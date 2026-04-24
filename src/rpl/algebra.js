@@ -257,6 +257,65 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     for (let i = 0; i < m; i++) out *= (n - i);
     return out;
   } },
+  // Session 068 — integer-division single-result siblings of IDIV2.
+  // Stack ops lift to Symbolic(AstFn('IQUOT', [l, r])) when either
+  // operand is a Name/Symbolic; registering the textual form here lets
+  // the entry parser recognise `IQUOT(A, B)` as a function call and
+  // round-trip through parseEntry.  Numeric evaluator folds only on
+  // integer-valued Reals with a non-zero divisor — matches the stack
+  // op's rejections (non-integer → "Bad argument value", zero-divisor
+  // → "Infinite result") by returning null rather than inventing a
+  // fractional fold or NaN.
+  IQUOT: { arity: 2, eval: (a, b) => {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
+    if (b === 0) return null;
+    return Math.trunc(a / b);
+  } },
+  IREMAINDER: { arity: 2, eval: (a, b) => {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
+    if (b === 0) return null;
+    return a - Math.trunc(a / b) * b;
+  } },
+  // Session 068 — special functions.  GAMMA gets a numeric evaluator
+  // that only folds on positive-integer-valued Reals (so simplify
+  // produces exact factorials rather than floating-point Γ values);
+  // LNGAMMA also only folds when the numeric result is guaranteed
+  // finite and mode-independent.  Generic folding on non-integer x is
+  // deferred to EVAL — the stack ops handle it via the Lanczos path.
+  GAMMA: { arity: 1, eval: x => {
+    if (!Number.isFinite(x)) return null;
+    if (!Number.isInteger(x)) return null;
+    if (x <= 0) return null;          // pole — leave symbolic
+    if (x > 171) return null;         // overflow — leave symbolic
+    let acc = 1;
+    for (let i = 2; i < x; i++) acc *= i;
+    return acc;                        // Γ(n) = (n-1)!
+  } },
+  LNGAMMA: { arity: 1 },
+  // Session 068 — STAT-DIST upper tail (terminal numeric op, no
+  // symbolic simplification rules to exploit; listed here only for
+  // parser round-trip so `'UTPC(4, 9.5)'` works at the entry line).
+  UTPC: { arity: 2 },
+  // Session 069 — Beta-family special functions + STAT-DIST UTPF /
+  // UTPT + erf / erfc.  All parser round-trip only: there are no
+  // clean symbolic simplification rules for these in the HP50 CAS,
+  // and their numeric evaluators all live on the stack side (they
+  // need the Lanczos log-gamma / incomplete-beta helpers that the
+  // algebra layer does not have).  Entering `'Beta(3, 4)'` therefore
+  // survives as a Symbolic; `EVAL` hands it to the stack op which
+  // computes the numeric value via _betaScalar.
+  // (KNOWN_FUNCTIONS lookups use ident.toUpperCase(), so keep the keys
+  // uppercase even when the HP50 spelling is mixed-case — the parser
+  // and simplifier both normalise the name before the lookup.  The
+  // stack ops stay registered under the mixed-case spelling so a user
+  // can type the lowercase form in alpha mode and reach them.)
+  BETA: { arity: 2 },
+  ERF:  { arity: 1 },
+  ERFC: { arity: 1 },
+  UTPF: { arity: 3 },
+  UTPT: { arity: 2 },
 });
 
 export function isKnownFunction(name) {

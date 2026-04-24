@@ -5,7 +5,7 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md` (or its predecessor, `docs/COMMANDS_INVENTORY.md`).
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 064 (2026-04-23).
+**Last updated.** Session 072 (2026-04-23).
 
 ---
 
@@ -65,7 +65,7 @@ follow-on candidates and listed at the bottom.
 | INV    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | ✓ | ✓ | ✓ | ✗ | ✗ | V = · (no standard vector-inverse); M = matrix inverse. Session 064 added T. |
 | SQ     | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | · | ✓ | ✓ | ✗ | ✗ | V/M deliberately · — `SQ/V` = dot product, `SQ/M` = matmul, handled by `*`. Session 064 added T. |
 | SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. |
-| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). T still a candidate. |
+| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. |
 | SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. |
 | FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). |
 | LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). |
@@ -74,10 +74,10 @@ follow-on candidates and listed at the bottom.
 
 | Op    | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| FLOOR | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. Complex ✗ — no total order. |
-| CEIL  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. |
-| IP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. |
-| FP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. |
+| FLOOR | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U (`1.5_m FLOOR` → `1_m`, uexpr preserved). Complex ✗ — no total order. |
+| CEIL  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. |
+| IP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Compound uexpr (`m/s^2`) round-trips. |
+| FP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. `FP(-1.8_m)` = `-0.8_m` (sign preserved). |
 | SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. |
 | ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. |
 
@@ -85,9 +85,9 @@ follow-on candidates and listed at the bottom.
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Session 062. V/M broadcast still a candidate — spec is ambiguous. |
-| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. |
-| MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. |
+| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 068 confirmed V/M rejection (HP50 AUR §3 scalar-only). |
+| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. |
+| MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. |
 
 ### Binary — GCD / LCM
 
@@ -102,9 +102,9 @@ follow-on candidates and listed at the bottom.
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| %   | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Session 064 added L/T. V/M intentionally left — HP50 AUR spec is scalar-only. |
-| %T  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. Infinite result on base = 0 preserved. |
-| %CH | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. |
+| %   | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added L/T; session 072 flipped V/M from blank to ✗ (HP50 AUR §3-1 scalar-only, mirrors MOD/MIN/MAX audit in s068). |
+| %T  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. Infinite result on base = 0 preserved. |
+| %CH | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. |
 
 ### Reference rows — already-broad ops from earlier sessions
 
@@ -114,15 +114,28 @@ candidate flagged in session 063.
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|-------|
-| +   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✓ | Concats on String+String; Unit dim-algebra; V+V element-wise (same length). T still a candidate. |
-| -   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | — |
-| *   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | V·V = dot product, M·M = matmul; Real-by-String = repeat (String rep). |
-| /   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | — |
-| ^   | ✓ | ✓ | ✗ | ✓ | ✓ | ✓  | ✓ | ✗ | ✓ |   | ✓ | ✗ | M^n = repeated matmul for integer n. |
-| NEG | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | — |
-| CONJ| ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | · | · | — |
-| RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | · | · | — |
-| IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | · | · | — |
+| +   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Concats on String+String; Unit dim-algebra; V+V element-wise (same length). Session 068 added T. |
+| -   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. |
+| *   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | V·V = dot product, M·M = matmul; Real-by-String = repeat (String rep). Session 068 added T. |
+| /   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. |
+| ^   | ✓ | ✓ | ✗ | ✓ | ✓ | ✓  | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | M^n = repeated matmul for integer n. Session 068 added T. |
+| NEG | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. |
+| CONJ| ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
+| RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
+| IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
+
+### Equality / structural compare — `==` / `SAME`
+
+Structural equality over collection and expression types.  `==` and
+`SAME` share the same comparator (`eqValues`) — the only semantic
+difference is that `SAME` never lifts to Symbolic for the other
+comparators (it always returns a Real 1./0.).  Numeric cross-promotion
+is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
+
+| Op   | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
+|------|---|---|---|---|---|----|---|---|---|---|---|---|-------|
+| ==   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Session 072 added Sy/L/V/M/T/U structural compare (gap filed s070). Nested lists / matrix rows recurse via `_eqArr`. Tagged: same tag AND same value. Unit: same numeric value AND same `uexpr` (so `1_m == 1_km` = 0). |
+| SAME | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Same widening — `SAME` always returns Real 1./0., never a Symbolic. |
 
 ---
 
@@ -130,22 +143,33 @@ candidate flagged in session 063.
 
 (Ordered by estimated effort, smallest first.)
 
-1. **Tagged transparency on the arithmetic family (`+`, `-`, `*`, `/`, `^`)** —
-   all five are broadly typed today but none of them unwrap Tagged.  Each
-   needs a single-line `_withTaggedBinary(_withListBinary(...))` swap and a
-   pair of tests.  Batch of 5 ops × 2 tests = ~10 new assertions.
-2. **Tagged transparency on `NEG`, `ABS`, `CONJ`, `RE`, `IM`** — same pattern
-   with `_withTaggedUnary`.  Batch of 5 × 2 = 10.
-3. **MOD / MIN / MAX V/M broadcast** — session 062 deferred this because
-   the HP50 spec for these on Vector/Matrix isn't clearly documented.
-   Worth a re-read of the Advanced Guide §3.1 before committing.
-4. **BinaryInteger widening on `+`, `-`, `*` with mixed scalar operand** —
-   already works for B+B but rejects B+Z.  HP50 AUR §10.1 describes the
-   coercion rule (masked to current wordsize).  Estimated 6–8 tests.
-5. **Detail rows for `+` / `-` / `*` / `/` / `^`** — pull these out of the
+1. **BinaryInteger audit on `+`, `-`, `*`, `/` with mixed scalar operand** —
+   confirm the B + R / B + Z coercion path in `_scalarBinaryMixed`
+   (session 047?) is correct under all four wordsize masks.  Estimated
+   6–8 tests.  HP50 AUR §10.1 describes the masking rule.
+2. **Tagged transparency on `SIGN`, `ARG`, `FLOOR`, `CEIL`, `IP`, `FP`** —
+   audit; most are already ✓ via the existing `_withTaggedUnary` wrapper
+   (added in sessions 062–063).  If any row is still blank, one-line
+   swap + pair of tests.
+3. **Detail rows for `+` / `-` / `*` / `/` / `^`** — pull these out of the
    compact reference table into per-op sections with Unit-dim-algebra notes
-   and BinaryInteger STWS masking notes.  Doc-only; pairs well with any of
-   the above.
+   and BinaryInteger STWS masking notes.  Doc-only; low effort.
+4. **String lexicographic `<` / `>` / `≤` / `≥`** — currently
+   `comparePair()` in `src/rpl/ops.js` rejects Strings with
+   `Bad argument type`.  HP50 User Guide App-J defines char-code lex
+   ordering.  Gap filed against this lane by the unit-tests lane
+   (session 070); the soft-assert in `test-comparisons.mjs` still
+   accepts either outcome.  Estimated ~1 hr: widen `comparePair`,
+   add 5 positive + 2 rejection tests, flip the soft-assert to hard.
+5. **`==` / `SAME` on Program, Directory** — out of scope for session
+   072.  Program is conceptually structural over its tokens (could
+   reuse `_eqArr`); Directory is a live mutable container so `SAME`
+   should probably be reference-identity only.  Read HP50 AUR §4-7
+   before widening.
+6. **BinaryInteger `==` across bases** — `#FFh == #255d` should be
+   `1` (same underlying n, different base annotation).  Currently
+   `eqValues` routes BinInt through `isNumber` → `promoteNumericPair`.
+   Spot-check with a few base-mix pairs.
 
 ---
 

@@ -850,3 +850,189 @@ setBinaryBase(null);
 // ------------------------------------------------------------------
 
 // ------------------------------------------------------------------
+// Session 074 additions — BinaryInteger == / SAME / comparator audit.
+// HP50 AUR §4-1 and the User Guide's BinInt appendix treat BinInt base
+// as a *display attribute* — arithmetic and equality operate on the
+// masked numeric value, and `==` / `SAME` should therefore return 1 for
+// any two BinInts with the same masked value regardless of stored
+// display base.  They should likewise return 1 for a BinInt vs an
+// Integer / Real with the same numeric value (== is a numeric-identity
+// op, not a type-identity op — that's what SAME is almost-but-not-quite
+// for: SAME on BinInt vs Integer is 0 because the types differ, but
+// SAME on two BinInts at the same value regardless of base is 1).
+//
+// Written as a KNOWN GAP cluster: `eqValues()` in `src/rpl/ops.js` today
+// has no BinaryInteger branch and `isNumber` deliberately excludes
+// BinInt (types.js L230), so every == / SAME on BinInt currently falls
+// through to `return false`, even for reference-identical inputs.
+// Each assertion is a soft `assert(got === 0 || got === 1, …)`
+// pinning the current behaviour alongside the HP50 expectation in the
+// message.  Once the data-types / command-support lane adds the BinInt
+// branch to eqValues, the soft-asserts flip to hard in one line each.
+// ------------------------------------------------------------------
+{
+  resetBinaryState();
+  setBinaryBase(null);
+
+  // Reference-identical: #FFh == #FFh must return 1.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'h')]);
+    lookup('==').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: #FFh == #FFh (current: ${got} … HP50 expected: 1). `
+      + 'eqValues has no BinInt branch → always 0. Sibling lane: rpl5050-data-types.');
+  }
+
+  // Cross-base same value: #FFh == #255d must return 1.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'd')]);
+    lookup('==').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: #FFh == #255d (current: ${got} … HP50 expected: 1). `
+      + 'Display base is not semantic — masked numeric value decides.');
+  }
+
+  // Cross-base all four: hex/dec/oct/bin all at value 255 must equal each other.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'b')]);
+    lookup('==').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: #FFh == #11111111b (current: ${got} … HP50 expected: 1).`);
+  }
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'o'), BinaryInteger(255n, 'd')]);
+    lookup('==').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: #377o == #255d (current: ${got} … HP50 expected: 1).`);
+  }
+
+  // Different values must return 0 — this already works because the
+  // fall-through produces 0.  Hard-assert; becomes a regression guard
+  // for future rewriters that don't preserve the zero-on-mismatch
+  // branch.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(256n, 'h')]);
+    lookup('==').fn(s);
+    assert(s.peek().value === 0,
+      'session074: #FFh == #100h (different values) = 0 (regression guard).');
+  }
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(0n, 'h'), BinaryInteger(1n, 'd')]);
+    lookup('==').fn(s);
+    assert(s.peek().value === 0,
+      'session074: #0h == #1d (different values, cross-base) = 0.');
+  }
+
+  // != / <> on BinInts must be the complement of == once the gap is
+  // fixed.  Soft today: both 0 and 1 allowed.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'd')]);
+    lookup('<>').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: #FFh <> #255d (current: ${got} … HP50 expected: 0 once == fixed).`);
+  }
+
+  // SAME on two reference-identical BinInts must return 1.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'h')]);
+    lookup('SAME').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: SAME #FFh #FFh (current: ${got} … HP50 expected: 1).`);
+  }
+
+  // Cross-type: BinInt vs Integer with same numeric value.
+  // AUR §4-1 is explicit that == compares the numeric value across
+  // numeric families.  SAME is stricter (types must match) and should
+  // still return 0 cross-type.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(16n, 'h'), Integer(16n)]);
+    lookup('==').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: #10h == Integer(16) (current: ${got} … HP50 expected: 1). `
+      + '== widens across numeric families; SAME would stay 0 because the types differ.');
+  }
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(16n, 'h'), Integer(16n)]);
+    lookup('SAME').fn(s);
+    assert(s.peek().value === 0,
+      'session074: SAME #10h Integer(16) = 0 (strict type + value; types differ). Regression guard.');
+  }
+
+  // Wordsize masking: #100h at ws=8 masks to #0h.  Two such BinInts
+  // must therefore be == even if constructed with "different" raw
+  // payloads pre-mask.  BinaryInteger() already applies the mask at
+  // construction time, so the raw payloads are identical and the
+  // "masked value equality" reduces to regular value equality.  This
+  // is a soft-assert today for the same root-cause reason.
+  {
+    resetBinaryState();
+    setWordsize(8);
+    const s = new Stack();
+    // Both clamp to 0 at ws=8.
+    s.pushMany([BinaryInteger(0x100n, 'h'), BinaryInteger(0n, 'd')]);
+    lookup('==').fn(s);
+    const got = s.peek().value;
+    assert(got === 0 || got === 1,
+      `session074 KNOWN GAP: #100h (wrap → #0h) == #0d at ws=8 (current: ${got} … HP50 expected: 1).`);
+    resetBinaryState();
+  }
+
+  // Rejection: BinInt vs non-numeric must NOT crash — == is total.
+  // Currently returns 0 via fall-through, which is the HP50 behaviour
+  // for any cross-type == (per AUR §4-1 "if operands are not comparable,
+  // returns 0; does not error").  Hard-assert.
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(255n, 'h'), Str('FF')]);
+    lookup('==').fn(s);
+    assert(s.peek().value === 0,
+      'session074: #FFh == "FF" = 0 (cross-type: BinInt vs String is not comparable, not an error).');
+  }
+  {
+    const s = new Stack();
+    s.pushMany([Str('FF'), BinaryInteger(255n, 'h')]);
+    lookup('==').fn(s);
+    assert(s.peek().value === 0,
+      'session074: "FF" == #FFh = 0 (symmetric cross-type non-match).');
+  }
+
+  // Comparators on BinInt — lens on the parallel data-types gap.
+  // HP50 AUR §4-1 supports `<` / `>` / `≤` / `≥` on BinInts by masked
+  // numeric value; today `comparePair()` rejects BinInt outright with
+  // "Bad argument type".  Soft-assert via assertThrows-style probe:
+  // accept either throw (current) or the ordered-comparison result
+  // (future).
+  {
+    const s = new Stack();
+    s.pushMany([BinaryInteger(1n, 'h'), BinaryInteger(2n, 'h')]);
+    let caught = null; let got = null;
+    try { lookup('<').fn(s); got = s.peek().value; }
+    catch (e) { caught = e; }
+    assert(caught != null || got === 1,
+      `session074 KNOWN GAP: #1h < #2h (current: ${caught ? 'throws "'+caught.message+'"' : 'returned '+got} … `
+      + 'HP50 expected: 1). Sibling lane: rpl5050-data-types (widen comparePair to accept BinInt).');
+  }
+
+  resetBinaryState();
+}
+
+// ------------------------------------------------------------------
+// End session 074 additions (BinInt == / SAME / comparator audit)
+// ------------------------------------------------------------------

@@ -16,6 +16,7 @@ import {
   setWordsize, getWordsize, getWordsizeMask,
   setBinaryBase, getBinaryBase, resetBinaryState,
   setApproxMode,
+  setHalted, getHalted, clearHalted,
 } from '../src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
 import { assert } from './helpers.mjs';
@@ -1127,23 +1128,22 @@ import { assert } from './helpers.mjs';
     'session067: nested CASE: inner match returns to outer short-circuit');
 }
 
-/* ---- CASE without closing outer END is a parse-level incompleteness
-        but runCase throws CASE without END when it falls off ---- */
+/* ---- CASE without closing outer END — session 073 flipped this
+        behaviour to auto-close (parity with IF/WHILE/program-body
+        recovery).  Regression guard: the matching THEN clause still
+        runs, trailing tokens after the last inner END act as the
+        default clause (empty here), no throw. ---- */
 {
   resetHome();
   const s = new Stack();
-  // Force the error by handing a hand-built token stream (parseProgram
-  // auto-closes missing `»` but we want to exercise runCase's own
-  // fallthrough detection).
   s.push(Program([
     Name('CASE'),
     Integer(1n), Name('THEN'), Integer(10n), Name('END'),
-    // deliberately missing outer END
+    // deliberately missing outer END — auto-closes at program end
   ]));
-  let caught = null;
-  try { lookup('EVAL').fn(s); } catch (e) { caught = e.message; }
-  assert(caught && /CASE without END/.test(caught),
-    'session067: CASE without outer END raises a diagnostic');
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session073: unterminated outer CASE auto-closes, matched clause still runs');
 }
 
 /* ================================================================
@@ -1220,4 +1220,620 @@ import { assert } from './helpers.mjs';
   // The 7 pushed just before ABORT is retained; nothing after ran.
   assert(s.depth === 1 && s.peek().value === 7n,
     'session067: ABORT preserves values pushed before the abort');
+}
+
+/* ================================================================
+   Compiled local environments — `→ a b … body`  (session 068)
+   ================================================================ */
+
+// Single local + program body.  3 4 « → a b « a b + » » EVAL → 7
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(3n));
+  s.push(Integer(4n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),
+    Program([ Name('a'), Name('b'), Name('+') ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session068: → single-clause, program body, a + b with a=3 b=4 → 7');
+}
+
+// Three locals; rightmost name takes stack level 1.
+// 10 3 2 → a b c « a b c * - »  → 10 - (3 * 2) = 4
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(3n));
+  s.push(Integer(2n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'), Name('c'),
+    Program([ Name('a'), Name('b'), Name('c'), Name('*'), Name('-') ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 4n,
+    'session068: → three locals — rightmost name binds stack level 1');
+}
+
+// Algebraic body: 5 2 → a b 'a+b'  → 7 (via Symbolic EVAL)
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    const s = new Stack();
+    s.push(Integer(5n));
+    s.push(Integer(2n));
+    // Build the program: → a b 'a+b'
+    s.push(parseEntry("<< → a b 'a+b' >>")[0]);
+    lookup('EVAL').fn(s);
+    assert(s.depth === 1,
+      'session068: → with algebraic body leaves a single value on the stack');
+    const top = s.peek();
+    // Symbolic EVAL with locals bound to integers folds to a Real 7.
+    const val = top.type === 'real' ? top.value
+              : top.type === 'integer' ? Number(top.value)
+              : null;
+    assert(val === 7,
+      'session068: → algebraic body: a+b with a=5 b=2 folds to 7');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+// Locals are invisible after the body ends — the outer lookup falls
+// through to the global store (or pushes the Name if unbound).
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(42n));
+  s.push(Program([
+    Name('→'), Name('x'),
+    Program([ Name('x') ]),    // body: push the local
+    Name('x'),                 // after body — `x` is no longer bound
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 2,
+    'session068: → locals invisible after body (x pushes a Name afterwards)');
+  const top = s.peek();
+  assert(top.type === 'name' && top.id === 'x',
+    'session068: → trailing `x` became an unbound Name');
+  // Level 2 is the value of `x` inside the body — the Integer 42.
+  assert(s._items[0].value === 42n,
+    'session068: → body saw the local binding before it went out of scope');
+}
+
+// Nested → frames: inner shadows outer.
+// 1 2 → a b « 10 20 → a b « a b » »  → inner a=10, b=20, so top = 20, L2 = 10
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),
+    Program([
+      Integer(10n), Integer(20n),
+      Name('→'), Name('a'), Name('b'),
+      Program([ Name('a'), Name('b') ]),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 2,
+    'session068: nested → left two values on the stack');
+  assert(s.peek().value === 20n && s._items[0].value === 10n,
+    'session068: nested → inner shadows outer (sees 10,20 not 1,2)');
+}
+
+// After inner frame pops, outer still binds.
+// 1 2 → a b « 10 → a « a » b »  → inner a=10 pushed, outer b=2 pushed
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),
+    Program([
+      Integer(10n),
+      Name('→'), Name('a'),
+      Program([ Name('a') ]),         // inner body: pushes 10
+      Name('b'),                      // after inner body: outer b = 2
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 2,
+    'session068: outer → frame still live after inner pops');
+  assert(s.peek().value === 2n && s._items[0].value === 10n,
+    'session068: outer b=2 visible after inner → closed');
+}
+
+// Too-few-arguments error preserves the stack (EVAL's save/restore
+// kicks in because the error is an RPLError).
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(100n));                 // only one value
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),     // wants two
+    Program([ Name('a'), Name('b'), Name('+') ]),
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Too few arguments/.test(caught.message),
+    'session068: → with too-few args raises Too few arguments');
+  // EVAL's snapshot-restore should have put the 100 and the Program back.
+  assert(s.depth === 2 && s._items[0].value === 100n,
+    'session068: → error path leaves outer stack intact (EVAL restore)');
+}
+
+// Error inside the body pops the frame even on the error path — after
+// unwind, the local name is NOT visible.
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Program([
+    Name('→'), Name('boom'),
+    Program([ Name('boom'), Integer(0n), Name('/') ]),   // divide-by-zero
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (_e) { caught = _e; }
+  assert(caught && /Infinite|[Zz]ero|[Dd]ivide/.test(caught.message || ''),
+    'session068: → body propagates divide-by-zero');
+  // Now re-run a tiny probe to confirm frame was popped: just push `boom`
+  // in a fresh Program with no → — should stay as an unbound Name.
+  const s2 = new Stack();
+  s2.push(Program([ Name('boom') ]));
+  lookup('EVAL').fn(s2);
+  const t = s2.peek();
+  assert(s2.depth === 1 && t.type === 'name' && t.id === 'boom',
+    'session068: → frame popped on error path — local name no longer bound');
+}
+
+// Syntax errors: → with no names, → with no body, → followed by a
+// non-Program non-Symbolic body.
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('→'),     // no locals, no body
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /local variable names/.test(caught.message),
+    'session068: → with no local names is a syntax error');
+}
+
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Program([
+    Name('→'), Name('a'),   // name but no body token
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /missing body/.test(caught.message),
+    'session068: → with local names but no body raises missing body');
+}
+
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Integer(99n),             // not a Program / Symbolic
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /body must be a program or algebraic/.test(caught.message),
+    'session068: → with non-Program non-Symbolic body is rejected');
+}
+
+// Local shadows a global with the same name.
+// 'X' 99 STO ; 5 → X « X » → 5 (local wins); then PURGE checks cleanup.
+{
+  resetHome();
+  const s = new Stack();
+  // Pre-store X=99 globally.
+  varStore('X', Integer(99n));
+  s.push(Integer(5n));
+  s.push(Program([
+    Name('→'), Name('X'),
+    Program([ Name('X') ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 5n,
+    'session068: local X shadows global X during body (got the 5)');
+  // After body, global X is still 99.
+  const g = varRecall('X');
+  assert(g && g.value === 99n,
+    'session068: global X unchanged by the → body');
+  varPurge('X');
+}
+
+/* ================================================================
+   Session 073 — Auto-close of unterminated CASE
+   Parser already auto-closes unterminated `«`, `}`, `]` (parser.js
+   lines 299-302).  The runCase helper now extends the same
+   convenience to CASE blocks whose outer END — or whose per-clause
+   inner ENDs — have been dropped off the end of the source.
+   ================================================================ */
+
+/* ---- CASE missing only the outer END (first clause matches) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « CASE 1 THEN 10 END »    — the outer CASE END is absent
+  s.push(Program([
+    Name('CASE'),
+    Integer(1n), Name('THEN'), Integer(10n), Name('END'),
+    // NOTE: no trailing outer `END`
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session073: CASE auto-closes missing outer END (matched clause)');
+}
+
+/* ---- CASE missing outer END (no clause matches, falls off) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Three false tests, no default action, no trailing END — pushes nothing.
+  s.push(Integer(42n));
+  s.push(Program([
+    Name('CASE'),
+    Integer(0n), Name('THEN'), Integer(1n), Name('END'),
+    Integer(0n), Name('THEN'), Integer(2n), Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session073: CASE auto-closes with no match and no default (leaves stack alone)');
+}
+
+/* ---- CASE missing outer END but has a default clause at the tail ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Default clause after the last inner END should still run when
+  // no test matches and the outer END is absent.
+  s.push(Program([
+    Name('CASE'),
+    Integer(0n), Name('THEN'), Integer(111n), Name('END'),
+    Integer(0n), Name('THEN'), Integer(222n), Name('END'),
+    Integer(999n),               // default-action body
+    // no trailing END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 999n,
+    'session073: CASE auto-close runs trailing default clause when no test matches');
+}
+
+/* ---- CASE with no clauses and no END: default-only auto-close ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « CASE 7 »   — all tokens after CASE are the default body
+  s.push(Program([
+    Name('CASE'),
+    Integer(7n),
+    // no THEN, no END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session073: CASE with no THEN and no END runs rest as default clause');
+}
+
+/* ---- CASE with a THEN but missing its inner END (truthy test) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « CASE 1 THEN 5 6 + »     — no inner END, no outer END
+  s.push(Program([
+    Name('CASE'),
+    Integer(1n), Name('THEN'),
+    Integer(5n), Integer(6n), Name('+'),
+    // truncated — the remainder is the matched clause's body
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 11n,
+    'session073: CASE auto-closes missing inner END when test matches');
+}
+
+/* ---- CASE with THEN missing inner END (falsy test) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Falsy test + truncated action: nothing runs, stack unchanged apart
+  // from the CASE block disappearing from the pending work.
+  s.push(Integer(88n));
+  s.push(Program([
+    Name('CASE'),
+    Integer(0n), Name('THEN'),
+    Integer(999n),                  // action that will NOT run
+    // truncated — no inner END, no outer END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 88n,
+    'session073: CASE falsy test with missing inner END skips without running body');
+}
+
+/* ---- CASE auto-close at top of program body composes with a
+       properly-closed nested CASE ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Outer CASE is missing its END; inner CASE is fully closed.  The
+  // auto-close path must still recognise the fully-closed inner CASE
+  // and not count its inner-ENDs against the outer's pending ENDs.
+  //   « CASE 1 THEN
+  //          CASE 0 THEN 111 END 1 THEN 222 END END
+  //          »                              ← outer END dropped
+  s.push(Program([
+    Name('CASE'),
+      Integer(1n), Name('THEN'),
+        Name('CASE'),
+          Integer(0n), Name('THEN'), Integer(111n), Name('END'),
+          Integer(1n), Name('THEN'), Integer(222n), Name('END'),
+        Name('END'),                 // inner CASE closed
+      Name('END'),                   // outer first-clause closed
+    // outer CASE END dropped
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 222n,
+    'session073: CASE auto-close on outer block preserves nested CASE dispatch');
+}
+
+/* ================================================================
+   Session 073 — Nested-program closure-over-locals pin
+   HP50 `→` locals use dynamic scoping within the compiled-local
+   region: a nested `« »` program invoked during the outer body
+   sees the outer frame's bindings.  This test freezes that
+   behavior so a future refactor to lexical scoping has to come
+   with a deliberate flip.
+   ================================================================ */
+
+/* ---- Nested program reads an outer-frame local ---- */
+{
+  resetHome();
+  const s = new Stack();
+  //  5 → a  «  «  a a * »  EVAL  »       → 25
+  s.push(Integer(5n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([
+      Program([ Name('a'), Name('a'), Name('*') ]),
+      Name('EVAL'),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 25n,
+    'session073: nested program sees outer → local (dynamic-scope pin)');
+}
+
+/* ---- Inner `→` frame shadows outer without clobbering ---- */
+{
+  resetHome();
+  const s = new Stack();
+  //  3 → a
+  //    « 10 → a « a »     ← inner body pushes 10 (inner a wins)
+  //      a                ← outer a again visible after inner pops
+  //      +                ← 10 + 3 = 13
+  //    »
+  s.push(Integer(3n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([
+      Integer(10n), Name('→'), Name('a'),
+      Program([ Name('a') ]),              // inner body
+      Name('a'),                           // outer a (3) pushed here
+      Name('+'),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 13n,
+    'session073: inner → shadows outer local, outer visible again after pop');
+}
+
+/* ---- Outer local survives nested program throwing ---- */
+{
+  resetHome();
+  const s = new Stack();
+  //  7 → a
+  //    « IFERR 1 0 / THEN a END »
+  //  The probe 1 0 / throws; the THEN clause should find outer a=7
+  //  still bound because runArrow's finally hasn't fired yet.
+  s.push(Integer(7n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([
+      Name('IFERR'),
+      Integer(1n), Integer(0n), Name('/'),
+      Name('THEN'),
+      Name('a'),
+      Name('END'),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session073: outer → local still visible after nested RPLError unwinds IFERR');
+}
+
+/* ================================================================
+   Session 073 — HALT / CONT / KILL substrate pilot
+   HP50 AUR p.2-52, p.2-135, p.2-140.  HALT suspends the running
+   program at the current instruction pointer; CONT resumes where
+   HALT left off; KILL discards the suspension.  Pilot restriction:
+   HALT must fire at the top level of a Program body (no active
+   structured-control frame, no compiled-local frame).
+   ================================================================ */
+
+/* ---- HALT suspends, stack carries the pre-HALT result ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  // « 1 2 + HALT 3 * »    — after HALT the stack has 3, not 9.
+  s.push(Program([
+    Integer(1n), Integer(2n), Name('+'),
+    Name('HALT'),
+    Integer(3n), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 3n,
+    'session073: HALT suspends program, pre-HALT stack result preserved (3)');
+  assert(getHalted() !== null,
+    'session073: HALT populates state.halted slot');
+  clearHalted();
+}
+
+/* ---- CONT resumes from the token after HALT ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  s.push(Program([
+    Integer(1n), Integer(2n), Name('+'),
+    Name('HALT'),
+    Integer(3n), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 3n, 'session073: HALT pre-state matches');
+  lookup('CONT').fn(s);
+  // After CONT: 3 * → 9
+  assert(s.depth === 1 && s.peek().value === 9n,
+    'session073: CONT resumes from post-HALT token (3 * → 9)');
+  assert(getHalted() === null,
+    'session073: CONT clears halted slot on successful resume');
+}
+
+/* ---- KILL clears the halted slot without resuming ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  s.push(Program([
+    Integer(42n),
+    Name('HALT'),
+    Integer(999n),                     // would run if CONT'd, killed instead
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 42n, 'session073: HALT for KILL test');
+  assert(getHalted() !== null, 'session073: halted before KILL');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session073: KILL clears halted slot');
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session073: KILL does not touch the stack');
+}
+
+/* ---- KILL with no halted program is a no-op ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  s.push(Integer(7n));
+  lookup('KILL').fn(s);             // should not throw
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session073: KILL with empty halted slot is a no-op (stack unchanged)');
+}
+
+/* ---- CONT with no halted program raises an RPLError ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  let caught = null;
+  try { lookup('CONT').fn(s); } catch (e) { caught = e; }
+  assert(caught && /No halted program/.test(caught.message),
+    'session073: CONT with empty halted slot raises No halted program');
+}
+
+/* ---- HALT inside structured control flow rejects (pilot limit) ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  // « IF 1 THEN HALT END »   — HALT under IF's runIf evalRange call
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'),
+    Name('HALT'),
+    Name('END'),
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /HALT.*inside control structure/.test(caught.message),
+    'session073: HALT inside IF raises pilot-limit RPLError');
+  assert(getHalted() === null,
+    'session073: pilot-limit rejection does not populate halted slot');
+}
+
+/* ---- HALT inside a compiled-local `→` frame rejects ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  // 5 → a « HALT »   — HALT fires under runArrow
+  s.push(Integer(5n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([ Name('HALT') ]),
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /HALT.*pilot/.test(caught.message),
+    'session073: HALT inside → raises pilot-limit RPLError');
+  assert(getHalted() === null,
+    'session073: pilot limit blocks halted-slot write from inside →');
+}
+
+/* ---- Bare HALT on the stack (not inside EVAL) reports the bare-op
+       error, so `HALT ENTER` outside a program doesn't wedge anything ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  let caught = null;
+  try { lookup('HALT').fn(s); } catch (e) { caught = e; }
+  assert(caught && /not inside a running program/.test(caught.message),
+    'session073: bare-op HALT (outside a program body) raises clear error');
+}
+
+/* ---- HALT + CONT round-trip preserves mid-stream compute ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  // « 10 HALT DUP * »       — HALT with 10 on stack, CONT squares it → 100
+  s.push(Program([
+    Integer(10n),
+    Name('HALT'),
+    Name('DUP'), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 10n, 'session073: HALT preserves 10 mid-stream');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().value === 100n,
+    'session073: CONT runs DUP * on the preserved 10 → 100');
+}
+
+/* ---- Two sequential HALT/CONT pairs (sequential resumption) ---- */
+{
+  resetHome(); clearHalted();
+  const s = new Stack();
+  // « 1 HALT 2 + HALT 3 * »    first CONT yields 3 (=1+2); second → 9
+  s.push(Program([
+    Integer(1n), Name('HALT'),
+    Integer(2n), Name('+'),
+    Name('HALT'),
+    Integer(3n), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 1n, 'session073: first HALT — 1 on top');
+  lookup('CONT').fn(s);
+  assert(s.peek().value === 3n,
+    'session073: first CONT runs 2 + → 3, re-hits HALT');
+  assert(getHalted() !== null,
+    'session073: second HALT re-populated the slot');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().value === 9n,
+    'session073: second CONT runs 3 * → 9, program finishes clean');
+  assert(getHalted() === null,
+    'session073: slot empty after the final CONT');
 }

@@ -1,27 +1,87 @@
 /* Aggregate runner: imports every split test file and prints the
-   combined pass/fail summary. */
+   combined pass/fail summary.
+
+   Session 074 (unit-test lane) — the flat `import './test-foo.mjs';`
+   list was replaced with a dynamic-import loop that snapshots the
+   shared pass/fail counters before and after each file and prints
+   one headline line per file.  Standing TESTS.md queue item #1
+   across sessions 068/070/073 — resolves the "one final number,
+   zero per-file attribution" gap that made per-file regressions
+   hard to spot on inspection.
+
+   Resilience bonus: each dynamic import is wrapped in a try/catch
+   so a file that throws *at module-load time* (e.g. the session-068
+   cross-lane `Symbolic` import race) is reported with its filename
+   and the remaining files still run.  One crash no longer knocks
+   out the aggregate. */
 
 import { state } from './helpers.mjs';
-import './test-numerics.mjs';
-import './test-comparisons.mjs';
-import './test-variables.mjs';
-import './test-eval.mjs';
-import './test-control-flow.mjs';
-import './test-binary-int.mjs';
-import './test-algebra.mjs';
-import './test-entry.mjs';
-import './test-matrix.mjs';
-import './test-types.mjs';
-import './test-lists.mjs';
-import './test-reflection.mjs';
-import './test-units.mjs';
-import './test-ui.mjs';
-import './test-stack-ops.mjs';
-import './test-stats.mjs';
-import './test-arrow-aliases.mjs';
 
+const FILES = [
+  './test-helpers.mjs',
+  './test-numerics.mjs',
+  './test-comparisons.mjs',
+  './test-variables.mjs',
+  './test-eval.mjs',
+  './test-control-flow.mjs',
+  './test-binary-int.mjs',
+  './test-algebra.mjs',
+  './test-entry.mjs',
+  './test-matrix.mjs',
+  './test-types.mjs',
+  './test-lists.mjs',
+  './test-reflection.mjs',
+  './test-units.mjs',
+  './test-ui.mjs',
+  './test-stack-ops.mjs',
+  './test-stats.mjs',
+  './test-arrow-aliases.mjs',
+];
+
+const perFile = [];
+const importErrors = [];
+
+for (const f of FILES) {
+  const beforePass = state.passed;
+  const beforeFail = state.failed;
+  try {
+    await import(f);
+  } catch (e) {
+    importErrors.push({ file: f, err: e });
+  }
+  perFile.push({
+    file: f,
+    passed: state.passed - beforePass,
+    failed: state.failed - beforeFail,
+  });
+}
+
+/* ---------- Per-file headline block ---------- */
+console.log('\n' + '='.repeat(60));
+console.log(' Per-file headline counts');
+console.log('='.repeat(60));
+// Width of the longest filename (trimmed of leading './') + a bit.
+const nameW = Math.max(...perFile.map(r => r.file.length));
+for (const r of perFile) {
+  const tag = r.failed === 0 ? 'ok  ' : 'FAIL';
+  console.log(` ${tag}  ${r.file.padEnd(nameW)}  ${String(r.passed).padStart(5)} passed  ${String(r.failed).padStart(3)} failed`);
+}
+
+/* ---------- Module-load crash report (session 074) ---------- */
+if (importErrors.length) {
+  console.error('\n' + '='.repeat(60));
+  console.error(' Module-load failures');
+  console.error('='.repeat(60));
+  for (const { file, err } of importErrors) {
+    console.error(` ${file}:`);
+    console.error('   ' + (err && err.stack ? err.stack.split('\n').join('\n   ') : String(err)));
+  }
+}
+
+/* ---------- Aggregate line (backwards-compatible) ---------- */
 const total = state.passed + state.failed;
-console.log(state.failed === 0
+const hasImportErr = importErrors.length > 0;
+console.log(state.failed === 0 && !hasImportErr
   ? `\nALL TESTS PASSED (${state.passed})`
-  : `\n${state.failed} FAILED (of ${total})`);
-process.exit(state.failed === 0 ? 0 : 1);
+  : `\n${state.failed} FAILED (of ${total})${hasImportErr ? ` + ${importErrors.length} import error(s)` : ''}`);
+process.exit(state.failed === 0 && !hasImportErr ? 0 : 1);

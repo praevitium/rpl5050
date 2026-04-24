@@ -306,3 +306,15 @@ export class RPLError extends Error {
 export class RPLAbort extends Error {
   constructor(msg = 'Abort') { super(msg); this.name = 'RPLAbort'; }
 }
+
+/* RPLHalt — signal thrown by the HALT op to suspend the currently-
+ * running program.  Like RPLAbort it does NOT subclass RPLError so
+ * IFERR cannot trap it.  The top-level EVAL wrapper treats it as a
+ * clean program suspension (no flashError, stack preserved at the
+ * point of the halt).  `state.halted` is populated before the throw
+ * so `CONT` can resume where HALT left off.  Session 073 — pilot
+ * restricted to the top level of a Program body (no structured
+ * control flow, no compiled-local frame active). */
+export class RPLHalt extends Error {
+  constructor(msg = 'Halt') { super(msg); this.name = 'RPLHalt'; }
+}

@@ -118,6 +118,17 @@ export const state = {
   // slot is NOT persisted across reloads; running any *FIT op
   // after a reload re-establishes it.
   lastFitModel: null,
+  // Suspended-execution slot (session 073 — HALT/CONT/KILL pilot).
+  // Populated by HALT when it suspends the currently-running program.
+  // Shape: { tokens: Array, ip: number, length: number } or null.
+  //   `tokens`   — the program's token list at the HALT point
+  //   `ip`       — index of the next token to execute on CONT
+  //   `length`   — upper bound (cached `tokens.length` at HALT time)
+  // Read by the CONT op to resume; cleared by KILL.  Currently the
+  // pilot only captures HALTs at the top level of a Program body
+  // (no structured control flow depth, no active compiled-local
+  // frame) — future RunState work will generalise this.
+  halted: null,
 };
 
 function _emit() {
@@ -350,6 +361,32 @@ export function getLastFitModel() { return state.lastFitModel; }
 export function clearLastFitModel() {
   if (state.lastFitModel === null) return;
   state.lastFitModel = null;
+  _emit();
+}
+
+/* ---------------------- halted-program slot -------------------------
+   Session 073 — HALT/CONT/KILL substrate pilot.  A single slot that
+   carries the suspended program's token stream + instruction pointer
+   between the HALT that captured it and the CONT that resumes it.
+
+   The slot is a plain object with fields `{tokens, ip, length}` (see
+   the `state.halted` comment above) or `null` when no program is
+   currently suspended.  Only one suspension is tracked at a time —
+   HP50 supports a stack of halted programs but the pilot keeps it to
+   one.  Setting the slot emits a state-change so the UI can render
+   a status annunciator if desired.
+   ------------------------------------------------------------------ */
+
+export function setHalted(h) {
+  state.halted = h;
+  _emit();
+}
+
+export function getHalted() { return state.halted; }
+
+export function clearHalted() {
+  if (state.halted === null) return;
+  state.halted = null;
   _emit();
 }
 

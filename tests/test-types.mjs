@@ -2,7 +2,7 @@ import { Stack } from '../src/rpl/stack.js';
 import { lookup } from '../src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
-  RList, Vector, Matrix,
+  RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString,
 } from '../src/rpl/types.js';
@@ -515,4 +515,158 @@ import { assert } from './helpers.mjs';
          s.peek(2).type === 'integer' && s.peek(2).value === 99n &&
          s.peek(1).value === 'banana',
     'session053: →TAG|UNDER round-trip');
+}
+
+/* =================================================================
+   session068 — TYPE / VTYPE / KIND table-driven sweep (AUR §3-44)
+
+   HP50 AUR §3-44 table of type codes:
+       0  Real
+       1  Complex
+       2  String
+       3  Real-array (Vector or Matrix with no complex entries)
+       4  Complex-array (any complex entry)
+       5  List
+       6  Global name
+       7  Local name
+       8  Program
+       9  Algebraic (Symbolic)
+      10  Binary integer
+      11  Graphics object (GROB)
+      12  Tagged object
+      13  Unit
+      15  Directory
+      28  Integer (ZINT, arbitrary precision)
+
+   The TYPE / KIND ops return this code for any stack value.  VTYPE
+   takes a Name, resolves the value via varRecall, and returns the
+   code for the stored value (or "Undefined name" on miss).
+
+   This block tables every type code our implementation supports and
+   asserts all three ops agree with the AUR.
+   ================================================================= */
+
+const TYPE_CODE_TABLE = [
+  // [value-factory, expected HP50 code, label]
+  [() => Real(3.14),                                  0,  'Real'],
+  [() => Complex(1, 2),                               1,  'Complex (non-zero im)'],
+  [() => Complex(5, 0),                               1,  'Complex (zero im — still code 1)'],
+  [() => Str('hello'),                                2,  'String'],
+  [() => Vector([Real(1), Real(2), Real(3)]),         3,  'Real Vector'],
+  [() => Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]),
+                                                      3,  'Real Matrix'],
+  [() => Vector([Complex(1, 2), Real(3)]),            4,  'Complex Vector (any complex entry → code 4)'],
+  [() => Matrix([[Complex(1, 1), Real(0)], [Real(0), Real(1)]]),
+                                                      4,  'Complex Matrix (any complex entry → code 4)'],
+  [() => RList([Real(1), Real(2), Str('x')]),         5,  'List (heterogeneous)'],
+  [() => Name('FOO'),                                 6,  'Global Name'],
+  [() => Name('LX', { local: true }),                 7,  'Local Name'],
+  [() => Program([Integer(1n), Integer(2n), Name('+')]),
+                                                      8,  'Program'],
+  [() => Symbolic({ k: 'var', id: 'X' }),             9,  'Symbolic (Algebraic)'],
+  [() => BinaryInteger(255n, 'h'),                   10,  'Binary integer'],
+  [() => Tagged('t', Integer(42n)),                  12,  'Tagged'],
+  [() => Tagged('t', Tagged('inner', Real(1))),      12,  'Nested Tagged (outer kind is still Tagged)'],
+  // Unit needs a uexpr; the simplest is an empty-exponents tuple.
+  // Use the same {kind,name} shape test-arrow-aliases.mjs builds.
+  [() => ({ type: 'unit', value: 5, uexpr: { kind: 'atom', name: 'm' } }),
+                                                     13,  'Unit'],
+  [() => Directory({ name: 'HOME' }),                15,  'Directory'],
+  [() => Integer(12345678901234567890n),             28,  'Integer (arbitrary precision)'],
+];
+
+/* ---- TYPE: table-drive every row ---- */
+for (const [make, code, label] of TYPE_CODE_TABLE) {
+  const s = new Stack();
+  s.push(make());
+  lookup('TYPE').fn(s);
+  assert(isReal(s.peek()) && s.peek().value === code,
+    `session068: TYPE(${label}) = ${code} (got ${s.peek()?.value})`);
+}
+
+/* ---- KIND: should agree with TYPE for every row ---- */
+for (const [make, code, label] of TYPE_CODE_TABLE) {
+  const s = new Stack();
+  s.push(make());
+  lookup('KIND').fn(s);
+  assert(isReal(s.peek()) && s.peek().value === code,
+    `session068: KIND(${label}) = ${code} (got ${s.peek()?.value})`);
+}
+
+/* ---- VTYPE: store each test value under a fresh name and assert
+       VTYPE('n') returns the same code TYPE does ---- */
+{
+  // Use a scratch subdirectory to keep test values from polluting HOME.
+  resetHome();
+  let i = 0;
+  for (const [make, code, label] of TYPE_CODE_TABLE) {
+    const name = `VT_${i++}`;
+    varStore(name, make());
+    const s = new Stack();
+    s.push(Name(name, { quoted: true }));
+    lookup('VTYPE').fn(s);
+    assert(isReal(s.peek()) && s.peek().value === code,
+      `session068: VTYPE('${name}') = ${code} — ${label}`);
+  }
+}
+
+/* ---- VTYPE rejects non-Name argument ---- */
+{
+  const s = new Stack();
+  s.push(Real(1));
+  let threw = false;
+  try { lookup('VTYPE').fn(s); }
+  catch (e) { threw = /Bad argument type/i.test(e.message); }
+  assert(threw, 'session068: VTYPE on Real → Bad argument type');
+}
+
+/* ---- VTYPE on an undefined name → Undefined name ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Name('NOPE_XYZ', { quoted: true }));
+  let threw = false;
+  try { lookup('VTYPE').fn(s); }
+  catch (e) { threw = /Undefined name/i.test(e.message); }
+  assert(threw, 'session068: VTYPE on undefined name → Undefined name');
+}
+
+/* ---- TYPE / KIND distinguish Real ≠ Integer ≠ BinaryInteger ---- */
+{
+  // HP50 has three distinct numeric types.  This is a common "these
+  // should never collide" regression point — the code has changed
+  // whenever someone refactored promoteNumericPair.
+  const real = new Stack(); real.push(Real(5));       lookup('TYPE').fn(real);
+  const integer = new Stack(); integer.push(Integer(5n)); lookup('TYPE').fn(integer);
+  const bin = new Stack(); bin.push(BinaryInteger(5n, 'h')); lookup('TYPE').fn(bin);
+  assert(real.peek().value === 0 && integer.peek().value === 28 && bin.peek().value === 10
+      && real.peek().value !== integer.peek().value
+      && integer.peek().value !== bin.peek().value,
+    'session068: TYPE distinguishes Real(0) / Integer(28) / BinaryInteger(10)');
+}
+
+/* ---- TYPE on multi-arg inputs consumes exactly one ---- */
+{
+  const s = new Stack();
+  s.push(Real(1));
+  s.push(Real(2));
+  s.push(Str('x'));
+  const startDepth = s.depth;
+  lookup('TYPE').fn(s);
+  // TYPE should pop 1, push 1 → net depth unchanged.
+  assert(s.depth === startDepth,
+    'session068: TYPE pops 1 and pushes 1 (net depth unchanged)');
+  assert(s.peek().value === 2,
+    'session068: TYPE of level-1 String → code 2 (operated on the top, not level 2)');
+  assert(s.peek(2).value === 2, 'session068: TYPE leaves level 2 (Real(2)) untouched');
+  assert(s.peek(3).value === 1, 'session068: TYPE leaves level 3 (Real(1)) untouched');
+}
+
+/* ---- KIND on empty stack → Too few arguments ---- */
+{
+  const s = new Stack();
+  let threw = false;
+  try { lookup('KIND').fn(s); }
+  catch (e) { threw = /Too few arguments/i.test(e.message); }
+  assert(threw, 'session068: KIND on empty stack → Too few arguments');
 }

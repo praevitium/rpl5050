@@ -4,8 +4,8 @@
 *.swp
 *.swo
 
-# Project sepcific
-@*.md
+# Project specific
+@*
 logs/
 
 # Dependencies

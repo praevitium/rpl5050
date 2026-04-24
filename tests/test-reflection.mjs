@@ -2,7 +2,7 @@ import { Stack } from '../src/rpl/stack.js';
 import { lookup } from '../src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
-  RList, Vector, Matrix,
+  RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString,
 } from '../src/rpl/types.js';
@@ -673,4 +673,364 @@ import { assert } from './helpers.mjs';
     'session067: nested Program tokens survive round-trip');
   assert(isProgram(s.peek().tokens[2]) && s.peek().tokens[2].tokens.length === 1,
     'session067: nested Program token is still a Program after round-trip');
+}
+
+/* ================================================================
+   DECOMP — Program → String source form  (session 068)
+   ================================================================ */
+
+// Basic: DECOMP produces a String whose value starts with « and ends with ».
+{
+  const s = new Stack();
+  s.push(Program([Integer(3n), Integer(4n), Name('+')]));
+  lookup('DECOMP').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'string',
+    'session068: DECOMP on Program pushes a String');
+  const src = s.peek().value;
+  assert(src.startsWith('«') && src.endsWith('»'),
+    'session068: DECOMP output carries the « … » program delimiters');
+  assert(src.includes('3') && src.includes('4') && src.includes('+'),
+    'session068: DECOMP output contains every original token (3 4 +)');
+}
+
+// Empty program.
+{
+  const s = new Stack();
+  s.push(Program([]));
+  lookup('DECOMP').fn(s);
+  assert(s.peek().type === 'string',
+    'session068: DECOMP on empty Program still pushes a String');
+  assert(/^«\s*»$/.test(s.peek().value),
+    'session068: DECOMP of empty Program is roughly «  »');
+}
+
+// DECOMP + STR→ round-trip: the restored Program runs to the same result.
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    const s = new Stack();
+    s.push(Program([Integer(3n), Integer(4n), Name('+')]));
+    lookup('DECOMP').fn(s);                 // Program → String
+    lookup('STR→').fn(s);                   // String → value(s)
+    // STR→ may emit one or more values; for a program source string we
+    // expect exactly one: the reconstructed Program.
+    assert(s.depth >= 1,
+      'session068: DECOMP→STR→ leaves at least one value on the stack');
+    const reconstituted = s._items[s._items.length - 1];
+    assert(isProgram(reconstituted),
+      'session068: DECOMP→STR→ yields a Program (round-trip preserves type)');
+    assert(reconstituted.tokens.length === 3,
+      'session068: DECOMP→STR→ preserves token count');
+    // Running it should produce 7.
+    lookup('EVAL').fn(s);
+    // Level-1 is now the integer 7 (plus possibly other bookkeeping).
+    const top = s.peek();
+    const topVal = top.type === 'integer' ? Number(top.value)
+                : top.type === 'real'    ? top.value : null;
+    assert(topVal === 7,
+      'session068: DECOMP→STR→→EVAL reproduces the original result (3 4 + → 7)');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+// DECOMP on non-Program raises Bad argument type.
+{
+  const s = new Stack();
+  s.push(Integer(42n));
+  let caught = null;
+  try { lookup('DECOMP').fn(s); } catch (e) { caught = e.message; }
+  assert(caught && /Bad argument type/.test(caught),
+    'session068: DECOMP on Integer raises Bad argument type');
+}
+
+{
+  const s = new Stack();
+  s.push(Str('hi'));
+  let caught = null;
+  try { lookup('DECOMP').fn(s); } catch (e) { caught = e.message; }
+  assert(caught && /Bad argument type/.test(caught),
+    'session068: DECOMP on String raises Bad argument type');
+}
+
+/* ================================================================
+   OBJ→ on Symbolic — peel one AST layer onto the stack (session 068)
+   ================================================================ */
+
+// `'A+B' OBJ→`  →  'A'  'B'  '+'  3
+{
+  const s = new Stack();
+  s.push(parseEntry("'A+B'")[0]);
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 4,
+    'session068: OBJ→ on 2-arg Bin leaves 4 items (l, r, op, count)');
+  const [l, r, op, cnt] = s._items;
+  assert(l.type === 'name' && l.id === 'A' && l.quoted,
+    'session068: OBJ→ symbolic arg l is quoted Name(A)');
+  assert(r.type === 'name' && r.id === 'B' && r.quoted,
+    'session068: OBJ→ symbolic arg r is quoted Name(B)');
+  assert(op.type === 'name' && op.id === '+' && op.quoted,
+    'session068: OBJ→ symbolic head is quoted Name(+)');
+  assert(cnt.type === 'integer' && cnt.value === 3n,
+    'session068: OBJ→ symbolic count is Integer(3) for a binary head');
+}
+
+// `'3+X' OBJ→`  →  Real(3)  'X'  '+'  3
+{
+  const s = new Stack();
+  s.push(parseEntry("'3+X'")[0]);
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 4,
+    'session068: OBJ→ on 3+X leaves 4 items');
+  assert(s._items[0].type === 'real' && s._items[0].value === 3,
+    'session068: OBJ→ 3+X left-arg unwraps to Real(3)');
+  assert(s._items[1].type === 'name' && s._items[1].id === 'X',
+    'session068: OBJ→ 3+X right-arg is Name(X)');
+  assert(s._items[3].type === 'integer' && s._items[3].value === 3n,
+    'session068: OBJ→ 3+X count is 3');
+}
+
+// `'SIN(X+1)' OBJ→`  →  Symbolic('X+1')  'SIN'  2
+{
+  const s = new Stack();
+  s.push(parseEntry("'SIN(X+1)'")[0]);
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 3,
+    'session068: OBJ→ on a unary Fn leaves 3 items (arg, fn, count)');
+  const [arg, fn, cnt] = s._items;
+  assert(arg.type === 'symbolic' && arg.expr.kind === 'bin' && arg.expr.op === '+',
+    'session068: OBJ→ SIN(X+1): non-leaf argument stays Symbolic');
+  assert(fn.type === 'name' && fn.id === 'SIN' && fn.quoted,
+    'session068: OBJ→ SIN(X+1) head is quoted Name(SIN)');
+  assert(cnt.type === 'integer' && cnt.value === 2n,
+    'session068: OBJ→ SIN(X+1) count is 2 (arg + head)');
+}
+
+// Leaf Var: 'X' OBJ→  →  'X'  1  (single-layer)
+{
+  const s = new Stack();
+  // Parser emits Name(X) for a plain 'X', not a Symbolic.  To exercise
+  // the Symbolic-Var leaf path, wrap via Symbolic(Var(X)) directly.
+  s.push(Symbolic({ kind: 'var', name: 'X' }));
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 2,
+    'session068: OBJ→ on leaf Symbolic(Var) leaves 2 items (name, count)');
+  assert(s._items[0].type === 'name' && s._items[0].id === 'X' && s._items[0].quoted,
+    'session068: OBJ→ leaf Var unwraps to quoted Name');
+  assert(s._items[1].type === 'integer' && s._items[1].value === 1n,
+    'session068: OBJ→ leaf Var count is 1');
+}
+
+// Leaf Num: Symbolic(Num) OBJ→  →  Real, 1
+{
+  const s = new Stack();
+  s.push(Symbolic({ kind: 'num', value: 7 }));
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 2,
+    'session068: OBJ→ on leaf Symbolic(Num) leaves 2 items');
+  assert(s._items[0].type === 'real' && s._items[0].value === 7,
+    'session068: OBJ→ leaf Num unwraps to Real(7)');
+  assert(s._items[1].type === 'integer' && s._items[1].value === 1n,
+    'session068: OBJ→ leaf Num count is 1');
+}
+
+// Neg: '-X' OBJ→  →  'X'  'NEG'  2
+{
+  const s = new Stack();
+  s.push(parseEntry("'-X'")[0]);
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 3,
+    'session068: OBJ→ on Neg leaves 3 items');
+  assert(s._items[1].type === 'name' && s._items[1].id === 'NEG',
+    'session068: OBJ→ Neg head is Name(NEG)');
+  assert(s._items[2].type === 'integer' && s._items[2].value === 2n,
+    'session068: OBJ→ Neg count is 2');
+}
+
+// Multi-arg function: lift a fake Fn with two args and verify the shape.
+{
+  const s = new Stack();
+  s.push(Symbolic({
+    kind: 'fn', name: 'GCD',
+    args: [ { kind: 'var', name: 'A' }, { kind: 'var', name: 'B' } ],
+  }));
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 4,
+    'session068: OBJ→ on 2-arg Fn leaves 4 items (a1, a2, fn, count)');
+  assert(s._items[2].type === 'name' && s._items[2].id === 'GCD',
+    'session068: OBJ→ 2-arg Fn head is Name(GCD)');
+  assert(s._items[3].type === 'integer' && s._items[3].value === 3n,
+    'session068: OBJ→ 2-arg Fn count is N+1 = 3');
+}
+
+/* ================================================================
+   Session 073 — DECOMP → STR→ round-trip invariants
+
+   Pins the canonical "program source-string round-trips to an
+   equivalent program" invariant for a spread of program shapes.
+   HP50 AUR p.1-12 documents this as the defining property of
+   DECOMP: the emitted string must reparse into an object that's
+   semantically equivalent to the input.
+
+   Helper: decompThenStrTo(v) returns the Program re-assembled by
+   DECOMP-then-STR→ on value v.
+   ================================================================ */
+
+function _roundTripProgram(prog) {
+  const s = new Stack();
+  s.push(prog);
+  lookup('DECOMP').fn(s);
+  lookup('STR→').fn(s);
+  // STR→ yields one Program for any program-shape source string.
+  assert(s.depth === 1,
+    'session073: DECOMP→STR→ round-trip leaves exactly one value');
+  const back = s.peek();
+  assert(isProgram(back),
+    'session073: DECOMP→STR→ round-trip yields a Program');
+  return back;
+}
+
+/* ---- Empty program round-trips to an empty Program ---- */
+{
+  const back = _roundTripProgram(Program([]));
+  assert(back.tokens.length === 0,
+    'session073: DECOMP→STR→ preserves empty Program');
+}
+
+/* ---- Multi-token arithmetic round-trips with identical token count ---- */
+{
+  const src = Program([Integer(3n), Integer(4n), Name('+'), Integer(5n), Name('*')]);
+  const back = _roundTripProgram(src);
+  assert(back.tokens.length === src.tokens.length,
+    'session073: DECOMP→STR→ preserves token count for arithmetic program');
+}
+
+/* ---- Round-trip execution agrees with the original ---- */
+{
+  resetHome();
+  const prev = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    const src = Program([Integer(6n), Integer(7n), Name('*'), Integer(2n), Name('-')]);
+    // Original EVAL: 6 7 * 2 - = 40
+    const s0 = new Stack();
+    s0.push(src);
+    lookup('EVAL').fn(s0);
+    const origTop = s0.peek();
+    const origVal = origTop.type === 'integer' ? Number(origTop.value) : origTop.value;
+
+    const back = _roundTripProgram(src);
+    const s1 = new Stack();
+    s1.push(back);
+    lookup('EVAL').fn(s1);
+    const backTop = s1.peek();
+    const backVal = backTop.type === 'integer' ? Number(backTop.value) : backTop.value;
+    assert(origVal === backVal && origVal === 40,
+      'session073: DECOMP→STR→ round-trip preserves EVAL semantics (arith)');
+  } finally {
+    setApproxMode(prev);
+  }
+}
+
+/* ---- Nested Program inside Program round-trips structurally ---- */
+{
+  // outer Program whose single token is an inner Program.
+  const inner = Program([Integer(1n), Integer(2n), Name('+')]);
+  const src = Program([inner]);
+  const back = _roundTripProgram(src);
+  assert(back.tokens.length === 1,
+    'session073: DECOMP→STR→ on {nested prog} preserves outer length');
+  assert(isProgram(back.tokens[0]),
+    'session073: DECOMP→STR→ nested token is still a Program');
+  assert(back.tokens[0].tokens.length === 3,
+    'session073: DECOMP→STR→ nested Program token count survives');
+}
+
+/* ---- Program containing a String token round-trips with the string intact ---- */
+{
+  // The quoted string with spaces must survive lexing intact via the
+  // `" … "` delimiters the formatter emits.
+  const src = Program([Str('hello world'), Integer(5n)]);
+  const back = _roundTripProgram(src);
+  assert(back.tokens.length === 2,
+    'session073: DECOMP→STR→ on [String, Integer] preserves token count');
+  assert(back.tokens[0].type === 'string' &&
+         back.tokens[0].value === 'hello world',
+    'session073: DECOMP→STR→ preserves String token with embedded space');
+}
+
+/* ---- Program containing an IF/THEN/ELSE/END structure round-trips
+       and re-evaluates to the same result ---- */
+{
+  resetHome();
+  const prev = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    const src = Program([
+      Integer(5n),
+      Name('IF'), Name('DUP'), Integer(0n), Name('>'),
+      Name('THEN'), Integer(100n), Name('+'),
+      Name('ELSE'), Name('NEG'),
+      Name('END'),
+    ]);
+    const back = _roundTripProgram(src);
+    // Re-run the round-tripped program.
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    const v = top.type === 'integer' ? Number(top.value) : top.value;
+    assert(v === 105,
+      'session073: DECOMP→STR→ round-trip preserves IF/THEN/ELSE/END (5>0 → 5+100)');
+  } finally {
+    setApproxMode(prev);
+  }
+}
+
+/* ---- Program containing a quoted Name round-trips as quoted ---- */
+{
+  // Quoted-Name tokens in a Program body come from source like `'X'`.
+  const q = Name('X', { quoted: true });
+  const src = Program([q, Name('STO')]);
+  const back = _roundTripProgram(src);
+  assert(back.tokens.length === 2,
+    'session073: DECOMP→STR→ preserves {quoted-Name, Name} token count');
+  const first = back.tokens[0];
+  assert(isName(first) && first.id === 'X' && first.quoted === true,
+    'session073: DECOMP→STR→ quoted-Name round-trips as quoted');
+}
+
+/* ---- Program containing a Real with a fractional part round-trips ---- */
+{
+  const src = Program([Real(3.25), Real(2.5), Name('+')]);
+  const back = _roundTripProgram(src);
+  assert(back.tokens.length === 3,
+    'session073: DECOMP→STR→ preserves token count for Real-bearing program');
+  assert(back.tokens[0].type === 'real' &&
+         Math.abs(back.tokens[0].value - 3.25) < 1e-12,
+    'session073: DECOMP→STR→ preserves Real value 3.25');
+}
+
+/* ---- Idempotence: DECOMP→STR→→DECOMP produces the SAME string ---- */
+{
+  // Second round yields the identical source — this is the
+  // "canonical form" check.  If the formatter ever introduced
+  // nondeterministic whitespace, this assertion would catch it.
+  const src = Program([
+    Integer(1n),
+    Name('FOR'), Name('i'), Integer(10n),
+    Name('i'), Name('*'),
+    Name('NEXT'),
+  ]);
+  const s = new Stack();
+  s.push(src);
+  lookup('DECOMP').fn(s);
+  const str1 = s.peek().value;
+  lookup('STR→').fn(s);       // back to Program
+  lookup('DECOMP').fn(s);     // Program → string again
+  const str2 = s.peek().value;
+  assert(str1 === str2,
+    'session073: DECOMP→STR→→DECOMP is a canonical-form fixed point');
 }
