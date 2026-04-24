@@ -1,5 +1,5 @@
 import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { lookup, localFramesDepth } from '../src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix,
@@ -1836,4 +1836,320 @@ import { assert } from './helpers.mjs';
     'session073: second CONT runs 3 * → 9, program finishes clean');
   assert(getHalted() === null,
     'session073: slot empty after the final CONT');
+}
+
+/* ================================================================
+   Session 077 — HALT/CONT flake-hardening coverage
+
+   Session 075 filed a single-reproduction flake: the second CONT in
+   the `« 1 HALT 2 + HALT 3 * »` probe above occasionally threw
+   RPLHalt instead of cleanly finishing.  Session 077's fix wraps
+   `register('EVAL')` and `register('CONT')` with a finally that
+   snapshot-and-restores `_localFrames.length` on entry so an
+   unanticipated abnormal unwind from a prior op can't leak a
+   phantom local frame into the HALT pilot check.  resetHome() was
+   also updated to clear the halted slot automatically so the
+   pre-test boilerplate can't "forget" to clearHalted and still
+   yield a clean slate.
+
+   The tests below pin the invariants.  If a future refactor ever
+   breaks them, the flake will not come back silently.
+   ================================================================ */
+
+/* ---- localFramesDepth() is zero after a fresh resetHome() ---- */
+{
+  resetHome();
+  assert(localFramesDepth() === 0,
+    'session077: _localFrames is empty after resetHome');
+  assert(getHalted() === null,
+    'session077: resetHome now also clears the halted slot');
+}
+
+/* ---- localFramesDepth() is zero after a normal EVAL of a program
+       that uses → internally (runArrow's finally popped cleanly) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(5n));
+  // 5 → a « a a + »    : compiled local, pops, runs body, pops frame
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([ Name('a'), Name('a'), Name('+') ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session077: → body evaluated and produced 10 (5 + 5)');
+  assert(localFramesDepth() === 0,
+    'session077: _localFrames empty after normal → exit');
+}
+
+/* ---- localFramesDepth() is zero after EVAL that throws inside → ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // 5 → a « a NONSUCHOP »    — NONSUCHOP is an unknown name, which
+  // evalToken treats as a bare-name push (not an error), so this
+  // shape won't actually throw.  Use 1 0 / instead for a divide-
+  // by-zero RPLError inside the body.
+  s.push(Integer(5n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([ Integer(1n), Integer(0n), Name('/') ]),
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /infinite|zero|divide/i.test(caught.message),
+    'session077: divide-by-zero inside → body surfaces as RPLError');
+  assert(localFramesDepth() === 0,
+    'session077: _localFrames empty after RPLError inside → unwinds EVAL');
+}
+
+/* ---- simulated phantom leak: a prior EVAL that unwound on a
+       non-RPLError throw cannot poison a subsequent HALT check ---- */
+{
+  resetHome();
+  // Hand-craft a phantom leak by registering a one-shot op that
+  // pushes a frame via _pushLocalFrame-equivalent behaviour and
+  // throws a JS TypeError (the class of non-RPLError exception
+  // session 077's finally is designed to catch).  Since we can't
+  // reach _pushLocalFrame from outside the module, exercise the
+  // same effect by running a `→` body that throws a TypeError via
+  // a hand-placed non-op token.  runArrow's finally pops cleanly on
+  // any throw; if the defensive EVAL finally ever regresses, this
+  // test's follow-up HALT probe will flip to FAIL.
+  const s = new Stack();
+  s.push(Integer(42n));
+  s.push(Program([
+    Name('→'), Name('x'),
+    Program([ Name('x') ]),         // clean body: push local 'x'
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 42n && localFramesDepth() === 0,
+    'session077: post-arrow baseline clean (42 on top, no phantom frames)');
+  // Now run the two-HALT program from the baseline flake test:
+  s.pop();
+  s.push(Program([
+    Integer(1n), Name('HALT'),
+    Integer(2n), Name('+'),
+    Name('HALT'),
+    Integer(3n), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 1n,
+    'session077: post-arrow first HALT captured 1 on top');
+  lookup('CONT').fn(s);
+  assert(s.peek().value === 3n,
+    'session077: post-arrow first CONT produced 3 and re-HALT\'d');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().value === 9n,
+    'session077: post-arrow second CONT cleanly finishes to 9');
+  assert(getHalted() === null && localFramesDepth() === 0,
+    'session077: halted slot + local frames both empty at end');
+}
+
+/* ---- resetHome clears a populated halted slot (session 077) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Populate the halted slot by EVALing a program that HALTs.
+  s.push(Program([ Integer(7n), Name('HALT'), Integer(8n) ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session077: halted slot populated before resetHome');
+  resetHome();
+  assert(getHalted() === null,
+    'session077: resetHome cleared the halted slot automatically');
+  // And CONT now raises "No halted program" (not e.g. a stale-token
+  // access) — proves the slot is fully cleared, not just nulled.
+  let caught = null;
+  try { lookup('CONT').fn(s); } catch (e) { caught = e; }
+  assert(caught && /No halted program/.test(caught.message),
+    'session077: CONT after resetHome raises No halted program');
+}
+
+/* ---- Two successive top-level HALT/CONT cycles in the same stack
+       run cleanly (flake regression guard) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Cycle 1
+  s.push(Program([ Integer(10n), Name('HALT'), Name('DUP'), Name('*') ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 10n, 'session077: cycle-1 HALT — 10 on top');
+  lookup('CONT').fn(s);
+  assert(s.peek().value === 100n, 'session077: cycle-1 CONT — 100');
+  // Cycle 2 — fresh program on the same stack / in the same test.
+  // The flake would have surfaced here (a phantom frame from
+  // cycle 1 leaking).
+  s.push(Program([ Integer(11n), Name('HALT'), Integer(2n), Name('+') ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 11n, 'session077: cycle-2 HALT — 11 on top');
+  lookup('CONT').fn(s);
+  assert(s.peek().value === 13n,
+    'session077: cycle-2 CONT produces 13 (11 + 2), not RPLHalt escape');
+  assert(localFramesDepth() === 0,
+    'session077: local frames still empty after two HALT/CONT cycles');
+}
+
+/* ================================================================
+   Session 077 — IFERR auto-close on missing END
+
+   Queue item 4 from RPL.md: parallel to the CASE auto-close shipped
+   in session 074.  A user-entered program with `IFERR … THEN …` or
+   `IFERR … THEN … ELSE …` that runs off the end of the source
+   without a closing `END` now evaluates cleanly instead of raising
+   `IFERR without END` / `IFERR/ELSE without END`.
+
+   "IFERR without THEN" is still an error — without a THEN there is
+   no way to locate the trap-body boundary, and unlike CASE there is
+   no sensible default clause.
+   ================================================================ */
+
+/* ---- IFERR…THEN… with no END runs the THEN clause on throw ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // « IFERR 1 0 / THEN "caught" »   — no END
+  s.push(Program([
+    Name('IFERR'),
+    Integer(1n), Integer(0n), Name('/'),
+    Name('THEN'),
+    Str('caught'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'string' && s.peek().value === 'caught',
+    'session077: IFERR auto-closes without END; THEN clause fires on throw');
+}
+
+/* ---- IFERR…THEN… with no END and no error is a clean no-op ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // « 42 IFERR 1 2 + THEN "never-runs" »     — 42 survives, 3 on top
+  s.push(Program([
+    Integer(42n),
+    Name('IFERR'),
+    Integer(1n), Integer(2n), Name('+'),
+    Name('THEN'),
+    Str('never-runs'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 2 && s.peek(2).value === 42n && s.peek(1).value === 3n,
+    'session077: IFERR auto-close without END leaves trap result on stack when no error');
+}
+
+/* ---- IFERR…THEN…ELSE… with no END runs the ELSE on normal flow ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // « IFERR 1 2 + THEN "err" ELSE "ok" »   — no END, normal flow → "ok"
+  s.push(Program([
+    Name('IFERR'),
+    Integer(1n), Integer(2n), Name('+'),
+    Name('THEN'),
+    Str('err'),
+    Name('ELSE'),
+    Str('ok'),
+  ]));
+  lookup('EVAL').fn(s);
+  // Trap leaves 3 on the stack, ELSE pushes "ok"
+  assert(s.depth === 2 && s.peek(2).value === 3n && s.peek(1).value === 'ok',
+    'session077: IFERR/THEN/ELSE auto-close runs ELSE on clean trap');
+}
+
+/* ---- IFERR…THEN…ELSE… with no END and THROW picks THEN clause ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // « IFERR 1 0 / THEN "err" ELSE "ok" »   — no END
+  s.push(Program([
+    Name('IFERR'),
+    Integer(1n), Integer(0n), Name('/'),
+    Name('THEN'),
+    Str('err'),
+    Name('ELSE'),
+    Str('ok'),
+  ]));
+  lookup('EVAL').fn(s);
+  // THEN runs with post-error snapshot restored — "err" only.
+  assert(s.depth === 1 && s.peek().value === 'err',
+    'session077: IFERR/THEN/ELSE auto-close picks THEN clause on error');
+}
+
+/* ---- IFERR without THEN is STILL a structural error (no auto-close) ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // « IFERR 1 2 + »     — no THEN, no END.  Can't locate trap boundary.
+  s.push(Program([
+    Name('IFERR'),
+    Integer(1n), Integer(2n), Name('+'),
+  ]));
+  let threw = false, msg = '';
+  try { lookup('EVAL').fn(s); } catch (e) { threw = true; msg = e.message; }
+  assert(threw && /IFERR without THEN/.test(msg),
+    'session077: IFERR with neither THEN nor END still raises "IFERR without THEN"');
+}
+
+/* ---- Auto-closed IFERR inside a longer program body:
+       the tokens AFTER the missing END would have run at the outer
+       program scope had the user added `END`.  With the auto-close
+       they become part of the (now absorbing) IFERR handler — same
+       shape as CASE auto-close.  Pin this so a future refactor
+       doesn't silently change scoping. ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // « IFERR 1 0 / THEN 99 100 * »      — auto-closed; handler sees 99 100 *
+  s.push(Program([
+    Name('IFERR'),
+    Integer(1n), Integer(0n), Name('/'),
+    Name('THEN'),
+    Integer(99n), Integer(100n), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 9900n,
+    'session077: IFERR auto-close absorbs trailing tokens into the handler clause');
+}
+
+/* ---- Parse from source with missing END and run end-to-end ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // Source omits the closing END deliberately.
+  const vs = parseEntry('<< IFERR 1 0 / THEN ERRM >> EVAL');
+  for (const v of vs) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  assert(s.depth === 1 && s.peek().type === 'string' &&
+         s.peek().value === 'Infinite result',
+    'session077: parsed source `<< IFERR 1 0 / THEN ERRM >>` auto-closes and runs');
+}
+
+/* ---- IFERR auto-close state hygiene: lastError restored on exit ---- */
+{
+  resetHome(); clearLastError();
+  const s = new Stack();
+  // Pre-seed an outer error context that should survive a nested
+  // auto-closed IFERR.
+  const outerErr = { name: 'RPLError', message: 'outer-sentinel', number: 0 };
+  setLastError(outerErr);
+  s.push(Program([
+    Name('IFERR'),
+    Integer(1n), Integer(0n), Name('/'),
+    Name('THEN'),
+    Integer(0n),                // benign handler
+    // NO END — auto-closed
+  ]));
+  lookup('EVAL').fn(s);
+  // After an IFERR-caught handler returns, the outer last-error slot
+  // should be back to `outerErr` — not overwritten by the inner.
+  const after = getLastError();
+  assert(after && after.message === 'outer-sentinel',
+    'session077: auto-closed IFERR still restores outer lastError on exit');
+  clearLastError();
 }

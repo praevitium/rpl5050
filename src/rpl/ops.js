@@ -2439,6 +2439,24 @@ function _pushLocalFrame(names, values) {
 
 function _popLocalFrame() { _localFrames.pop(); }
 
+/** Restore `_localFrames` to a previously-captured length.  Pops any
+ *  extra entries that accumulated on top.  Session 077: used by
+ *  `register('EVAL')` / `register('CONT')` in a top-level `finally` so
+ *  that an abnormal unwind (non-RPLError throw, JS TypeError from a
+ *  broken op, unanticipated path through a future refactor) can't
+ *  leak a half-popped frame and poison the HALT pilot check that runs
+ *  inside `evalRange`.  The normal path through `runArrow`'s own
+ *  `finally` restores the length itself, so this is a no-op in the
+ *  common case.  Kept internal to the module — no export needed. */
+function _truncateLocalFrames(toLength) {
+  while (_localFrames.length > toLength) _localFrames.pop();
+}
+
+/** Read-only view of the current local-frame depth.  Session 077:
+ *  exposed so tests can assert the post-EVAL invariant
+ *  `localFramesDepth() === 0` after a resetHome / resetState call. */
+export function localFramesDepth() { return _localFrames.length; }
+
 /** Execute a `→ n1 n2 … body` form starting at `toks[arrowIdx]`.
  *  Returns the index immediately past the body token.  Throws
  *  `RPLError` on malformed syntax or too-few stack values.  */
@@ -2786,23 +2804,46 @@ function runIf(s, toks, openIdx, depth) {
  *  inner IFERR runs between catch and outer reference.  (A rare
  *  case, but the alternative is subtle action-at-a-distance.) */
 function runIfErr(s, toks, openIdx, depth) {
+  // Session 077 auto-close policy.  Mirrors the CASE auto-close shipped
+  // in session 074 and the parser's existing "forgot the `»`" / "forgot
+  // the `}`" convenience: a forward scan that falls off the end of the
+  // token list is treated as an implicit END.  So
+  //   `« IFERR … THEN … »`     runs the error handler on throw and is
+  //                            otherwise a no-op — identical to the
+  //                            fully-terminated `« IFERR … THEN … END »`.
+  //   `« IFERR … THEN … ELSE … »`   also auto-closes the ELSE clause.
+  // A missing THEN *inside the source* still raises "IFERR without
+  // THEN" because without a THEN we cannot locate the trap body's end
+  // — there is no sensible default clause for IFERR, unlike CASE where
+  // the whole body is a valid default.
+  const bound = toks.length;
+
   const thenScan = scanAtDepth0(toks, openIdx + 1, new Set(['THEN']));
   if (!thenScan || thenScan.kind !== 'THEN') {
     throw new RPLError('IFERR without THEN');
   }
   const thenIdx = thenScan.idx;
   const branchScan = scanAtDepth0(toks, thenIdx + 1, new Set(['ELSE']));
-  if (!branchScan) throw new RPLError('IFERR without END');
 
   let elseIdx = -1;
   let endIdx;
-  if (branchScan.kind === 'ELSE') {
+  let autoClosed = false;
+  if (!branchScan) {
+    // No ELSE or END found — auto-close at the end of the token list.
+    // The whole [thenIdx+1, bound) span is the error-handler clause.
+    endIdx = bound;
+    autoClosed = true;
+  } else if (branchScan.kind === 'ELSE') {
     elseIdx = branchScan.idx;
     const endScan = scanAtDepth0(toks, elseIdx + 1, null);
     if (!endScan || endScan.kind !== 'END') {
-      throw new RPLError('IFERR/ELSE without END');
+      // ELSE present but no END — auto-close at the end of the token
+      // list.  [elseIdx+1, bound) is the success-branch clause.
+      endIdx = bound;
+      autoClosed = true;
+    } else {
+      endIdx = endScan.idx;
     }
-    endIdx = endScan.idx;
   } else if (branchScan.kind === 'END') {
     endIdx = branchScan.idx;
   } else {
@@ -2833,7 +2874,11 @@ function runIfErr(s, toks, openIdx, depth) {
   } else if (elseIdx >= 0) {
     evalRange(s, toks, elseIdx + 1, endIdx, depth + 1);
   }
-  return endIdx + 1;
+  // When we auto-closed at the program boundary, return `bound` (same
+  // index, not `bound + 1`) so the outer evalRange's `while (i < to)`
+  // terminates immediately on the next iteration.  The exact same shape
+  // runCase uses for its auto-close return.
+  return autoClosed ? bound : endIdx + 1;
 }
 
 function runWhile(s, toks, openIdx, depth) {
@@ -3249,6 +3294,16 @@ register('EVAL', (s) => {
   // resumption baseline, so we let the signal through and rely on
   // the outer loop to catch it cleanly.  CONT later picks up
   // state.halted and resumes the program where HALT left off.
+  //
+  // Session 077: snapshot `_localFrames.length` on entry and restore
+  // it in a finally so any unexpected unwind (non-RPLError throw, or
+  // a future path we haven't anticipated) can't leak a half-popped
+  // frame into subsequent top-level EVAL calls.  This hardens
+  // against the HALT/CONT ordering flake reported in session 075:
+  // a phantom local frame here would flip the pilot-HALT check's
+  // `_localFrames.length !== 0` branch and convert a valid top-level
+  // HALT into a "cannot suspend inside → (pilot)" RPLError (or worse).
+  const framesAtEntry = _localFrames.length;
   const snap = s.save();
   try {
     const v = s.pop();
@@ -3263,6 +3318,8 @@ register('EVAL', (s) => {
     }
     if (!(e instanceof RPLAbort)) s.restore(snap);
     throw e;
+  } finally {
+    _truncateLocalFrames(framesAtEntry);
   }
 });
 
@@ -4646,9 +4703,15 @@ function _invMatrixNumeric(rows) {
    structurally via a recursive `_rplEqual` that matches HP50's SAME.
    ================================================================ */
 
-// Coerce a Real/Integer to a 1-based integer index.  Rejects non-ints,
-// negatives, and zero — matches HP50 "Bad Argument Type" for anything
-// that isn't a plain non-negative whole number.
+// Coerce a Real/Integer/BinaryInteger to a 1-based integer index.
+// Rejects non-ints, negatives, and zero — matches HP50 "Bad Argument
+// Type" for anything that isn't a plain non-negative whole number.
+//
+// Session 077: BinaryInteger branch added to match the BinInt widening
+// that `_toCountIdx` (→PRG, →STREAM, etc.) already had.  Parity audit
+// from RPL.md queue item 3: `→LIST 3 ENTER #3h ENTER` should behave
+// identically to `→LIST 3 ENTER 3 ENTER` now that BinInt is a
+// first-class integer type throughout the stack.
 function _toIntIdx(v) {
   if (isInteger(v)) {
     const n = Number(v.value);
@@ -4660,10 +4723,16 @@ function _toIntIdx(v) {
     if (!Number.isInteger(n) || n < 1) throw new RPLError('Bad argument value');
     return n;
   }
+  if (isBinaryInteger(v)) {
+    const n = Number(v.value);
+    if (n < 1 || !Number.isFinite(n)) throw new RPLError('Bad argument value');
+    return n;
+  }
   throw new RPLError('Bad argument type');
 }
 
 // Same as _toIntIdx but permits 0 (used by counts like →LIST N).
+// Session 077: BinaryInteger branch added for parity with →PRG.
 function _toCountN(v) {
   if (isInteger(v)) {
     const n = Number(v.value);
@@ -4673,6 +4742,11 @@ function _toCountN(v) {
   if (isReal(v)) {
     const n = v.value;
     if (!Number.isInteger(n) || n < 0) throw new RPLError('Bad argument value');
+    return n;
+  }
+  if (isBinaryInteger(v)) {
+    const n = Number(v.value);
+    if (n < 0 || !Number.isFinite(n)) throw new RPLError('Bad argument value');
     return n;
   }
   throw new RPLError('Bad argument type');
@@ -9745,6 +9819,11 @@ register('CONT', (s) => {
   // reason.  On failure (resumed program throws RPLError), the slot
   // stays cleared — matches HP50 "CONT on an errored halt starts
   // fresh" behavior.
+  //
+  // Session 077: same `_localFrames` defensive restore as EVAL —
+  // see that handler's comment for the flake hypothesis this guards
+  // against.
+  const framesAtEntry = _localFrames.length;
   clearHalted();
   try {
     evalRange(s, h.tokens, h.ip, h.length, 0);
@@ -9753,6 +9832,8 @@ register('CONT', (s) => {
     // swallow it so CONT returns cleanly, matching the top-level EVAL
     // wrapper's behaviour.  Any other error bubbles up normally.
     if (!(e instanceof RPLHalt)) throw e;
+  } finally {
+    _truncateLocalFrames(framesAtEntry);
   }
 });
 

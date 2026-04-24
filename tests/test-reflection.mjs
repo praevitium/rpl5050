@@ -1034,3 +1034,225 @@ function _roundTripProgram(prog) {
   assert(str1 === str2,
     'session073: DECOMP→STR→→DECOMP is a canonical-form fixed point');
 }
+
+/* ================================================================
+   Session 077 — →PRG / OBJ→(Program) parity audit with →LIST /
+                 LIST→ / →ARRY
+
+   RPL.md queue item 3.  The cluster of decompose/compose ops should
+   present a uniform surface for the meta-programmer.  This block
+   pins the invariants after the session 077 parity widening in
+   `_toCountN` / `_toIntIdx`:
+
+     - →PRG, →LIST, →ARRY all accept Integer / Real / BinaryInteger
+       counts.  Previous behaviour: →PRG widened to BinInt in
+       session 064, but →LIST / →ARRY rejected it with "Bad
+       argument type".
+     - Negative counts reject with "Bad argument value" (not "type").
+     - Zero counts produce the empty form: « », { }, [ ].
+     - OBJ→ on Program pushes tokens then an Integer count (matching
+       LIST→).  OBJ→ on List does the same.  ARRY→ still uses the
+       size-list convention — documented here so the contrast is
+       visible.
+     - Round-trip: OBJ→ ; →PRG reproduces the input program.  Same
+       shape LIST→ ; →LIST has.
+   ================================================================ */
+
+/* ---- Count-type parity: BinaryInteger on level 1 ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n)); s.push(Integer(20n));
+  s.push(BinaryInteger(2n, 'd'));
+  lookup('→LIST').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'list' &&
+         s.peek().items.length === 2,
+    'session077: →LIST accepts BinaryInteger count (parity with →PRG)');
+}
+{
+  const s = new Stack();
+  s.push(Name('A')); s.push(Name('B'));
+  s.push(BinaryInteger(2n, 'h'));
+  lookup('→PRG').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'program' &&
+         s.peek().tokens.length === 2,
+    'session077: →PRG accepts BinaryInteger count (session 064 baseline)');
+}
+{
+  const s = new Stack();
+  s.push(Integer(1n)); s.push(Integer(2n)); s.push(Integer(3n));
+  s.push(BinaryInteger(3n, 'b'));
+  lookup('→ARRY').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'vector' &&
+         s.peek().items.length === 3,
+    'session077: →ARRY accepts BinaryInteger bare count (parity widening)');
+}
+
+/* ---- Count-type parity: negative count ---- */
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(-1n));
+  let caught = null;
+  try { lookup('→LIST').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument value/.test(caught.message),
+    'session077: →LIST with negative count raises Bad argument value');
+}
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(-1n));
+  let caught = null;
+  try { lookup('→PRG').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument value/.test(caught.message),
+    'session077: →PRG with negative count raises Bad argument value (parity)');
+}
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(-1n));
+  let caught = null;
+  try { lookup('→ARRY').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument value/.test(caught.message),
+    'session077: →ARRY with negative bare count raises Bad argument value');
+}
+
+/* ---- Count-type parity: String count rejects with Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Str('oops'));
+  let caught = null;
+  try { lookup('→PRG').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument type/.test(caught.message),
+    'session077: →PRG rejects String count with Bad argument type');
+}
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Str('oops'));
+  let caught = null;
+  try { lookup('→LIST').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument type/.test(caught.message),
+    'session077: →LIST rejects String count with Bad argument type');
+}
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Str('oops'));
+  let caught = null;
+  try { lookup('→ARRY').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument type/.test(caught.message),
+    'session077: →ARRY rejects String bare count with Bad argument type');
+}
+
+/* ---- Zero count across the trio produces the empty form ---- */
+{
+  const s = new Stack();
+  s.push(Integer(0n));
+  lookup('→LIST').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'list' &&
+         s.peek().items.length === 0,
+    'session077: →LIST 0 → empty list {}');
+}
+{
+  const s = new Stack();
+  s.push(Integer(0n));
+  lookup('→PRG').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'program' &&
+         s.peek().tokens.length === 0,
+    'session077: →PRG 0 → empty program « »');
+}
+{
+  const s = new Stack();
+  s.push(Integer(0n));
+  lookup('→ARRY').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'vector' &&
+         s.peek().items.length === 0,
+    'session077: →ARRY 0 → empty vector []');
+}
+
+/* ---- OBJ→ on Program / List both push Integer count (parity) ---- */
+{
+  const s = new Stack();
+  s.push(RList([Integer(1n), Integer(2n), Integer(3n)]));
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 4 && s.peek().type === 'integer' &&
+         s.peek().value === 3n,
+    'session077: OBJ→ on List pushes Integer count (=3)');
+}
+{
+  const s = new Stack();
+  s.push(Program([Integer(1n), Integer(2n), Integer(3n)]));
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 4 && s.peek().type === 'integer' &&
+         s.peek().value === 3n,
+    'session077: OBJ→ on Program pushes Integer count (=3, matches LIST→ shape)');
+}
+{
+  const s = new Stack();
+  // LIST→ equivalent — pushes Integer count too.
+  s.push(RList([Integer(1n), Integer(2n), Integer(3n)]));
+  lookup('LIST→').fn(s);
+  assert(s.peek().type === 'integer' && s.peek().value === 3n,
+    'session077: LIST→ pushes Integer count (baseline)');
+}
+
+/* ---- Round-trip idempotence: OBJ→ ; →PRG reproduces the Program ---- */
+{
+  const s = new Stack();
+  const prog = Program([
+    Integer(2n), Integer(3n), Name('+'),
+    Name('SWAP'), Name('DUP'),
+  ]);
+  s.push(prog);
+  lookup('OBJ→').fn(s);
+  lookup('→PRG').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'program' &&
+         s.peek().tokens.length === prog.tokens.length,
+    'session077: Program OBJ→ ; →PRG round-trips token count');
+  // Spot-check content.
+  const rt = s.peek();
+  for (let i = 0; i < prog.tokens.length; i++) {
+    const a = prog.tokens[i], b = rt.tokens[i];
+    const same = (a.type === b.type) && (
+      (a.type === 'integer' && a.value === b.value) ||
+      (a.type === 'name' && a.id === b.id)
+    );
+    assert(same,
+      `session077: round-trip token[${i}] preserved (${a.type})`);
+  }
+}
+
+/* ---- Round-trip idempotence: LIST→ ; →LIST reproduces the list ---- */
+{
+  const s = new Stack();
+  const src = RList([Integer(10n), Integer(20n), Integer(30n)]);
+  s.push(src);
+  lookup('LIST→').fn(s);
+  lookup('→LIST').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'list' &&
+         s.peek().items.length === 3 &&
+         s.peek().items[0].value === 10n &&
+         s.peek().items[2].value === 30n,
+    'session077: LIST→ ; →LIST round-trips the source list');
+}
+
+/* ---- ARRY→ is documented-different: it pushes a size-LIST, not a
+       bare count.  This is the one known asymmetry in the cluster —
+       left as-is because OBJ→ on Matrix has the same shape and the
+       2-D form genuinely needs 2 numbers (rows + cols).  Pin the
+       shape explicitly so a future cleanup pass doesn't silently
+       flip it to bare Integer and break existing callers. ---- */
+{
+  const s = new Stack();
+  const v = Vector([Real(1), Real(2), Real(3)]);
+  s.push(v);
+  lookup('ARRY→').fn(s);
+  // Stack: 1  2  3  { 3 }   (bottom→top)
+  assert(s.depth === 4, 'session077: ARRY→ pushes elements + 1-elem size-list');
+  const top = s.peek();
+  assert(top.type === 'list' && top.items.length === 1 &&
+         top.items[0].type === 'real' && top.items[0].value === 3,
+    'session077: ARRY→ size-spec is a LIST wrapping Real — asymmetric with '
+    + 'LIST→/OBJ→(Program) by design (matches →ARRY input shape)');
+}

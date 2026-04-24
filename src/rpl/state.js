@@ -690,10 +690,19 @@ export function currentPath() {
 /** Reset home to an empty directory.  Primarily for tests.
  *  Clears both HOME's entries AND drops any lingering subdirectories by
  *  snapping `current` back to HOME.  A resetHome() in one test must not
- *  leak subdirectory state into the next. */
+ *  leak subdirectory state into the next.
+ *
+ *  Session 077: also clears the suspended-execution slot so a HALT'd
+ *  program from the previous test cannot be CONT'd into from the next.
+ *  Matches the "clean slate" intent of resetHome — a stale halted slot
+ *  is a subtle hazard for the HALT/CONT substrate (session 075 filed
+ *  a single-reproduction flake of exactly that shape against this
+ *  lane).  resetHome() already emits once via _home; clearHalted()
+ *  emits again only if state.halted was non-null. */
 export function resetHome() {
   _home.entries.clear();
   state.current = _home;
+  state.halted = null;                   // session 077: no-emit direct reset
   _emit();
 }
 
