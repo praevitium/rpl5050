@@ -118,6 +118,19 @@ export const state = {
   // slot is NOT persisted across reloads; running any *FIT op
   // after a reload re-establishes it.
   lastFitModel: null,
+  // CAS "main variable" slot (session 076 — VX / SVX).  HP50 firmware
+  // stores a single CAS directory variable named `VX` that every
+  // CAS-aware op consults when it needs to pick a canonical variable
+  // against which to operate: DERVX, INTVX, LAPLACE, ILAP, PREVAL on
+  // multi-free-variable input, TABVAL, TAYLOR0, etc.  We store it
+  // here as a plain uppercase-ish string (Name.id).  Default is `'X'`
+  // — matches the HP50 factory default.  Written by the SVX op and
+  // by `setCasVx()`; read by the VX op and by `getCasVx()`.
+  //
+  // Not (yet) persisted across reloads in v1 snapshots; we accept an
+  // optional `casVx` field on decode so a future version bump is
+  // backwards-compatible.
+  casVx: 'X',
   // Suspended-execution slot (session 073 — HALT/CONT/KILL pilot).
   // Populated by HALT when it suspends the currently-running program.
   // Shape: { tokens: Array, ip: number, length: number } or null.
@@ -387,6 +400,38 @@ export function getHalted() { return state.halted; }
 export function clearHalted() {
   if (state.halted === null) return;
   state.halted = null;
+  _emit();
+}
+
+/* ----------------------- CAS main variable (VX) ---------------------
+   Session 076.  Single string slot holding the Name.id of the current
+   CAS main variable.  The VX / SVX ops are thin wrappers around these
+   getters and setters — see src/rpl/ops.js.  LAPLACE, ILAP, PREVAL
+   (and future DERVX / INTVX / TABVAL / TAYLOR0) fall back to this
+   value when their input is multi-free-variable or constant.
+
+   The name must be a non-empty string of characters a name can carry —
+   we accept anything the Name() type accepts at construction time and
+   let the downstream Name parser worry about keyword collisions.  The
+   setter rejects non-string / empty-string input so callers surface a
+   consistent "Bad argument value" at their own level. */
+
+export function setCasVx(name) {
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new Error(`setCasVx: expected a non-empty string, got ${name}`);
+  }
+  if (state.casVx === name) return;
+  state.casVx = name;
+  _emit();
+}
+
+export function getCasVx() { return state.casVx; }
+
+/** Reset VX to the HP50 factory default of `'X'`.  For tests so one
+ *  test's SVX call doesn't leak into the next. */
+export function resetCasVx() {
+  if (state.casVx === 'X') return;
+  state.casVx = 'X';
   _emit();
 }
 

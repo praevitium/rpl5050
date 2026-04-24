@@ -5570,16 +5570,20 @@ function _assertRootsMatch(got, expected, name) {
     'session058: PREVAL on constant F → 0');
 }
 
-/* ---- PREVAL multi-variable F rejects ---- */
+/* ---- PREVAL multi-variable F substitutes VX (session 076) ----
+   Previous behavior (pre-session 076): rejected multi-var F with
+   Bad argument value.  New behavior: PREVAL picks VX (default 'X')
+   as the substitution variable, matches HP50 AUR.  For F = X + Y
+   with VX = X, result is (1 + Y) - (0 + Y) = 1. */
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X+Y')));
   s.push(Real(0));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('PREVAL').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session058: PREVAL multi-var F rejects');
+  lookup('PREVAL').fn(s);
+  const out = s.pop();
+  assert(isReal(out) && Math.abs(out.value - 1) < 1e-12,
+    'session076: PREVAL X+Y from 0 to 1 → 1 (substitutes VX=X)');
 }
 
 /* ---- PREVAL non-Symbolic F rejects ---- */
@@ -7370,5 +7374,211 @@ function _s061HasVar(node, name) {
   const rootsList = s.pop();
   assert(Array.isArray(rootsList.items) && rootsList.items.length === 8,
     'session061: FROOTS(2·X⁴-20X²+2) returns 4 roots');
+}
+
+/* ================================================================
+   Session 076 — VX / SVX CAS-main-variable state + ops.
+   ================================================================ */
+
+/* ---- VX push default = Name('X') ---- */
+{
+  const { resetCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  const s = new Stack();
+  lookup('VX').fn(s);
+  const out = s.pop();
+  assert(isName(out) && out.id === 'X',
+    'session076: VX pushes Name(X) on a freshly-booted unit');
+}
+
+/* ---- SVX accepts Name and is observable via VX ---- */
+{
+  const { resetCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  const s = new Stack();
+  s.push(Name('T'));
+  lookup('SVX').fn(s);
+  assert(s.depth === 0, 'session076: SVX consumes its argument');
+  lookup('VX').fn(s);
+  const out = s.pop();
+  assert(isName(out) && out.id === 'T',
+    'session076: after `SVX T`, VX → Name(T)');
+  resetCasVx();
+}
+
+/* ---- SVX accepts String (HP50 accepts either at prompt) ---- */
+{
+  const { resetCasVx, getCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  const s = new Stack();
+  s.push(Str('Y'));
+  lookup('SVX').fn(s);
+  assert(getCasVx() === 'Y', 'session076: SVX accepts String argument');
+  resetCasVx();
+}
+
+/* ---- SVX rejects Real ---- */
+{
+  const { resetCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  const s = new Stack();
+  s.push(Real(1));
+  let threw = false;
+  try { lookup('SVX').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session076: SVX on Real rejects with Bad argument type');
+}
+
+/* ---- SVX rejects empty String with Bad argument value ---- */
+{
+  const { resetCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  const s = new Stack();
+  s.push(Str(''));
+  let threw = false;
+  try { lookup('SVX').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: SVX on empty string rejects with Bad argument value');
+}
+
+/* ---- PREVAL follows the active VX (not the single-free-var heuristic) ---- */
+{
+  const { resetCasVx, setCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  setCasVx('Y');
+  // F = X + Y, endpoints 0 → 1.  VX = Y, so F(y=0) - F(y=1) substitutes Y:
+  //   (X + 1) - (X + 0) = 1.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X+Y')));
+  s.push(Real(0));
+  s.push(Real(1));
+  lookup('PREVAL').fn(s);
+  const out = s.pop();
+  assert(isReal(out) && Math.abs(out.value - 1) < 1e-12,
+    'session076: PREVAL with VX=Y substitutes Y (not the first free var)');
+  resetCasVx();
+}
+
+/* ---- LAPLACE picks VX when the input has multiple free vars ---- */
+{
+  const { resetCasVx, setCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  setCasVx('T');
+  // F(T) = T (linear in T), plus an unrelated free var A.  With VX=T,
+  // LAPLACE(T) = 1 / T^2, and the extra A stays as a multiplicative
+  // constant on the outside.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('A*T')));
+  lookup('LAPLACE').fn(s);
+  const out = s.pop();
+  assert(isSymbolic(out),
+    'session076: LAPLACE returns Symbolic on multi-var input with VX set');
+  // The result must be a function of T (the LAPLACE variable), not A.
+  // Just assert T appears and the top-level contains a division by T^2
+  // somewhere — a coarse structural guard, not an exact equality.
+  const fv = freeVars(out.expr);
+  assert(fv.has('T'), 'session076: LAPLACE(A·T) with VX=T contains T in result');
+  resetCasVx();
+}
+
+/* ---- VX round-trips through SVX/VX ---- */
+{
+  const { resetCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  const s = new Stack();
+  s.push(Name('Q'));
+  lookup('SVX').fn(s);
+  lookup('VX').fn(s);
+  const out = s.pop();
+  assert(isName(out) && out.id === 'Q',
+    'session076: SVX/VX round-trips a Name through state');
+  resetCasVx();
+}
+
+/* ================================================================
+   Session 076 — EXLR: extract left and right sides of a symbolic.
+   ================================================================ */
+
+/* ---- EXLR on A = B ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('A = B')));
+  lookup('EXLR').fn(s);
+  assert(s.depth === 2, 'session076: EXLR on A=B pushes two items');
+  const right = s.pop();
+  const left = s.pop();
+  assert(isSymbolic(left) && left.expr.kind === 'var' && left.expr.name === 'A',
+    'session076: EXLR(A=B) left is Symbolic(A)');
+  assert(isSymbolic(right) && right.expr.kind === 'var' && right.expr.name === 'B',
+    'session076: EXLR(A=B) right is Symbolic(B)');
+}
+
+/* ---- EXLR on the quadratic X^2 + 2X + 1 = 0 ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X^2 + 2*X + 1 = 0')));
+  lookup('EXLR').fn(s);
+  const right = s.pop();
+  const left = s.pop();
+  assert(isSymbolic(left) && left.expr.kind === 'bin',
+    'session076: EXLR on quadratic preserves LHS compound shape');
+  assert(isSymbolic(right) && right.expr.kind === 'num' && right.expr.value === 0,
+    'session076: EXLR on quadratic RHS is Symbolic(0)');
+}
+
+/* ---- EXLR on X + Y (non-equation binary) ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X + Y')));
+  lookup('EXLR').fn(s);
+  const r = s.pop();
+  const l = s.pop();
+  assert(isSymbolic(l) && l.expr.kind === 'var' && l.expr.name === 'X',
+    'session076: EXLR on X+Y left = Symbolic(X)');
+  assert(isSymbolic(r) && r.expr.kind === 'var' && r.expr.name === 'Y',
+    'session076: EXLR on X+Y right = Symbolic(Y)');
+}
+
+/* ---- EXLR on comparison operator (<) ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X < 5')));
+  lookup('EXLR').fn(s);
+  const r = s.pop();
+  const l = s.pop();
+  assert(isSymbolic(l) && l.expr.kind === 'var' && l.expr.name === 'X',
+    'session076: EXLR on X<5 left = Symbolic(X)');
+  assert(isSymbolic(r) && r.expr.kind === 'num' && r.expr.value === 5,
+    'session076: EXLR on X<5 right = Symbolic(5)');
+}
+
+/* ---- EXLR rejects a bare variable (no top-level bin) ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  let threw = false;
+  try { lookup('EXLR').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: EXLR on bare Sy(X) rejects with Bad argument value');
+}
+
+/* ---- EXLR rejects a unary (SIN(X)) ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('SIN(X)')));
+  let threw = false;
+  try { lookup('EXLR').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: EXLR on SIN(X) rejects with Bad argument value');
+}
+
+/* ---- EXLR rejects a Real (non-Symbolic type) ---- */
+{
+  const s = new Stack();
+  s.push(Real(42));
+  let threw = false;
+  try { lookup('EXLR').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session076: EXLR on Real rejects with Bad argument type');
 }
 

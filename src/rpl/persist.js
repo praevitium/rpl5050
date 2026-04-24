@@ -27,7 +27,10 @@
    instead of loading as garbage.
    ================================================================= */
 
-import { state, currentPath, goHome, goInto, notify } from './state.js';
+import {
+  state, currentPath, goHome, goInto, notify,
+  setCasVx, resetCasVx,
+} from './state.js';
 import { TYPES } from './types.js';
 
 /* Session 051: PRNG seed survives page reload.
@@ -102,6 +105,11 @@ export function snapshot(stack) {
     // { __t: 'bigint', v: '<digits>' }.  Older snapshots that omit this
     // key rehydrate with the current module seed untouched (see below).
     prngSeed: encode(state.prngSeed),
+    // Session 076: CAS main variable (VX / SVX) survives a page reload.
+    // Plain string — no encoding helper needed.  Optional on decode
+    // (see rehydrate below) so older snapshots predating this field
+    // still load cleanly and reset VX to the default `'X'`.
+    casVx: state.casVx,
   };
 }
 
@@ -163,6 +171,17 @@ export function rehydrate(snap, stack) {
       // rejected rather than silently losing seeded determinism.
       console.warn('hp50 persist: bad prngSeed in snapshot, ignoring', e);
     }
+  }
+
+  // Session 076: optional CAS main variable (VX).  Older snapshots
+  // that lack this field reset VX to the default — matching what a
+  // fresh boot would do.  Non-string / empty values are treated as
+  // "not present" so a bad payload can't stash garbage into the slot.
+  if (typeof snap.casVx === 'string' && snap.casVx.length > 0) {
+    try { setCasVx(snap.casVx); }
+    catch (e) { console.warn('hp50 persist: bad casVx, ignoring', e); resetCasVx(); }
+  } else {
+    resetCasVx();
   }
 
   const items = Array.isArray(snap.stack) ? snap.stack.map(decode) : [];

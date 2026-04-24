@@ -55,6 +55,7 @@ import {
   seedPrng, nextPrngUnit, nextPrngInt9, getPrngSeed,
   setLastFitModel, getLastFitModel,
   setHalted, getHalted, clearHalted,
+  setCasVx, getCasVx,
 } from './state.js';
 // Used by OBJ→ on String: re-parse the string as RPL source.  parser.js
 // deliberately does not import ops.js, so this top-level import is safe.
@@ -1616,6 +1617,103 @@ register('IREMAINDER', _withTaggedBinary(_withListBinary((s) => {
   const q = ba / bb;
   s.push(Integer(ba - q * bb));
 })));
+
+/* ---- Extended Euclidean algorithm (session 076) --------------------
+   Returns `{ g, s, t }` with the invariant `s·a + t·b = g`, where
+   `g = gcd(|a|, |b|)` is always non-negative.  Caller deals with the
+   sign.  Handles a = 0 or b = 0 cleanly (gcd(0, b) = |b| with
+   s = 0, t = sign(b); and vice-versa).  BigInt throughout so we stay
+   exact for inputs of any size. */
+
+function _extGcdBigInt(a, b) {
+  // Work over absolute values to keep the loop uniform, then re-sign
+  // the Bezout coefficients at the end.
+  const aNeg = a < 0n, bNeg = b < 0n;
+  let r0 = aNeg ? -a : a;
+  let r1 = bNeg ? -b : b;
+  let s0 = 1n, s1 = 0n;
+  let t0 = 0n, t1 = 1n;
+  while (r1 !== 0n) {
+    const q = r0 / r1;
+    [r0, r1] = [r1, r0 - q * r1];
+    [s0, s1] = [s1, s0 - q * s1];
+    [t0, t1] = [t1, t0 - q * t1];
+  }
+  // r0 = gcd(|a|, |b|); s0·|a| + t0·|b| = r0.  Re-sign to match
+  // the original operands so s·a + t·b = g.
+  if (aNeg) s0 = -s0;
+  if (bNeg) t0 = -t0;
+  return { g: r0, s: s0, t: t0 };
+}
+
+/* ---- EUCLID — extended Euclidean (Bezout) on integers -------------
+   HP50 AUR §2-39 (CAS-ARITH-INTEGER menu).  Integer-only first pass
+   (the HP50 command accepts polynomials too via the shared
+   CAS-polynomial coefficient form — routing that through the
+   polynomial layer can be layered on later without disturbing this
+   branch).
+
+     a b EUCLID  ( Z Z → { u v g } )
+
+   where u·a + v·b = g and g ≥ 0.  The returned RList is the tuple
+   HP50 firmware emits: [level-1] a list, [level-2..] untouched.
+   Both a and b = 0 throws Bad argument value — gcd(0, 0) is
+   undefined on HP50; pick one non-zero pair and try again.
+
+   Integer-valued Reals are accepted (matches the IDIV2 / IQUOT
+   convention).  Symbolic and non-numeric types reject with
+   Bad argument type.  No Tagged / List wrappers this pass — the
+   op is terminal (returns a list, not a scalar) so the standard
+   list-distribution wrappers don't apply. */
+
+register('EUCLID', (s) => {
+  const [a, b] = s.popN(2);
+  const ba = _intQuotientArg(a);
+  const bb = _intQuotientArg(b);
+  if (ba === 0n && bb === 0n) {
+    // gcd(0, 0) is undefined.  HP50 firmware returns an error here.
+    throw new RPLError('Bad argument value');
+  }
+  const { g, s: u, t: v } = _extGcdBigInt(ba, bb);
+  s.push(RList([Integer(u), Integer(v), Integer(g)]));
+});
+
+/* ---- INVMOD — modular multiplicative inverse ----------------------
+   HP50 AUR §2-58 (CAS-ARITH-MODULO menu).  The HP50 firmware uses
+   the global CAS MODULO state variable for the modulus; we take it
+   explicitly on the stack until that slot lands so the op is usable
+   without the CAS state substrate.
+
+     a n INVMOD  ( Z Z → Z )    a · result ≡ 1  (mod n)
+
+   Requires gcd(a, n) = 1 and n ≥ 2; otherwise throws
+   `Bad argument value` (no inverse).  The returned representative is
+   reduced into the range [0, n) — matching the convention the HP50
+   uses for MODULO-style output.  Integer-valued Reals coerce
+   through `_intQuotientArg` the same way IQUOT / IREMAINDER do.
+
+   Session 076.  When the MODULO state slot lands, add a single-arg
+   form that consults it; the two-arg form stays for explicit
+   callers. */
+
+register('INVMOD', (s) => {
+  const [a, n] = s.popN(2);
+  const ba = _intQuotientArg(a);
+  let bn = _intQuotientArg(n);
+  if (bn < 0n) bn = -bn;              // negative modulus folds to |n|
+  if (bn < 2n) throw new RPLError('Bad argument value');
+  // Reduce a mod n into [0, n).  BigInt `%` returns a result with the
+  // sign of the dividend, so negative a needs an explicit bump.
+  let ra = ba % bn;
+  if (ra < 0n) ra += bn;
+  if (ra === 0n) throw new RPLError('Bad argument value');
+  const { g, s: u } = _extGcdBigInt(ra, bn);
+  if (g !== 1n) throw new RPLError('Bad argument value');
+  // u·ra + t·bn = 1 → u ≡ ra^-1 (mod bn).  Reduce into [0, bn).
+  let inv = u % bn;
+  if (inv < 0n) inv += bn;
+  s.push(Integer(inv));
+});
 
 /** Log-gamma via the same Lanczos coefficients as _gamma.  Implemented
  *  directly rather than as Math.log(_gamma(x)) so we stay finite for
@@ -3263,6 +3361,25 @@ function eqValues(a, b) {
     if (p.kind === 'integer')  return p.a === p.b;
     return p.a === p.b;
   }
+  /* Session 074 — BinaryInteger structural equality.
+     BinInt stays out of `isNumber` (types.js L225 rationale: base-
+     preservation rules for arithmetic), so BinInt × BinInt used to
+     fall through to `return false` — even for reference-identical
+     inputs.  HP50 AUR §4-1 compares BinInts by masked numeric value:
+     display base is not semantic, so `#FFh == #255d` is 1.  Cross-
+     family BinInt × Integer / Real / Complex widening is done in the
+     `==` / `≠` / `<>` op wrappers (NOT here) so that `SAME` — which
+     uses `eqValues` directly — stays strict on types.  This session
+     fixes the previously identified BinInt structural-equality gap.
+     Masking note: `BinaryInteger()` does NOT apply the wordsize mask
+     at construction (types.js L88), so `#100h` at ws=8 stores
+     `value = 256n`, not `0n`.  We mask both operands against the
+     current wordsize before comparing so HP50-visible equal values
+     (all bits outside the wordsize are meaningless) compare equal. */
+  if (isBinaryInteger(a) && isBinaryInteger(b)) {
+    const m = getWordsizeMask();
+    return (a.value & m) === (b.value & m);
+  }
   // Name / String / everything else: structural comparison by id/value.
   if (isName(a) && isName(b)) return a.id === b.id;
   if (isString(a) && isString(b)) return a.value === b.value;
@@ -3361,11 +3478,33 @@ register('=', (s) => {
   s.push(Symbolic(AstBin('=', l, r)));
 });
 
+/** Cross-family BinInt ↔ Integer/Real/Complex widening for the `==` /
+ *  `≠` family.  HP50 AUR §4-1: `==` compares numeric operands by value
+ *  across the numeric family, so `#10h == Integer(16)` is 1.  SAME is
+ *  explicitly NOT in this widening — it stays strict on types
+ *  (`SAME #10h Integer(16)` = 0).  Session 074. */
+function _binIntCrossNormalize(a, b) {
+  // Apply the wordsize mask before coercing to Integer — `#100h` at
+  // ws=8 compares as 0, not 256.  Matches the masking rule in the
+  // eqValues BinInt×BinInt branch and in comparePair.
+  const m = getWordsizeMask();
+  if (isBinaryInteger(a) && !isBinaryInteger(b) && isNumber(b)) {
+    return [Integer(a.value & m), b];
+  }
+  if (isBinaryInteger(b) && !isBinaryInteger(a) && isNumber(a)) {
+    return [a, Integer(b.value & m)];
+  }
+  return [a, b];
+}
+
 register('==', (s) => {
   // `==` is a strict structural equality test — it always returns a
   // boolean (1./0.), even on symbolic operands.  Use `=` instead to
   // build an equation: `'X' 'X' =` → `'X=X'`.  Session 034.
-  const [a, b] = s.popN(2);
+  // Session 074: cross-family BinInt widening at the outer level
+  // (see _binIntCrossNormalize above).
+  const [a0, b0] = s.popN(2);
+  const [a, b] = _binIntCrossNormalize(a0, b0);
   s.push(eqValues(a, b) ? TRUE : FALSE);
 });
 register('SAME', (s) => {
@@ -3373,24 +3512,45 @@ register('SAME', (s) => {
   // values it coincides with ==.  We use the same comparator.  SAME
   // stays strictly boolean — it does NOT lift to symbolic, since SAME's
   // contract is "are these the same object?", not "are they equal?".
+  // Session 074: deliberately does NOT cross-normalize BinInt — `SAME
+  // #10h Integer(16)` = 0 per AUR §4-7 ("SAME does not type-coerce").
   const [a, b] = s.popN(2);
   s.push(eqValues(a, b) ? TRUE : FALSE);
 });
 
 register('≠', (s) => {
-  const [a, b] = s.popN(2);
-  if (_trySymCompare(s, a, b, '≠')) return;
+  const [a0, b0] = s.popN(2);
+  if (_trySymCompare(s, a0, b0, '≠')) return;
+  const [a, b] = _binIntCrossNormalize(a0, b0);   // session 074
   s.push(eqValues(a, b) ? FALSE : TRUE);
 });
 register('<>', (s) => {
   // ASCII alias for ≠.
-  const [a, b] = s.popN(2);
-  if (_trySymCompare(s, a, b, '≠')) return;
+  const [a0, b0] = s.popN(2);
+  if (_trySymCompare(s, a0, b0, '≠')) return;
+  const [a, b] = _binIntCrossNormalize(a0, b0);   // session 074
   s.push(eqValues(a, b) ? FALSE : TRUE);
 });
 
 function comparePair(s, cmp, op) {
-  const [a, b] = s.popN(2);                 // a = level 2, b = level 1
+  let [a, b] = s.popN(2);                 // a = level 2, b = level 1
+  /* Session 074 — BinaryInteger comparator widening.
+     HP50 AUR §4-1 accepts BinInts on `<` / `>` / `≤` / `≥` by
+     masked numeric value.  `isNumber` deliberately excludes BinInt
+     (see types.js L225), so before this session the check below
+     would throw `Bad argument type`.  Promote each BinInt operand
+     to an Integer with the masked BigInt payload — that lets the
+     symbolic-lift path lift via `_toAst` (which accepts Integer),
+     and the numeric path route through `promoteNumericPair` with
+     the `integer` kind.  Display base is dropped here because it
+     isn't semantic for comparison (cf. == widening above).  Apply
+     the wordsize mask to the payload — `#100h < #200h` at ws=8
+     must compare masked values (both 0), not unmasked payloads. */
+  {
+    const m = getWordsizeMask();
+    if (isBinaryInteger(a)) a = Integer(a.value & m);
+    if (isBinaryInteger(b)) b = Integer(b.value & m);
+  }
   // Symbolic lift first — `x y >` with Name/Symbolic operands yields
   // `'x>y'` instead of an error.  Session 034.
   if (_isSymOperand(a) || _isSymOperand(b)) {
@@ -12127,6 +12287,44 @@ register('PREDX', (s) => {
   s.push(Real(x));
 });
 
+/* ---- VX / SVX — CAS main variable (session 076) -------------------
+   HP50 AUR §2.6.  VX is the CAS "main variable" the firmware falls
+   back on whenever a CAS op has to pick a canonical variable from a
+   multi-free-variable or constant argument: LAPLACE, ILAP, PREVAL,
+   DERVX, INTVX, TABVAL, TAYLOR0, etc.  On real hardware VX is a
+   directory variable in CASDIR the user stores into from the stack;
+   we back it with a dedicated `state.casVx` slot instead so the setter
+   is free of HOME/VAR bookkeeping and survives persistence.
+
+     VX   ( → Name )    push the current CAS main variable as a Name.
+     SVX  ( Name → )    set the CAS main variable from a Name (or
+                        string — HP50 accepts either at the prompt).
+
+   Rejection: SVX with anything other than Name/String throws
+   `Bad argument type`.  Empty-string / empty-name throws
+   `Bad argument value`.  VX never throws — it pushes the default
+   Name `'X'` on a freshly-booted unit.
+
+   The slot survives page reloads via `persist.js`.  Both ops emit a
+   state-change event through the `setCasVx` helper so future status-
+   line annunciators can display the active VX. */
+
+register('VX', (s) => {
+  s.push(Name(getCasVx()));
+});
+
+register('SVX', (s) => {
+  const [v] = s.popN(1);
+  let name;
+  if (isName(v))        name = v.id;
+  else if (isString(v)) name = v.value;
+  else throw new RPLError('Bad argument type');
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new RPLError('Bad argument value');
+  }
+  setCasVx(name);
+});
+
 /* ---- PREVAL — evaluate F at two endpoints --------------------------
    HP50 AUR §11.  The workhorse for "definite integral via
    antiderivative": evaluate `F(X)` at two scalars and subtract.
@@ -12158,12 +12356,25 @@ register('PREVAL', (s) => {
   if (s.depth < 3) throw new RPLError('Too few arguments');
   const [fVal, aVal, bVal] = s.popN(3);
   if (!isSymbolic(fVal)) throw new RPLError('Bad argument type');
-  // Pick the variable to substitute.  HP50 firmware consults VX (which
-  // we don't have yet) — fall back to the single free variable in F,
-  // or `X` when F is a pure constant.
+  // Pick the variable to substitute.  HP50 firmware consults the CAS
+  // main variable (VX — session 076 real state slot).  Selection
+  // priority:
+  //
+  //   VX ∈ free(F)         → substitute VX.              (HP50 canonical)
+  //   |free(F)| == 1       → substitute that single var. (classic
+  //                          single-var PREVAL — the common case.)
+  //   otherwise            → substitute VX anyway.  When VX isn't a
+  //                          free variable the substitution is a
+  //                          no-op and F(b) - F(a) folds to 0 (or
+  //                          stays symbolic).  Matches HP50 AUR's
+  //                          "the current variable is VX" phrasing
+  //                          without rejecting the input.
   const vars = algebraFreeVars(fVal.expr);
-  if (vars.size > 1) throw new RPLError('Bad argument value');
-  const varName = vars.size === 1 ? [...vars][0] : 'X';
+  const vx = getCasVx();
+  let varName;
+  if (vars.has(vx))         varName = vx;
+  else if (vars.size === 1) varName = [...vars][0];
+  else                      varName = vx;
   const endpointToAst = (v) => {
     if (isReal(v))    return AstNum(v.value);
     if (isInteger(v)) return AstNum(Number(v.value));
@@ -12227,6 +12438,44 @@ register('TAN2SC', (s) => {
   s.push(Symbolic(_tan2scWalk(v.expr)));
 });
 
+/* ---- EXLR — Extract Left and Right sides of a symbolic -----------
+   HP50 AUR §4.9 / §11.4 (SYMBOLIC → OBJECT).  Splits the top-level
+   binary operator of its Symbolic argument into two stack entries.
+   The op itself is discarded; only the operands come back.
+
+     Sy EXLR  ( Sy → Sy Sy )
+
+   Operator classes matched at the top level:
+     arithmetic   +  -  *  /  ^
+     comparison   =  ≠  <  >  ≤  ≥
+
+   Typical usage is on an equation `A = B`:
+
+       'A = B' EXLR              →  'A'   'B'
+       'X^2 + 2·X + 1 = 0' EXLR  →  'X^2+2·X+1'   '0'
+
+   Non-binary-operator input (a bare Var / Num, a unary Neg, a
+   function call) rejects with `Bad argument value` — there is no
+   unambiguous "left" and "right" to extract.  Non-Symbolic input
+   rejects with `Bad argument type`.  Both sides are returned as
+   Symbolic regardless of whether the operand happens to be a lone
+   variable or a number; users who want to unwrap can apply EVAL.
+
+   Session 076 — newly registered from the lane-local COMMANDS.md
+   "Not yet supported" queue. */
+
+register('EXLR', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const ast = v.expr;
+  if (!ast || ast.kind !== 'bin') {
+    // Leaf (num/var), unary (neg), or function call — no bin to split.
+    throw new RPLError('Bad argument value');
+  }
+  s.push(Symbolic(ast.l));
+  s.push(Symbolic(ast.r));
+});
+
 /* ---- LAPLACE / ILAP — Laplace transform and inverse --------------
    HP50 AUR §11.8.  Rules-based AST rewrite over the CAS main
    variable (VX, which we surface as `X` here until the VX state
@@ -12254,13 +12503,14 @@ register('TAN2SC', (s) => {
    input (fall back to `X` when the input is a constant). */
 
 function _lapVarName(ast) {
+  const vx = getCasVx();
   const vars = algebraFreeVars(ast);
-  if (vars.size === 0) return 'X';
+  if (vars.size === 0) return vx;
   if (vars.size === 1) return [...vars][0];
-  // Multi-variable input: HP50 uses VX; we fall back to X as the
-  // canonical main variable.  Future VX-state landing can replace
-  // this.
-  return vars.has('X') ? 'X' : [...vars][0];
+  // Multi-variable input: HP50 uses VX.  Session 076 — the VX state
+  // slot is now real.  If the CAS main variable is one of the free
+  // vars, pick it; otherwise the first free var in iteration order.
+  return vars.has(vx) ? vx : [...vars][0];
 }
 
 /** Is `ast` a Num node? */

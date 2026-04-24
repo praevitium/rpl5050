@@ -5092,3 +5092,207 @@ setAngle('RAD');
   assert(s.peek().type === 'symbolic',
     'session072: regression guard — %(Sy, Real) lifts to Symbolic');
 }
+
+/* ================================================================
+   Session 076 — EUCLID (Bezout) + INVMOD (modular inverse).
+   ================================================================ */
+
+/* ---- EUCLID on coprime pair ---- */
+{
+  const s = new Stack();
+  s.push(Integer(3n));
+  s.push(Integer(5n));
+  lookup('EUCLID').fn(s);
+  const out = s.pop();
+  assert(out && Array.isArray(out.items) && out.items.length === 3,
+    'session076: EUCLID pushes a 3-element list');
+  const [u, v, g] = out.items;
+  assert(isInteger(u) && isInteger(v) && isInteger(g),
+    'session076: EUCLID list elements are Integers');
+  // u*3 + v*5 = g, and g = 1.
+  assert(g.value === 1n,
+    `session076: EUCLID(3, 5) gcd = 1 (got ${g.value})`);
+  assert(u.value * 3n + v.value * 5n === 1n,
+    `session076: EUCLID(3, 5) Bezout identity holds (got ${u.value}·3 + ${v.value}·5)`);
+}
+
+/* ---- EUCLID on non-coprime pair ---- */
+{
+  const s = new Stack();
+  s.push(Integer(12n));
+  s.push(Integer(18n));
+  lookup('EUCLID').fn(s);
+  const out = s.pop();
+  const [u, v, g] = out.items;
+  assert(g.value === 6n,
+    `session076: EUCLID(12, 18) gcd = 6 (got ${g.value})`);
+  assert(u.value * 12n + v.value * 18n === 6n,
+    `session076: EUCLID(12, 18) Bezout identity holds`);
+}
+
+/* ---- EUCLID with negative operand re-signs Bezout coefficient ---- */
+{
+  const s = new Stack();
+  s.push(Integer(-15n));
+  s.push(Integer(6n));
+  lookup('EUCLID').fn(s);
+  const out = s.pop();
+  const [u, v, g] = out.items;
+  // gcd(|-15|, 6) = 3; verify u·(-15) + v·6 = 3.
+  assert(g.value === 3n,
+    `session076: EUCLID(-15, 6) gcd = 3 (got ${g.value})`);
+  assert(u.value * (-15n) + v.value * 6n === 3n,
+    `session076: EUCLID(-15, 6) Bezout identity holds on signed operand`);
+}
+
+/* ---- EUCLID with one zero operand ---- */
+{
+  const s = new Stack();
+  s.push(Integer(0n));
+  s.push(Integer(7n));
+  lookup('EUCLID').fn(s);
+  const out = s.pop();
+  const [u, v, g] = out.items;
+  // gcd(0, 7) = 7; 0·u + 7·v = 7  ⇒ v = 1 (u unconstrained by identity).
+  assert(g.value === 7n, 'session076: EUCLID(0, 7) gcd = 7');
+  assert(u.value * 0n + v.value * 7n === 7n,
+    'session076: EUCLID(0, 7) Bezout identity holds');
+}
+
+/* ---- EUCLID rejects (0, 0) with Bad argument value ---- */
+{
+  const s = new Stack();
+  s.push(Integer(0n));
+  s.push(Integer(0n));
+  let threw = false;
+  try { lookup('EUCLID').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: EUCLID(0, 0) rejects with Bad argument value');
+}
+
+/* ---- EUCLID rejects non-integer-valued Real ---- */
+{
+  const s = new Stack();
+  s.push(Real(3.5));
+  s.push(Integer(5n));
+  let threw = false;
+  try { lookup('EUCLID').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: EUCLID rejects non-integer-valued Real');
+}
+
+/* ---- EUCLID rejects String ---- */
+{
+  const s = new Stack();
+  s.push(Str('x'));
+  s.push(Integer(5n));
+  let threw = false;
+  try { lookup('EUCLID').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session076: EUCLID on String rejects with Bad argument type');
+}
+
+/* ---- INVMOD small case: 3^-1 mod 11 = 4 (since 3·4 = 12 ≡ 1) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(3n));
+  s.push(Integer(11n));
+  lookup('INVMOD').fn(s);
+  const out = s.pop();
+  assert(isInteger(out) && out.value === 4n,
+    `session076: INVMOD(3, 11) = 4 (got ${out.value})`);
+}
+
+/* ---- INVMOD bigger coprime case: 17^-1 mod 3120 ---- */
+{
+  // A textbook RSA-style case.  17 · 2753 = 46801 = 15·3120 + 1.
+  const s = new Stack();
+  s.push(Integer(17n));
+  s.push(Integer(3120n));
+  lookup('INVMOD').fn(s);
+  const out = s.pop();
+  assert(out.value === 2753n,
+    `session076: INVMOD(17, 3120) = 2753 (got ${out.value})`);
+  assert((17n * out.value) % 3120n === 1n,
+    'session076: INVMOD(17, 3120) satisfies 17·r ≡ 1 (mod 3120)');
+}
+
+/* ---- INVMOD reduces negative a ---- */
+{
+  // -3 ≡ 8 (mod 11); so INVMOD(-3, 11) = INVMOD(8, 11).  8·7 = 56 = 5·11+1.
+  const s = new Stack();
+  s.push(Integer(-3n));
+  s.push(Integer(11n));
+  lookup('INVMOD').fn(s);
+  const out = s.pop();
+  assert(out.value === 7n,
+    `session076: INVMOD(-3, 11) = 7 (reduces -3 to 8 first) (got ${out.value})`);
+}
+
+/* ---- INVMOD result is in [0, n) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(5n));
+  s.push(Integer(13n));
+  lookup('INVMOD').fn(s);
+  const out = s.pop();
+  assert(out.value >= 0n && out.value < 13n,
+    `session076: INVMOD result reduced into [0, n) (got ${out.value})`);
+  assert((5n * out.value) % 13n === 1n,
+    'session076: INVMOD(5, 13) satisfies the inverse equation');
+}
+
+/* ---- INVMOD rejects non-coprime pair ---- */
+{
+  const s = new Stack();
+  s.push(Integer(4n));
+  s.push(Integer(6n));         // gcd(4, 6) = 2 → no inverse
+  let threw = false;
+  try { lookup('INVMOD').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: INVMOD(4, 6) rejects — no inverse (gcd = 2)');
+}
+
+/* ---- INVMOD rejects modulus < 2 ---- */
+{
+  const s = new Stack();
+  s.push(Integer(3n));
+  s.push(Integer(1n));
+  let threw = false;
+  try { lookup('INVMOD').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: INVMOD rejects modulus = 1');
+}
+
+/* ---- INVMOD rejects a ≡ 0 (mod n) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(6n));
+  s.push(Integer(3n));
+  let threw = false;
+  try { lookup('INVMOD').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: INVMOD(6, 3) rejects — 6 ≡ 0 (mod 3)');
+}
+
+/* ---- INVMOD rejects non-integer-valued Real ---- */
+{
+  const s = new Stack();
+  s.push(Real(3.5));
+  s.push(Integer(11n));
+  let threw = false;
+  try { lookup('INVMOD').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session076: INVMOD rejects non-integer-valued Real');
+}
+
+/* ---- INVMOD rejects String ---- */
+{
+  const s = new Stack();
+  s.push(Str('3'));
+  s.push(Integer(11n));
+  let threw = false;
+  try { lookup('INVMOD').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session076: INVMOD on String rejects with Bad argument type');
+}

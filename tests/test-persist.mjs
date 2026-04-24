@@ -201,5 +201,31 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value === 2 &&
   resetPrng();
 }
 
+/* --- Session 076: VX (CAS main variable) survives snapshot / rehydrate. --- */
+{
+  const { setCasVx, resetCasVx, getCasVx } = await import('../src/rpl/state.js');
+  resetCasVx();
+  setCasVx('T');                                  // pin to T so 'X' default is clearly rejected
+  const s4 = new Stack();
+  s4.push(Integer(1n));
+  const snap4 = snapshot(s4);
+  const json4 = JSON.parse(JSON.stringify(snap4));
+  resetCasVx();                                   // wipe back to 'X'
+  const s5 = new Stack();
+  rehydrate(json4, s5);
+  assert(getCasVx() === 'T',
+    `session076: casVx restored to 'T' after snapshot round-trip (got '${getCasVx()}')`);
+
+  // Old snapshot without casVx rehydrates to default 'X'.
+  const legacy = { ...snap4 };
+  delete legacy.casVx;
+  setCasVx('Q');                                  // pin to Q so the default reset is observable
+  rehydrate(legacy, new Stack());
+  assert(getCasVx() === 'X',
+    `session076: snapshot missing casVx resets to default 'X' (got '${getCasVx()}')`);
+
+  resetCasVx();
+}
+
 console.log(failed ? `\n${failed} FAIL(s)` : '\nALL PERSIST TESTS PASSED');
 process.exit(failed ? 1 : 0);

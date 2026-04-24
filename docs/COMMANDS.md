@@ -21,18 +21,18 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 069 — 2026-04-23)
+## Counts (as of session 076 — 2026-04-23)
 
-- Fully shipped (✓): 404
+- Fully shipped (✓): 409
 - Partially shipped (~): 0
-- Not yet implemented (✗): 37 (see "Not yet supported" below)
+- Not yet implemented (✗): 32 (see "Not yet supported" below)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" src/rpl/ops.js` = **429** at the end of session 069
-(was 424 at the end of session 068); the Fully-shipped count above
-reflects new HP50 ops shipped this run (`Beta`, `erf`, `erfc`, `UTPF`,
-`UTPT` — 5 rows flipped ✗ → ✓).
+`grep -c "register(" src/rpl/ops.js` = **437** at the end of session 076
+(was 429 at the end of session 069); the Fully-shipped count above
+reflects new HP50 ops shipped this run (`VX`, `SVX`, `EXLR`, `EUCLID`,
+`INVMOD` — 5 rows flipped ✗ → ✓).
 
 ---
 
@@ -68,9 +68,9 @@ reflects new HP50 ops shipped this run (`Beta`, `erf`, `erfc`, `UTPF`,
 
 | Command | Status | Notes |
 |---------|--------|-------|
-| `==` `=` `<>` `≠` `<` `>` `<=` `>=` `≤` `≥` | ✓ | Session 072 — `==` widened to structural compare on List / Vector / Matrix / Symbolic / Tagged / Unit (was: returned 0 for all such pairs). |
+| `==` `=` `<>` `≠` `<` `>` `<=` `>=` `≤` `≥` | ✓ | Session 072 — `==` widened to structural compare on List / Vector / Matrix / Symbolic / Tagged / Unit (was: returned 0 for all such pairs). Session 074 — BinaryInteger widening: `==` / `≠` / `<>` cross-base and cross-family (BinInt × Integer/Real/Complex) through `_binIntCrossNormalize`; `<` / `>` / `≤` / `≥` widened in `comparePair` by promoting BinInt to Integer(value & wordsize-mask). |
 | `AND` `OR` `XOR` `NOT` | ✓ | Real/Int/Binary. |
-| `SAME` | ✓ | Strict structural equality.  Session 072 same widening as `==`; never lifts to Symbolic. |
+| `SAME` | ✓ | Strict structural equality.  Session 072 same widening as `==`; never lifts to Symbolic. Session 074 — accepts BinInt × BinInt value compare (cross-base) via the eqValues BinInt branch, but deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0). |
 | `TRUE` `FALSE` | ✓ | |
 
 ## Bitwise / BinaryInteger
@@ -167,6 +167,8 @@ reflects new HP50 ops shipped this run (`Beta`, `erf`, `erfc`, `UTPF`,
 | `QUOT` `REMAINDER` `IABCUV` `ICHINREM` `IEGCD` | ✓ | |
 | `IBERNOULLI` `DIVIS` `FACTORS` | ✓ | |
 | `ISPRIME?` `NEXTPRIME` `PREVPRIME` | ✓ | |
+| `EUCLID` | ✓ | **Session 076** — `( a b → {u v g} )` extended-Euclid / Bezout; `u*a + v*b = g`.  Rejects `(0,0)` ("Bad argument value"), non-Integer ("Bad argument type").  Re-signs u,v for negative inputs. |
+| `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  One-arg MODULO-state form deferred until MODULO lands. |
 
 ## CAS (symbolic)
 
@@ -180,6 +182,8 @@ reflects new HP50 ops shipped this run (`Beta`, `erf`, `erfc`, `UTPF`,
 | `HALFTAN` `ASIN2C` `ASIN2T` `ACOS2S` | ✓ | |
 | `ATAN2S` `TAN2SC` `TAN2SC2` `TAN2CS2` | ✓ | |
 | `COLLECT` `EPSX0` | ✓ | |
+| `VX` `SVX` | ✓ | **Session 076** — CAS main variable slot.  `VX` pushes the current name (default `X`); `SVX` sets it from a Name or String, rejects Real ("Bad argument type") and empty string ("Bad argument value").  Persists across reload (snapshot field `casVx`).  LAPLACE/ILAP/PREVAL now honor VX for variable selection. |
+| `EXLR` | ✓ | **Session 076** — extract left/right of an equation-style Symbolic.  `( 'L==R' → 'L' 'R' )`; works on any top-level binary (`==`, `+`, `-`, `<`, `≤`, …).  Rejects bare variable / function application ("Bad argument value"), non-Symbolic ("Bad argument type"). |
 
 ## Statistics
 
@@ -270,13 +274,11 @@ can be picked up as a group.
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
 | `RCWS` (STWS/RCWS done) | binary-int | ✓ | |
 | `XNUM` `XQ` | number mode | low | "Numeric / exact" toggles — aliases of →NUM / →Q. |
-| `VX` `SVX` | CAS state | medium | Current CAS variable (default `X`). |
 | `CYCLOTOMIC` | poly | low | nth cyclotomic polynomial. |
-| `POLYEVAL` `MULTMOD` `EUCLID` `INVMOD` | modular | low | Modular arithmetic ops. |
+| `POLYEVAL` `MULTMOD` | modular | low | Modular poly ops — `EUCLID` / `INVMOD` shipped session 076; these two remain (need MODULO state). |
 | `PA2B2` `PROPFRAC` `PARTFRAC` | algebra | medium | PARTFRAC is the big one. |
 | `TRUNC` (two-arg) | real | low | `TRUNC(x, n)` — truncate to n places.  One-arg `TRNC` present. |
 | `COSSIN` | trig-form | low | Rewrite in cos/sin basis. |
-| `EXLR` | symbolic | low | Extract left/right of an equation. |
 
 ## Will-not-support (by design deviation)
 
@@ -302,6 +304,16 @@ If a user asks for one of these, the correct response is to point at
 
 Maintain chronologically, most recent first.
 
+- **session 076** (2026-04-23) — CAS VX slot + EXLR + modular arithmetic.
+  Shipped `VX` / `SVX` (CAS main variable — default `X`, persists across
+  reload via new `casVx` snapshot field; LAPLACE/ILAP/PREVAL now honor
+  it), `EXLR` (split a top-level binary AST into two Symbolics), and
+  `EUCLID` / `INVMOD` (extended-Euclid returning `{u v g}` + two-arg
+  modular inverse with reduction into `[0, n)`).  Five rows flipped ✗ →
+  ✓; PREVAL multi-var path rewritten to substitute VX instead of
+  rejecting (session058 test updated).  +51 assertions (test-algebra
+  VX/SVX + EXLR, test-numerics EUCLID/INVMOD, test-persist VX
+  round-trip).  3630 → 3681.  See `logs/session-076.md`.
 - **session 069** (2026-04-23) — Beta-family + STAT-DIST completion.
   Added `_regBetaI(a, b, x)` (NR §6.4 Lentz CF) as the shared helper.
   Shipped `UTPF`, `UTPT` (both via `_regBetaI` in the I-of-w(·,·)

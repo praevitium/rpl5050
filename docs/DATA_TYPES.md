@@ -5,7 +5,7 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md` (or its predecessor, `docs/COMMANDS_INVENTORY.md`).
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 072 (2026-04-23).
+**Last updated.** Session 076 (2026-04-23).
 
 ---
 
@@ -124,6 +124,25 @@ candidate flagged in session 063.
 | RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
 | IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
 
+### Ordered comparators — `<` / `>` / `≤` / `≥`
+
+Numeric-family ordered compare.  `comparePair()` promotes BinInt to
+Integer (with wordsize mask applied to the payload) before routing
+through `promoteNumericPair`, so BinInt × BinInt and cross-family
+BinInt × Integer / Real are accepted.  Complex with a non-zero
+imaginary part rejects (no total order on ℂ).  String lex order is
+still `Bad argument type` — tracked in the "next-session candidates"
+list below.
+
+| Op   | R | Z | B | C* | N | Sy | L | V | M | T | U | S | Notes |
+|------|---|---|---|----|---|----|---|---|---|---|---|---|-------|
+| `<`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). |
+| `>`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Same. |
+| `≤`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Same. |
+| `≥`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Same. |
+
+*`~` on Complex = accepted only when both `im === 0`; otherwise `Bad argument type`.
+
 ### Equality / structural compare — `==` / `SAME`
 
 Structural equality over collection and expression types.  `==` and
@@ -134,8 +153,8 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
 
 | Op   | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
 |------|---|---|---|---|---|----|---|---|---|---|---|---|-------|
-| ==   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Session 072 added Sy/L/V/M/T/U structural compare (gap filed s070). Nested lists / matrix rows recurse via `_eqArr`. Tagged: same tag AND same value. Unit: same numeric value AND same `uexpr` (so `1_m == 1_km` = 0). |
-| SAME | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Same widening — `SAME` always returns Real 1./0., never a Symbolic. |
+| ==   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Session 072 added Sy/L/V/M/T/U structural compare (gap filed s070). Session 074 added BinInt × BinInt (masked against current wordsize) plus cross-family BinInt × Integer / Real / Complex widening at the `==` / `≠` / `<>` outer level via `_binIntCrossNormalize`. Nested lists / matrix rows recurse via `_eqArr`. Tagged: same tag AND same value. Unit: same numeric value AND same `uexpr` (so `1_m == 1_km` = 0). |
+| SAME | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Same widening — `SAME` always returns Real 1./0., never a Symbolic. Session 074: BinInt × BinInt value compare through the same eqValues branch, BUT `SAME` deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0 — AUR §4-7 "SAME does not type-coerce"). |
 
 ---
 
@@ -166,10 +185,26 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    reuse `_eqArr`); Directory is a live mutable container so `SAME`
    should probably be reference-identity only.  Read HP50 AUR §4-7
    before widening.
-6. **BinaryInteger `==` across bases** — `#FFh == #255d` should be
-   `1` (same underlying n, different base annotation).  Currently
-   `eqValues` routes BinInt through `isNumber` → `promoteNumericPair`.
-   Spot-check with a few base-mix pairs.
+6. **Dim-equivalence `==` on Units** — distinct from today's strict
+   structural `==`.  Could be a new op (`UEQUAL`?) or a flag that
+   flips `==` semantics.  Read AUR §20 first.
+7. **BinaryInteger widening on floor/ceil/ip/fp** — today BinInt on the
+   rounders is rejected because `_rounderScalar` only dispatches on
+   `isReal(v) || isInteger(v) || isUnit(v)`.  For BinInts rounding is
+   a no-op — they are already integers — but the type should still be
+   accepted rather than rejected (HP50 AUR §3).  Quick widening.
+
+### Resolved this session (074)
+
+- **BinaryInteger `==` across bases** — `#FFh == #255d` = 1.  Fixed
+  by a dedicated BinInt × BinInt branch in `eqValues` (masked against
+  current wordsize) plus a `_binIntCrossNormalize` helper invoked by
+  the `==` / `≠` / `<>` op wrappers for cross-family BinInt ↔
+  Integer/Real/Complex widening.  `SAME` deliberately does NOT
+  cross-normalize (strict type per AUR §4-7).
+- **BinaryInteger `<` / `>` / `≤` / `≥`** — `comparePair` promotes
+  BinInt to Integer(value & mask) before routing through the numeric
+  path.
 
 ---
 
