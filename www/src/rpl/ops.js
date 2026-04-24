@@ -13477,8 +13477,13 @@ register('SVX', (s) => {
   if (isName(v))        name = v.id;
   else if (isString(v)) name = v.value;
   else throw new RPLError('Bad argument type');
-  if (typeof name !== 'string' || name.length === 0) {
-    throw new RPLError('Bad argument value');
+  if (!isValidHpIdentifier(name)) {
+    // HP50 rejects empty strings and any non-conforming name for SVX.
+    // We use the validator here (not isStorableHpName) because the CAS
+    // main variable legitimately overlaps the reserved-ops space on
+    // the HP50 — `'X' SVX` is the factory default, yet 'X' is also a
+    // command-line name slot.  Only syntactic validity is enforced.
+    throw new RPLError(`Invalid name: ${name}`);
   }
   setCasVx(name);
 });

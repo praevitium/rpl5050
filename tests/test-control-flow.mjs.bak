@@ -216,25 +216,25 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   varStore('N', Real(1));
-  varStore('TOTAL', Real(0));
+  varStore('SUM', Real(0));
   const s = new Stack();
   // << WHILE 'N' RCL 5 ≤ REPEAT
-  //      'TOTAL' RCL 'N' RCL + 'TOTAL' STO
+  //      'SUM' RCL 'N' RCL + 'SUM' STO
   //      'N' RCL 1 + 'N' STO
   //    END >>
   s.push(Program([
     Name('WHILE'),
       Name('N', { quoted: true }), Name('RCL'), Integer(5), Name('≤'),
     Name('REPEAT'),
-      Name('TOTAL', { quoted: true }), Name('RCL'),
+      Name('SUM', { quoted: true }), Name('RCL'),
       Name('N', { quoted: true }),  Name('RCL'), Name('+'),
-      Name('TOTAL', { quoted: true }), Name('STO'),
+      Name('SUM', { quoted: true }), Name('STO'),
       Name('N', { quoted: true }),  Name('RCL'), Integer(1), Name('+'),
       Name('N', { quoted: true }),  Name('STO'),
     Name('END'),
   ]));
   lookup('EVAL').fn(s);
-  const sum = varRecall('TOTAL');
+  const sum = varRecall('SUM');
   assert(sum && sum.value.eq(15), 'WHILE loop sums 1..5 to 15');
 }
 

@@ -371,9 +371,9 @@ import { assert } from './helpers.mjs';
 // HOME op: cd to root from a subdir
 {
   resetHome();
-  makeSubdir('SUB');
-  goInto('SUB');
-  assert(currentPath().join('/') === 'HOME/SUB', 'setup: inside SUB');
+  makeSubdir('AFOO');
+  goInto('AFOO');
+  assert(currentPath().join('/') === 'HOME/AFOO', 'setup: inside AFOO');
   const s = new Stack();
   lookup('HOME').fn(s);
   assert(currentPath().join('/') === 'HOME', 'HOME op returns to root');
@@ -425,14 +425,14 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   varStore('GLOBAL', Real(100));
-  makeSubdir('SUB');
-  goInto('SUB');
+  makeSubdir('AFOO');
+  goInto('AFOO');
   varStore('LOCAL', Real(1));
   const s = new Stack();
   s.push(Name('GLOBAL', { quoted: true }));
   lookup('RCL').fn(s);
   assert(s.peek()?.value.eq(100),
-         'RCL inside SUB walks up and finds GLOBAL at HOME');
+         'RCL inside AFOO walks up and finds GLOBAL at HOME');
   s.drop();
   s.push(Name('LOCAL', { quoted: true }));
   lookup('RCL').fn(s);
@@ -444,12 +444,12 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   varStore('X', Real(1));
-  makeSubdir('SUB');
-  goInto('SUB');
+  makeSubdir('AFOO');
+  goInto('AFOO');
   varStore('X', Real(99));
-  assert(varRecall('X')?.value.eq(99), 'SUB.X shadows HOME.X');
+  assert(varRecall('X')?.value.eq(99), 'AFOO.X shadows HOME.X');
   goUp();
-  assert(varRecall('X')?.value.eq(1), 'HOME.X is unchanged by SUB.X write');
+  assert(varRecall('X')?.value.eq(1), 'HOME.X is unchanged by AFOO.X write');
   resetHome();
 }
 
@@ -457,8 +457,8 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   varStore('OUTER', Real(1));
-  makeSubdir('SUB');
-  goInto('SUB');
+  makeSubdir('AFOO');
+  goInto('AFOO');
   let threw = false;
   try { varPurge('OUTER'); } catch { threw = true; }
   // varPurge returns false; it doesn't throw.  But the wrapper op PURGE
@@ -468,9 +468,9 @@ import { assert } from './helpers.mjs';
   s.push(Name('OUTER', { quoted: true }));
   let opThrew = false;
   try { lookup('PURGE').fn(s); } catch (e) { opThrew = true; }
-  assert(opThrew, 'PURGE in SUB does not remove HOME.OUTER — errors');
+  assert(opThrew, 'PURGE in AFOO does not remove HOME.OUTER — errors');
   assert(varRecall('OUTER')?.value.eq(1),
-         'HOME.OUTER survived the failed PURGE from SUB');
+         'HOME.OUTER survived the failed PURGE from AFOO');
   resetHome();
 }
 
@@ -572,14 +572,14 @@ import { assert } from './helpers.mjs';
 
   // Directory branch: press on a subdir descends.
   resetHome();
-  makeSubdir('SUB');
+  makeSubdir('AFOO');
   const s = new Stack();
   assert(s.depth === 0, 'VARS descent: stack starts empty');
-  const tag = varsPress('SUB', s);
+  const tag = varsPress('AFOO', s);
   assert(tag === 'descended',
          'VARS soft-key on Directory → goInto (not push)');
-  assert(currentPath().join('/') === 'HOME/SUB',
-         'VARS descent: current is now HOME/SUB');
+  assert(currentPath().join('/') === 'HOME/AFOO',
+         'VARS descent: current is now HOME/AFOO');
   assert(s.depth === 0,
          'VARS descent: Directory value NOT pushed onto stack');
   resetHome();
@@ -649,17 +649,17 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   clearLastError();
-  makeSubdir('SUB');
+  makeSubdir('AFOO');
   const s = new Stack();
   s.push(Real(42));
-  s.push(Name('SUB', { quoted: true }));
+  s.push(Name('AFOO', { quoted: true }));
   let threw = null;
   try { lookup('STO').fn(s); } catch (e) { threw = e; }
   assert(threw !== null, 'STO over subdir: throws');
   assert(threw && /Directory not allowed/.test(threw.message),
          'STO over subdir: message is "Directory not allowed"');
   // And the Directory is preserved.
-  const still = varRecall('SUB');
+  const still = varRecall('AFOO');
   assert(isDirectory(still),
          'STO over subdir: subdir not clobbered on failed STO');
   resetHome();
@@ -682,18 +682,18 @@ import { assert } from './helpers.mjs';
 // PURGE refuses to remove a non-empty subdirectory.
 {
   resetHome();
-  makeSubdir('SUB');
-  goInto('SUB');
+  makeSubdir('AFOO');
+  goInto('AFOO');
   varStore('X', Real(1));
   goHome();
   const s = new Stack();
-  s.push(Name('SUB', { quoted: true }));
+  s.push(Name('AFOO', { quoted: true }));
   let threw = null;
   try { lookup('PURGE').fn(s); } catch (e) { threw = e; }
   assert(threw !== null, 'PURGE non-empty subdir: throws');
   assert(threw && /Directory not empty/.test(threw.message),
          'PURGE non-empty subdir: message is "Directory not empty"');
-  assert(isDirectory(varRecall('SUB')),
+  assert(isDirectory(varRecall('AFOO')),
          'PURGE non-empty subdir: subdir not removed');
   resetHome();
 }
@@ -715,12 +715,12 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   clearLastError();
-  makeSubdir('SUB');
+  makeSubdir('AFOO');
   const s = new Stack();
-  // << 42 'SUB' IFERR STO THEN ERRN END >>
+  // << 42 'AFOO' IFERR STO THEN ERRN END >>
   s.push(Program([
     Real(42),
-    Name('SUB', { quoted: true }),
+    Name('AFOO', { quoted: true }),
     Name('IFERR'), Name('STO'),
     Name('THEN'), Name('ERRN'),
     Name('END'),
@@ -736,14 +736,14 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   clearLastError();
-  makeSubdir('SUB');
-  goInto('SUB');
+  makeSubdir('AFOO');
+  goInto('AFOO');
   varStore('X', Real(1));
   goHome();
   const s = new Stack();
-  // << 'SUB' IFERR PURGE THEN ERRN END >>
+  // << 'AFOO' IFERR PURGE THEN ERRN END >>
   s.push(Program([
-    Name('SUB', { quoted: true }),
+    Name('AFOO', { quoted: true }),
     Name('IFERR'), Name('PURGE'),
     Name('THEN'), Name('ERRN'),
     Name('END'),
@@ -778,10 +778,10 @@ import { assert } from './helpers.mjs';
 // Direct classifier checks for the new error numbers.
 {
   clearLastError();
-  setLastError({ message: 'Directory not allowed: SUB' });
+  setLastError({ message: 'Directory not allowed: AFOO' });
   assert(getLastError().number === 0x502,
          'map: "Directory not allowed" prefix → 0x502');
-  setLastError({ message: 'Directory not empty: SUB' });
+  setLastError({ message: 'Directory not empty: AFOO' });
   assert(getLastError().number === 0x503,
          'map: "Directory not empty" prefix → 0x503');
   setLastError({ message: 'Name conflict: X' });
@@ -861,11 +861,11 @@ import { assert } from './helpers.mjs';
   // ---- current-directory restoration after goInto ----
   {
     resetHome();
-    makeSubdir('SUB');
+    makeSubdir('AFOO');
     saveVarStateForUndo();
-    goInto('SUB');
-    assert(currentPath().join('/') === 'HOME/SUB',
-      'goInto puts us in SUB');
+    goInto('AFOO');
+    assert(currentPath().join('/') === 'HOME/AFOO',
+      'goInto puts us in AFOO');
     undoVarState();
     assert(currentPath().join('/') === 'HOME',
       'undoVarState navigates back to HOME');
@@ -874,37 +874,37 @@ import { assert } from './helpers.mjs';
   // ---- current-directory restoration after goUp ----
   {
     resetHome();
-    makeSubdir('SUB');
-    goInto('SUB');
+    makeSubdir('AFOO');
+    goInto('AFOO');
     saveVarStateForUndo();
     goUp();
     assert(currentPath().join('/') === 'HOME', 'goUp landed at HOME');
     undoVarState();
-    assert(currentPath().join('/') === 'HOME/SUB',
-      'undoVarState navigates back into SUB');
+    assert(currentPath().join('/') === 'HOME/AFOO',
+      'undoVarState navigates back into AFOO');
   }
 
-  // ---- undo captures SUB's contents, even after we leave + modify ----
+  // ---- undo captures AFOO's contents, even after we leave + modify ----
   {
     resetHome();
-    const sub = makeSubdir('SUB');
-    goInto('SUB');
+    const sub = makeSubdir('AFOO');
+    goInto('AFOO');
     varStore('A', Real(1));
     goUp();                          // HOME
     saveVarStateForUndo();
-    // Go back and mutate SUB's contents.
-    goInto('SUB');
+    // Go back and mutate AFOO's contents.
+    goInto('AFOO');
     varStore('B', Real(2));
     varPurge('A');
-    assert(varRecall('B').value.eq(2), 'live: B stored in SUB');
-    assert(varRecall('A') === undefined, 'live: A purged in SUB');
-    // Undo should restore SUB's A and drop B.  We're currently inside
-    // SUB; the snapshot was taken from HOME, so undo should also
+    assert(varRecall('B').value.eq(2), 'live: B stored in AFOO');
+    assert(varRecall('A') === undefined, 'live: A purged in AFOO');
+    // Undo should restore AFOO's A and drop B.  We're currently inside
+    // AFOO; the snapshot was taken from HOME, so undo should also
     // navigate back to HOME.
     undoVarState();
     assert(currentPath().join('/') === 'HOME',
       'undo returns us to HOME (where we were when saveForUndo ran)');
-    goInto('SUB');
+    goInto('AFOO');
     assert(varRecall('A') && varRecall('A').value.eq(1),
       'SUB/A restored to 1');
     assert(varRecall('B') === undefined,

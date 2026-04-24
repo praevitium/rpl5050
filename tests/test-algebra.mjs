@@ -5215,16 +5215,21 @@ giac._setFixtures({
   assert(threw, 'session076: SVX on Real rejects with Bad argument type');
 }
 
-/* ---- SVX rejects empty String with Bad argument value ---- */
+/* ---- SVX rejects empty String with Invalid name ---- */
 {
+  // Session 095: SVX now routes through the HP50 identifier validator
+  // (types.js isValidHpIdentifier), which catches empty strings and
+  // any non-conforming name with a single "Invalid name" error — the
+  // same wording the HP50 uses.  Previously the op hand-rolled its
+  // own empty-string check and threw "Bad argument value".
   const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   s.push(Str(''));
   let threw = false;
   try { lookup('SVX').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: SVX on empty string rejects with Bad argument value');
+  catch (e) { threw = /Invalid name/.test(e.message); }
+  assert(threw, 'session076: SVX on empty string rejects with Invalid name');
 }
 
 /* ---- PREVAL follows the active VX (not the single-free-var heuristic) ---- */

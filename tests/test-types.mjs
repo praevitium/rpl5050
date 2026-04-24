@@ -5,6 +5,7 @@ import {
   RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isRational, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString, isNumber, promoteNumericPair, Decimal,
+  isValidHpIdentifier, isReservedHpName, isStorableHpName, registerReservedName,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
 import { format, formatStackTop } from '../www/src/rpl/formatter.js';
