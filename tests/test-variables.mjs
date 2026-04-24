@@ -232,8 +232,8 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   const s = new Stack();
-  // Simulate what the entry loop does for "42 'X' STO"
-  const v1 = parseEntry("42 'X' STO");
+  // Simulate what the entry loop does for "42 `X` STO"
+  const v1 = parseEntry("42 `X` STO");
   for (const v of v1) {
     if (v?.type === 'name') {
       const op = lookup(v.id);
@@ -242,9 +242,9 @@ import { assert } from './helpers.mjs';
     s.push(v);
   }
   assert(varRecall('X')?.value === 42n,
-         "round-trip: 42 'X' STO wrote Integer(42)");
+         "round-trip: 42 `X` STO wrote Integer(42)");
   // Now recall by pushing Name('X') then RCL
-  const v2 = parseEntry("'X' RCL");
+  const v2 = parseEntry("`X` RCL");
   for (const v of v2) {
     if (v?.type === 'name') {
       const op = lookup(v.id);
@@ -252,7 +252,7 @@ import { assert } from './helpers.mjs';
     }
     s.push(v);
   }
-  assert(s.peek()?.value === 42n, "round-trip: 'X' RCL put 42 on stack");
+  assert(s.peek()?.value === 42n, "round-trip: `X` RCL put 42 on stack");
   resetHome();
 }
 
@@ -478,7 +478,7 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   const s = new Stack();
-  const toks = parseEntry("'A' CRDIR");
+  const toks = parseEntry("`A` CRDIR");
   for (const v of toks) {
     if (v?.type === 'name') {
       const op = lookup(v.id);
@@ -980,11 +980,11 @@ import { assert } from './helpers.mjs';
     const e = new Entry(s);
     // First ENTER: push 42 and quoted-X onto the stack.  Snap slot
     // now holds "empty stack + empty HOME".
-    e.type("42 'X'");
+    e.type("42 `X`");
     e.enter();
     assert(s.depth === 2, 'two values on stack before STO');
     // Second ENTER: run STO as a named op.  This ENTER's snap slot
-    // overwrites the previous one with "stack = {42, 'X'}, HOME = {}".
+    // overwrites the previous one with "stack = {42, `X`}, HOME = {}".
     e.type('STO');
     e.enter();
     assert(s.depth === 0, 'STO consumed the two args');
@@ -1010,7 +1010,7 @@ import { assert } from './helpers.mjs';
     varStore('X', Real(99));
     const s = new Stack();
     const e = new Entry(s);
-    e.type("'X' PURGE");
+    e.type("`X` PURGE");
     e.enter();
     assert(varRecall('X') === undefined, 'PURGE removed X');
     e.performUndo();
@@ -1101,7 +1101,7 @@ const {
   s.push(Name('X'));
   lookup('INCR').fn(s);
   assert(varRecall('X').value === 11,
-    "INCR: X=10, 'X' INCR stores X=11");
+    "INCR: X=10, `X` INCR stores X=11");
   assert(s.depth === 1 && isReal(s.peek(1)) && s.peek(1).value === 11,
     'INCR leaves the NEW value on the stack (11)');
 }
@@ -1112,7 +1112,7 @@ const {
   s.push(Name('Y'));
   lookup('DECR').fn(s);
   assert(varRecall('Y').value === 4,
-    "DECR: Y=5, 'Y' DECR stores Y=4");
+    "DECR: Y=5, `Y` DECR stores Y=4");
   assert(s.peek(1).value === 4, 'DECR pushes the NEW value (4)');
 }
 {

@@ -692,57 +692,57 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // test pins both the AST structure and the parser round-trip
   // (KNOWN_FUNCTIONS membership is what lets the result re-parse).
   {
-    const [e] = parseEntry("'SINH(X)'");
+    const [e] = parseEntry("`SINH(X)`");
     const out = runOp('DERIV', e, Name('X'));
-    assert(format(out) === "'COSH(X)'",
+    assert(format(out) === "`COSH(X)`",
       `session082: DERIV SINH(X) / X = COSH(X) (got ${format(out)})`);
   }
   {
-    const [e] = parseEntry("'COSH(X)'");
+    const [e] = parseEntry("`COSH(X)`");
     const out = runOp('DERIV', e, Name('X'));
     // d/dx cosh(x) = +sinh(x), NOT -sinh(x) (common sign-flip mistake).
-    assert(format(out) === "'SINH(X)'",
+    assert(format(out) === "`SINH(X)`",
       `session082: DERIV COSH(X) / X = SINH(X), not -SINH(X) (got ${format(out)})`);
   }
   {
-    const [e] = parseEntry("'TANH(X)'");
+    const [e] = parseEntry("`TANH(X)`");
     const out = runOp('DERIV', e, Name('X'));
     // 1 - TANH(X)^2 — simplifier may reorder as '-(TANH(X)^2) + 1'.
     // Accept either ordering so the test isn't brittle to cosmetic
     // reshuffling inside the like-terms combiner.
     const f = format(out);
-    assert(f === "'-(TANH(X)^2) + 1'" || f === "'1 - TANH(X)^2'",
+    assert(f === "`-(TANH(X)^2) + 1`" || f === "`1 - TANH(X)^2`",
       `session082: DERIV TANH(X) / X = 1 - TANH(X)^2 (got ${f})`);
   }
   {
-    const [e] = parseEntry("'ASINH(X)'");
+    const [e] = parseEntry("`ASINH(X)`");
     const out = runOp('DERIV', e, Name('X'));
-    assert(format(out) === "'1/SQRT(X^2 + 1)'",
+    assert(format(out) === "`1/SQRT(X^2 + 1)`",
       `session082: DERIV ASINH(X) / X = 1/SQRT(X^2+1) (got ${format(out)})`);
   }
   {
-    const [e] = parseEntry("'ACOSH(X)'");
+    const [e] = parseEntry("`ACOSH(X)`");
     const out = runOp('DERIV', e, Name('X'));
-    assert(format(out) === "'1/SQRT(X^2 - 1)'",
+    assert(format(out) === "`1/SQRT(X^2 - 1)`",
       `session082: DERIV ACOSH(X) / X = 1/SQRT(X^2-1) (got ${format(out)})`);
   }
   {
-    const [e] = parseEntry("'ATANH(X)'");
+    const [e] = parseEntry("`ATANH(X)`");
     const out = runOp('DERIV', e, Name('X'));
     // 1 / (1 - X^2) — simplifier may emit as '1/(-(X^2) + 1)'.
     const f = format(out);
-    assert(f === "'1/(-(X^2) + 1)'" || f === "'1/(1 - X^2)'",
+    assert(f === "`1/(-(X^2) + 1)`" || f === "`1/(1 - X^2)`",
       `session082: DERIV ATANH(X) / X = 1/(1 - X^2) (got ${f})`);
   }
 
   // Chain rule test — DERIV COSH(2*X) = 2 * SINH(2*X) (the chain-rule
   // factor must propagate through the hyp family too, not just trig).
   {
-    const [e] = parseEntry("'COSH(2*X)'");
+    const [e] = parseEntry("`COSH(2*X)`");
     const out = runOp('DERIV', e, Name('X'));
     const f = format(out);
     // Simplifier may produce '2*SINH(2*X)' or 'SINH(2*X)*2' — pin both.
-    assert(f === "'2*SINH(2*X)'" || f === "'SINH(2*X)*2'",
+    assert(f === "`2*SINH(2*X)`" || f === "`SINH(2*X)*2`",
       `session082: DERIV COSH(2*X) applies chain rule with 2 (got ${f})`);
   }
 
@@ -750,7 +750,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // derivative table still throws (e.g. HEAVISIDE).  This guards
   // against "DERIV accidentally became a no-op wrapper" regressions.
   {
-    const [e] = parseEntry("'HEAVISIDE(X)'");
+    const [e] = parseEntry("`HEAVISIDE(X)`");
     assertThrows(
       () => runOp('DERIV', e, Name('X')),
       /unsupported function/i,
@@ -764,27 +764,27 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Positive direct-arg antiderivatives.  Same shape as the existing
   // SIN/COS/EXP/LN cases — u must equal the variable of integration.
   {
-    const [e] = parseEntry("'SINH(X)'");
+    const [e] = parseEntry("`SINH(X)`");
     const out = runOp('INTEG', e, Name('X'));
-    assert(format(out) === "'COSH(X)'",
+    assert(format(out) === "`COSH(X)`",
       `session082: INTEG SINH(X) d/X = COSH(X) (got ${format(out)})`);
   }
   {
-    const [e] = parseEntry("'COSH(X)'");
+    const [e] = parseEntry("`COSH(X)`");
     const out = runOp('INTEG', e, Name('X'));
-    assert(format(out) === "'SINH(X)'",
+    assert(format(out) === "`SINH(X)`",
       `session082: INTEG COSH(X) d/X = SINH(X) (got ${format(out)})`);
   }
   {
     // ∫ ALOG(X) dX = ALOG(X) / LN(10).  simplify() folds LN(10) to
     // the numeric constant 2.302585…  because LN has an eval hook in
     // KNOWN_FUNCTIONS — matches the existing DERIV-of-ALOG behaviour.
-    const [e] = parseEntry("'ALOG(X)'");
+    const [e] = parseEntry("`ALOG(X)`");
     const out = runOp('INTEG', e, Name('X'));
     const f = format(out);
     assert(
-      /^'ALOG\(X\)\/2\.30258509/.test(f)           // folded LN(10)
-      || f === "'ALOG(X)/LN(10)'",                  // if folding disabled
+      /^`ALOG\(X\)\/2\.30258509/.test(f)           // folded LN(10)
+      || f === "`ALOG(X)/LN(10)`",                  // if folding disabled
       `session082: INTEG ALOG(X) d/X = ALOG(X)/LN(10) (got ${f})`);
   }
 
@@ -793,13 +793,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // `INTEG(...,var)` fallback (NOT an error).  Positive: the
   // fallback preserves unknown integrands rather than discarding.
   {
-    const [e] = parseEntry("'TANH(X)'");
+    const [e] = parseEntry("`TANH(X)`");
     const out = runOp('INTEG', e, Name('X'));
     const f = format(out);
     // TANH has no direct-arg antiderivative rule — should bottom out
     // in the `INTEG(TANH(X), X)` fallback so the expression round-
     // trips.  NOT an error.
-    assert(f === "'INTEG(TANH(X),X)'",
+    assert(f === "`INTEG(TANH(X),X)`",
       `session082: INTEG TANH(X) falls back to INTEG(TANH(X),X) (got ${f})`);
   }
 
@@ -808,7 +808,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // earlier sessions.  Included here so Item 2's test block covers
   // both the widening path AND the rejection path.)
   {
-    const [e] = parseEntry("'SINH(X)'");
+    const [e] = parseEntry("`SINH(X)`");
     assertThrows(
       () => runOp('INTEG', e, Real(7)),
       /Bad argument type/i,
@@ -836,16 +836,16 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     ['SIGN(SIGN(X))',   'SIGN(X)'],
   ];
   for (const [src, expected] of IDEMP) {
-    const [e] = parseEntry(`'${src}'`);
+    const [e] = parseEntry(`\`${src}\``);
     const out = runOp('COLLECT', e);
     const f = format(out);
-    assert(f === `'${expected}'`,
+    assert(f === `\`${expected}\``,
       `session082: COLLECT '${src}' → '${expected}' (got ${f})`);
   }
 
   // FP of any integer-producing rounder = 0.  The post-simplify AST
   // is `Num(0)`; how it renders depends on whether the Symbolic
-  // survives (Num wrapped in Symbolic prints as "'0'") or whether
+  // survives (Num wrapped in Symbolic prints as "`0`") or whether
   // COLLECT unwraps to a bare numeric (prints as "0").
   const FP_OF_INT = [
     ['FP(FLOOR(X))'],
@@ -853,12 +853,12 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     ['FP(IP(X))'],
   ];
   for (const [src] of FP_OF_INT) {
-    const [e] = parseEntry(`'${src}'`);
+    const [e] = parseEntry(`\`${src}\``);
     const out = runOp('COLLECT', e);
     const f = format(out);
     // Accept either Symbolic-wrapped or unwrapped 0 — both mean the
     // user sees a zero on the stack.
-    assert(f === "'0'" || f === '0' || f === '0.',
+    assert(f === "`0`" || f === '0' || f === '0.',
       `session082: COLLECT '${src}' → 0 (got ${f})`);
   }
 
@@ -873,10 +873,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     ['CEIL(IP(X))',    'IP(X)'],
   ];
   for (const [src, expected] of CROSS) {
-    const [e] = parseEntry(`'${src}'`);
+    const [e] = parseEntry(`\`${src}\``);
     const out = runOp('COLLECT', e);
     const f = format(out);
-    assert(f === `'${expected}'`,
+    assert(f === `\`${expected}\``,
       `session082: COLLECT '${src}' → '${expected}' (got ${f})`);
   }
 
@@ -884,15 +884,15 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // NOT idempotent (FP result ∈ (-1,1) so FLOOR can still be -1 or 0).
   // simplify must leave these alone rather than over-reduce.
   {
-    const [e] = parseEntry("'FLOOR(FP(X))'");
+    const [e] = parseEntry("`FLOOR(FP(X))`");
     const out = runOp('COLLECT', e);
-    assert(format(out) === "'FLOOR(FP(X))'",
+    assert(format(out) === "`FLOOR(FP(X))`",
       `session082: COLLECT leaves FLOOR(FP(X)) alone (got ${format(out)})`);
   }
   {
-    const [e] = parseEntry("'CEIL(FP(X))'");
+    const [e] = parseEntry("`CEIL(FP(X))`");
     const out = runOp('COLLECT', e);
-    assert(format(out) === "'CEIL(FP(X))'",
+    assert(format(out) === "`CEIL(FP(X))`",
       `session082: COLLECT leaves CEIL(FP(X)) alone (got ${format(out)})`);
   }
 }

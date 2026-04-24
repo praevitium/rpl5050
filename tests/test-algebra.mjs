@@ -175,7 +175,7 @@ import { assert } from './helpers.mjs';
 
 // --- parser.js integration: 'expr' tokens become Symbolic -----------
 {
-  const [v] = parseEntry("'X^2 + 3*X + 1'");
+  const [v] = parseEntry("`X^2 + 3*X + 1`");
   assert(isSymbolic(v), 'parseEntry on algebraic body returns Symbolic');
   assert(formatAlgebra(v.expr) === 'X^2 + 3*X + 1',
          'Symbolic.expr round-trips to original text');
@@ -183,16 +183,16 @@ import { assert } from './helpers.mjs';
 {
   // Bare quoted name 'X' still returns a quoted Name, not a Symbolic —
   // important so STO/RCL/PURGE keep working unchanged.
-  const [v] = parseEntry("'X'");
+  const [v] = parseEntry("`X`");
   assert(isName(v) && v.quoted && v.id === 'X',
-         "parseEntry on bare 'X' returns quoted Name (unchanged)");
+         "parseEntry on bare `X` returns quoted Name (unchanged)");
 }
 {
   // Quoted operator '+' still works as a Name (used by tests around
   // STO of operator names etc.)
-  const [v] = parseEntry("'+'");
+  const [v] = parseEntry("`+`");
   assert(isName(v) && v.quoted && v.id === '+',
-         "parseEntry on '+' returns quoted Name (unchanged)");
+         "parseEntry on `+` returns quoted Name (unchanged)");
 }
 
 // --- DERIV op end-to-end -------------------------------------------
@@ -243,7 +243,7 @@ import { assert } from './helpers.mjs';
   // wrappers so the stack display uses HP50 style.
   const sym = Symbolic(parseAlgebra('2*X + 1'));
   const out = format(sym);
-  assert(out === "'2*X + 1'", `format(Symbolic(2*X+1)) = '${out}'`);
+  assert(out === "`2*X + 1`", `format(Symbolic(2*X+1)) = '${out}'`);
 }
 
 // --- Associativity-aware printing ----------------------------------
@@ -277,7 +277,7 @@ import { assert } from './helpers.mjs';
       s.push(v);
     }
   };
-  entryLoop("'2*X+3' 'X' DERIV");
+  entryLoop("`2*X+3` `X` DERIV");
   assert(s.depth === 1, 'entryLoop leaves a single result');
   const out = s.peek();
   assert(isSymbolic(out) || (isInteger(out) && out.value === 2n) ||
@@ -288,7 +288,7 @@ import { assert } from './helpers.mjs';
   // formatStackTop then renders the Symbolic wrapper — accept either
   // form, but the visible-to-user rendering must say 2.
   const rendered = formatStackTop(out);
-  assert(rendered === "'2'" || rendered === '2' || rendered === "2",
+  assert(rendered === "`2`" || rendered === '2' || rendered === "2",
          `keyboard 'X^2+3*X+1' DERIV renders as '${rendered}'`);
 }
 
@@ -467,7 +467,7 @@ import { assert } from './helpers.mjs';
 {
   // Full round-trip through the outer parser: 'SIN(X)' should land as
   // a Symbolic on the stack.
-  const vals = parseEntry("'SIN(X)'");
+  const vals = parseEntry("`SIN(X)`");
   assert(vals.length === 1 && isSymbolic(vals[0]),
          'parseEntry SIN(X) returns Symbolic');
   const body = formatAlgebra(vals[0].expr);
@@ -1593,15 +1593,15 @@ import { assert } from './helpers.mjs';
   // The outer parser's looksAlgebraic heuristic accepts `=` so an
   // `=`-only body reaches the algebra parser and lands as a Symbolic
   // equation (not a bare Name('X = 3')).
-  const vs = parseEntry("'X = 3'");
+  const vs = parseEntry("`X = 3`");
   assert(vs.length === 1 && isSymbolic(vs[0]),
          `parseEntry('X = 3') produces a Symbolic (got ${JSON.stringify(vs)})`);
   assert(formatAlgebra(vs[0].expr) === 'X = 3',
          `parseEntry('X = 3') round-trips as 'X = 3' (got '${formatAlgebra(vs[0].expr)}')`);
   // End-to-end: typing the equation followed by SUBST substitutes.
   const s = new Stack();
-  for (const v of parseEntry("'X^2 + 1'")) s.push(v);
-  for (const v of parseEntry("'X = 3'")) s.push(v);
+  for (const v of parseEntry("`X^2 + 1`")) s.push(v);
+  for (const v of parseEntry("`X = 3`")) s.push(v);
   lookup('SUBST').fn(s);
   assert(isReal(s.peek()) && s.peek().value === 10,
          `parseEntry → SUBST eqn-form end-to-end: 10 (got ${JSON.stringify(s.peek())})`);
@@ -3803,8 +3803,8 @@ import { assert } from './helpers.mjs';
     const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     const e = new Entry(s);
-    e.type("'X'");   e.enter();
-    e.type("'Y'");   e.enter();
+    e.type("`X`");   e.enter();
+    e.type("`Y`");   e.enter();
     e.execOp('+');
     assert(s.depth === 1 && isSymbolic(s.peek(1)),
       'full keypad flow: X ENTER Y ENTER + produces Symbolic');
@@ -3818,7 +3818,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     const e = new Entry(s);
     e.type('2');     e.enter();
-    e.type("'X'");   e.enter();
+    e.type("`X`");   e.enter();
     e.execOp('*');   // level1 = '2*X'
     e.type('1');     e.enter();
     e.execOp('+');   // level1 = '2*X+1'
@@ -3838,14 +3838,14 @@ import { assert } from './helpers.mjs';
 
     // --- parse inside '…' for every comparison operator ---
     const parseOps = [
-      ["'x<y'",  'x<y'],
-      ["'x>y'",  'x>y'],
-      ["'x=y'",  'x = y'],      // `=` keeps legacy spaced print
-      ["'x≠y'",  'x≠y'],
-      ["'x<=y'", 'x≤y'],         // `<=` normalised to ≤
-      ["'x>=y'", 'x≥y'],
-      ["'x≤y'",  'x≤y'],
-      ["'x≥y'",  'x≥y'],
+      ["`x<y`",  'x<y'],
+      ["`x>y`",  'x>y'],
+      ["`x=y`",  'x = y'],      // `=` keeps legacy spaced print
+      ["`x≠y`",  'x≠y'],
+      ["`x<=y`", 'x≤y'],         // `<=` normalised to ≤
+      ["`x>=y`", 'x≥y'],
+      ["`x≤y`",  'x≤y'],
+      ["`x≥y`",  'x≥y'],
     ];
     for (const [src, expected] of parseOps) {
       const vs = parseEntry(src);
@@ -3942,8 +3942,8 @@ import { assert } from './helpers.mjs';
       const { Entry } = await import('../www/src/ui/entry.js');
       const s = new Stack();
       const e = new Entry(s);
-      e.type("'x'");   e.enter();
-      e.type("'y'");   e.enter();
+      e.type("`x`");   e.enter();
+      e.type("`y`");   e.enter();
       e.execOp('>');
       assert(s.depth === 1 && s.peek(1).type === TYPES.SYMBOLIC,
         `'x' ENTER 'y' ENTER > → Symbolic`);
@@ -4148,12 +4148,12 @@ import { assert } from './helpers.mjs';
     resetHome();
     setApproxMode(true);
     assert(getApproxMode() === true, 'default/APPROX: flag is true');
-    assert(evalExpr("'SQRT(2)'") === '1.41421356237',
-      `APPROX: SQRT(2) folds to decimal — got ${evalExpr("'SQRT(2)'")}`);
-    assert(evalExpr("'SQRT(9)'") === '3.',
-      `APPROX: SQRT(9) folds to 3. — got ${evalExpr("'SQRT(9)'")}`);
-    assert(evalExpr("'LN(2)'").startsWith('0.69314'),
-      `APPROX: LN(2) folds to decimal — got ${evalExpr("'LN(2)'")}`);
+    assert(evalExpr("`SQRT(2)`") === '1.41421356237',
+      `APPROX: SQRT(2) folds to decimal — got ${evalExpr("`SQRT(2)`")}`);
+    assert(evalExpr("`SQRT(9)`") === '3.',
+      `APPROX: SQRT(9) folds to 3. — got ${evalExpr("`SQRT(9)`")}`);
+    assert(evalExpr("`LN(2)`").startsWith('0.69314'),
+      `APPROX: LN(2) folds to decimal — got ${evalExpr("`LN(2)`")}`);
   }
 
   // ---- EXACT mode keeps non-integer results symbolic ----
@@ -4162,18 +4162,18 @@ import { assert } from './helpers.mjs';
     setApproxMode(false);
     assert(getApproxMode() === false, 'EXACT: flag is false after setApproxMode(false)');
     // Integer-in, integer-out: still folds.
-    assert(evalExpr("'SQRT(9)'") === '3.',
-      `EXACT: SQRT(9) still folds to 3. — got ${evalExpr("'SQRT(9)'")}`);
-    assert(evalExpr("'LN(1)'") === '0.',
-      `EXACT: LN(1) still folds to 0. — got ${evalExpr("'LN(1)'")}`);
+    assert(evalExpr("`SQRT(9)`") === '3.',
+      `EXACT: SQRT(9) still folds to 3. — got ${evalExpr("`SQRT(9)`")}`);
+    assert(evalExpr("`LN(1)`") === '0.',
+      `EXACT: LN(1) still folds to 0. — got ${evalExpr("`LN(1)`")}`);
     // Integer-in, non-integer-out: stays symbolic.
-    assert(evalExpr("'SQRT(2)'") === "'SQRT(2)'",
-      `EXACT: SQRT(2) stays symbolic — got ${evalExpr("'SQRT(2)'")}`);
-    assert(evalExpr("'LN(2)'") === "'LN(2)'",
-      `EXACT: LN(2) stays symbolic — got ${evalExpr("'LN(2)'")}`);
+    assert(evalExpr("`SQRT(2)`") === "`SQRT(2)`",
+      `EXACT: SQRT(2) stays symbolic — got ${evalExpr("`SQRT(2)`")}`);
+    assert(evalExpr("`LN(2)`") === "`LN(2)`",
+      `EXACT: LN(2) stays symbolic — got ${evalExpr("`LN(2)`")}`);
     // Non-integer-in: stays symbolic regardless of result.
-    assert(evalExpr("'SQRT(0.25)'") === "'SQRT(0.25)'",
-      `EXACT: SQRT(0.25) stays symbolic — got ${evalExpr("'SQRT(0.25)'")}`);
+    assert(evalExpr("`SQRT(0.25)`") === "`SQRT(0.25)`",
+      `EXACT: SQRT(0.25) stays symbolic — got ${evalExpr("`SQRT(0.25)`")}`);
   }
 
   // ---- toggleApproxMode flips the flag ----
@@ -4203,7 +4203,7 @@ import { assert } from './helpers.mjs';
     // Start in EXACT.  `'SQRT(2)' EVAL` would stay symbolic;
     // `'SQRT(2)' →NUM` must fold to the decimal.
     const s = new Stack();
-    for (const v of parseEntry("'SQRT(2)'")) s.push(v);
+    for (const v of parseEntry("`SQRT(2)`")) s.push(v);
     lookup('→NUM').fn(s, null);
     const top = formatStackTop(s.peek());
     assert(top === '1.41421356237',
@@ -4235,7 +4235,7 @@ import { assert } from './helpers.mjs';
     resetHome();
     setApproxMode(false);
     const s = new Stack();
-    for (const v of parseEntry("'SQRT(4)'")) s.push(v);
+    for (const v of parseEntry("`SQRT(4)`")) s.push(v);
     lookup('->NUM').fn(s, null);
     assert(formatStackTop(s.peek()) === '2.',
       `->NUM ASCII alias folds SQRT(4) → 2. — got ${formatStackTop(s.peek())}`);
@@ -4263,19 +4263,19 @@ import { assert } from './helpers.mjs';
   const { getApproxMode } = await import('../www/src/rpl/state.js');
   // --- parser recognizes pure-numeric tick-strings as Symbolic ------
   {
-    const toks = parseEntry("'1/3'");
+    const toks = parseEntry("`1/3`");
     assert(toks.length === 1 && isSymbolic(toks[0]),
            `session041: '1/3' parses as Symbolic — got ${JSON.stringify(toks[0])}`);
   }
   {
-    const toks = parseEntry("'2^0.5'");
+    const toks = parseEntry("`2^0.5`");
     assert(toks.length === 1 && isSymbolic(toks[0]),
            `session041: '2^0.5' parses as Symbolic`);
   }
   {
     // Bare operator ticks still fall through to Name via the
     // parseAlgebra try/catch — `'+'` is not a legal algebraic form.
-    const toks = parseEntry("'+'");
+    const toks = parseEntry("`+`");
     assert(toks.length === 1 && isName(toks[0]) && toks[0].id === '+' && toks[0].quoted === true,
            `session041: '+' still falls back to a quoted Name`);
   }
@@ -4290,28 +4290,28 @@ import { assert } from './helpers.mjs';
     return { top: s.peek(), approx: getApproxMode() };
   }
   {
-    const { top, approx } = runNum("'1/3'");
+    const { top, approx } = runNum("`1/3`");
     assert(isReal(top) && Math.abs(top.value - 1/3) < 1e-12,
            `session041: EXACT '1/3' →NUM folds to 0.3333… — got ${formatStackTop(top)}`);
-    assert(approx === false, "session041: →NUM restored EXACT after '1/3'");
+    assert(approx === false, "session041: →NUM restored EXACT after `1/3`");
   }
   {
-    const { top } = runNum("'2^0.5'");
+    const { top } = runNum("`2^0.5`");
     assert(isReal(top) && Math.abs(top.value - Math.SQRT2) < 1e-12,
            `session041: EXACT '2^0.5' →NUM folds to SQRT(2) — got ${formatStackTop(top)}`);
   }
   {
-    const { top } = runNum("'PI'");
+    const { top } = runNum("`PI`");
     assert(isReal(top) && Math.abs(top.value - Math.PI) < 1e-12,
            `session041: EXACT 'PI' →NUM folds to 3.14159… — got ${formatStackTop(top)}`);
   }
   {
-    const { top } = runNum("'PI+1'");
+    const { top } = runNum("`PI+1`");
     assert(isReal(top) && Math.abs(top.value - (Math.PI + 1)) < 1e-12,
            `session041: EXACT 'PI+1' →NUM folds — got ${formatStackTop(top)}`);
   }
   {
-    const { top } = runNum("'SIN(PI/4)'");
+    const { top } = runNum("`SIN(PI/4)`");
     setAngle('RAD');                   // in case a previous test changed it
     assert(isReal(top) && Math.abs(top.value - Math.SQRT1_2) < 1e-12,
            `session041: EXACT 'SIN(PI/4)' →NUM folds to √2/2 — got ${formatStackTop(top)}`);
@@ -4328,23 +4328,23 @@ import { assert } from './helpers.mjs';
     return s.peek();
   }
   {
-    const top = runEvalExact("'PI'");
+    const top = runEvalExact("`PI`");
     assert(isName(top) && top.id === 'PI',
            `session041: EXACT 'PI' EVAL stays symbolic — got ${formatStackTop(top)}`);
   }
   {
-    const top = runEvalExact("'1/3'");
+    const top = runEvalExact("`1/3`");
     assert(isSymbolic(top),
            `session041: EXACT '1/3' EVAL stays symbolic — got ${formatStackTop(top)}`);
   }
   {
-    const top = runEvalExact("'2+3'");
+    const top = runEvalExact("`2+3`");
     // Integer-result-from-integer-inputs still folds under EXACT.
     assert(isReal(top) && top.value === 5,
            `session041: EXACT '2+3' EVAL folds to 5. — got ${formatStackTop(top)}`);
   }
   {
-    const top = runEvalExact("'1+0.5'");
+    const top = runEvalExact("`1+0.5`");
     assert(isSymbolic(top),
            `session041: EXACT '1+0.5' EVAL stays symbolic (non-integer input) — got ${formatStackTop(top)}`);
   }

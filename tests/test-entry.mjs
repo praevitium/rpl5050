@@ -43,18 +43,18 @@ import { assert, assertThrows } from './helpers.mjs';
   {
     const e = new Entry(new Stack());
     assert(e.isAlgebraic() === false, 'isAlgebraic empty → false');
-    e.type("'"); assert(e.isAlgebraic() === true, "isAlgebraic after `'` → true");
-    e.type('X'); assert(e.isAlgebraic() === true, "isAlgebraic inside `'X` → true");
-    e.type("'"); assert(e.isAlgebraic() === false, "isAlgebraic after closing `'` → false");
+    e.type("`"); assert(e.isAlgebraic() === true, "isAlgebraic after ``` → true");
+    e.type('X'); assert(e.isAlgebraic() === true, "isAlgebraic inside ``X` → true");
+    e.type("`"); assert(e.isAlgebraic() === false, "isAlgebraic after closing ``` → false");
   }
 
   // typeOrExec — inside `'` it types, outside it execs
   {
     const s = new Stack();
     const e = new Entry(s);
-    e.type("'"); e.type('3');
+    e.type("`"); e.type('3');
     e.typeOrExec('+', '+');
-    assert(e.buffer === "'3+", `typeOrExec in algebraic → buffer='${e.buffer}'`);
+    assert(e.buffer === "`3+", `typeOrExec in algebraic → buffer='${e.buffer}'`);
     assert(s.depth === 0, 'typeOrExec in algebraic → stack untouched');
   }
   {
@@ -69,9 +69,9 @@ import { assert, assertThrows } from './helpers.mjs';
   {
     const s = new Stack();
     const e = new Entry(s);
-    e.type("'"); e.type('X'); e.type('+');
+    e.type("`"); e.type('X'); e.type('+');
     e.typeOrExecFn('SIN');
-    assert(e.buffer === "'X+SIN(", `typeOrExecFn in algebraic → '${e.buffer}'`);
+    assert(e.buffer === "`X+SIN(", `typeOrExecFn in algebraic → '${e.buffer}'`);
   }
   {
     const s = new Stack();
@@ -131,7 +131,7 @@ import { assert, assertThrows } from './helpers.mjs';
   {
     const s = new Stack();
     const e = new Entry(s);
-    e.type("'");
+    e.type("`");
     e.type('X');
     e.typeOrExec('^', '^');   // yˣ while algebraic → types `^`
     e.type('2');
@@ -145,7 +145,7 @@ import { assert, assertThrows } from './helpers.mjs';
     e.typeOrExec('+', '+');
     e.type(' ');
     e.type('1');
-    e.type("'");
+    e.type("`");
     assert(e.isAlgebraic() === false, 'ticks balanced after closing quote');
     e.enter();
     assert(s.depth === 1, `after ENTER: depth=${s.depth}`);
@@ -165,7 +165,7 @@ import { assert, assertThrows } from './helpers.mjs';
     giac._setFixture('factor(X^2+2*X+1)', '(X+1)^2');
     const s = new Stack();
     const e = new Entry(s);
-    for (const ch of "'X^2 + 2*X + 1'") {
+    for (const ch of "`X^2 + 2*X + 1`") {
       if ('+-*/^'.includes(ch)) e.typeOrExec(ch, ch);
       else e.type(ch);
     }
@@ -181,7 +181,7 @@ import { assert, assertThrows } from './helpers.mjs';
   {
     const s = new Stack();
     const e = new Entry(s);
-    for (const ch of "'X^2 - 4' 'X' SOLVE") {
+    for (const ch of "`X^2 - 4` `X` SOLVE") {
       if ('+-*/^'.includes(ch) && e.isAlgebraic()) e.typeOrExec(ch, ch);
       else e.type(ch);
     }
@@ -197,7 +197,7 @@ import { assert, assertThrows } from './helpers.mjs';
   {
     const s = new Stack();
     const e = new Entry(s);
-    for (const ch of "'SIN(X^2)' 'X' DERIV") {
+    for (const ch of "`SIN(X^2)` `X` DERIV") {
       if ('+-*/^'.includes(ch) && e.isAlgebraic()) e.typeOrExec(ch, ch);
       else e.type(ch);
     }
@@ -214,13 +214,13 @@ import { assert, assertThrows } from './helpers.mjs';
   // and verify cursor lands inside the parens.
   {
     const e = new Entry(new Stack());
-    e.type("'");
+    e.type("`");
     // Simulate − shiftL action: typeWithCursor('()', 1)
     e.typeWithCursor('()', 1);
     e.type('X');
     e.type('+');
     e.type('1');
-    assert(e.buffer === "'(X+1)", `nested-paren entry sequence: '${e.buffer}'`);
+    assert(e.buffer === "`(X+1)", `nested-paren entry sequence: '${e.buffer}'`);
   }
 
   // Regression: NON-algebraic use of + / × / yˣ still runs the op

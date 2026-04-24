@@ -756,7 +756,7 @@ import { assert } from './helpers.mjs';
 // `'A+B' OBJ→`  →  'A'  'B'  '+'  3
 {
   const s = new Stack();
-  s.push(parseEntry("'A+B'")[0]);
+  s.push(parseEntry("`A+B`")[0]);
   lookup('OBJ→').fn(s);
   assert(s.depth === 4,
     'session068: OBJ→ on 2-arg Bin leaves 4 items (l, r, op, count)');
@@ -774,7 +774,7 @@ import { assert } from './helpers.mjs';
 // `'3+X' OBJ→`  →  Real(3)  'X'  '+'  3
 {
   const s = new Stack();
-  s.push(parseEntry("'3+X'")[0]);
+  s.push(parseEntry("`3+X`")[0]);
   lookup('OBJ→').fn(s);
   assert(s.depth === 4,
     'session068: OBJ→ on 3+X leaves 4 items');
@@ -789,7 +789,7 @@ import { assert } from './helpers.mjs';
 // `'SIN(X+1)' OBJ→`  →  Symbolic('X+1')  'SIN'  2
 {
   const s = new Stack();
-  s.push(parseEntry("'SIN(X+1)'")[0]);
+  s.push(parseEntry("`SIN(X+1)`")[0]);
   lookup('OBJ→').fn(s);
   assert(s.depth === 3,
     'session068: OBJ→ on a unary Fn leaves 3 items (arg, fn, count)');
@@ -833,7 +833,7 @@ import { assert } from './helpers.mjs';
 // Neg: '-X' OBJ→  →  'X'  'NEG'  2
 {
   const s = new Stack();
-  s.push(parseEntry("'-X'")[0]);
+  s.push(parseEntry("`-X`")[0]);
   lookup('OBJ→').fn(s);
   assert(s.depth === 3,
     'session068: OBJ→ on Neg leaves 3 items');

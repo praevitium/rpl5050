@@ -63,11 +63,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Name('X')); s.push(Name('X'));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, "Name('X') == Name('X')");
+  assert(s.peek().value === 1, "Name(`X`) == Name(`X`)");
   s.clear();
   s.push(Str('foo')); s.push(Str('bar'));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, "'foo' != 'bar'");
+  assert(s.peek().value === 0, "`foo` != `bar`");
 }
 
 // Logical ops
@@ -392,8 +392,8 @@ import { assert, assertThrows } from './helpers.mjs';
    `_astStructEqual` over the AST; uses a properly-shaped parser AST
    (via parseEntry — parser emits `{kind,...}`). */
 {
-  const [symA] = parseEntry("'A+B'");
-  const [symB] = parseEntry("'A+B'");
+  const [symA] = parseEntry("`A+B`");
+  const [symB] = parseEntry("`A+B`");
   const s = new Stack();
   s.push(symA); s.push(symB);
   lookup('SAME').fn(s);
@@ -526,49 +526,49 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 /* ---- Symbolic == Symbolic and SAME ---- */
 {
-  const [a] = parseEntry("'X+Y'");
-  const [b] = parseEntry("'X+Y'");
+  const [a] = parseEntry("`X+Y`");
+  const [b] = parseEntry("`X+Y`");
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 1, "session072: 'X+Y' == 'X+Y' = 1");
+  assert(s.peek().value === 1, "session072: `X+Y` == `X+Y` = 1");
 }
 {
   // Subtly different operand order — structural compare is order-sensitive.
-  const [a] = parseEntry("'X+Y'");
-  const [b] = parseEntry("'Y+X'");
+  const [a] = parseEntry("`X+Y`");
+  const [b] = parseEntry("`Y+X`");
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
   assert(s.peek().value === 0,
-    "session072: 'X+Y' == 'Y+X' = 0 (commutativity is a CAS concern, not ==)");
+    "session072: `X+Y` == `Y+X` = 0 (commutativity is a CAS concern, not ==)");
 }
 {
   // Symbolic fn calls.
-  const [a] = parseEntry("'SIN(X)'");
-  const [b] = parseEntry("'SIN(X)'");
+  const [a] = parseEntry("`SIN(X)`");
+  const [b] = parseEntry("`SIN(X)`");
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('SAME').fn(s);
-  assert(s.peek().value === 1, "session072: SAME 'SIN(X)' 'SIN(X)' = 1");
+  assert(s.peek().value === 1, "session072: SAME `SIN(X)` `SIN(X)` = 1");
 }
 {
   // SIN(X) vs COS(X) — different fn name.
-  const [a] = parseEntry("'SIN(X)'");
-  const [b] = parseEntry("'COS(X)'");
+  const [a] = parseEntry("`SIN(X)`");
+  const [b] = parseEntry("`COS(X)`");
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 0, "session072: 'SIN(X)' == 'COS(X)' = 0 (fn-name differs)");
+  assert(s.peek().value === 0, "session072: `SIN(X)` == `COS(X)` = 0 (fn-name differs)");
 }
 {
   // Nested bin + fn.
-  const [a] = parseEntry("'X^2+SIN(X)'");
-  const [b] = parseEntry("'X^2+SIN(X)'");
+  const [a] = parseEntry("`X^2+SIN(X)`");
+  const [b] = parseEntry("`X^2+SIN(X)`");
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 1, "session072: 'X^2+SIN(X)' structural match");
+  assert(s.peek().value === 1, "session072: `X^2+SIN(X)` structural match");
 }
 /* ---- Tagged == Tagged ---- */
 {
@@ -638,7 +638,7 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   // Symbolic vs Real — cross-type is never equal via == (numeric Real would
   // need to be lifted to symbolic by `+`-family ops, not by ==).
-  const [a] = parseEntry("'X'");
+  const [a] = parseEntry("`X`");
   const s = new Stack();
   s.push(a); s.push(Real(5));
   // Note: `==` does NOT call `_trySymCompare`; it goes straight to
@@ -646,5 +646,5 @@ import { assert, assertThrows } from './helpers.mjs';
   // per the docstring on register('=='): "strict structural equality".
   lookup('==').fn(s);
   assert(s.peek().value === 0,
-    "session072: 'X' == 5 = 0 (== is strictly structural, no symbolic lift)");
+    "session072: `X` == 5 = 0 (== is strictly structural, no symbolic lift)");
 }

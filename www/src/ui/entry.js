@@ -59,30 +59,31 @@ export class Entry {
     this._emit();
   }
 
-  /** True when the buffer has an unclosed tick-quote — i.e. the cursor
+  /** True when the buffer has an unclosed backtick-quote — i.e. the cursor
    *  is inside an algebraic expression.  Used to route operator keys
    *  (+, -, *, /, ^) through type() instead of execOp() so the user
-   *  can actually spell out `'X^2 + 2*X + 1'` on the keypad.
+   *  can actually spell out ``X^2 + 2*X + 1`` on the keypad.
    *
-   *  Counts apostrophes literally; there's no tick-escaping syntax
-   *  (parseEntry uses balanced ticks).  Odd count → we're inside a
-   *  quote; even → we're outside.
+   *  Counts backticks literally; there's no escape syntax (parseEntry
+   *  uses balanced backticks).  Odd count → we're inside a quote;
+   *  even → we're outside.
    */
   isAlgebraic() {
     let count = 0;
-    for (const ch of this.buffer) if (ch === "'") count++;
+    for (const ch of this.buffer) if (ch === '`') count++;
     return (count % 2) === 1;
   }
 
   /** True when the user has started composing a command line — either
-   *  anything is already in the buffer, or a tick is open.  The key
+   *  anything is already in the buffer, or a backtick is open.  The key
    *  dispatchers below use this to decide whether a command key types
    *  its name (editing → build text) or runs the op (stack-direct).
    *
-   *  Rationale: pressing `'` is the canonical "start edit mode" gesture
-   *  on HP50 because it opens an algebraic expression that accepts
-   *  operator keys as text.  This build extends the same rule to any
-   *  content in the buffer so `3 5 +` (typed) builds a program
+   *  Rationale: pressing the backtick key is the canonical "start edit
+   *  mode" gesture (this app's remap of the HP50 tick key) — it opens an
+   *  algebraic expression that accepts operator keys as text.  This
+   *  build extends the same rule to any content in the buffer so `3 5 +`
+   *  (typed) builds a program
    *  fragment, and so key presses during editing never silently
    *  commit-and-execute a half-finished line. */
   isEditing() {
@@ -109,9 +110,9 @@ export class Entry {
   }
 
   /** Function-key dispatcher (SIN, COS, LN, SQRT, …).  Three cases:
-   *    - Inside an unclosed tick (algebraic entry): type `FN(` so the
+   *    - Inside an unclosed backtick (algebraic entry): type `FN(` so the
    *      expression reads like textbook math.
-   *    - Editing but outside a tick (bare RPN): type `FN ` — a
+   *    - Editing but outside a backtick (bare RPN): type `FN ` — a
    *      whitespace-separated token that parses to a Name reference
    *      and composes cleanly with the rest of the buffer.  If the
    *      char before the cursor isn't whitespace, prefix a space too

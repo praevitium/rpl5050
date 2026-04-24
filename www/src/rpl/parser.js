@@ -10,7 +10,7 @@
      - binary integers                #FFh, #1010b, #777o, #255d
      - parenthesised complex          (re,im)
      - string literals                "hello"
-     - bare identifiers               X, 'Y'
+     - bare identifiers               X, `Y`
      - lists                          { 1 2 3 }
      - programs                       << 1 2 + >>   (stored as tokens)
      - vectors                        [ 1 2 3 ]
@@ -128,11 +128,13 @@ export function tokenize(src) {
       i = j; continue;
     }
 
-    // Tick for algebraic/name — 'X'.  Unterminated tick → accept
-    // whatever is typed so far as the quoted body.
-    if (c === "'") {
+    // Backtick for algebraic/name — `X`.  Unterminated backtick → accept
+    // whatever is typed so far as the quoted body.  (The HP50 uses `'` for
+    // this role; we remap to backtick so a literal apostrophe can be typed
+    // as an ordinary character.)
+    if (c === '`') {
       let j = i + 1, sym = '';
-      while (j < n && src[j] !== "'") sym += src[j++];
+      while (j < n && src[j] !== '`') sym += src[j++];
       tokens.push({ kind: 'quotedName', text: sym });
       i = (j < n) ? j + 1 : n; continue;
     }
@@ -151,7 +153,7 @@ export function tokenize(src) {
       if (i < n && src[i] === '_') {
         i++;                                  // consume the '_'
         let j = i;
-        while (j < n && !isSpace(src[j]) && !'{}[]"\''.includes(src[j])) j++;
+        while (j < n && !isSpace(src[j]) && !'{}[]"`'.includes(src[j])) j++;
         tokens.push({ kind: 'unit', numText: m[0], unitText: src.slice(i, j) });
         i = j; continue;
       }
@@ -161,7 +163,7 @@ export function tokenize(src) {
 
     // Identifier / operator token — run until whitespace or delimiter
     let j = i;
-    while (j < n && !isSpace(src[j]) && !'{}[]"\''.includes(src[j])) j++;
+    while (j < n && !isSpace(src[j]) && !'{}[]"`'.includes(src[j])) j++;
     tokens.push({ kind: 'ident', text: src.slice(i, j) });
     i = j;
   }
@@ -242,22 +244,22 @@ export function parseEntry(src) {
       }
 
       case 'quotedName': {
-        // A tick-quoted atom can be either:
-        //   - a bare variable reference:   'X'        → Name('X', quoted)
-        //   - an operator name:            '+'        → Name('+', quoted)
-        //   - an algebraic expression:     'X^2 + 1'  → Symbolic(ast)
-        //   - a pure-numeric algebra form: '1/3'      → Symbolic(ast)
+        // A backtick-quoted atom can be either:
+        //   - a bare variable reference:   `X`        → Name('X', quoted)
+        //   - an operator name:            `+`        → Name('+', quoted)
+        //   - an algebraic expression:     `X^2 + 1`  → Symbolic(ast)
+        //   - a pure-numeric algebra form: `1/3`      → Symbolic(ast)
         // Heuristic: if the body contains any algebra token (+ - * / ^
         // ( ) = ≠ < > ≤ ≥), try the algebra parser.  If that fails,
-        // fall back to Name so forms like `'+'` (bare operator tick)
-        // still round-trip as a Name.
+        // fall back to Name so forms like `+` (bare operator) still
+        // round-trip as a Name.
         const body = t.text;
-        // Include comparison operators (≠, <, >, ≤, ≥) so `'x<y'` and
+        // Include comparison operators (≠, <, >, ≤, ≥) so `x<y` and
         // friends are parsed as symbolic inequalities rather than falling
-        // through to Name.  Purely numeric algebra — '1/3', '2^0.5' —
+        // through to Name.  Purely numeric algebra — `1/3`, `2^0.5` —
         // also becomes Symbolic rather than a Name.  This is what makes
-        // `'1/3' →NUM` fold under APPROX and stay exact under EXACT.
-        // Bare operator atoms like `'+'` fall through to Name via the
+        // ``1/3` →NUM`` fold under APPROX and stay exact under EXACT.
+        // Bare operator atoms like `+` fall through to Name via the
         // parseAlgebra try/catch.
         const looksAlgebraic =
           /[+\-*/^()=≠<>≤≥]/.test(body);
@@ -269,7 +271,7 @@ export function parseEntry(src) {
             // tokens working even if they look algebraic at a glance.
           }
         }
-        // Literal name reference — never auto-evaluated.  The `quoted`
+        // Literal name reference — never auto-evaluated.  The quoted
         // flag tells EVAL and the entry loop to push this back instead
         // of looking it up.
         return Name(body, { quoted: true });

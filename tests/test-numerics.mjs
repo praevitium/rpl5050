@@ -2288,7 +2288,7 @@ setAngle('rad');
 
 /* ---- FLOOR / CEIL on Symbolic round-trips through entry parser ---- */
 {
-  const parsed = parseEntry("'FLOOR(X+1)'");
+  const parsed = parseEntry("`FLOOR(X+1)`");
   const s = new Stack();
   // parseEntry returns an array of stack-push items.
   for (const item of parsed) s.push(item);
@@ -2550,7 +2550,7 @@ setAngle('rad');
 
 /* ---- Symbolic round-trip through entry parser for new KNOWN_FUNCTIONS ---- */
 {
-  const parsed = parseEntry("'MIN(X,3)'");
+  const parsed = parseEntry("`MIN(X,3)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -2558,7 +2558,7 @@ setAngle('rad');
     'session062: MIN(X,3) parses as Symbolic(MIN(…))');
 }
 {
-  const parsed = parseEntry("'MOD(X,2)'");
+  const parsed = parseEntry("`MOD(X,2)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -2566,7 +2566,7 @@ setAngle('rad');
     'session062: MOD(X,2) parses as Symbolic(MOD(…))');
 }
 {
-  const parsed = parseEntry("'SIGN(X)'");
+  const parsed = parseEntry("`SIGN(X)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -2923,7 +2923,7 @@ setAngle('RAD');
 
 /* ---- Symbolic round-trip: FACT(X) parses through entry line ---- */
 {
-  const parsed = parseEntry("'FACT(X)'");
+  const parsed = parseEntry("`FACT(X)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -3020,7 +3020,7 @@ setAngle('RAD');
 }
 {
   // GCD symbolic round-trip through the entry parser.
-  const parsed = parseEntry("'GCD(M,N)'");
+  const parsed = parseEntry("`GCD(M,N)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -3250,7 +3250,7 @@ setAngle('RAD');
 }
 {
   // Symbolic round-trip through parseEntry.
-  const parsed = parseEntry("'COMB(N,K)'");
+  const parsed = parseEntry("`COMB(N,K)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -4041,7 +4041,7 @@ setAngle('RAD');
 }
 {
   // Parser round-trip: `'GAMMA(X)'` parses to Symbolic.
-  const parsed = parseEntry("'GAMMA(X)'");
+  const parsed = parseEntry("`GAMMA(X)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -4178,7 +4178,7 @@ setAngle('RAD');
 }
 {
   // Parser round-trip for the name form.
-  const parsed = parseEntry("'UTPC(4, 9.49)'");
+  const parsed = parseEntry("`UTPC(4, 9.49)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -4265,7 +4265,7 @@ setAngle('RAD');
 {
   // Parser round-trip for Beta with numeric args — goes through the
   // entry-line parser, lands as a Symbolic.
-  const parsed = parseEntry("'Beta(3, 4)'");
+  const parsed = parseEntry("`Beta(3, 4)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -4341,7 +4341,7 @@ setAngle('RAD');
 }
 {
   // Parser round-trip.
-  const parsed = parseEntry("'erf(X)'");
+  const parsed = parseEntry("`erf(X)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -4486,7 +4486,7 @@ setAngle('RAD');
 }
 {
   // Parser round-trip.
-  const parsed = parseEntry("'UTPF(5, 10, 3.326)'");
+  const parsed = parseEntry("`UTPF(5, 10, 3.326)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -4575,7 +4575,7 @@ setAngle('RAD');
 }
 {
   // Parser round-trip.
-  const parsed = parseEntry("'UTPT(10, 2.228)'");
+  const parsed = parseEntry("`UTPT(10, 2.228)`");
   const s = new Stack();
   for (const item of parsed) s.push(item);
   const v = s.peek();
@@ -4770,7 +4770,7 @@ setAngle('RAD');
 {
   // Symbolic lift still fires when either operand is symbolic.
   const s = new Stack();
-  const [x] = parseEntry("'X'");
+  const [x] = parseEntry("`X`");
   s.push(x); s.push(Real(10));
   lookup('%').fn(s);
   assert(s.peek().type === 'symbolic',

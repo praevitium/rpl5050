@@ -8,13 +8,14 @@
    ================================================================= */
 
 import {
-  Real, Integer, BinaryInteger, Complex, Name, RList, Str, Symbolic,
+  Real, Integer, Rational, BinaryInteger, Complex, Name, RList, Str, Symbolic,
   Vector, Matrix, Tagged, Unit, Program,
-  isReal, isInteger, isBinaryInteger, isComplex, isNumber, isName, isString,
+  isReal, isInteger, isRational, isBinaryInteger, isComplex, isNumber, isName, isString,
   isProgram, isTagged, isList, isSymbolic, isVector, isMatrix, isDirectory,
   isUnit,
   toRealOrThrow, toComplex, promoteNumericPair,
 } from './types.js';
+import { Fraction } from '../vendor/fraction.js/fraction.mjs';
 import {
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
@@ -27,7 +28,6 @@ import {
   evalAst as algebraEvalAst, defaultFnEval as algebraDefaultFnEval,
   expand as algebraExpand,
   simplify as algebraSimplify,
-  factor as algebraFactor,
   subst as algebraSubst,
   collectByVar as algebraCollectByVar,
   solve as algebraSolve,
@@ -35,6 +35,8 @@ import {
   formatAlgebra,
   freeVars as algebraFreeVars,
 } from './algebra.js';
+import { giac } from './cas/giac-engine.mjs';
+import { astToGiac, giacToAst } from './cas/giac-convert.mjs';
 import {
   format as formatValue,
   formatReal, formatBinaryInteger, DEFAULT_DISPLAY,
@@ -327,13 +329,71 @@ function _scalarBinary(op, a, b) {
     return Complex(r.re, r.im);
   }
   if (p.kind === 'integer') {
-    if (op === '/' && !getApproxMode() && p.b !== 0n && p.a % p.b !== 0n) {
-      return Symbolic(AstBin('/', AstNum(Number(p.a)), AstNum(Number(p.b))));
+    // Integer / Integer that doesn't divide evenly promotes to Rational
+    // in EXACT mode (session 092), or to Real in APPROX.  Integer
+    // division that IS exact stays Integer.  All other ops stay on the
+    // BigInt path.
+    if (op === '/' && p.b !== 0n && p.a % p.b !== 0n) {
+      if (getApproxMode()) return Real(Number(p.a) / Number(p.b));
+      return Rational(p.a, p.b);
     }
     const r = integerBinary(op, p.a, p.b);
     return (typeof r === 'bigint') ? Integer(r) : Real(r);
   }
+  if (p.kind === 'rational') {
+    // In APPROX mode, collapse both operands to Real before arithmetic —
+    // the flag says "give me decimals", and a Rational result would
+    // contradict that.  In EXACT mode, arithmetic stays exact.
+    if (getApproxMode()) {
+      const ra = Number(p.a.n) / Number(p.a.d);
+      const rb = Number(p.b.n) / Number(p.b.d);
+      return Real(realBinary(op, ra, rb));
+    }
+    return _rationalBinary(op, p.a, p.b);
+  }
   return Real(realBinary(op, p.a, p.b));
+}
+
+/* -------------------------------------------------------------
+   Rational arithmetic via Fraction.js.
+
+   Inputs `a` and `b` are { n: BigInt, d: BigInt } pairs produced by
+   `toRationalPair` (Integers widen to { n, d:1n } before we get here).
+   We hand them straight to Fraction.js and let it do the heavy lifting
+   — GCD reduction, sign canonicalisation, arbitrary-precision
+   arithmetic.  No fallback path: a Fraction.js runtime error
+   (division by zero, bad input) propagates untouched.
+
+   Result shaping:
+     • a/b with b.d === 1n → emit Integer when the answer is integral,
+       Rational otherwise.  Matches HP50 stack aesthetics: `4 2 /` →
+       Integer(2), `1 3 /` → Rational(1/3).
+     • `^` with non-integer exponent drops to Real (Fraction.js pow
+       rejects irrational exponents, so we convert eagerly).
+   ------------------------------------------------------------- */
+function _rationalBinary(op, a, b) {
+  const fa = new Fraction(a.n, a.d);
+  const fb = new Fraction(b.n, b.d);
+  let r;
+  switch (op) {
+    case '+': r = fa.add(fb); break;
+    case '-': r = fa.sub(fb); break;
+    case '*': r = fa.mul(fb); break;
+    case '/': r = fa.div(fb); break;
+    case '^': {
+      // Fraction.pow only supports rational exponents whose denominator
+      // is 1 (integer exponent) or whose result is representable as a
+      // fraction.  For non-integer exponents we drop to Real; integer
+      // exponents stay exact.
+      if (fb.d === 1n) { r = fa.pow(fb); break; }
+      return Real(Math.pow(Number(fa.s * fa.n) / Number(fa.d),
+                           Number(fb.s * fb.n) / Number(fb.d)));
+    }
+    default: throw new RPLError('Bad argument type');
+  }
+  const signedN = r.s * r.n;
+  if (r.d === 1n) return Integer(signedN);
+  return Rational(signedN, r.d);
 }
 
 /** Types that broadcast as a scalar across a Vector/Matrix. */
@@ -767,6 +827,12 @@ register('NEG', _withTaggedUnary(_withListUnary((s) => {
   if (_isSymOperand(v))  { s.push(Symbolic(AstNeg(_toAst(v)))); return; }
   if (isReal(v))     s.push(Real(-v.value));
   else if (isInteger(v)) s.push(Integer(-v.value));
+  else if (isRational(v)) {
+    // APPROX mode collapses to Real (flag says "decimals"); EXACT stays
+    // exact — negate the numerator only.
+    if (getApproxMode()) s.push(Real(-Number(v.n) / Number(v.d)));
+    else s.push(Rational(-v.n, v.d));
+  }
   else if (isComplex(v)) s.push(Complex(-v.re, -v.im));
   else if (isUnit(v))    s.push(Unit(-v.value, v.uexpr));
   else if (isVector(v))  s.push(Vector(v.items.map(x => _scalarBinary('-', Real(0), x))));
@@ -789,7 +855,21 @@ register('INV', _withTaggedUnary(_withListUnary((s) => {
     s.push(Real(1 / v.value));
   } else if (isInteger(v)) {
     if (v.value === 0n) throw new RPLError('Infinite result');
-    s.push(Real(1 / Number(v.value)));
+    // 1/n: exact Rational in EXACT mode, Real in APPROX mode.
+    // Special case ±1 → ±1 (stay Integer); otherwise 1/n is a proper
+    // fraction.
+    if (getApproxMode()) s.push(Real(1 / Number(v.value)));
+    else if (v.value === 1n || v.value === -1n) s.push(Integer(v.value));
+    else s.push(Rational(1n, v.value));
+  } else if (isRational(v)) {
+    if (v.n === 0n) throw new RPLError('Infinite result');
+    // (a/b)^-1 = b/a.  APPROX collapses to Real.  In EXACT, if |a|==1
+    // the result is integer-valued (d=1) so we emit Integer instead of
+    // Rational(k, 1) for display cleanliness.
+    if (getApproxMode()) s.push(Real(Number(v.d) / Number(v.n)));
+    else if (v.n === 1n)  s.push(Integer(v.d));
+    else if (v.n === -1n) s.push(Integer(-v.d));
+    else                  s.push(Rational(v.d, v.n));
   } else if (isComplex(v)) {
     const d = v.re * v.re + v.im * v.im;
     if (d === 0) throw new RPLError('Infinite result');
@@ -818,6 +898,12 @@ register('ABS', _withTaggedUnary(_withListUnary((s) => {
   if (_isSymOperand(v))  { s.push(Symbolic(AstFn('ABS', [_toAst(v)]))); return; }
   if (isReal(v))    s.push(Real(Math.abs(v.value)));
   else if (isInteger(v)) s.push(Integer(v.value < 0n ? -v.value : v.value));
+  else if (isRational(v)) {
+    // |a/b| = |a|/b (d is always positive by Rational invariant).
+    // APPROX collapses to Real.
+    if (getApproxMode()) s.push(Real(Math.abs(Number(v.n) / Number(v.d))));
+    else s.push(Rational(v.n < 0n ? -v.n : v.n, v.d));
+  }
   else if (isComplex(v)) s.push(Real(Math.hypot(v.re, v.im)));
   else if (isUnit(v))    s.push(Unit(Math.abs(v.value), v.uexpr));
   else if (isVector(v)) {
@@ -846,6 +932,14 @@ register('SQ', _withTaggedUnary(_withListUnary((s) => {             // ^2
   if (_isSymOperand(v))  { s.push(Symbolic(AstBin('^', _toAst(v), AstNum(2)))); return; }
   if (isReal(v))    s.push(Real(v.value * v.value));
   else if (isInteger(v)) s.push(Integer(v.value * v.value));
+  else if (isRational(v)) {
+    // (a/b)^2 = a^2/b^2 — gcd is still 1 (squaring preserves coprime).
+    // Collapse to Real in APPROX; otherwise keep exact.
+    if (getApproxMode()) {
+      const r = Number(v.n) / Number(v.d);
+      s.push(Real(r * r));
+    } else s.push(Rational(v.n * v.n, v.d * v.d));
+  }
   else if (isComplex(v)) s.push(Complex(
     v.re * v.re - v.im * v.im,
     2 * v.re * v.im,
@@ -862,16 +956,61 @@ register('SQRT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstFn('SQRT', [_toAst(v)]))); return; }
   if (isComplex(v) || (isReal(v) && v.value < 0) ||
-      (isInteger(v) && v.value < 0n)) {
+      (isInteger(v) && v.value < 0n) ||
+      (isRational(v) && v.n < 0n)) {
     const c = toComplex(v);
     const r = Math.hypot(c.re, c.im);
     const re = Math.sqrt((r + c.re) / 2);
     const im = Math.sign(c.im || 1) * Math.sqrt((r - c.re) / 2);
     s.push(Complex(re, im));
+  } else if (isRational(v) && !getApproxMode()) {
+    // EXACT mode, non-negative Rational: attempt exact square-root.
+    // Both numerator and denominator must be perfect squares — then
+    // SQRT(a/b) = √a/√b stays a Rational (collapse to Integer when
+    // d=1).  Otherwise fall through to the numeric Real path.
+    const sn = _bigIntIsqrt(v.n);
+    const sd = _bigIntIsqrt(v.d);
+    if (sn !== null && sd !== null) {
+      if (sd === 1n) s.push(Integer(sn));
+      else           s.push(Rational(sn, sd));
+    } else s.push(Real(Math.sqrt(Number(v.n) / Number(v.d))));
+  } else if (isInteger(v) && !getApproxMode()) {
+    // EXACT mode, non-negative Integer: exact sqrt if perfect square,
+    // otherwise Real (HP50 surfaces the numeric value in STD display).
+    const sn = _bigIntIsqrt(v.value);
+    if (sn !== null) s.push(Integer(sn));
+    else             s.push(Real(Math.sqrt(Number(v.value))));
   } else {
     s.push(Real(Math.sqrt(toRealOrThrow(v))));
   }
 }))));
+
+/**
+ * Integer square root for non-negative BigInt.  Returns the exact
+ * BigInt sqrt if `n` is a perfect square, otherwise `null`.  Used by
+ * SQRT's Rational fast-path to keep exactness when both numerator and
+ * denominator are perfect squares (e.g. SQRT(4/9) → 2/3).
+ *
+ * Algorithm: Newton's method on BigInt.  Fast enough for any Rational
+ * the user is realistically going to stack — we're not going to sqrt
+ * a 10000-digit rational without a CAS anyway.
+ */
+function _bigIntIsqrt(n) {
+  if (n < 0n) return null;
+  if (n < 2n) return n;
+  // Initial guess: 2^(ceil(bitlen/2))
+  let x = 1n;
+  const bits = n.toString(2).length;
+  x <<= BigInt((bits + 1) >> 1);
+  // Newton iteration.
+  let prev;
+  do {
+    prev = x;
+    x = (x + n / x) >> 1n;
+  } while (x < prev);
+  // prev is floor(sqrt(n)); check perfect-square.
+  return prev * prev === n ? prev : null;
+}
 
 /* -------------------- unary real helpers --------------------
    `unaryReal(name, fn)` builds an op that evaluates fn(x) on a
@@ -1018,6 +1157,24 @@ register('XROOT', _withListBinary((s) => {
 function _rounderScalar(name, realFn, intFn) {
   return (v) => {
     if (isInteger(v))        return intFn(v);
+    /* Rational: exact rounding via BigInt trunc/mod.  APPROX mode
+       collapses to Real (consistent with the rest of the Rational
+       plumbing — flag -3 says "decimals").  In EXACT mode, FLOOR/
+       CEIL/IP return Integer, FP returns Rational (or Integer 0
+       when the fractional part is zero). */
+    if (isRational(v)) {
+      if (getApproxMode()) return Real(realFn(Number(v.n) / Number(v.d)));
+      const n = v.n, d = v.d;           // d > 0 by Rational invariant
+      const q = n / d;                  // BigInt trunc-toward-zero
+      const r = n % d;                  // remainder, sign follows n
+      if (name === 'FP') {
+        return r === 0n ? Integer(0n) : Rational(r, d);
+      }
+      if (r === 0n)          return Integer(q);
+      if (name === 'IP')     return Integer(q);
+      if (name === 'FLOOR')  return Integer(n < 0n ? q - 1n : q);
+      if (name === 'CEIL')   return Integer(n > 0n ? q + 1n : q);
+    }
     /* BinaryInteger: BinInts are always integer-valued, so rounding is
        a no-op.  HP50 AUR §3 accepts BinInt on FLOOR/CEIL/IP/FP.  FP of
        any integer = 0; preserve base. */
@@ -1058,6 +1215,11 @@ register('SIGN', _withTaggedUnary(_withListUnary((s) => {
   } else if (isInteger(v)) {
     if (v.value === 0n) s.push(Integer(0n));
     else s.push(Integer(v.value > 0n ? 1n : -1n));
+  } else if (isRational(v)) {
+    // d is always positive by invariant, so sign(n/d) = sign(n).
+    // SIGN is already exact-valued (-1, 0, 1), so no APPROX branch.
+    if (v.n === 0n)      s.push(Integer(0n));
+    else                 s.push(Integer(v.n > 0n ? 1n : -1n));
   } else if (isComplex(v)) {
     // Unit vector e^(iθ) — zero input yields 0+0i.
     const mag = Math.hypot(v.re, v.im);
@@ -4263,10 +4425,27 @@ register('COLLECT', (s) => {
    ------------------------------------------------------------------ */
 register('FACTOR', (s) => {
   const v = s.pop();
+
+  // Symbolic input: route to Giac (the new CAS). We convert the AST to
+  // a Giac expression string, call factor(...), then parse Giac's output
+  // back into an AST. No fallback — if Giac isn't ready or the call
+  // errors, the op errors. The legacy algebraFactor path has been retired.
   if (isSymbolic(v)) {
-    s.push(Symbolic(algebraFactor(v.expr)));
+    if (!giac.isReady()) {
+      throw new RPLError('CAS not ready');
+    }
+    const giacExpr = astToGiac(v.expr);
+    const giacResult = giac.caseval(`factor(${giacExpr})`);
+    const ast = giacToAst(giacResult);
+    s.push(Symbolic(ast));
     return;
   }
+
+  // Integer input: keep the native trial-division path. It's fast for
+  // the classroom-calculator range, handles negatives/zero/one/huge-int
+  // edge cases crisply, and doesn't need Giac. (Routing it to Giac would
+  // actually regress — caseval("factor(12)") returns "(2)^2*3" which is
+  // not what HP50 users expect.)
   if (isInteger(v) || (isReal(v) && Number.isInteger(v.value))) {
     const bv = isInteger(v) ? v.value : BigInt(v.value);
     const abs = bv < 0n ? -bv : bv;

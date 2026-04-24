@@ -35,6 +35,7 @@
 export const TYPES = Object.freeze({
   REAL:      'real',
   INTEGER:   'integer',
+  RATIONAL:  'rational',
   BININT:    'binaryInteger',
   COMPLEX:   'complex',
   STRING:    'string',
@@ -65,6 +66,55 @@ export function Real(n) {
 export function Integer(n) {
   const b = typeof n === 'bigint' ? n : BigInt(n);
   return Object.freeze({ type: TYPES.INTEGER, value: b });
+}
+
+/**
+ * A Rational — exact ratio of integers.
+ *
+ * Stored as two BigInts: `n` (numerator, sign-carrying) and `d`
+ * (denominator, always positive, always ≥ 1 after reduction).  Always
+ * in lowest terms — `gcd(|n|, d) === 1n` is an invariant.  `d === 0n`
+ * is rejected at construction ("Division by zero" → RangeError).
+ *
+ * Constructor behavior:
+ *   • Accepts BigInt or Number inputs (Numbers are BigInt-coerced;
+ *     non-integer Numbers throw).
+ *   • Normalizes sign onto `n` (so `Rational(1, -2)` ≡ `Rational(-1, 2)`).
+ *   • Reduces via GCD (so `Rational(4, 6)` → `{ n: 2n, d: 3n }`).
+ *   • Does NOT collapse to Integer on `d === 1n` — callers decide
+ *     whether an integer result should be Integer or Rational.  Op
+ *     handlers (e.g. `+`, `-`, `*`, `/`) typically check `d === 1n`
+ *     after arithmetic and emit Integer in that case, so the user-
+ *     visible stack stays consistent with HP50 semantics (`2 1 /` →
+ *     Integer(2), not Rational(2/1)).
+ *
+ * Arithmetic is performed internally via Fraction.js (vendored at
+ * `src/vendor/fraction.js/`), which is BigInt-backed so a Rational of
+ * arbitrarily large numerator and denominator (e.g. a factorial ratio)
+ * works out of the box.
+ */
+export function Rational(n, d = 1n) {
+  const ni = (typeof n === 'bigint') ? n
+           : (typeof n === 'number' && Number.isInteger(n)) ? BigInt(n)
+           : (() => { throw new TypeError(`Rational numerator must be BigInt or integer Number, got ${typeof n}`); })();
+  const di = (typeof d === 'bigint') ? d
+           : (typeof d === 'number' && Number.isInteger(d)) ? BigInt(d)
+           : (() => { throw new TypeError(`Rational denominator must be BigInt or integer Number, got ${typeof d}`); })();
+  if (di === 0n) throw new RangeError('Division by zero');
+  // Put sign on the numerator; keep denominator strictly positive.
+  let num = ni, den = di;
+  if (den < 0n) { num = -num; den = -den; }
+  // Reduce by GCD.
+  const g = _bigIntGcd(num < 0n ? -num : num, den);
+  num = num / g;
+  den = den / g;
+  return Object.freeze({ type: TYPES.RATIONAL, n: num, d: den });
+}
+
+/** Euclidean GCD on non-negative BigInts. `_bigIntGcd(0n, x)` = x. */
+function _bigIntGcd(a, b) {
+  while (b !== 0n) { [a, b] = [b, a % b]; }
+  return a;
 }
 
 /**
@@ -209,6 +259,7 @@ export function Directory({ name = 'HOME', parent = null, entries = null } = {})
 
 export const isReal     = v => v && v.type === TYPES.REAL;
 export const isInteger  = v => v && v.type === TYPES.INTEGER;
+export const isRational = v => v && v.type === TYPES.RATIONAL;
 export const isBinaryInteger = v => v && v.type === TYPES.BININT;
 export const isComplex  = v => v && v.type === TYPES.COMPLEX;
 export const isString   = v => v && v.type === TYPES.STRING;
@@ -227,7 +278,7 @@ export const isUnit      = v => v && v.type === TYPES.UNIT;
 // (the left operand's base wins) that the default promoteNumericPair
 // doesn't model yet.  Ops that want to accept a BinInt can do so via
 // `isInteger(v) || isBinaryInteger(v)` and call `binIntToBigInt(v)`.
-export const isNumber    = v => isReal(v) || isInteger(v) || isComplex(v);
+export const isNumber    = v => isReal(v) || isInteger(v) || isRational(v) || isComplex(v);
 
 /* ------------------------ numeric coercion helpers ------------------------ */
 
@@ -239,6 +290,7 @@ export const isNumber    = v => isReal(v) || isInteger(v) || isComplex(v);
 export function toRealOrThrow(v) {
   if (isReal(v)) return v.value;
   if (isInteger(v)) return Number(v.value);
+  if (isRational(v)) return Number(v.n) / Number(v.d);
   if (isComplex(v) && v.im === 0) return v.re;
   throw new TypeError(`Bad argument type: expected real, got ${v?.type}`);
 }
@@ -250,12 +302,20 @@ export function toComplex(v) {
   if (isComplex(v)) return { re: v.re, im: v.im };
   if (isReal(v))    return { re: v.value, im: 0 };
   if (isInteger(v)) return { re: Number(v.value), im: 0 };
+  if (isRational(v)) return { re: Number(v.n) / Number(v.d), im: 0 };
   throw new TypeError(`Bad argument type: expected number, got ${v?.type}`);
 }
 
 /**
  * Promote a pair of numeric operands to a common numeric type.
- * Returns { a, b, kind } where kind is 'real' | 'complex' | 'integer'.
+ * Returns { a, b, kind } where kind is 'real' | 'complex' | 'integer'
+ * | 'rational'.
+ *
+ * Promotion lattice (lowest → highest): Integer ⊂ Rational ⊂ Real ⊂ Complex.
+ * A pair of Integers keeps the 'integer' kind for fast BigInt arithmetic.
+ * Rationals promote to 'rational' when paired with Integer or Rational;
+ * mixing with Real pushes to 'real' (the Real is inexact, so Rational's
+ * exactness is already lost).  Mixing with Complex pushes to 'complex'.
  */
 export function promoteNumericPair(a, b) {
   if (isComplex(a) || isComplex(b)) {
@@ -264,9 +324,25 @@ export function promoteNumericPair(a, b) {
   if (isInteger(a) && isInteger(b)) {
     return { a: a.value, b: b.value, kind: 'integer' };
   }
+  if ((isRational(a) || isInteger(a)) && (isRational(b) || isInteger(b))) {
+    return { a: toRationalPair(a), b: toRationalPair(b), kind: 'rational' };
+  }
   return {
     a: toRealOrThrow(a),
     b: toRealOrThrow(b),
     kind: 'real',
   };
+}
+
+/**
+ * Widen an Integer or Rational to the two-BigInt pair { n, d } that
+ * rational arithmetic operates on.  Integer(k) → { n: k, d: 1n }.
+ * Rational passes through its payload.  Throws otherwise — this is a
+ * helper for the 'rational'-kind arithmetic path in promoteNumericPair,
+ * never a general-purpose coercion.
+ */
+export function toRationalPair(v) {
+  if (isRational(v)) return { n: v.n, d: v.d };
+  if (isInteger(v))  return { n: v.value, d: 1n };
+  throw new TypeError(`toRationalPair: expected Integer or Rational, got ${v?.type}`);
 }

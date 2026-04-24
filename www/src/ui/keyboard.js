@@ -175,14 +175,14 @@ export const MAIN_KEYS = [
   // EVAL has no shift-L/R actions — PRG keywords and the char palette
   // both live in the side panel.  Unshifted EVAL runs the EVAL op.
   mk('EVAL',  { alpha: 'N', action: typeExecName('EVAL') }),
-  // ' key — tick quote (primary) plus the two complex / CAS affordances
-  // HP50 prints on the bezel above this key:
+  // ` key — backtick-quote (primary), this app's remap of the HP50 `'`
+  // key.  Backticks open/close algebraic entry; a literal `'` is typed
+  // via the shift-R on the `3` digit key.  Shift affordances stay as
+  // HP50 had them on the original tick key:
   //   shift-L  i   imaginary-unit constant (for Complex literals)
-  //   shift-R  |   the "where" substitution operator (`'X+1 | X=5'`)
-  // Both just type their glyph so they compose with whatever the user
-  // is building in the command line.
-  mk("'",     { alpha: 'O', shiftL: 'i', shiftR: '|',
-                action:       type("'"),
+  //   shift-R  |   the "where" substitution operator (``X+1 | X=5``)
+  mk('`',     { alpha: 'O', shiftL: 'i', shiftR: '|',
+                action:       type('`'),
                 shiftLAction: type('i'),
                 shiftRAction: type('|') }),
   // UNDO / REDO bypass execOp's pre-snap (which would otherwise
@@ -329,12 +329,13 @@ export const MAIN_KEYS = [
   mk('2',  { kind: 'digit', shiftL: '', shiftR: '',
              action: type('2') }),
   // 3 shift-L # types a `#` (binary-literal prefix — the entry parser
-  // already accepts e.g. `#FFh`).  Shift-R was BASE → MODES menu; dropped
-  // since the HEX/DEC/OCT/BIN toggles now surface through the side-panel
-  // Commands tab and the status-line base indicator.
-  mk('3',  { kind: 'digit', shiftL: '#',
+  // already accepts e.g. `#FFh`).  Shift-R `'` types a literal apostrophe
+  // character — freed up because the primary algebraic delimiter is now
+  // the backtick on the `` ` `` key.
+  mk('3',  { kind: 'digit', shiftL: '#', shiftR: "'",
              action:       type('3'),
-             shiftLAction: type('#') }),
+             shiftLAction: type('#'),
+             shiftRAction: type("'") }),
   mk('+',  { shiftL: '{ }', shiftR: '« »',
              action: typeExec('+', '+'),
              shiftLAction: (e) => e.typeWithCursor('{ }', 2),

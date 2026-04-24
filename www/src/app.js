@@ -30,6 +30,7 @@ import {
   loadFromLocalStorage, saveToLocalStorage,
   exportToFile, importFromFile,
 } from './rpl/persist.js';
+import { giac } from './rpl/cas/giac-engine.mjs';
 
 class App {
   constructor() {
@@ -1029,3 +1030,18 @@ function customMenuTarget(item) {
 }
 
 window.__hp50 = new App();
+
+/* ------------------------------------------------------------------
+   Kick off the Giac CAS in the background.  Cold init is ~150 ms
+   (loads /src/vendor/giac/giacwasm.js + giacwasm.wasm and cwraps the
+   caseval bridge).  Fire-and-forget: the UI stays responsive while
+   the WASM fetches, and any CAS-routed op (FACTOR on Symbolic, and
+   the EXPAND/DERIV/INTEG/SOLVE migrations to come) that runs before
+   `giac.isReady()` flips true throws "CAS not ready" per the
+   no-fallback policy — user just presses the op again once init
+   completes.  A visible init error is swallowed to the console for
+   now; a future UI polish pass can annunciate readiness on-screen.
+   ------------------------------------------------------------------ */
+giac.init().catch((e) => {
+  console.error('[giac] init failed:', e);
+});

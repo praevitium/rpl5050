@@ -1266,7 +1266,7 @@ import { assert } from './helpers.mjs';
     s.push(Integer(5n));
     s.push(Integer(2n));
     // Build the program: → a b 'a+b'
-    s.push(parseEntry("<< → a b 'a+b' >>")[0]);
+    s.push(parseEntry("<< → a b `a+b` >>")[0]);
     lookup('EVAL').fn(s);
     assert(s.depth === 1,
       'session068: → with algebraic body leaves a single value on the stack');

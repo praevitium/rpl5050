@@ -274,18 +274,18 @@ import { assert } from './helpers.mjs';
 
 // Parser distinguishes 'X' from X
 {
-  const vs = parseEntry("'X' X");
+  const vs = parseEntry("`X` X");
   assert(vs.length === 2, 'parse emits two tokens');
   assert(isName(vs[0]) && vs[0].id === 'X' && vs[0].quoted === true,
-         "'X' parses to quoted Name");
+         "`X` parses to quoted Name");
   assert(isName(vs[1]) && vs[1].id === 'X' && vs[1].quoted === false,
          'bare X parses to unquoted Name');
 }
 
 // Formatter: quoted Name shows with ticks, unquoted bare
 {
-  assert(format(Name('X', { quoted: true })) === "'X'",
-         "format(quoted Name) === 'X'");
+  assert(format(Name('X', { quoted: true })) === "`X`",
+         "format(quoted Name) === `X`");
   assert(format(Name('X')) === 'X', 'format(bare Name) === X');
 }
 
@@ -328,7 +328,7 @@ import { assert } from './helpers.mjs';
   s.push(Program([Name('+', { quoted: true })]));
   lookup('EVAL').fn(s);
   assert(s.depth === 1 && isName(s.peek()) && s.peek().id === '+' && s.peek().quoted === true,
-         "quoted '+' inside program is pushed, not executed");
+         "quoted `+` inside program is pushed, not executed");
 }
 
 // Program round-trip: << 'X' STO >> with 42 on level 1 stores 42 in X
@@ -340,7 +340,7 @@ import { assert } from './helpers.mjs';
   lookup('EVAL').fn(s);
   assert(s.depth === 0, 'program consumed both operands');
   assert(varRecall('X')?.value === 42n,
-         "<< 'X' STO >> applied to 42 stored Integer(42) in X");
+         "<< `X` STO >> applied to 42 stored Integer(42) in X");
   resetHome();
 }
 
@@ -357,16 +357,16 @@ import { assert } from './helpers.mjs';
       s.push(v);
     }
   };
-  entryLoop("42 'X' STO");
+  entryLoop("42 `X` STO");
   assert(varRecall('X')?.value === 42n,
-         "quoted-aware entry loop: 42 'X' STO stored 42");
-  entryLoop("'X' RCL");
-  assert(s.peek()?.value === 42n, "'X' RCL put 42 on stack");
+         "quoted-aware entry loop: 42 `X` STO stored 42");
+  entryLoop("`X` RCL");
+  assert(s.peek()?.value === 42n, "`X` RCL put 42 on stack");
   // Now verify that typing `'+'` pushes the Name rather than running the op
   s.clear();
-  entryLoop("'+'");
+  entryLoop("`+`");
   assert(s.depth === 1 && isName(s.peek()) && s.peek().id === '+' && s.peek().quoted === true,
-         "typing '+' at the cmdline pushes quoted Name('+'), does not add");
+         "typing `+` at the cmdline pushes quoted Name(`+`), does not add");
   resetHome();
 }
 
@@ -375,7 +375,7 @@ import { assert } from './helpers.mjs';
   resetHome();
   varStore('X', Real(1));            // bind X so we'd notice a wrong lookup
   const s = new Stack();
-  const values = parseEntry("<< 'X' >> EVAL");
+  const values = parseEntry("<< `X` >> EVAL");
   for (const v of values) {
     if (v?.type === 'name' && !v.quoted) {
       const op = lookup(v.id);
@@ -384,7 +384,7 @@ import { assert } from './helpers.mjs';
     s.push(v);
   }
   assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'X' && s.peek().quoted === true,
-         "parsed << 'X' >> EVAL produces quoted Name('X') even with X bound");
+         "parsed << `X` >> EVAL produces quoted Name(`X`) even with X bound");
   resetHome();
 }
 
@@ -393,7 +393,7 @@ import { assert } from './helpers.mjs';
   const p = Program([Name('X', { quoted: true }), Name('+')]);
   // Formatter wraps programs with « … » and joins tokens with spaces.
   // Expect: « 'X' + »
-  assert(format(p) === "« 'X' + »",
+  assert(format(p) === "« `X` + »",
          "format(program) renders quoted + bare names distinctly");
 }
 
@@ -415,14 +415,14 @@ import { assert } from './helpers.mjs';
 
 // Top-level Name: ticks on whether or not quoted
 {
-  assert(formatStackTop(Name('X', { quoted: true })) === "'X'",
-         "formatStackTop(quoted Name) === 'X'");
-  assert(formatStackTop(Name('X')) === "'X'",
-         "formatStackTop(bare Name) === 'X' — stack always ticks");
+  assert(formatStackTop(Name('X', { quoted: true })) === "`X`",
+         "formatStackTop(quoted Name) === `X`");
+  assert(formatStackTop(Name('X')) === "`X`",
+         "formatStackTop(bare Name) === `X` — stack always ticks");
   // Operator names and funny characters still round-trip
-  assert(formatStackTop(Name('+')) === "'+'",
-         "formatStackTop(bare Name('+')) === \"'+'\"");
-  assert(formatStackTop(Name('UNDEFINED_THING')) === "'UNDEFINED_THING'",
+  assert(formatStackTop(Name('+')) === "`+`",
+         "formatStackTop(bare Name(`+`)) === \"`+`\"");
+  assert(formatStackTop(Name('UNDEFINED_THING')) === "`UNDEFINED_THING`",
          "unbound-lookup residue displays with ticks on stack");
 }
 
@@ -457,7 +457,7 @@ import { assert } from './helpers.mjs';
   // But a genuinely-quoted nested Name still ticks — that's a property
   // of the value, not the render context.
   const mixed = RList([Name('X'), Name('Y', { quoted: true })]);
-  assert(formatStackTop(mixed) === "{ X 'Y' }",
+  assert(formatStackTop(mixed) === "{ X `Y` }",
          'formatStackTop(List) preserves per-Name quoted flag');
 }
 
@@ -467,7 +467,7 @@ import { assert } from './helpers.mjs';
   assert(formatStackTop(p) === '« X + »',
          'formatStackTop(Program) shows bare names in program body');
   const p2 = Program([Name('X', { quoted: true }), Name('+')]);
-  assert(formatStackTop(p2) === "« 'X' + »",
+  assert(formatStackTop(p2) === "« `X` + »",
          'formatStackTop(Program) keeps quoted Names quoted in program body');
 }
 
@@ -490,7 +490,7 @@ import { assert } from './helpers.mjs';
   assert(formatStackTop(t) === 'label: Z',
          'formatStackTop(Tagged<Name>) keeps bare name bare inside the payload');
   const t2 = Tagged('label', Name('Z', { quoted: true }));
-  assert(formatStackTop(t2) === "label: 'Z'",
+  assert(formatStackTop(t2) === "label: `Z`",
          'formatStackTop(Tagged<quoted Name>) keeps ticks (per-value)');
 }
 
@@ -498,9 +498,9 @@ import { assert } from './helpers.mjs';
 {
   assert(format(Name('X')) === 'X',
          'format(bare Name) without stack context still renders bare');
-  assert(format(Name('X', { quoted: true })) === "'X'",
+  assert(format(Name('X', { quoted: true })) === "`X`",
          'format(quoted Name) without stack context still ticks');
-  assert(format(Program([Name('X', { quoted: true }), Name('+')])) === "« 'X' + »",
+  assert(format(Program([Name('X', { quoted: true }), Name('+')])) === "« `X` + »",
          'format(Program) regression — quoted + bare mix unchanged');
 }
 

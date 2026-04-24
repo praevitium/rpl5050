@@ -7,7 +7,7 @@
    ================================================================= */
 
 import {
-  TYPES, isReal, isInteger, isBinaryInteger, isComplex, isString,
+  TYPES, isReal, isInteger, isRational, isBinaryInteger, isComplex, isString,
   isName, isList, isVector, isMatrix, isProgram, isTagged, isSymbolic,
   isDirectory, isUnit,
 } from './types.js';
@@ -50,15 +50,16 @@ export function format(v, display = DEFAULT_DISPLAY, options = {}) {
   if (v == null) return '';
   if (isReal(v))    return formatReal(v.value, display);
   if (isInteger(v)) return v.value.toString();
+  if (isRational(v)) return `${v.n.toString()}/${v.d.toString()}`;
   if (isBinaryInteger(v)) return formatBinaryInteger(v);
   if (isComplex(v)) return formatComplex(v, display);
   if (isString(v))  return `"${v.value}"`;
   if (isName(v)) {
     if (v.local)  return `↓${v.id}`;
-    // On a stack level, any Name is a name literal by nature — tick it.
-    // Otherwise, only a quoted Name gets ticks (bare survives inside
+    // On a stack level, any Name is a name literal by nature — backtick it.
+    // Otherwise, only a quoted Name gets backticks (bare survives inside
     // programs, lists, and other internal renderings).
-    if (options.context === 'stack' || v.quoted) return `'${v.id}'`;
+    if (options.context === 'stack' || v.quoted) return `\`${v.id}\``;
     return v.id;
   }
   // Recursive calls deliberately drop the `stack` context — nested
@@ -69,7 +70,7 @@ export function format(v, display = DEFAULT_DISPLAY, options = {}) {
                          r.map(x => format(x, display)).join(' ')).join(' ][ ') + ' ]]';
   if (isProgram(v)) return '« ' + v.tokens.map(x => format(x, display)).join(' ') + ' »';
   if (isTagged(v))  return `${v.tag}: ${format(v.value, display)}`;
-  if (isSymbolic(v))return `'${formatSymbolic(v.expr)}'`;
+  if (isSymbolic(v))return `\`${formatSymbolic(v.expr)}\``;
   if (isDirectory(v)) return `Directory { ${v.name} }`;
   if (isUnit(v)) {
     const num = formatReal(v.value, display);

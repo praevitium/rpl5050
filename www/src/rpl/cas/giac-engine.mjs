@@ -1,128 +1,143 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Giac CAS engine adapter.
+// Giac CAS engine adapter — synchronous main-thread variant.
 //
 // Giac (Bernard Parisse, Institut Fourier) is the CAS we delegate to for
 // FACTOR, EXPAND, DERIV, INTEG, SOLVE, TEXPAND, TLIN, series, limits,
 // and everything else symbolic. This module is the single place the rest
 // of the codebase talks to Giac through.
 //
+// Why main-thread + sync (not a worker):
+//   A Web Worker forces every caseval() call to be a Promise, which means
+//   every op that touches the CAS becomes async, which means the whole
+//   eval loop has to be async-capable. We tried that once (session 092
+//   blanket-async migration) — cascaded into 200 test failures because
+//   each `await` yielded a microtask and every test that asserted stack
+//   state immediately after `lookup('X').fn(s)` tripped on un-settled
+//   state. Premature async is the enemy.
+//
+//   Emscripten's generated caseval is a synchronous C function. Running
+//   Giac on the main thread lets us call it synchronously via ccall, and
+//   the entire FACTOR/EXPAND/etc. pipeline stays a normal sync op.
+//
+//   Cost: heavy CAS calls (e.g. a nasty symbolic integral) block the UI
+//   while running. For a classroom calculator with reasonable inputs
+//   this is fine. If we ever need backgrounding for specific ops, we can
+//   add an opt-in "offload this one call" path via a worker later.
+//
 // Environment handling:
-//   Browser (Tauri webview): the real engine. Loads the Giac WebAssembly
-//     blob in a classic Web Worker (see giac-worker.js) so the UI stays
-//     responsive during init and during heavy calls like integrate().
-//   Node (tests):             a mock engine that returns fixtures the
-//     test sets up via _setFixture(). Real Giac is intentionally not run
-//     in Node — the 12 MB emscripten build is browser-targeted, and the
-//     surface we care about testing in Node is the *adapter* (AST <->
-//     Giac string conversion), not Giac's math itself (that's Giac's
-//     problem and verified by browser-side smoke pages).
+//   Browser (Tauri webview):
+//     - Calls init() to load www/src/vendor/giac/giacwasm.js as a
+//       <script>, wait for emscripten's onRuntimeInitialized, then grab
+//       a synchronous cwrap of caseval.
+//     - After init() resolves, caseval(cmd) returns a string synchronously.
+//   Node (tests):
+//     - Mock engine backed by a fixture map. Real Giac is intentionally
+//       not run in Node — the 12 MB emscripten build is browser-targeted,
+//       and the surface we care about testing in Node is the *adapter*
+//       (AST <-> Giac string conversion), not Giac's math itself.
+//     - caseval is likewise synchronous.
 //
 // Public API:
-//     await giac.init()         // idempotent; resolves once ready
-//     await giac.caseval(cmd)   // run a Giac expression, get its string
-//     await giac.toLatex(expr)  // shortcut: caseval(`latex(${expr})`)
-//
-// All calls are async. Ops that delegate to Giac must return Promises
-// and the eval loop must await them — see ops.js dispatch.
+//     await giac.init()      // idempotent; resolves once ready
+//     giac.isReady()         // boolean — true once init() has resolved
+//     giac.caseval(cmd)      // synchronous; throws if not ready
+//     giac.toLatex(expr)     // shortcut: caseval(`latex(${expr})`)
 
 const isBrowser =
   typeof globalThis !== "undefined" &&
-  typeof globalThis.Worker !== "undefined" &&
+  typeof globalThis.document !== "undefined" &&
   typeof globalThis.window !== "undefined";
 
 /* ------------------------------------------------------------------
-   Browser: worker-based engine.
+   Browser: main-thread synchronous engine.
+
+   Load sequence:
+     1. Install window.Module with locateFile + onRuntimeInitialized.
+     2. <script src="giacwasm.js"> — emscripten sees window.Module and
+        attaches its generated code to it.
+     3. Emscripten loads the .wasm (async network fetch + instantiate).
+     4. onRuntimeInitialized fires; we cwrap caseval; init() resolves.
+     5. Callers now have synchronous giac.caseval(cmd).
+
+   locateFile must return the path to giacwasm.wasm relative to the
+   document. The vendored blob lives at /src/vendor/giac/giacwasm.wasm
+   relative to the served www/ root, so that's the literal URL.
    ------------------------------------------------------------------ */
 
 class BrowserGiacEngine {
   constructor() {
-    this._worker = null;
-    this._ready = null; // Promise<void>
-    this._nextId = 1;
-    this._pending = new Map(); // id -> { resolve, reject }
+    this._ready = null;      // Promise<void> | null
+    this._resolved = false;
+    this._caseval = null;    // sync string -> string, once ready
   }
 
   init() {
     if (this._ready) return this._ready;
     this._ready = new Promise((resolve, reject) => {
-      let workerUrl;
       try {
-        workerUrl = new URL("./giac-worker.js", import.meta.url);
-      } catch (err) {
-        reject(err);
-        return;
+        // Emscripten reads window.Module before giacwasm.js attaches.
+        window.Module = {
+          noExitRuntime: true,
+          print: function (_t) { /* silent; uncomment for debug */ },
+          printErr: function (_t) { /* silent; uncomment for debug */ },
+          locateFile: function (name) {
+            if (name.endsWith(".wasm")) return "/src/vendor/giac/giacwasm.wasm";
+            return name;
+          },
+          onRuntimeInitialized: () => {
+            try {
+              this._caseval = window.Module.cwrap("caseval", "string", ["string"]);
+              this._resolved = true;
+              resolve();
+            } catch (e) {
+              reject(new Error(`Giac cwrap failed: ${(e && e.message) || e}`));
+            }
+          },
+          onAbort: (reason) => {
+            reject(new Error(`Giac aborted: ${(reason && reason.message) || reason}`));
+          },
+        };
+        const script = document.createElement("script");
+        script.src = "/src/vendor/giac/giacwasm.js";
+        script.async = true;
+        script.onerror = () => reject(new Error("Failed to load giacwasm.js"));
+        document.head.appendChild(script);
+      } catch (e) {
+        reject(e);
       }
-      // Classic worker (not { type: 'module' }) so the worker can
-      // importScripts() giacwasm.js directly.
-      this._worker = new Worker(workerUrl);
-      this._worker.onmessage = (e) => {
-        const { type, id, result, error } = e.data || {};
-        if (type === "ready") {
-          resolve();
-          return;
-        }
-        if (type === "init_error") {
-          reject(new Error(`Giac init failed: ${error}`));
-          return;
-        }
-        if (type === "result" || type === "error") {
-          const p = this._pending.get(id);
-          if (!p) return;
-          this._pending.delete(id);
-          if (type === "error") p.reject(new Error(error));
-          else p.resolve(result);
-        }
-      };
-      this._worker.onerror = (err) => {
-        // Reject init if it hasn't resolved yet.
-        reject(new Error(`Giac worker crashed: ${err.message || err}`));
-      };
     });
     return this._ready;
   }
 
-  async caseval(cmd) {
-    await this.init();
+  isReady() {
+    return this._resolved;
+  }
+
+  caseval(cmd) {
+    if (!this._resolved) {
+      throw new Error("Giac not initialized — call await giac.init() first");
+    }
     if (typeof cmd !== "string") {
       throw new TypeError(`giac.caseval: expected string, got ${typeof cmd}`);
     }
-    const id = this._nextId++;
-    return new Promise((resolve, reject) => {
-      this._pending.set(id, { resolve, reject });
-      this._worker.postMessage({ id, cmd });
-    });
+    return this._caseval(cmd);
   }
 
-  async toLatex(expr) {
+  toLatex(expr) {
     return this.caseval(`latex(${expr})`);
-  }
-
-  // Test/debug hook — dispose of the worker. Intentionally not exported
-  // by the default singleton; callers who want it must reach through
-  // `giac._dispose()` deliberately.
-  _dispose() {
-    if (this._worker) {
-      this._worker.terminate();
-      this._worker = null;
-    }
-    this._ready = null;
-    for (const { reject } of this._pending.values()) {
-      reject(new Error("Giac engine disposed"));
-    }
-    this._pending.clear();
   }
 }
 
 /* ------------------------------------------------------------------
-   Node: mock engine for the test suite.
+   Node: mock engine for the test suite. Synchronous by design.
    ------------------------------------------------------------------ */
 
 class MockGiacEngine {
   constructor() {
     this._fixtures = new Map(); // cmd string -> result string | Error
     this._callLog = [];
-    this._defaultThrow = true; // unknown cmd throws by default
+    this._defaultThrow = true;
   }
 
   // --- test helpers (underscore-prefixed; not part of real API) ---
@@ -146,11 +161,15 @@ class MockGiacEngine {
   }
 
   // --- public API ---
-  async init() {
-    /* no-op */
+  init() {
+    return Promise.resolve();
   }
 
-  async caseval(cmd) {
+  isReady() {
+    return true;
+  }
+
+  caseval(cmd) {
     if (typeof cmd !== "string") {
       throw new TypeError(`giac.caseval: expected string, got ${typeof cmd}`);
     }
@@ -168,7 +187,7 @@ class MockGiacEngine {
     return "";
   }
 
-  async toLatex(expr) {
+  toLatex(expr) {
     return this.caseval(`latex(${expr})`);
   }
 }
