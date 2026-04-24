@@ -716,7 +716,7 @@ setBinaryBase(null);
 }
 
 // ------------------------------------------------------------------
-// Session 045: mixed BinInt ↔ Real/Integer arithmetic (HP50 AUR §10.1)
+// Mixed BinInt ↔ Real/Integer arithmetic (HP50 AUR §10.1)
 // ------------------------------------------------------------------
 //
 // When +, -, *, /, ^ receives a BinaryInteger on one side and a
@@ -724,9 +724,9 @@ setBinaryBase(null);
 // (truncate toward zero, mask to STWS) and the op runs as a BinInt
 // op.  The BinInt operand's base is preserved in the result.
 //
-// AND / OR / XOR are NOT modified — they still treat mixed input as
+// AND / OR / XOR are NOT modified — they treat mixed input as
 // 'Bad argument type' (the boolean vs. bitwise distinction lives on
-// a per-op basis, see session 014 registration).
+// a per-op basis).
 
 /* ---- BinInt +/-/*// with Real on the right, base 'h' preserved ---- */
 {
@@ -813,7 +813,7 @@ setBinaryBase(null);
   s.pushMany([BinaryInteger(1n, 'h'), Real(0)]);
   let threw = false;
   try { lookup('AND').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session045: AND of mixed BinInt + Real still errors (unchanged from 044)');
+  assert(threw, 'session045: AND of mixed BinInt + Real still errors');
   resetBinaryState();
 }
 
@@ -842,32 +842,22 @@ setBinaryBase(null);
 }
 
 // ------------------------------------------------------------------
-// End session 045 additions (mixed BinInt arithmetic)
-// ------------------------------------------------------------------
-
-// ------------------------------------------------------------------
-// Session 074 additions — BinaryInteger == / SAME / comparator audit.
+// BinaryInteger == / SAME / comparator audit.
 // HP50 AUR §4-1 and the User Guide's BinInt appendix treat BinInt base
 // as a *display attribute* — arithmetic and equality operate on the
-// masked numeric value, and `==` / `SAME` should therefore return 1 for
-// any two BinInts with the same masked value regardless of stored
-// display base.  They should likewise return 1 for a BinInt vs an
-// Integer / Real with the same numeric value (== is a numeric-identity
-// op, not a type-identity op — that's what SAME is almost-but-not-quite
-// for: SAME on BinInt vs Integer is 0 because the types differ, but
-// SAME on two BinInts at the same value regardless of base is 1).
+// masked numeric value, so `==` / `SAME` return 1 for any two BinInts
+// with the same masked value regardless of stored display base.  They
+// likewise return 1 for a BinInt vs an Integer / Real with the same
+// numeric value (== is a numeric-identity op, not a type-identity op —
+// that's what SAME is almost-but-not-quite for: SAME on BinInt vs
+// Integer is 0 because the types differ, but SAME on two BinInts at
+// the same value regardless of base is 1).
 //
-// Originally written (s074) as a KNOWN GAP cluster with soft asserts —
-// `eqValues()` in `src/rpl/ops.js` had no BinaryInteger branch and
-// `isNumber` deliberately excludes BinInt (types.js L225), so every
-// == / SAME on BinInt fell through to `return false`.  The data-types
-// lane fixed this in session 074 (source-side): eqValues now has a
-// BinInt × BinInt branch (masked against the current wordsize), the
-// `==` / `≠` / `<>` ops do a top-level cross-family coercion so that
-// `#10h == Integer(16)` = 1 while `SAME #10h Integer(16)` stays 0,
-// and `comparePair()` promotes BinInts to Integers for `<` / `>` /
-// `≤` / `≥`.  The session 074 soft asserts below have been hard-
-// flipped accordingly.
+// `eqValues()` in `src/rpl/ops.js` has a BinInt × BinInt branch
+// (masked against the current wordsize); `==` / `≠` / `<>` apply a
+// top-level cross-family coercion so `#10h == Integer(16)` = 1 while
+// `SAME #10h Integer(16)` stays 0; and `comparePair()` promotes
+// BinInts to Integers for `<` / `>` / `≤` / `≥`.
 // ------------------------------------------------------------------
 {
   resetBinaryState();
@@ -1062,6 +1052,3 @@ setBinaryBase(null);
   resetBinaryState();
 }
 
-// ------------------------------------------------------------------
-// End session 074 additions (BinInt == / SAME / comparator audit)
-// ------------------------------------------------------------------
