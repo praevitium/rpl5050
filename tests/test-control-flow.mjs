@@ -945,3 +945,279 @@ import { assert } from './helpers.mjs';
   assert(s.depth === 1 && s.peek().type === 'string' && s.peek().value === 'oops',
     'session053: IFERR traps DOERR; ERRM returns the custom message');
 }
+
+/* ================================================================
+   Session 064 — CASE / THEN / END
+   ================================================================
+
+   Grammar:
+     CASE
+       test1 THEN action1 END
+       test2 THEN action2 END
+       ...
+       [default]
+     END
+
+   Each THEN clause is its own body-END pair; the CASE itself is
+   closed by the trailing outer END.  See runCase in src/rpl/ops.js. */
+
+/* ---- first clause matches — action runs, later clauses skipped ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // << CASE
+  //      1 THEN 111 END
+  //      1 THEN 222 END    ← would also match but should be skipped
+  //      333               ← default, also skipped
+  //    END >>
+  s.push(Program([
+    Name('CASE'),
+    Integer(1n), Name('THEN'), Integer(111n), Name('END'),
+    Integer(1n), Name('THEN'), Integer(222n), Name('END'),
+    Integer(333n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 111n,
+    'session067: CASE first matching clause runs; later clauses skipped');
+}
+
+/* ---- later clause matches — earlier false clauses fall through ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('CASE'),
+    Integer(0n), Name('THEN'), Integer(111n), Name('END'),   // false
+    Integer(1n), Name('THEN'), Integer(222n), Name('END'),   // true
+    Integer(333n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 222n,
+    'session067: CASE second clause runs when first test is false');
+}
+
+/* ---- no clause matches — default runs ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('CASE'),
+    Integer(0n), Name('THEN'), Integer(111n), Name('END'),
+    Integer(0n), Name('THEN'), Integer(222n), Name('END'),
+    Integer(999n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 999n,
+    'session067: CASE default clause runs when no test matches');
+}
+
+/* ---- no match and no default — nothing added ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(42n));                // witness — must survive
+  s.push(Program([
+    Name('CASE'),
+    Integer(0n), Name('THEN'), Integer(111n), Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session067: CASE with no match and no default pushes nothing');
+}
+
+/* ---- empty CASE ( CASE END ) is a no-op ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(7n));
+  s.push(Program([Name('CASE'), Name('END')]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session067: empty CASE is a no-op');
+}
+
+/* ---- CASE matches use full EVAL — Program action runs, non-Program pushes ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('CASE'),
+    Integer(1n), Name('THEN'),
+      Integer(10n), Integer(20n), Name('+'),     // compute 30 inside action
+    Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 30n,
+    'session067: CASE action body supports multi-token expressions (10 20 +)');
+}
+
+/* ---- CASE inside IF — nested blocks ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // << IF 1 THEN
+  //      CASE
+  //        0 THEN 111 END
+  //        1 THEN 222 END
+  //      END
+  //    ELSE 999 END >>
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'),
+      Name('CASE'),
+        Integer(0n), Name('THEN'), Integer(111n), Name('END'),
+        Integer(1n), Name('THEN'), Integer(222n), Name('END'),
+      Name('END'),
+    Name('ELSE'), Integer(999n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 222n,
+    'session067: CASE nested inside IF — inner match wins');
+}
+
+/* ---- IF inside CASE action — nested blocks the other way around ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // << CASE
+  //      1 THEN IF 1 THEN 55 ELSE 66 END END
+  //      7777
+  //    END >>
+  s.push(Program([
+    Name('CASE'),
+    Integer(1n), Name('THEN'),
+      Name('IF'), Integer(1n), Name('THEN'), Integer(55n),
+      Name('ELSE'), Integer(66n), Name('END'),
+    Name('END'),
+    Integer(7777n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 55n,
+    'session067: CASE clause containing IF/ELSE/END — ELSE stays inside clause');
+}
+
+/* ---- nested CASE — inner match does not short-circuit outer ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Outer first clause contains a nested CASE whose own first clause
+  // matches.  After the inner match, the outer's first clause
+  // completes, and the outer short-circuits past its own second clause.
+  // Expected: 77 on the stack (inner match), not 8 (outer default).
+  s.push(Program([
+    Name('CASE'),
+      Integer(1n), Name('THEN'),
+        Name('CASE'),
+          Integer(1n), Name('THEN'), Integer(77n), Name('END'),
+          Integer(88n),
+        Name('END'),
+      Name('END'),
+      Integer(1n), Name('THEN'), Integer(999n), Name('END'),
+    Integer(8n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 77n,
+    'session067: nested CASE: inner match returns to outer short-circuit');
+}
+
+/* ---- CASE without closing outer END is a parse-level incompleteness
+        but runCase throws CASE without END when it falls off ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Force the error by handing a hand-built token stream (parseProgram
+  // auto-closes missing `»` but we want to exercise runCase's own
+  // fallthrough detection).
+  s.push(Program([
+    Name('CASE'),
+    Integer(1n), Name('THEN'), Integer(10n), Name('END'),
+    // deliberately missing outer END
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e.message; }
+  assert(caught && /CASE without END/.test(caught),
+    'session067: CASE without outer END raises a diagnostic');
+}
+
+/* ================================================================
+   ABORT — program-interrupt primitive (session 067)
+   AUR p.1-27.  ABORT stops execution of the currently-running
+   program.  Unlike RPLError, ABORT is *not* catchable by IFERR, and
+   EVAL's snapshot-restore lets it pass through so the stack reflects
+   the state at the abort point, not pre-EVAL.
+   ================================================================ */
+
+// Basic: ABORT inside a program unwinds EVAL and does NOT re-push the
+// Program, so the stack is left with anything ABORT's program pushed
+// before the abort.
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Integer(42n),     // program runs: pushes 42
+    Name('ABORT'),    // then aborts
+    Integer(99n),     // unreachable
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && caught.name === 'RPLAbort',
+    'session067: ABORT inside EVAL propagates an RPLAbort signal');
+  // Stack contents at point of abort are preserved: 42 was pushed
+  // before ABORT ran; 99 was NOT.  The Program itself is consumed.
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session067: ABORT preserves stack state (42 stays, 99 never ran)');
+}
+
+// IFERR cannot trap ABORT — it bubbles straight past the handler.
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('IFERR'),
+      Name('ABORT'),
+    Name('THEN'),
+      Integer(111n),     // trap branch — must NOT run
+    Name('END'),
+    Integer(222n),       // after IFERR — must NOT run either
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && caught.name === 'RPLAbort',
+    'session067: IFERR does NOT catch ABORT (RPLAbort bubbles past)');
+  assert(s.depth === 0,
+    'session067: neither THEN branch nor post-IFERR ran after ABORT');
+}
+
+// ABORT unwinds multiple nested control frames (WHILE inside IF).
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('IF'),
+      Real(1),                          // truthy constant test for IF
+    Name('THEN'),
+      Name('WHILE'),
+        Real(1),                        // infinite-loop test body
+      Name('REPEAT'),
+        Integer(7n),                    // body: push 7
+        Name('ABORT'),                  // then abort from deep inside
+        Integer(999n),                  // unreachable
+      Name('END'),                      // WHILE END
+    Name('END'),                        // IF END
+    Integer(555n),                      // unreachable past the IF
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && caught.name === 'RPLAbort',
+    'session067: ABORT unwinds WHILE-inside-IF cleanly');
+  // The 7 pushed just before ABORT is retained; nothing after ran.
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session067: ABORT preserves values pushed before the abort');
+}

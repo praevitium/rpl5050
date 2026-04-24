@@ -3065,3 +3065,613 @@ setAngle('RAD');
   assert(v && v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'FACT',
     'session063: FACT(X) parses as Symbolic(FACT(…))');
 }
+
+/* ============================================================
+ * Session 064 — type-widening assertions
+ *
+ * Three clusters:
+ *   (a) GCD / LCM — gain Tagged + List + Symbolic/Name.
+ *   (b) % / %T / %CH — gain Tagged + List.
+ *   (c) INV / SQ — gain Tagged (List was already present).
+ *
+ * Every widened cell earns ≥1 positive test.  Rejection tests
+ * pin the HP50 boundaries: GCD still refuses a non-integer
+ * Real, %/%T/%CH still refuse a Complex, INV/SQ still refuse a
+ * String or Program.
+ * ============================================================ */
+
+/* ---- (a) GCD / LCM widening ---- */
+{
+  // Tagged × Real on GCD: unwrap both, drop tag (binary convention).
+  const s = new Stack();
+  s.push(Tagged('num', Integer(12n)));
+  s.push(Integer(18n));
+  lookup('GCD').fn(s);
+  const v = s.peek();
+  assert(v.type === 'integer' && v.value === 6n,
+    'session064: GCD on Tagged × Integer unwraps and drops tag');
+}
+{
+  // List × scalar on GCD distributes element-wise.
+  const s = new Stack();
+  s.push(RList([Integer(12n), Integer(18n), Integer(30n)]));
+  s.push(Integer(6n));
+  lookup('GCD').fn(s);
+  const v = s.peek();
+  assert(v.type === 'list'
+      && v.items.length === 3
+      && v.items[0].value === 6n
+      && v.items[1].value === 6n
+      && v.items[2].value === 6n,
+    'session064: GCD distributes across List × scalar');
+}
+{
+  // List × List on LCM pairs element-wise (same length).
+  const s = new Stack();
+  s.push(RList([Integer(4n), Integer(6n)]));
+  s.push(RList([Integer(6n), Integer(8n)]));
+  lookup('LCM').fn(s);
+  const v = s.peek();
+  assert(v.type === 'list'
+      && v.items.length === 2
+      && v.items[0].value === 12n
+      && v.items[1].value === 24n,
+    'session064: LCM pairs element-wise on List × List');
+}
+{
+  // Name × Name lifts to Symbolic(GCD(M, N)).
+  const s = new Stack();
+  s.push(Name('M', { quoted: true }));
+  s.push(Name('N', { quoted: true }));
+  lookup('GCD').fn(s);
+  const v = s.peek();
+  assert(v && v.type === 'symbolic'
+      && v.expr.kind === 'fn'
+      && v.expr.name === 'GCD',
+    'session064: GCD lifts Name × Name to Symbolic(GCD(…))');
+}
+{
+  // Name × Integer lifts to Symbolic(LCM(X, 6)).
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  s.push(Integer(6n));
+  lookup('LCM').fn(s);
+  const v = s.peek();
+  assert(v && v.type === 'symbolic'
+      && v.expr.kind === 'fn'
+      && v.expr.name === 'LCM'
+      && v.expr.args.length === 2,
+    'session064: LCM lifts Name × Integer to Symbolic(LCM(X, 6))');
+}
+{
+  // Tagged on both sides on LCM: unwrap both, drop tag.
+  const s = new Stack();
+  s.push(Tagged('p', Integer(4n)));
+  s.push(Tagged('q', Integer(6n)));
+  lookup('LCM').fn(s);
+  const v = s.peek();
+  assert(v.type === 'integer' && v.value === 12n,
+    'session064: LCM on Tagged × Tagged drops both tags');
+}
+{
+  // GCD symbolic round-trip through the entry parser.
+  const parsed = parseEntry("'GCD(M,N)'");
+  const s = new Stack();
+  for (const item of parsed) s.push(item);
+  const v = s.peek();
+  assert(v && v.type === 'symbolic'
+      && v.expr.kind === 'fn'
+      && v.expr.name === 'GCD',
+    'session064: GCD(M,N) parses as Symbolic(GCD(…)) (KNOWN_FUNCTIONS)');
+}
+{
+  // Rejection: non-integer Real still throws even with Tagged wrapper.
+  const s = new Stack();
+  s.push(Tagged('x', Real(1.5)));
+  s.push(Integer(3n));
+  let threw = false;
+  try { lookup('GCD').fn(s); }
+  catch (e) { threw = /Bad argument/.test(e.message); }
+  assert(threw,
+    'session064: GCD still rejects non-integer Real inside a Tagged');
+}
+{
+  // Rejection: Complex still rejected even via a List.
+  const s = new Stack();
+  s.push(RList([Complex(1, 2)]));
+  s.push(Integer(3n));
+  let threw = false;
+  try { lookup('GCD').fn(s); }
+  catch (e) { threw = /Bad argument/.test(e.message); }
+  assert(threw,
+    'session064: GCD still rejects Complex element inside a List');
+}
+
+/* ---- (b) % / %T / %CH widening ---- */
+{
+  // Tagged × Real on %: unwrap the tag, compute, drop tag.
+  const s = new Stack();
+  s.push(Tagged('base', Real(200)));
+  s.push(Real(10));
+  lookup('%').fn(s);
+  const v = s.peek();
+  assert(v.type === 'real' && v.value === 20,
+    'session064: % on Tagged × Real unwraps and drops tag');
+}
+{
+  // List × scalar on %T: distribute element-wise.
+  const s = new Stack();
+  s.push(RList([Real(50), Real(100), Real(200)]));
+  s.push(Real(40));
+  lookup('%T').fn(s);
+  const v = s.peek();
+  assert(v.type === 'list'
+      && v.items.length === 3
+      && v.items[0].value === 80
+      && v.items[1].value === 40
+      && v.items[2].value === 20,
+    'session064: %T distributes across List × scalar');
+}
+{
+  // List × List on %CH: element-wise percent change.
+  const s = new Stack();
+  s.push(RList([Real(100), Real(200)]));
+  s.push(RList([Real(125), Real(150)]));
+  lookup('%CH').fn(s);
+  const v = s.peek();
+  assert(v.type === 'list'
+      && v.items.length === 2
+      && v.items[0].value === 25
+      && v.items[1].value === -25,
+    'session064: %CH pairs element-wise on List × List');
+}
+{
+  // Rejection: Complex still thrown for %.
+  const s = new Stack();
+  s.push(Complex(1, 1));
+  s.push(Real(10));
+  let threw = false;
+  try { lookup('%').fn(s); }
+  catch (e) { threw = /Bad argument/.test(e.message); }
+  assert(threw,
+    'session064: % still rejects Complex (scalar-only, no C path)');
+}
+{
+  // Rejection: %T with 0 base still throws Infinite result, even
+  // when the 0 is inside a Tagged wrapper.
+  const s = new Stack();
+  s.push(Tagged('base', Real(0)));
+  s.push(Real(10));
+  let threw = false;
+  try { lookup('%T').fn(s); }
+  catch (e) { threw = /Infinite result/.test(e.message); }
+  assert(threw,
+    'session064: %T on Tagged(0) × Real still throws Infinite result');
+}
+
+/* ---- (c) INV / SQ Tagged transparency ---- */
+{
+  // Tagged Real on INV: unwrap, invert, re-tag.
+  const s = new Stack();
+  s.push(Tagged('r', Real(4)));
+  lookup('INV').fn(s);
+  const v = s.peek();
+  assert(v.type === 'tagged' && v.tag === 'r'
+      && v.value.type === 'real' && v.value.value === 0.25,
+    'session064: INV on Tagged Real preserves the tag');
+}
+{
+  // Tagged Matrix on INV: matrix inverse inside, tag preserved.
+  const s = new Stack();
+  s.push(Tagged('A', Matrix([
+    [Real(1), Real(0)],
+    [Real(0), Real(2)],
+  ])));
+  lookup('INV').fn(s);
+  const v = s.peek();
+  assert(v.type === 'tagged' && v.tag === 'A'
+      && v.value.type === 'matrix'
+      && _approx(v.value.rows[0][0].value, 1)
+      && _approx(v.value.rows[1][1].value, 0.5),
+    'session064: INV on Tagged Matrix preserves tag, computes inverse');
+}
+{
+  // Tagged Real on SQ.
+  const s = new Stack();
+  s.push(Tagged('a', Real(3)));
+  lookup('SQ').fn(s);
+  const v = s.peek();
+  assert(v.type === 'tagged' && v.tag === 'a'
+      && v.value.type === 'real' && v.value.value === 9,
+    'session064: SQ on Tagged Real preserves the tag');
+}
+{
+  // Tagged Complex on SQ.
+  const s = new Stack();
+  s.push(Tagged('z', Complex(1, 2)));
+  lookup('SQ').fn(s);
+  const v = s.peek();
+  assert(v.type === 'tagged' && v.tag === 'z'
+      && v.value.type === 'complex'
+      && v.value.re === -3 && v.value.im === 4,
+    'session064: SQ on Tagged Complex preserves the tag');
+}
+{
+  // Rejection: INV on a String still throws (Tagged wrapper doesn't
+  // invent an inversion rule for non-numeric values).
+  const s = new Stack();
+  s.push(Tagged('note', Str('hi')));
+  let threw = false;
+  try { lookup('INV').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw,
+    'session064: INV on Tagged-of-String still rejects');
+}
+{
+  // Rejection: SQ on a Program still throws.
+  const s = new Stack();
+  s.push(Program([Real(1)]));
+  let threw = false;
+  try { lookup('SQ').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw,
+    'session064: SQ on Program still rejects');
+}
+
+/* ==================================================================
+ * Session 065 — new ops: COMB / PERM / IDIV2 / UTPN
+ *
+ * Each op gets at least one positive test and one rejection path.
+ * Tagged / List wrappers are exercised where they apply to confirm
+ * the wrapper plumbing composes with the new handler.
+ * ================================================================== */
+
+/* ---- COMB: non-negative integer arguments, n ≥ m ---- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  s.push(Integer(3n));
+  lookup('COMB').fn(s);
+  assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 35n,
+    'session065: COMB(7, 3) = 35');
+}
+{
+  // Boundary: C(n, 0) = 1, C(n, n) = 1.
+  const s = new Stack();
+  s.push(Integer(100n));
+  s.push(Integer(0n));
+  lookup('COMB').fn(s);
+  const r = s.pop();
+  assert(isInteger(r) && r.value === 1n, 'session065: COMB(100, 0) = 1');
+
+  s.push(Integer(100n));
+  s.push(Integer(100n));
+  lookup('COMB').fn(s);
+  const r2 = s.pop();
+  assert(isInteger(r2) && r2.value === 1n, 'session065: COMB(100, 100) = 1');
+}
+{
+  // Big: C(40, 20) = 137846528820 — BigInt prevents overflow.
+  const s = new Stack();
+  s.push(Integer(40n));
+  s.push(Integer(20n));
+  lookup('COMB').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === 137846528820n,
+    'session065: COMB(40, 20) exact BigInt (no Number overflow)');
+}
+{
+  // Integer-valued Reals are accepted.
+  const s = new Stack();
+  s.push(Real(6));
+  s.push(Real(2));
+  lookup('COMB').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === 15n,
+    'session065: COMB(6.0, 2.0) = 15 (integer-valued Reals coerce)');
+}
+{
+  // Name × Name lifts to Symbolic.
+  const s = new Stack();
+  s.push(Name('N'));
+  s.push(Name('K'));
+  lookup('COMB').fn(s);
+  const v = s.peek();
+  assert(v && v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'COMB',
+    'session065: COMB(N, K) lifts to Symbolic');
+}
+{
+  // Tagged-transparent: binary ops drop the tag on the result.
+  const s = new Stack();
+  s.push(Tagged('n', Integer(5n)));
+  s.push(Integer(2n));
+  lookup('COMB').fn(s);
+  const v = s.peek();
+  assert(isInteger(v) && v.value === 10n,
+    'session065: COMB on Tagged integer unwraps and drops tag');
+}
+{
+  // List × scalar distributes.
+  const s = new Stack();
+  s.push(RList([Integer(4n), Integer(5n), Integer(6n)]));
+  s.push(Integer(2n));
+  lookup('COMB').fn(s);
+  const v = s.peek();
+  assert(v && v.type === 'list' && v.items.length === 3
+      && v.items[0].value === 6n
+      && v.items[1].value === 10n
+      && v.items[2].value === 15n,
+    'session065: COMB distributes over List × scalar');
+}
+{
+  // Symbolic round-trip through parseEntry.
+  const parsed = parseEntry("'COMB(N,K)'");
+  const s = new Stack();
+  for (const item of parsed) s.push(item);
+  const v = s.peek();
+  assert(v && v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'COMB'
+      && v.expr.args.length === 2,
+    'session065: COMB(N,K) parses via KNOWN_FUNCTIONS');
+}
+{
+  // Rejection: m > n.
+  const s = new Stack();
+  s.push(Integer(3n));
+  s.push(Integer(5n));
+  let threw = false;
+  try { lookup('COMB').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session065: COMB(3, 5) throws Bad argument value (m > n)');
+}
+{
+  // Rejection: negative argument.
+  const s = new Stack();
+  s.push(Integer(-3n));
+  s.push(Integer(2n));
+  let threw = false;
+  try { lookup('COMB').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session065: COMB(-3, 2) throws Bad argument value');
+}
+{
+  // Rejection: non-integer Real.
+  const s = new Stack();
+  s.push(Real(5.5));
+  s.push(Integer(2n));
+  let threw = false;
+  try { lookup('COMB').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session065: COMB(5.5, 2) throws Bad argument value');
+}
+{
+  // Rejection: complex argument → Bad argument type.
+  const s = new Stack();
+  s.push(Complex(2, 1));
+  s.push(Integer(1n));
+  let threw = false;
+  try { lookup('COMB').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session065: COMB((2,1), 1) throws Bad argument type');
+}
+
+/* ---- PERM: n! / (n−m)! ---- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  s.push(Integer(3n));
+  lookup('PERM').fn(s);
+  // P(7, 3) = 7·6·5 = 210.
+  assert(isInteger(s.peek()) && s.peek().value === 210n,
+    'session065: PERM(7, 3) = 210');
+}
+{
+  // P(n, 0) = 1 (empty product).
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(0n));
+  lookup('PERM').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === 1n,
+    'session065: PERM(10, 0) = 1');
+}
+{
+  // P(n, n) = n!
+  const s = new Stack();
+  s.push(Integer(6n));
+  s.push(Integer(6n));
+  lookup('PERM').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === 720n,
+    'session065: PERM(6, 6) = 720 = 6!');
+}
+{
+  // Name × Integer lift.
+  const s = new Stack();
+  s.push(Name('N'));
+  s.push(Integer(2n));
+  lookup('PERM').fn(s);
+  const v = s.peek();
+  assert(v && v.type === 'symbolic' && v.expr.name === 'PERM'
+      && v.expr.args.length === 2,
+    'session065: PERM(N, 2) lifts to Symbolic');
+}
+{
+  // Rejection: m > n.
+  const s = new Stack();
+  s.push(Integer(2n));
+  s.push(Integer(5n));
+  let threw = false;
+  try { lookup('PERM').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session065: PERM(2, 5) throws Bad argument value (m > n)');
+}
+{
+  // Rejection: non-numeric type.
+  const s = new Stack();
+  s.push(Str('five'));
+  s.push(Integer(2n));
+  let threw = false;
+  try { lookup('PERM').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session065: PERM(String, 2) throws Bad argument type');
+}
+
+/* ---- IDIV2: integer quotient + remainder ---- */
+{
+  const s = new Stack();
+  s.push(Integer(17n));
+  s.push(Integer(5n));
+  lookup('IDIV2').fn(s);
+  assert(s.depth === 2,
+    'session065: IDIV2 leaves two results on the stack');
+  const r = s.pop(), q = s.pop();
+  assert(isInteger(q) && q.value === 3n, 'session065: IDIV2(17, 5) quotient = 3');
+  assert(isInteger(r) && r.value === 2n, 'session065: IDIV2(17, 5) remainder = 2');
+}
+{
+  // Negative dividend: truncated division, remainder has sign of dividend.
+  // -17 = (-3) * 5 + (-2).  Not -4 * 5 + 3 (that would be floor-div MOD).
+  const s = new Stack();
+  s.push(Integer(-17n));
+  s.push(Integer(5n));
+  lookup('IDIV2').fn(s);
+  const r = s.pop(), q = s.pop();
+  assert(q.value === -3n, 'session065: IDIV2(-17, 5) quotient = -3 (trunc)');
+  assert(r.value === -2n, 'session065: IDIV2(-17, 5) remainder = -2 (sign of dividend)');
+}
+{
+  // Even division: r = 0, q = a/b.
+  const s = new Stack();
+  s.push(Integer(100n));
+  s.push(Integer(25n));
+  lookup('IDIV2').fn(s);
+  const r = s.pop(), q = s.pop();
+  assert(q.value === 4n && r.value === 0n, 'session065: IDIV2(100, 25) = 4, 0');
+}
+{
+  // Integer-valued Reals accepted.
+  const s = new Stack();
+  s.push(Real(23));
+  s.push(Real(4));
+  lookup('IDIV2').fn(s);
+  const r = s.pop(), q = s.pop();
+  assert(isInteger(q) && q.value === 5n && isInteger(r) && r.value === 3n,
+    'session065: IDIV2(23.0, 4.0) accepts integer-valued Reals');
+}
+{
+  // Rejection: zero divisor → Infinite result.
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(0n));
+  let threw = false;
+  try { lookup('IDIV2').fn(s); }
+  catch (e) { threw = /Infinite result/.test(e.message); }
+  assert(threw, 'session065: IDIV2(10, 0) throws Infinite result');
+}
+{
+  // Rejection: non-integer Real → Bad argument value.
+  const s = new Stack();
+  s.push(Real(7.5));
+  s.push(Integer(2n));
+  let threw = false;
+  try { lookup('IDIV2').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session065: IDIV2(7.5, 2) throws Bad argument value');
+}
+{
+  // Rejection: complex operand → Bad argument type.
+  const s = new Stack();
+  s.push(Complex(3, 2));
+  s.push(Integer(2n));
+  let threw = false;
+  try { lookup('IDIV2').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session065: IDIV2((3,2), 2) throws Bad argument type');
+}
+
+/* ---- UTPN: upper-tail normal probability ---- */
+{
+  // Symmetry: P(X > μ) = 0.5 at the mean.
+  const s = new Stack();
+  s.push(Real(0));       // μ
+  s.push(Real(1));       // σ²
+  s.push(Real(0));       // x
+  lookup('UTPN').fn(s);
+  const v = s.peek();
+  assert(isReal(v) && _approx(v.value, 0.5, 1e-7),
+    'session065: UTPN(0, 1, 0) = 0.5 at the mean');
+}
+{
+  // Standard normal 1-σ tail: P(Z > 1) ≈ 0.158655.
+  const s = new Stack();
+  s.push(Real(0));
+  s.push(Real(1));
+  s.push(Real(1));
+  lookup('UTPN').fn(s);
+  const v = s.peek();
+  assert(_approx(v.value, 0.15865525393145707, 5e-7),
+    'session065: UTPN(0, 1, 1) ≈ 0.158655 (1-σ upper tail)');
+}
+{
+  // Shifted / scaled: N(μ=5, σ²=4), x=9 is 2σ above mean — same as Z=2.
+  // P(Z > 2) ≈ 0.02275.
+  const s = new Stack();
+  s.push(Real(5));
+  s.push(Real(4));
+  s.push(Real(9));
+  lookup('UTPN').fn(s);
+  const v = s.peek();
+  assert(_approx(v.value, 0.02275013194817921, 5e-7),
+    'session065: UTPN(5, 4, 9) ≈ 0.02275 (2-σ upper tail on shifted normal)');
+}
+{
+  // Symmetric lower tail: P(X > −1) = 1 − P(X > 1) = 0.841345.
+  const s = new Stack();
+  s.push(Real(0));
+  s.push(Real(1));
+  s.push(Real(-1));
+  lookup('UTPN').fn(s);
+  const v = s.peek();
+  assert(_approx(v.value, 0.8413447460685429, 5e-7),
+    'session065: UTPN(0, 1, -1) ≈ 0.841345');
+}
+{
+  // Integer arguments accepted on all three slots.
+  const s = new Stack();
+  s.push(Integer(0n));
+  s.push(Integer(1n));
+  s.push(Integer(0n));
+  lookup('UTPN').fn(s);
+  const v = s.peek();
+  assert(isReal(v) && _approx(v.value, 0.5, 1e-7),
+    'session065: UTPN accepts all-Integer args, returns Real');
+}
+{
+  // Rejection: σ² ≤ 0 → Bad argument value (variance must be positive).
+  const s = new Stack();
+  s.push(Real(0));
+  s.push(Real(0));
+  s.push(Real(0));
+  let threw = false;
+  try { lookup('UTPN').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session065: UTPN with σ²=0 throws Bad argument value');
+}
+{
+  // Rejection: σ² < 0.
+  const s = new Stack();
+  s.push(Real(0));
+  s.push(Real(-1));
+  s.push(Real(0));
+  let threw = false;
+  try { lookup('UTPN').fn(s); }
+  catch (e) { threw = /Bad argument value/.test(e.message); }
+  assert(threw, 'session065: UTPN with σ²<0 throws Bad argument value');
+}
+{
+  // Rejection: complex argument → Bad argument type.
+  const s = new Stack();
+  s.push(Real(0));
+  s.push(Real(1));
+  s.push(Complex(1, 1));
+  let threw = false;
+  try { lookup('UTPN').fn(s); }
+  catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session065: UTPN with Complex x throws Bad argument type');
+}

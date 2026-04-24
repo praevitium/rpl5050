@@ -298,3 +298,11 @@ Stack.UNDO_MAX = 100;
 export class RPLError extends Error {
   constructor(msg) { super(msg); this.name = 'RPLError'; }
 }
+
+/* RPLAbort — signal thrown by the ABORT op.  Intentionally *not* a
+ * subclass of RPLError, so the IFERR trap will never catch it.  The
+ * top-level entry-point loop catches it and displays "Abort" on the
+ * status line. */
+export class RPLAbort extends Error {
+  constructor(msg = 'Abort') { super(msg); this.name = 'RPLAbort'; }
+}

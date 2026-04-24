@@ -16,6 +16,9 @@ import './test-lists.mjs';
 import './test-reflection.mjs';
 import './test-units.mjs';
 import './test-ui.mjs';
+import './test-stack-ops.mjs';
+import './test-stats.mjs';
+import './test-arrow-aliases.mjs';
 
 const total = state.passed + state.failed;
 console.log(state.failed === 0

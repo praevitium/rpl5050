@@ -9,7 +9,7 @@
 
 import {
   Real, Integer, BinaryInteger, Complex, Name, RList, Str, Symbolic,
-  Vector, Matrix, Tagged, Unit,
+  Vector, Matrix, Tagged, Unit, Program,
   isReal, isInteger, isBinaryInteger, isComplex, isNumber, isName, isString,
   isProgram, isTagged, isList, isSymbolic, isVector, isMatrix, isDirectory,
   isUnit,
@@ -19,7 +19,7 @@ import {
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
 } from './units.js';
-import { RPLError } from './stack.js';
+import { RPLError, RPLAbort } from './stack.js';
 import {
   deriv as algebraDeriv, integ as algebraInteg,
   Var as AstVar, Num as AstNum,
@@ -713,7 +713,12 @@ register('NEG', _withListUnary((s) => {
   else throw new RPLError('Bad argument type');
 }));
 
-register('INV', _withListUnary((s) => {
+/* Session 064: INV gains Tagged transparency.  The List wrapper was
+   already present (session 036); V/M is NOT element-wise for INV —
+   a Matrix here means "compute the matrix inverse", not "invert each
+   element".  Tagged wraps outside List so `Tagged('M', RList(…))` and
+   `Tagged('M', Matrix(…))` both retag the result. */
+register('INV', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  {
     s.push(Symbolic(AstBin('/', AstNum(1), _toAst(v))));
@@ -743,7 +748,7 @@ register('INV', _withListUnary((s) => {
     if (n === 0) { s.push(v); return; }
     s.push(Matrix(_invMatrixNumeric(v.rows)));
   } else throw new RPLError('Bad argument type');
-}));
+})));
 
 register('ABS', _withListUnary((s) => {
   const v = s.pop();
@@ -769,7 +774,12 @@ register('ABS', _withListUnary((s) => {
   } else throw new RPLError('Bad argument type');
 }));
 
-register('SQ', _withListUnary((s) => {             // ^2
+/* Session 064: SQ gains Tagged transparency.  V/M is NOT wrapped —
+   HP50 SQ on a Vector is `V · V` (dot product, scalar) and on a Matrix
+   is `M · M` (matmul), both handled by the `*` op today; an element-
+   wise wrapper here would silently break that semantic.  See also
+   session 063 next-step notes. */
+register('SQ', _withTaggedUnary(_withListUnary((s) => {             // ^2
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstBin('^', _toAst(v), AstNum(2)))); return; }
   if (isReal(v))    s.push(Real(v.value * v.value));
@@ -780,7 +790,7 @@ register('SQ', _withListUnary((s) => {             // ^2
   ));
   else if (isUnit(v)) s.push(Unit(v.value * v.value, powerUexpr(v.uexpr, 2)));
   else throw new RPLError('Bad argument type');
-}));
+})));
 
 // Session 063: SQRT picks up Tagged transparency and Vector/Matrix
 // element-wise dispatch.  Element-wise on Vector/Matrix is the HP50
@@ -1099,20 +1109,43 @@ function _bigGcd(a, b) {
   while (b !== 0n) { [a, b] = [b, a % b]; }
   return a;
 }
-register('GCD', (s) => {
+/* Session 064: GCD / LCM widen to Tagged + List + Symbolic/Name.
+   Both ops were R/Z-only before.  Now:
+     - `_withTaggedBinary`  — unwrap either/both tags; binary drops tag.
+     - `_withListBinary`    — element-wise distribution (same length
+                              lists pair up; scalar broadcasts).
+     - Sy / N lift          — either operand a Name or Symbolic lifts to
+                              `Symbolic(AstFn('GCD'|'LCM', [a, b]))`.
+                              Polynomial GCD on full symbolic expressions
+                              is CAS work and deliberately deferred; the
+                              lift here gets `'M' 'N' GCD` → `'GCD(M,N)'`
+                              on the stack and round-tripping through
+                              the entry parser via KNOWN_FUNCTIONS.
+   Integer-only rejection for non-integer Real stays — matches HP50. */
+register('GCD', _withTaggedBinary(_withListBinary((s) => {
   const [a, b] = s.popN(2);
+  if (_isSymOperand(a) || _isSymOperand(b)) {
+    const l = _toAst(a); const r = _toAst(b);
+    if (l && r) { s.push(Symbolic(AstFn('GCD', [l, r]))); return; }
+    throw new RPLError('Bad argument type');
+  }
   const ai = _toBigIntOrThrow(a);
   const bi = _toBigIntOrThrow(b);
   s.push(Integer(_bigGcd(ai, bi)));
-});
-register('LCM', (s) => {
+})));
+register('LCM', _withTaggedBinary(_withListBinary((s) => {
   const [a, b] = s.popN(2);
+  if (_isSymOperand(a) || _isSymOperand(b)) {
+    const l = _toAst(a); const r = _toAst(b);
+    if (l && r) { s.push(Symbolic(AstFn('LCM', [l, r]))); return; }
+    throw new RPLError('Bad argument type');
+  }
   const ai = _toBigIntOrThrow(a);
   const bi = _toBigIntOrThrow(b);
   if (ai === 0n || bi === 0n) { s.push(Integer(0n)); return; }
   const g = _bigGcd(ai, bi);
   s.push(Integer(_bigAbs(ai / g * bi)));
-});
+})));
 
 /* ------------------- factorial (session 031) ------------------------
    `n FACT` → n!.  Non-negative Integer input stays exact (BigInt).
@@ -1264,6 +1297,164 @@ function _minMax(s, pick, name) {
 }
 register('MIN', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x <= y, 'MIN'))));
 register('MAX', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x >= y, 'MAX'))));
+
+/* ------------------------------------------------------------------
+   Session 064 — combinatorics + integer div-mod + normal-CDF cluster
+
+   COMB / PERM / IDIV2 / UTPN.  All four were absent from the registry
+   before this session and are commonly-used HP50 ops (COMB and PERM
+   live under the MTH-NUM menu; IDIV2 under MTH-NUM-INTEG; UTPN on the
+   STAT-DIST menu).  Added here rather than in a new file so the
+   Tagged/List wrappers in scope are easy to reuse for the binary ops.
+
+   ─── COMB(n, m) and PERM(n, m) ─────────────────────────────────
+   Stack signature: level 2 = n, level 1 = m.  Both must be
+   non-negative integers with n ≥ m — "Bad argument value" otherwise.
+   Complex / unit / other types raise "Bad argument type".  Name /
+   Symbolic lift to Symbolic(AstFn(...)) so `'N' 'K' COMB` produces
+   `'COMB(N,K)'` on the stack.  Integer-valued Reals are accepted;
+   truly non-integer Real → "Bad argument value".  Tagged transparency
+   and List distribution come in automatically via the wrappers.
+
+   ─── IDIV2(a, b) ────────────────────────────────────────────────
+   Stack signature: level 2 = dividend, level 1 = divisor.  Returns
+   TWO results: level 2 = quotient, level 1 = remainder, with
+   a = q·b + r and r having the sign of the dividend (truncated
+   division — matches HP50 and JS BigInt convention).  Integer-valued
+   only; 0 divisor → "Infinite result".  Not wrapped in List/Tagged —
+   the two-output stack effect doesn't compose with those wrappers.
+
+   ─── UTPN(μ, σ², x) ─────────────────────────────────────────────
+   Upper-tail normal probability: P(X > x) for X ~ Normal(μ, σ²).
+   Stack (top-down): level 3 = μ, level 2 = σ², level 1 = x.
+   Computed as 0.5·erfc((x − μ) / (σ·√2)) where σ = √σ².  σ² must
+   be strictly positive — "Bad argument value" otherwise.  Real /
+   Integer arguments only ("Bad argument type" for Complex, Unit,
+   Name/Symbolic — no symbolic lift yet for 3-arg stats ops).
+   ------------------------------------------------------------------ */
+
+/** Parse a (Real | Integer | Symbolic-operand) pair for COMB/PERM.
+ *  Returns { kind: 'sym', expr } for the Name/Symbolic lift path or
+ *  { kind: 'int', n, m } for the numeric path.  Throws on any other
+ *  type or on a non-integer-valued Real. */
+function _combPermArgs(a, b, opName) {
+  if (_isSymOperand(a) || _isSymOperand(b)) {
+    const l = _toAst(a), r = _toAst(b);
+    if (!l || !r) throw new RPLError('Bad argument type');
+    return { kind: 'sym', expr: Symbolic(AstFn(opName, [l, r])) };
+  }
+  if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
+  if (isComplex(a) || isComplex(b)) throw new RPLError('Bad argument type');
+  const toBig = (v) => {
+    if (isInteger(v)) return v.value;
+    // Real is only accepted if integer-valued — COMB/PERM are defined
+    // on the integers; HP50 AUR rejects fractional arguments as "Bad
+    // argument value" rather than coercing via gamma (that's FACT's
+    // job, not COMB's).
+    if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+      throw new RPLError('Bad argument value');
+    }
+    return BigInt(v.value);
+  };
+  return { kind: 'int', n: toBig(a), m: toBig(b) };
+}
+
+register('COMB', _withTaggedBinary(_withListBinary((s) => {
+  const [a, b] = s.popN(2);
+  const args = _combPermArgs(a, b, 'COMB');
+  if (args.kind === 'sym') { s.push(args.expr); return; }
+  const { n, m } = args;
+  if (n < 0n || m < 0n) throw new RPLError('Bad argument value');
+  if (m > n)             throw new RPLError('Bad argument value');
+  // Compute via the falling-factorial form so intermediates stay
+  // near the final magnitude instead of blowing up into n! first.
+  //   C(n, m) = (n · (n−1) · … · (n−m+1)) / m!
+  let num = 1n, den = 1n;
+  for (let i = 1n; i <= m; i++) { num *= (n - m + i); den *= i; }
+  s.push(Integer(num / den));
+})));
+
+register('PERM', _withTaggedBinary(_withListBinary((s) => {
+  const [a, b] = s.popN(2);
+  const args = _combPermArgs(a, b, 'PERM');
+  if (args.kind === 'sym') { s.push(args.expr); return; }
+  const { n, m } = args;
+  if (n < 0n || m < 0n) throw new RPLError('Bad argument value');
+  if (m > n)             throw new RPLError('Bad argument value');
+  // P(n, m) = n · (n−1) · … · (n−m+1) — m terms, no division needed.
+  let out = 1n;
+  for (let i = 0n; i < m; i++) out *= (n - i);
+  s.push(Integer(out));
+})));
+
+register('IDIV2', (s) => {
+  if (s.depth < 2) throw new RPLError('Too few arguments');
+  const [a, b] = s.popN(2);
+  const toBig = (v) => {
+    if (isInteger(v)) return v.value;
+    if (isReal(v)) {
+      if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+        throw new RPLError('Bad argument value');
+      }
+      return BigInt(v.value);
+    }
+    throw new RPLError('Bad argument type');
+  };
+  const ba = toBig(a), bb = toBig(b);
+  if (bb === 0n) throw new RPLError('Infinite result');
+  // BigInt `/` truncates toward zero; `%` returns the remainder with
+  // the sign of the dividend.  That's exactly the HP50 IDIV2 contract.
+  const q = ba / bb;
+  const r = ba - q * bb;
+  s.push(Integer(q));
+  s.push(Integer(r));
+});
+
+/* Hastings-style Chebyshev approximation for erfc.  Numerical Recipes
+   (Press et al., §6.2) — relative error ≤ 1.2e-7 over the whole real
+   line.  The HP50 STAT-DIST tables are traditionally quoted to 10
+   digits; a tighter approximation (Cheb expansion, 28 coefficients)
+   would match that but would 10× the code with no user-visible gain
+   for the ops here — upgrade is straightforward if a later eval ever
+   needs it. */
+function _erfc(x) {
+  if (!Number.isFinite(x)) return x > 0 ? 0 : 2;
+  const z = Math.abs(x);
+  const t = 2 / (2 + z);
+  const ans = t * Math.exp(
+    -z * z - 1.26551223 +
+    t * (1.00002368 +
+    t * (0.37409196 +
+    t * (0.09678418 +
+    t * (-0.18628806 +
+    t * (0.27886807 +
+    t * (-1.13520398 +
+    t * (1.48851587 +
+    t * (-0.82215223 +
+    t * 0.17087277))))))))
+  );
+  return x >= 0 ? ans : 2 - ans;
+}
+
+register('UTPN', (s) => {
+  if (s.depth < 3) throw new RPLError('Too few arguments');
+  const [mu, var2, x] = s.popN(3);
+  const asReal = (v) => {
+    if (isInteger(v)) return Number(v.value);
+    if (isReal(v))    return v.value;
+    throw new RPLError('Bad argument type');
+  };
+  const m = asReal(mu);
+  const V = asReal(var2);
+  const X = asReal(x);
+  if (!(V > 0) || !Number.isFinite(V)) {
+    // σ² ≤ 0 or non-finite — a variance must be strictly positive.
+    throw new RPLError('Bad argument value');
+  }
+  const sigma = Math.sqrt(V);
+  const zScore = (X - m) / (sigma * Math.SQRT2);
+  s.push(Real(0.5 * _erfc(zScore)));
+});
 
 /* ------------------- angle-mode commands ------------------- */
 register('DEG', () => setAngle('DEG'));
@@ -1493,8 +1684,15 @@ const MAX_EVAL_DEPTH = 256;
    matched by a closer at the same nesting level.  Inner keywords
    (THEN/ELSE/REPEAT/UNTIL) are block-internal separators.  These
    are NOT registered as ops — they're only meaningful while walking
-   a Program's token stream, and are recognized here by name. */
-const CF_OPENERS = new Set(['IF', 'IFERR', 'WHILE', 'DO', 'START', 'FOR']);
+   a Program's token stream, and are recognized here by name.
+   Session 064 added CASE; its inner grammar (clauses of the shape
+   `test THEN action END`, each clause self-delimited by its own END,
+   with one extra outer END closing the CASE itself) is handled by
+   runCase.  CASE is still a CF_OPENER for the purposes of scanAtDepth0
+   so a CASE nested inside another block counts toward that block's
+   depth — but runCase never delegates to scanAtDepth0 across an
+   OUTER boundary; it walks its own token range clause by clause. */
+const CF_OPENERS = new Set(['IF', 'IFERR', 'WHILE', 'DO', 'START', 'FOR', 'CASE']);
 const CF_CLOSERS = new Set(['END', 'NEXT', 'STEP']);
 const CF_INNERS  = new Set(['THEN', 'ELSE', 'REPEAT', 'UNTIL']);
 
@@ -1508,23 +1706,83 @@ function bareNameId(tok) {
  *  returning the first index whose bare-name id appears in `wanted`
  *  OR is a block closer.  Nested opener/closer pairs are skipped.
  *
+ *  CASE is special: unlike IF/WHILE/DO/START/FOR/IFERR which each have
+ *  a single closer, a CASE block contains N+1 depth-0 ENDs (one per
+ *  inner THEN clause plus one outer END closing the CASE itself).  If
+ *  scanAtDepth0 naively incremented/decremented `depth` on CASE, the
+ *  very first inner END would appear to close the CASE — and any
+ *  outer block containing that CASE would then mistake that inner END
+ *  for its OWN closer.  To avoid that, when we encounter CASE we skip
+ *  past the entire CASE (up to and including its outer END) in one
+ *  step via `_skipPastCaseEnd`.
+ *
  *  Returns { idx, kind } or null if we fall off the end. */
 function scanAtDepth0(toks, from, wanted) {
   let depth = 0;
-  for (let i = from; i < toks.length; i++) {
+  let i = from;
+  while (i < toks.length) {
     const id = bareNameId(toks[i]);
-    if (!id) continue;
-    if (CF_OPENERS.has(id)) { depth++; continue; }
+    if (!id) { i++; continue; }
+    if (id === 'CASE') {
+      i = _skipPastCaseEnd(toks, i);
+      continue;
+    }
+    if (CF_OPENERS.has(id)) { depth++; i++; continue; }
     if (CF_CLOSERS.has(id)) {
       if (depth === 0) return { idx: i, kind: id };
       depth--;
+      i++;
       continue;
     }
     if (depth === 0 && wanted && wanted.has(id)) {
       return { idx: i, kind: id };
     }
+    i++;
   }
   return null;
+}
+
+/** Return the index immediately AFTER a CASE's outer END, given the
+ *  index of the `CASE` opener.  Balancing rule:
+ *    - start with pending = 1 (the CASE's own outer END)
+ *    - each depth-0 THEN adds 1 to pending (another inner END coming)
+ *    - each depth-0 END pays off one pending; pending = 0 → outer END
+ *    - other CF openers increment a `nest` counter that is balanced
+ *      by their own closers (and hides their internals from our count)
+ *    - a nested CASE is handled by a recursive call so its own inner
+ *      ENDs don't mistakenly decrement our pending count
+ *  If the token stream ends before pending hits zero, return the end
+ *  of the array so callers can report "CASE without END" cleanly. */
+function _skipPastCaseEnd(toks, caseIdx) {
+  let pending = 1;
+  let nest = 0;
+  let i = caseIdx + 1;
+  while (i < toks.length) {
+    const id = bareNameId(toks[i]);
+    if (id) {
+      if (id === 'CASE') {
+        i = _skipPastCaseEnd(toks, i);
+        continue;
+      }
+      if (CF_OPENERS.has(id)) {
+        nest++;
+      } else if (CF_CLOSERS.has(id)) {
+        if (nest > 0) nest--;
+        else if (id === 'END') {
+          pending--;
+          if (pending === 0) return i + 1;
+        }
+        // NEXT / STEP at nest=0 inside a CASE is a malformed program.
+        // We leave them as a no-op here; runCase's own dispatch will
+        // fall through to the final `CASE without END` if they outnumber
+        // their openers.
+      } else if (nest === 0 && id === 'THEN') {
+        pending++;
+      }
+    }
+    i++;
+  }
+  return toks.length;
 }
 
 /** Evaluate tokens in [from, to) as a flat sequence, respecting any
@@ -1605,8 +1863,117 @@ function runControl(s, toks, i, bound, depth) {
       return runStart(s, toks, i, depth);
     case 'FOR':
       return runFor(s, toks, i, depth);
+    case 'CASE':
+      return runCase(s, toks, i, depth);
   }
   throw new RPLError(`Bad opener: ${opener}`);
+}
+
+/** CASE dispatch:
+ *    CASE
+ *      test1 THEN action1 END
+ *      test2 THEN action2 END
+ *      ...
+ *      [default-action]
+ *    END
+ *
+ *  Semantics (HP50 AUR §21.3):
+ *    - Evaluate each clause's test in turn.
+ *    - The first truthy test runs its action and short-circuits to
+ *      the outer END — remaining clauses are neither tested nor run.
+ *    - If no clause matches, the tokens between the last inner END
+ *      and the outer END form an optional default action and are run.
+ *
+ *  Layout note: CASE is a `CF_OPENER` so `scanAtDepth0` properly
+ *  skips a nested CASE; but runCase's own forward scan must count
+ *  THENs to identify which END is the OUTER one.  The key invariant
+ *  is that each THEN clause is closed by the first END at depth 0,
+ *  and the CASE itself is closed by the END that follows the last
+ *  clause (or the only END when there are no clauses).
+ *
+ *  Our implementation walks clauses linearly:
+ *    - `scanAtDepth0(toks, i, {THEN})` returns either the next THEN
+ *       (a new clause starts here) or the next END at depth 0.  If
+ *       it's END, we're past all clauses — the range [i, endIdx) is
+ *       the default action.  Evaluate it and return `endIdx + 1`.
+ *    - Otherwise we have a THEN; tokens in [i, thenIdx) are the test.
+ *       Evaluate it and pop.  The matching END for this clause is the
+ *       next depth-0 closer.  If the test is truthy, evaluate the
+ *       action range and then scan forward for the OUTER CASE END
+ *       (counting remaining THENs as "pending ENDs").  If false,
+ *       advance past the clause's inner END and loop to the next
+ *       clause. */
+function runCase(s, toks, openIdx, depth) {
+  const bound = toks.length;
+  let i = openIdx + 1;
+
+  while (i < bound) {
+    const scan = scanAtDepth0(toks, i, new Set(['THEN']));
+    if (!scan) throw new RPLError('CASE without END');
+
+    if (scan.kind === 'END') {
+      // No THEN found — the range [i, scan.idx) is the default clause.
+      evalRange(s, toks, i, scan.idx, depth + 1);
+      return scan.idx + 1;
+    }
+
+    if (scan.kind !== 'THEN') {
+      throw new RPLError(`CASE: unexpected ${scan.kind}`);
+    }
+
+    const thenIdx = scan.idx;
+    evalRange(s, toks, i, thenIdx, depth + 1);
+    const test = s.pop();
+
+    const innerEnd = scanAtDepth0(toks, thenIdx + 1, null);
+    if (!innerEnd || innerEnd.kind !== 'END') {
+      throw new RPLError('CASE/THEN without END');
+    }
+    const innerEndIdx = innerEnd.idx;
+
+    if (isTruthy(test)) {
+      evalRange(s, toks, thenIdx + 1, innerEndIdx, depth + 1);
+      // Short-circuit to the outer CASE END.  After the inner END
+      // we've matched one of N+1 depth-0 ENDs (one per clause plus
+      // one for CASE).  `pending` tracks how many depth-0 ENDs we
+      // still need to pass — starts at 1 (the CASE's own END).  Each
+      // remaining THEN we skip adds one pending END (because it
+      // opens a clause that will close with its own END).  Nested
+      // openers (IF, WHILE, ...) are balanced by their own closers
+      // and don't contribute to the pending count.  A nested CASE is
+      // handled by `_skipPastCaseEnd` so its own inner ENDs don't
+      // confuse our counter.
+      let pending = 1;
+      let nest = 0;
+      let j = innerEndIdx + 1;
+      while (j < bound) {
+        const id = bareNameId(toks[j]);
+        if (id) {
+          if (id === 'CASE') {
+            j = _skipPastCaseEnd(toks, j);
+            continue;
+          }
+          if (CF_OPENERS.has(id)) {
+            nest++;
+          } else if (CF_CLOSERS.has(id)) {
+            if (nest > 0) nest--;
+            else if (id === 'END') {
+              pending--;
+              if (pending === 0) return j + 1;
+            }
+          } else if (nest === 0 && id === 'THEN') {
+            pending++;
+          }
+        }
+        j++;
+      }
+      throw new RPLError('CASE without END');
+    }
+
+    // Test was false: skip this clause's action and try the next.
+    i = innerEndIdx + 1;
+  }
+  throw new RPLError('CASE without END');
 }
 
 function runIf(s, toks, openIdx, depth) {
@@ -2107,12 +2474,18 @@ function _angleAwareFnEval(name, args) {
 register('EVAL', (s) => {
   // Snapshot BEFORE the pop so that on error we restore the EVAL'd
   // value too — the user can re-attempt from the same stack state.
+  //
+  // RPLAbort (thrown by ABORT) is deliberately NOT restored: HP50
+  // ABORT preserves stack state at the point of the abort rather than
+  // rewinding to pre-EVAL, so we let the signal pass through
+  // untouched.  The top-level entry-point loop treats it as a clean
+  // program termination.
   const snap = s.save();
   try {
     const v = s.pop();
     _evalValue(s, v, 0);
   } catch (e) {
-    s.restore(snap);
+    if (!(e instanceof RPLAbort)) s.restore(snap);
     throw e;
   }
 });
@@ -3721,9 +4094,16 @@ register('TYPE', (s) => {
      Vector [ x1 … xn ]  → x1 … xn { n }
      Matrix [[...][...]] → x11 x12 … xmn { m n }
      String  "src"       → evaluate src (parse + push each result)
+     Program « t1 … tn » → t1 … tn n          (session 064)
+
+   The Program case (session 064) is the "program-as-data" hook RPL
+   metaprogrammers reach for: `« ... » OBJ→` returns each token (as a
+   stack-pushable value) followed by the integer token count.  The
+   inverse is `→PRG` (see below).  Round-trip is guaranteed for any
+   program token stream since each token is itself a value-type —
+   Names, numbers, strings, nested Programs, etc.
 
    Skipped for this session (callers can ask later):
-     Program   (would flatten tokens)
      Symbolic  (would traverse AST)
      Unit      (needs full Unit support)
    ---------------------------------------------------------------- */
@@ -3764,6 +4144,15 @@ register('OBJ→', (s) => {
     for (const item of parsed) s.push(item);
     return;
   }
+  if (isProgram(v)) {
+    // Session 064: push each token followed by an Integer count.
+    // Matches the List decomposition shape so generic metaprogramming
+    // loops can treat the two symmetrically.  The tokens are already
+    // value-typed (from the parser) so no re-wrapping is needed.
+    for (const tok of v.tokens) s.push(tok);
+    s.push(Integer(BigInt(v.tokens.length)));
+    return;
+  }
   if (isReal(v) || isInteger(v)) {
     // HP50 OBJ→ on a Real pushes the mantissa and the exponent.  For
     // Integer it pushes the same Integer (no decomposition).  We
@@ -3782,6 +4171,46 @@ register('OBJ→', (s) => {
   throw new RPLError('Bad argument type');
 });
 register('OBJ->', (s) => OPS.get('OBJ→').fn(s));
+
+/* ----------------------------------------------------------------
+   →PRG — compose a Program from N level-1 tokens.
+
+   Stack signature:  t1 … tn  n  →  « t1 … tn »
+
+   Inverse of OBJ→ on a Program.  N is an Integer, Real, or
+   BinaryInteger-shaped non-negative count; zero is legal (produces
+   an empty program `« »`).  Any stack value may be a token: the
+   parser emits a flat list of Name / Integer / Real / Complex /
+   Str / RList / Vector / Matrix / Program / Tagged / Symbolic /
+   Unit / BinaryInteger values and any of those can appear in a
+   program body, so we don't validate the token kind here.
+
+   Aliases:
+     →PRG   (canonical, Unicode arrow)
+     ->PRG  (ASCII fallback for keyboards that can't produce →)
+
+   HP50 AUR §21.  Pairs with `→STR` / `STR→` for code-as-data work,
+   and with OBJ→ for metaprogramming loops of the shape
+   `« obj OBJ→ ... transform ... →PRG »`.
+   ---------------------------------------------------------------- */
+function _toCountIdx(v) {
+  if (isInteger(v))              return Number(v.value);
+  if (isBinaryInteger(v))        return Number(v.value);
+  if (isReal(v)) {
+    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
+    return v.value;
+  }
+  throw new RPLError('Bad argument type');
+}
+register('→PRG', (s) => {
+  const cv = s.pop();
+  const n = _toCountIdx(cv);
+  if (n < 0) throw new RPLError('Bad argument value');
+  if (n === 0) { s.push(Program([])); return; }
+  const items = s.popN(n);
+  s.push(Program(items));
+});
+register('->PRG', (s) => OPS.get('→PRG').fn(s));
 
 function _parseStringForObjTo(src) {
   // parseEntry may return a single value, an array, or something
@@ -4747,8 +5176,14 @@ function _percentAst(kind, l, r) {
   /* PCTCH */         return AstBin('/', AstBin('*', AstNum(100),
                           AstBin('-', r, l)), l);
 }
+/* Session 064: the percent family widens from "scalar + Sy/N only" to
+   pick up Tagged transparency and List distribution.  V/M broadcast
+   is intentionally NOT added — HP50 AUR describes %/%T/%CH only for
+   scalar operands; making them broadcast element-wise over a vector
+   would be a unilateral invention.  Complex rejection is preserved
+   (existing behavior — `toRealOrThrow` on Complex throws). */
 function _percentOp(kind, computeNumeric, errorsOnZeroX) {
-  return (s) => {
+  return _withTaggedBinary(_withListBinary((s) => {
     const y = s.pop();
     const x = s.pop();
     if (_isSymOperand(x) || _isSymOperand(y)) {
@@ -4759,7 +5194,7 @@ function _percentOp(kind, computeNumeric, errorsOnZeroX) {
     const yn = toRealOrThrow(y);
     if (errorsOnZeroX && xn === 0) throw new RPLError('Infinite result');
     s.push(Real(computeNumeric(xn, yn)));
-  };
+  }));
 }
 register('%',   _percentOp('PCT',   (x, y) => x * y / 100,          false));
 register('%T',  _percentOp('PCTT',  (x, y) => 100 * y / x,          true));
@@ -8299,6 +8734,25 @@ register('DOERR', (s) => {
     throw new RPLError(msg);
   }
   throw new RPLError('Bad argument type');
+});
+
+/* --------------- ABORT — program-interrupt primitive ---------------
+ * AUR p.1-27.  ABORT unwinds the currently-executing program (all
+ * nested IF/WHILE/CASE/etc frames) without taking any stack argument
+ * and without producing a trappable RPLError — IFERR cannot catch it.
+ *
+ * Implementation: throws an RPLAbort (subclass of Error but NOT
+ * RPLError).  `evalRange`/`runControl` have no try/catch of their own,
+ * so the signal bubbles straight to the outer EVAL, whose snapshot-
+ * restore catch has been taught to let RPLAbort pass through without
+ * restoring — ABORT preserves stack state at the point of the abort,
+ * matching HP50 behavior.  The top-level entry.js safeRun loop treats
+ * RPLAbort as a clean program termination (no `flashError`, no
+ * rollback) — see the EVAL catch below and the entry.js integration
+ * we'll add alongside the UI-side display work.
+ */
+register('ABORT', () => {
+  throw new RPLAbort('Abort');
 });
 
 /* --------------- APPEND — add element to end of a list ---------------

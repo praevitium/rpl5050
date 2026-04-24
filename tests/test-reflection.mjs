@@ -541,3 +541,136 @@ import { assert } from './helpers.mjs';
 // ------------------------------------------------------------------
 // End session 046 LAST/LASTARG additions
 // ------------------------------------------------------------------
+
+/* ================================================================
+   Session 064 — OBJ→ on Program + →PRG (composer)
+   ================================================================
+
+   Covers the new "program-as-data" hook and its inverse:
+     « t1 … tn » OBJ→  →  t1 … tn n
+     t1 … tn n  →PRG  →  « t1 … tn »
+   See src/rpl/ops.js for the implementation and comments. */
+
+/* ---- OBJ→ on a non-empty Program pushes tokens + count ---- */
+{
+  const s = new Stack();
+  // << 3 4 + >> — three tokens
+  s.push(Program([Integer(3n), Integer(4n), Name('+')]));
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 4,
+    'session067: OBJ→ on 3-token Program pushes 3 tokens + count');
+  assert(s.peek(1).type === 'integer' && s.peek(1).value === 3n,
+    'session067: OBJ→ Program level 1 = token count as Integer');
+  assert(s.peek(2).type === 'name' && s.peek(2).id === '+',
+    'session067: OBJ→ Program level 2 = last token (+)');
+  assert(s.peek(4).type === 'integer' && s.peek(4).value === 3n,
+    'session067: OBJ→ Program level 4 = first token (3)');
+}
+
+/* ---- OBJ→ on empty Program pushes just a zero count ---- */
+{
+  const s = new Stack();
+  s.push(Program([]));
+  lookup('OBJ→').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'integer' && s.peek().value === 0n,
+    'session067: OBJ→ on empty Program leaves just 0');
+}
+
+/* ---- →PRG composes a Program from count + tokens ---- */
+{
+  const s = new Stack();
+  s.push(Integer(3n));
+  s.push(Integer(4n));
+  s.push(Name('+'));
+  s.push(Integer(3n));                 // count
+  lookup('→PRG').fn(s);
+  assert(s.depth === 1 && isProgram(s.peek()),
+    'session067: →PRG pops 3 tokens + count, pushes Program');
+  assert(s.peek().tokens.length === 3,
+    'session067: →PRG preserves token count (3)');
+  assert(s.peek().tokens[2].type === 'name' && s.peek().tokens[2].id === '+',
+    'session067: →PRG preserves token order (+ is last)');
+}
+
+/* ---- →PRG with zero count yields an empty program ---- */
+{
+  const s = new Stack();
+  s.push(Integer(0n));
+  lookup('→PRG').fn(s);
+  assert(s.depth === 1 && isProgram(s.peek()) && s.peek().tokens.length === 0,
+    'session067: →PRG with 0 count → empty program');
+}
+
+/* ---- OBJ→ + →PRG round-trip preserves program body ---- */
+{
+  const s = new Stack();
+  // « 2 'X' * 1 + » — five tokens
+  const orig = Program([
+    Integer(2n), Name('X', { quoted: true }), Name('*'),
+    Integer(1n), Name('+'),
+  ]);
+  s.push(orig);
+  lookup('OBJ→').fn(s);
+  lookup('→PRG').fn(s);
+  assert(s.depth === 1 && isProgram(s.peek()),
+    'session067: OBJ→ ⟶ →PRG round-trip still a Program');
+  assert(s.peek().tokens.length === 5,
+    'session067: round-trip preserves token count');
+  // Structural check per-token
+  const after = s.peek().tokens;
+  let allMatch = true;
+  for (let k = 0; k < orig.tokens.length; k++) {
+    const a = orig.tokens[k], b = after[k];
+    if (a.type !== b.type) { allMatch = false; break; }
+    if (a.type === 'integer' && a.value !== b.value) { allMatch = false; break; }
+    if (a.type === 'name' && (a.id !== b.id || !!a.quoted !== !!b.quoted)) {
+      allMatch = false; break;
+    }
+  }
+  assert(allMatch, 'session067: round-trip preserves every token identity');
+}
+
+/* ---- →PRG ASCII alias ->PRG works identically ---- */
+{
+  const s = new Stack();
+  s.push(Integer(42n));
+  s.push(Integer(1n));
+  lookup('->PRG').fn(s);
+  assert(s.depth === 1 && isProgram(s.peek()) && s.peek().tokens.length === 1
+      && s.peek().tokens[0].value === 42n,
+    'session067: ->PRG ASCII alias produces the same Program shape');
+}
+
+/* ---- →PRG on negative count raises Bad argument value ---- */
+{
+  const s = new Stack();
+  s.push(Integer(-1n));
+  let caught = null;
+  try { lookup('→PRG').fn(s); } catch (e) { caught = e.message; }
+  assert(caught && /Bad argument value/.test(caught),
+    'session067: →PRG negative count raises Bad argument value');
+}
+
+/* ---- →PRG on a non-numeric count raises Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Name('foo'));
+  let caught = null;
+  try { lookup('→PRG').fn(s); } catch (e) { caught = e.message; }
+  assert(caught && /Bad argument type/.test(caught),
+    'session067: →PRG non-numeric count raises Bad argument type');
+}
+
+/* ---- Programs can contain other Programs as tokens (round-trip) ---- */
+{
+  const s = new Stack();
+  const inner = Program([Name('+')]);
+  const outer = Program([Integer(1n), Integer(2n), inner, Name('EVAL')]);
+  s.push(outer);
+  lookup('OBJ→').fn(s);
+  lookup('→PRG').fn(s);
+  assert(s.depth === 1 && isProgram(s.peek()) && s.peek().tokens.length === 4,
+    'session067: nested Program tokens survive round-trip');
+  assert(isProgram(s.peek().tokens[2]) && s.peek().tokens[2].tokens.length === 1,
+    'session067: nested Program token is still a Program after round-trip');
+}

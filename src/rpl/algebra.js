@@ -210,6 +210,53 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     return a >= b ? a : b;
   } },
+  // Session 064 — GCD / LCM widened to accept Symbolic/Name operands.
+  // The stack op produces `Symbolic(AstFn('GCD', [l, r]))` when either
+  // operand is a Name or Symbolic, and we register the textual form
+  // here so it round-trips through `parseEntry`.  Numeric evaluators
+  // only fold on non-negative integer-valued Reals — HP50 GCD/LCM
+  // reject non-integer Reals, and the simplifier must not invent a
+  // fractional folding rule that the stack op itself would refuse.
+  // Polynomial GCD / LCM on true symbolic expressions stays deferred
+  // (CAS work).
+  GCD: { arity: 2, eval: (a, b) => {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
+    let x = Math.abs(a), y = Math.abs(b);
+    while (y !== 0) { [x, y] = [y, x % y]; }
+    return x;
+  } },
+  LCM: { arity: 2, eval: (a, b) => {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
+    if (a === 0 || b === 0) return 0;
+    let x = Math.abs(a), y = Math.abs(b);
+    while (y !== 0) { [x, y] = [y, x % y]; }
+    return Math.abs(a / x * b);
+  } },
+  // Session 064 (new-ops cluster) — combinatorial.  Both arity-2 with
+  // integer arguments only.  When either side is a Name/Symbolic the
+  // stack op lifts to `Symbolic(AstFn('COMB', [l, r]))`; registering
+  // the textual form here lets `'COMB(N, K)'` round-trip through
+  // `parseEntry`.  The numeric evaluator only folds valid cases
+  // (non-negative integers with m ≤ n) and returns `null` otherwise,
+  // so the simplifier leaves bogus argument combos symbolic rather
+  // than injecting a nonsense value — the stack op's "Bad argument
+  // value" error is the right response at run time, not simplify time.
+  COMB:  { arity: 2, eval: (n, m) => {
+    if (!Number.isInteger(n) || !Number.isInteger(m)) return null;
+    if (n < 0 || m < 0 || m > n) return null;
+    let num = 1, den = 1;
+    for (let i = 1; i <= m; i++) { num *= (n - m + i); den *= i; }
+    return num / den;
+  } },
+  PERM:  { arity: 2, eval: (n, m) => {
+    if (!Number.isInteger(n) || !Number.isInteger(m)) return null;
+    if (n < 0 || m < 0 || m > n) return null;
+    let out = 1;
+    for (let i = 0; i < m; i++) out *= (n - i);
+    return out;
+  } },
 });
 
 export function isKnownFunction(name) {

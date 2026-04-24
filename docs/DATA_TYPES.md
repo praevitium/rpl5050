@@ -1,0 +1,160 @@
+# DATA_TYPES — RPL5050 argument-type coverage matrix
+
+**Scope.** This file tracks the per-op argument-type surface the `hp50-type-support`
+lane is widening.  It does not track whether an op is implemented at all — that
+lives in `docs/COMMANDS.md` (or its predecessor, `docs/COMMANDS_INVENTORY.md`).
+This file answers: *for this op, which types does the handler actually accept?*
+
+**Last updated.** Session 064 (2026-04-23).
+
+---
+
+## Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| `✓`    | Supported — verified by an assertion in one of the `tests/*` files. |
+| `·`    | Not applicable — the type isn't a meaningful operand here (e.g. a Real operand on a string-op). |
+| `✗`    | Deliberately rejected — HP50 itself rejects this type, and we match. Verified by a rejection test. |
+| *blank* | Candidate for a future widening pass. |
+
+## Type axes (column headers)
+
+```
+R   Real            V   Vector              Sy  Symbolic
+Z   Integer         M   Matrix              T   Tagged
+B   BinaryInteger   L   List                U   Unit
+C   Complex         N   Name (quoted)       S   String
+P   Program         D   Directory           G   Grob
+```
+
+## Conventions (shared across all ops below)
+
+- **List distribution** — lists distribute element-wise via
+  `_withListUnary` / `_withListBinary` (defined in `src/rpl/ops.js`).  An op
+  that treats a list as a whole object (SIZE, HEAD, aggregate reducers,
+  STO, PURGE, …) does NOT list-distribute and is not wrapped.
+- **Tagged transparency** — `_withTaggedUnary` unwraps, applies, re-tags with
+  the same label.  `_withTaggedBinary` unwraps both sides and drops the tag
+  (binary ops have no single obvious tag to keep).
+- **Vector / Matrix element-wise** — `_withVMUnary` dispatches `f(x)` per
+  element.  Ops with bespoke V/M semantics (ABS = Frobenius norm, INV/M =
+  matrix inverse, SQ/M = M·M, SIGN/V = unit direction) bypass the wrapper.
+- **Symbolic / Name lift** — either operand being a `Name` or `Symbolic`
+  lifts the op to `Symbolic(AstFn('OPNAME', [...]))` (or an `AstBin` when
+  that's more natural — see `+` / `-` / `*` / `/` / `^`).  The name must be
+  in `KNOWN_FUNCTIONS` in `src/rpl/algebra.js` so the symbolic result
+  round-trips through `parseEntry`.
+- **Promotion lattice** — Z → R → C (scalar promotion); scalar → V/M
+  (broadcast); R / C → Sy (lift).  BinaryInteger does NOT silently promote
+  to R — mixing B with a non-B scalar is rejected unless the op has an
+  explicit BinaryInteger path.
+
+---
+
+## Widened ops (current state)
+
+Rows are **in registration order** of the op in `src/rpl/ops.js` — grouping
+matches the code.  Blank cells in otherwise-widened rows are deliberate
+follow-on candidates and listed at the bottom.
+
+### Unary — invert / square / sqrt / elementary functions
+
+| Op     | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
+|--------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
+| INV    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | ✓ | ✓ | ✓ | ✗ | ✗ | V = · (no standard vector-inverse); M = matrix inverse. Session 064 added T. |
+| SQ     | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | · | ✓ | ✓ | ✗ | ✗ | V/M deliberately · — `SQ/V` = dot product, `SQ/M` = matmul, handled by `*`. Session 064 added T. |
+| SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. |
+| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). T still a candidate. |
+| SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. |
+| FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). |
+| LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). |
+
+### Unary — rounding / sign / arg
+
+| Op    | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
+|-------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
+| FLOOR | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. Complex ✗ — no total order. |
+| CEIL  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. |
+| IP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. |
+| FP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 062. |
+| SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. |
+| ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. |
+
+### Binary — MOD / MIN / MAX
+
+| Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
+|-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
+| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Session 062. V/M broadcast still a candidate — spec is ambiguous. |
+| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. |
+| MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. |
+
+### Binary — GCD / LCM
+
+| Op  | R* | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
+|-----|----|---|---|---|---|----|---|---|---|---|---|---|---|-------|
+| GCD | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added N/Sy/L/T. R accepted only when integer-valued (non-integer Real = Bad argument value). |
+| LCM | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same as GCD. |
+
+*`~` on Real = accepted only when `Number.isInteger(value)`.
+
+### Binary — percent family
+
+| Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
+|-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
+| %   | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Session 064 added L/T. V/M intentionally left — HP50 AUR spec is scalar-only. |
+| %T  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. Infinite result on base = 0 preserved. |
+| %CH | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ |   |   | ✓ | · | ✗ | ✗ | Same. |
+
+### Reference rows — already-broad ops from earlier sessions
+
+These rows summarise the `+` / `-` / `*` / `/` / `^` family and the complex
+reference ops.  Pulling them into per-op detail sections is a doc-only
+candidate flagged in session 063.
+
+| Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
+|-----|---|---|---|---|---|----|---|---|---|---|---|---|-------|
+| +   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✓ | Concats on String+String; Unit dim-algebra; V+V element-wise (same length). T still a candidate. |
+| -   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | — |
+| *   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | V·V = dot product, M·M = matmul; Real-by-String = repeat (String rep). |
+| /   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | — |
+| ^   | ✓ | ✓ | ✗ | ✓ | ✓ | ✓  | ✓ | ✗ | ✓ |   | ✓ | ✗ | M^n = repeated matmul for integer n. |
+| NEG | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | ✓ | ✗ | — |
+| CONJ| ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | · | · | — |
+| RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | · | · | — |
+| IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ |   | · | · | — |
+
+---
+
+## Next-session widening candidates
+
+(Ordered by estimated effort, smallest first.)
+
+1. **Tagged transparency on the arithmetic family (`+`, `-`, `*`, `/`, `^`)** —
+   all five are broadly typed today but none of them unwrap Tagged.  Each
+   needs a single-line `_withTaggedBinary(_withListBinary(...))` swap and a
+   pair of tests.  Batch of 5 ops × 2 tests = ~10 new assertions.
+2. **Tagged transparency on `NEG`, `ABS`, `CONJ`, `RE`, `IM`** — same pattern
+   with `_withTaggedUnary`.  Batch of 5 × 2 = 10.
+3. **MOD / MIN / MAX V/M broadcast** — session 062 deferred this because
+   the HP50 spec for these on Vector/Matrix isn't clearly documented.
+   Worth a re-read of the Advanced Guide §3.1 before committing.
+4. **BinaryInteger widening on `+`, `-`, `*` with mixed scalar operand** —
+   already works for B+B but rejects B+Z.  HP50 AUR §10.1 describes the
+   coercion rule (masked to current wordsize).  Estimated 6–8 tests.
+5. **Detail rows for `+` / `-` / `*` / `/` / `^`** — pull these out of the
+   compact reference table into per-op sections with Unit-dim-algebra notes
+   and BinaryInteger STWS masking notes.  Doc-only; pairs well with any of
+   the above.
+
+---
+
+## Bootstrap note
+
+Sessions 062 and 063 logs reference a file named `docs/TYPE_SUPPORT.md`;
+that filename is not present in the current tree.  The scheduled-task
+charter for this lane names the notes file `docs/DATA_TYPES.md`, so
+session 064 re-bootstraps under the charter-correct filename.  Future
+runs should treat *this* file as authoritative.  If `TYPE_SUPPORT.md`
+resurfaces, consolidate it back into this file rather than maintaining
+two.
