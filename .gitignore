@@ -31,7 +31,12 @@ Thumbs.db
 # Tauri
 src-tauri/target/
 src-tauri/dist/
+src-tauri/gen/
 .tauri/
 
 # Build artifacts
 bundle/
+*.dmg
+*.msi
+*.AppImage
+*.deb
