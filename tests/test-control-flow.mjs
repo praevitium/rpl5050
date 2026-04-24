@@ -711,7 +711,7 @@ import { assert } from './helpers.mjs';
 }
 
 
-// Session 016 — Integer-aware FOR/NEXT/STEP counter
+// Integer-aware FOR/NEXT/STEP counter
 // ------------------------------------------------------------------
 
 // FOR loop stores loop variable as Integer when both bounds are Integer.
@@ -734,7 +734,7 @@ import { assert } from './helpers.mjs';
   assert(isInteger(c) && c.value === 3n, 'FOR iter 3: I is Integer(3n)');
 }
 
-// FOR loop with Real bound demotes to Real (unchanged pre-session-016 path).
+// FOR loop with Real bound demotes to Real.
 {
   resetHome();
   const s = new Stack();
@@ -827,8 +827,8 @@ import { assert } from './helpers.mjs';
   assert(threw, 'FOR/STEP with Integer step of 0 throws');
 }
 
-// Arithmetic on Integer loop var stays Integer (session-016 headline):
-//   1 3 FOR I I I * NEXT — 1*1 + 2*2 + 3*3 — but we want individual Integer
+// Arithmetic on Integer loop var stays Integer:
+//   1 3 FOR I I I * NEXT — 1*1 + 2*2 + 3*3 — we want individual Integer
 //   products.  Here: 1*1, 2*2, 3*3 pushed as three Integers.
 {
   resetHome();
@@ -849,12 +849,11 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// End session 016 additions — STWS literal truncation + Integer FOR
 // ------------------------------------------------------------------
 
 
 // ==================================================================
-// Session 053 — DOERR (user-raised RPL error)
+// DOERR (user-raised RPL error)
 // ==================================================================
 
 /* ---- DOERR with String raises an error carrying that message ---- */
@@ -947,7 +946,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 064 — CASE / THEN / END
+   CASE / THEN / END
    ================================================================
 
    Grammar:
@@ -1127,11 +1126,11 @@ import { assert } from './helpers.mjs';
     'session067: nested CASE: inner match returns to outer short-circuit');
 }
 
-/* ---- CASE without closing outer END — session 073 flipped this
-        behaviour to auto-close (parity with IF/WHILE/program-body
-        recovery).  Regression guard: the matching THEN clause still
-        runs, trailing tokens after the last inner END act as the
-        default clause (empty here), no throw. ---- */
+/* ---- CASE without closing outer END auto-closes (parity with
+        IF/WHILE/program-body recovery).  Regression guard: the
+        matching THEN clause still runs, trailing tokens after the
+        last inner END act as the default clause (empty here), no
+        throw. ---- */
 {
   resetHome();
   const s = new Stack();
@@ -1146,7 +1145,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   ABORT — program-interrupt primitive (session 067)
+   ABORT — program-interrupt primitive.
    AUR p.1-27.  ABORT stops execution of the currently-running
    program.  Unlike RPLError, ABORT is *not* catchable by IFERR, and
    EVAL's snapshot-restore lets it pass through so the stack reflects
@@ -1222,7 +1221,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Compiled local environments — `→ a b … body`  (session 068)
+   Compiled local environments — `→ a b … body`
    ================================================================ */
 
 // Single local + program body.  3 4 « → a b « a b + » » EVAL → 7
@@ -1457,7 +1456,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 073 — Auto-close of unterminated CASE
+   Auto-close of unterminated CASE
    Parser already auto-closes unterminated `«`, `}`, `]` (parser.js
    lines 299-302).  The runCase helper now extends the same
    convenience to CASE blocks whose outer END — or whose per-clause
@@ -1589,7 +1588,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 073 — Nested-program closure-over-locals pin
+   Nested-program closure-over-locals pin
    HP50 `→` locals use dynamic scoping within the compiled-local
    region: a nested `« »` program invoked during the outer body
    sees the outer frame's bindings.  This test freezes that
@@ -1664,7 +1663,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 073 — HALT / CONT / KILL substrate pilot
+   HALT / CONT / KILL substrate pilot
    HP50 AUR p.2-52, p.2-135, p.2-140.  HALT suspends the running
    program at the current instruction pointer; CONT resumes where
    HALT left off; KILL discards the suspension.  Pilot restriction:
@@ -1845,21 +1844,17 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 077 — HALT/CONT flake-hardening coverage
+   HALT/CONT flake-hardening coverage.
 
-   Session 075 filed a single-reproduction flake: the second CONT in
-   the `« 1 HALT 2 + HALT 3 * »` probe above occasionally threw
-   RPLHalt instead of cleanly finishing.  Session 077's fix wraps
-   `register('EVAL')` and `register('CONT')` with a finally that
-   snapshot-and-restores `_localFrames.length` on entry so an
-   unanticipated abnormal unwind from a prior op can't leak a
-   phantom local frame into the HALT pilot check.  resetHome() was
-   also updated to clear the halted slot automatically so the
-   pre-test boilerplate can't "forget" to clearHalted and still
-   yield a clean slate.
+   `register('EVAL')` and `register('CONT')` wrap their bodies in a
+   finally that snapshot-and-restores `_localFrames.length` on entry,
+   so an abnormal unwind from a prior op can't leak a phantom local
+   frame into the HALT pilot check.  resetHome() clears the halted
+   slot automatically so pre-test boilerplate can't "forget" to
+   clearHalted and still yield a clean slate.
 
-   The tests below pin the invariants.  If a future refactor ever
-   breaks them, the flake will not come back silently.
+   The tests below pin the invariants.  If a future refactor breaks
+   them, the flake will not come back silently.
    ================================================================ */
 
 /* ---- localFramesDepth() is zero after a fresh resetHome() ---- */
@@ -1914,15 +1909,12 @@ import { assert } from './helpers.mjs';
        non-RPLError throw cannot poison a subsequent HALT check ---- */
 {
   resetHome();
-  // Hand-craft a phantom leak by registering a one-shot op that
-  // pushes a frame via _pushLocalFrame-equivalent behaviour and
-  // throws a JS TypeError (the class of non-RPLError exception
-  // session 077's finally is designed to catch).  Since we can't
-  // reach _pushLocalFrame from outside the module, exercise the
-  // same effect by running a `→` body that throws a TypeError via
-  // a hand-placed non-op token.  runArrow's finally pops cleanly on
-  // any throw; if the defensive EVAL finally ever regresses, this
-  // test's follow-up HALT probe will flip to FAIL.
+  // Simulate a phantom-leak scenario where a `→` body throws and the
+  // EVAL finally must still restore frame depth.  Since _pushLocalFrame
+  // isn't reachable from outside the module, exercise the effect by
+  // running a `→` body.  runArrow's finally pops cleanly on any throw;
+  // if the defensive EVAL finally ever regresses, this test's
+  // follow-up HALT probe will flip to FAIL.
   const s = new Stack();
   s.push(Integer(42n));
   s.push(Program([
@@ -1953,7 +1945,7 @@ import { assert } from './helpers.mjs';
     'session077: halted slot + local frames both empty at end');
 }
 
-/* ---- resetHome clears a populated halted slot (session 077) ---- */
+/* ---- resetHome clears a populated halted slot ---- */
 {
   resetHome();
   const s = new Stack();
@@ -1998,13 +1990,12 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 077 — IFERR auto-close on missing END
+   IFERR auto-close on missing END
 
-   Queue item 4 from RPL.md: parallel to the CASE auto-close shipped
-   in session 074.  A user-entered program with `IFERR … THEN …` or
-   `IFERR … THEN … ELSE …` that runs off the end of the source
-   without a closing `END` now evaluates cleanly instead of raising
-   `IFERR without END` / `IFERR/ELSE without END`.
+   Parallel to the CASE auto-close: a user-entered program with
+   `IFERR … THEN …` or `IFERR … THEN … ELSE …` that runs off the
+   end of the source without a closing `END` evaluates cleanly
+   instead of raising `IFERR without END` / `IFERR/ELSE without END`.
 
    "IFERR without THEN" is still an error — without a THEN there is
    no way to locate the trap-body boundary, and unlike CASE there is
@@ -2161,13 +2152,13 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 083 — IF auto-close on missing END
+   IF auto-close on missing END
    (queue item 6: CASE inside IF whose own END is also missing)
 
-   Mirrors the CASE auto-close (session 074) and IFERR auto-close
-   (session 077) — a forward scan that falls off the end of the
-   program body is treated as an implicit END.  "IF without THEN"
-   stays a hard error because IF has no default clause.
+   Mirrors the CASE and IFERR auto-close — a forward scan that falls
+   off the end of the program body is treated as an implicit END.
+   "IF without THEN" stays a hard error because IF has no default
+   clause.
    ================================================================ */
 
 /* ---- IF THEN … (no END) on truthy test runs the true-branch ---- */
@@ -2239,11 +2230,9 @@ import { assert } from './helpers.mjs';
     'session083: IF without THEN still throws (auto-close does NOT apply)');
 }
 
-/* ---- queue-item-6 case: CASE nested inside IF whose END is missing.
-       Previously raised "IF without END" because _skipPastCaseEnd
-       returned toks.length and the outer scanAtDepth0 fell off the
-       end.  With session-083's auto-close the whole « … » is well-
-       formed. ---- */
+/* ---- CASE nested inside IF whose END is missing.  With auto-close
+       the whole « … » is well-formed and both missing ENDs are
+       treated as implicit. ---- */
 {
   resetHome();
   const s = new Stack();
@@ -2313,7 +2302,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 083 — RUN op (AUR p.2-177): alias for CONT
+   RUN op (AUR p.2-177): alias for CONT
    ================================================================ */
 
 /* ---- RUN resumes a halted program (parity with CONT) ---- */
@@ -2364,15 +2353,13 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 083 — Multi-slot halted-program stack
+   Multi-slot halted-program stack.
 
-   Until session 083, state.halted was a single scalar slot and a
-   second HALT (from a freshly-EVAL'd program launched while an
-   earlier halt was live) would silently overwrite the first.  The
-   LIFO stack preserves the prior suspension — CONT resumes the
-   most-recent halt, the older halt remains on the stack to be
-   CONT'd next.  Matches HP50 AUR p.2-135's stack-of-halted-
-   programs behaviour.
+   state.halted is a LIFO stack so that a second HALT (from a
+   freshly-EVAL'd program launched while an earlier halt is live)
+   preserves the prior suspension — CONT resumes the most-recent
+   halt, the older halt remains on the stack to be CONT'd next.
+   Matches HP50 AUR p.2-135's stack-of-halted-programs behaviour.
    ================================================================ */
 
 /* ---- haltedDepth() baseline is zero ---- */
@@ -2496,8 +2483,8 @@ import { assert } from './helpers.mjs';
     'session083: state.halted is null after resetHome drain');
 }
 
-/* ---- Single-slot back-compat: one HALT still behaves exactly as
-       it did pre-session-083 (`state.halted` === getHalted()) ---- */
+/* ---- Single-slot back-compat: one HALT still populates a slot and
+       `state.halted` === getHalted() (LIFO-top aliasing) ---- */
 {
   resetHome();
   const s = new Stack();
@@ -2530,7 +2517,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 088 — Generator-based evalRange: HALT at any structural depth
+   Generator-based evalRange: HALT at any structural depth
    ================================================================
 
    These tests verify that HALT now works inside control structures
@@ -2561,9 +2548,14 @@ import { assert } from './helpers.mjs';
   assert(s.depth === 2 && s.peek().value === 2n,
     'session088: FOR-HALT iteration-2: i=2 on stack');
   lookup('CONT').fn(s);
-  assert(haltedDepth() === 0, 'session088: FOR-HALT done: haltedDepth=0');
+  // i=3 also HALTs (each iteration halts once); need one more CONT to
+  // exit the loop (counter advances to 4, which exceeds end=3).
+  assert(haltedDepth() === 1, 'session088: FOR-HALT iteration-3: haltedDepth=1');
   assert(s.depth === 3 && s.peek().value === 3n,
-    'session088: FOR-HALT iteration-3: i=3 on stack (loop done)');
+    'session088: FOR-HALT iteration-3: i=3 on stack');
+  lookup('CONT').fn(s);  // resumes from i=3 HALT; loop exits
+  assert(haltedDepth() === 0, 'session088: FOR-HALT done: haltedDepth=0');
+  assert(s.depth === 3, 'session088: FOR-HALT: stack has 3 items [1,2,3]');
   assert(localFramesDepth() === 0, 'session088: FOR-HALT: localFrames clean after completion');
 }
 
@@ -2632,7 +2624,9 @@ import { assert } from './helpers.mjs';
   resetHome(); clearAllHalted();
   const s = new Stack();
   // « 10 → a « a HALT a a + » »
-  // Pushes a=10, HALTs.  CONT: pushes a=10, a+a=20.  Stack: [10, 10, 20].
+  // Body: a HALT a a +
+  // At HALT: [a=10] on stack.  Resume: a a + → [10, 20] (a is still 10
+  // since the → binding is live during the entire suspended body).
   s.push(Integer(10n));
   s.push(Program([
     Name('→'), Name('a'),
@@ -2646,7 +2640,8 @@ import { assert } from './helpers.mjs';
   lookup('CONT').fn(s);
   assert(haltedDepth() === 0,
     'session088: HALT-inside-arrow: resumed and finished');
-  assert(s.depth === 3 && s.peek().value === 20n,
+  // resume pushes a=10, then a=10, then +→20: stack = [10, 20]
+  assert(s.depth === 2 && s.peek().value === 20n,
     'session088: HALT-inside-arrow: top is a+a=20 after resume');
   assert(localFramesDepth() === 0,
     'session088: HALT-inside-arrow: frame popped after generator completes');

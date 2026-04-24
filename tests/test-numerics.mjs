@@ -42,11 +42,10 @@ import { assert, assertThrows } from './helpers.mjs';
   assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 30n, '10 3 * = 30 (int)');
 }
 
-// Integer div that doesn't divide evenly -> Real (under APPROX mode)
-// Session 035: the default boot mode flipped to EXACT, under which
-// 10 3 / becomes Symbolic('10/3').  This test explicitly opts into
-// APPROX to preserve its original intent: exercise the Integer → Real
-// fall-through for non-clean division.
+// Integer div that doesn't divide evenly -> Real (under APPROX mode).
+// The default boot mode is EXACT, under which 10 3 / becomes
+// Symbolic('10/3').  This test explicitly opts into APPROX to exercise
+// the Integer → Real fall-through for non-clean division.
 {
   setApproxMode(true);
   const s = new Stack();
@@ -103,9 +102,9 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   assert(format(Real(3.14)) === '3.14', 'format real');
   assert(format(Integer(42)) === '42', 'format int');
-  // Session 041: in EXACT + STD, integer-valued Complex components
-  // drop the trailing dot so `(1, 2)` displays as `(1, 2)` rather than
-  // `(1., 2.)`.  Non-integer components still show the real form.
+  // In EXACT + STD, integer-valued Complex components drop the trailing
+  // dot so `(1, 2)` displays as `(1, 2)` rather than `(1., 2.)`.
+  // Non-integer components still show the real form.
   assert(format(Complex(1, 2)) === '(1, 2)', 'format complex — integer components (EXACT/STD)');
   assert(format(Complex(1.5, 2)) === '(1.5, 2)', 'format complex — mixed components');
   assert(format(Complex(1.5, 2.5)) === '(1.5, 2.5)', 'format complex — real components');
@@ -216,13 +215,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1));
   s.push(Real(0));
-  let threw = false;
-  try { lookup('/').fn(s); } catch (e) { threw = true; }
-  assert(threw, '1/0 throws');
+  assertThrows(() => { lookup('/').fn(s); }, null, '1/0 throws');
 }
 
 
-// Session 014: FLOOR / CEIL / IP / FP / SIGN / MOD / MIN / MAX
+// FLOOR / CEIL / IP / FP / SIGN / MOD / MIN / MAX
 // ------------------------------------------------------------------
 
 // FLOOR / CEIL / IP / FP on reals
@@ -303,9 +300,7 @@ import { assert, assertThrows } from './helpers.mjs';
          'Integer -7 3 MOD = Integer 2 (integer-preserving)');
   s.clear();
   s.pushMany([Real(10), Real(0)]);
-  let threw = false;
-  try { lookup('MOD').fn(s); } catch (_) { threw = true; }
-  assert(threw, 'MOD by 0 throws "Infinite result"');
+  assertThrows(() => { lookup('MOD').fn(s); }, null, 'MOD by 0 throws "Infinite result"');
 }
 
 // MIN / MAX
@@ -334,24 +329,16 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   const s = new Stack();
   s.pushMany([Complex(1, 1), Complex(2, 2)]);
-  let threw = false;
-  try { lookup('MOD').fn(s); } catch (_) { threw = true; }
-  assert(threw, 'MOD rejects complex arguments');
+  assertThrows(() => { lookup('MOD').fn(s); }, null, 'MOD rejects complex arguments');
   s.clear();
   s.pushMany([Complex(1, 1), Complex(2, 2)]);
-  let threw2 = false;
-  try { lookup('MIN').fn(s); } catch (_) { threw2 = true; }
-  assert(threw2, 'MIN rejects complex arguments');
+  assertThrows(() => { lookup('MIN').fn(s); }, null, 'MIN rejects complex arguments');
 }
 
-// ------------------------------------------------------------------
-// End session 014 additions
-// ------------------------------------------------------------------
-
 /* ==================================================================
-   Session 043 — additional stack ops, complex decomposition, real
-   decomposition (XPON/MANT), stable log/exp (LNP1/EXPM), rounding
-   (RND/TRNC), percent family (%/%T/%CH).
+   Additional stack ops, complex decomposition, real decomposition
+   (XPON/MANT), stable log/exp (LNP1/EXPM), rounding (RND/TRNC),
+   percent family (%/%T/%CH).
    ================================================================== */
 
 /* ---- DUPN ---- */
@@ -377,17 +364,13 @@ import { assert, assertThrows } from './helpers.mjs';
   // Negative count rejected
   const s = new Stack();
   s.push(Real(1)); s.push(Integer(-1));
-  let threw = false;
-  try { lookup('DUPN').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session043: DUPN with negative count → Bad argument value');
+  assertThrows(() => { lookup('DUPN').fn(s); }, /Bad argument value/, 'session043: DUPN with negative count → Bad argument value');
 }
 {
   // Not enough items for requested count
   const s = new Stack();
   s.push(Real(1)); s.push(Integer(5));
-  let threw = false;
-  try { lookup('DUPN').fn(s); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session043: DUPN where depth < count → Too few arguments');
+  assertThrows(() => { lookup('DUPN').fn(s); }, /Too few/, 'session043: DUPN where depth < count → Too few arguments');
 }
 
 /* ---- DUPDUP ---- */
@@ -400,9 +383,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 {
   const s = new Stack();
-  let threw = false;
-  try { lookup('DUPDUP').fn(s); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session043: DUPDUP on empty stack → Too few arguments');
+  assertThrows(() => { lookup('DUPDUP').fn(s); }, /Too few/, 'session043: DUPDUP on empty stack → Too few arguments');
 }
 
 /* ---- NIP ---- */
@@ -416,9 +397,7 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('NIP').fn(s); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session043: NIP with depth 1 → Too few arguments');
+  assertThrows(() => { lookup('NIP').fn(s); }, /Too few/, 'session043: NIP with depth 1 → Too few arguments');
 }
 
 /* ---- PICK3 ---- */
@@ -459,9 +438,7 @@ import { assert, assertThrows } from './helpers.mjs';
   // Too few
   const s = new Stack();
   s.push(Real(1)); s.push(Integer(5));
-  let threw = false;
-  try { lookup('ROLL').fn(s); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session043: ROLL with depth < count → Too few arguments');
+  assertThrows(() => { lookup('ROLL').fn(s); }, /Too few/, 'session043: ROLL with depth < count → Too few arguments');
 }
 
 /* ---- ROLLD ---- */
@@ -504,7 +481,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Integer(2));
   lookup('PICK').fn(s);
   assert(s.peek(1).value === 20, 'session043: PICK setup');
-  // Now: 10 20 30 20 — put it back at level 3 (was originally at level 2 after consume)
+  // Now: 10 20 30 20 — write back at level 3 (level 2 after the PICK consume)
   s.push(Integer(3));
   lookup('UNPICK').fn(s);
   assert(s.depth === 3 && s.peek(3).value === 20 && s.peek(2).value === 20 && s.peek(1).value === 30,
@@ -514,9 +491,7 @@ import { assert, assertThrows } from './helpers.mjs';
   // Bad index
   const s = new Stack();
   s.push(Real(1)); s.push(Real(99)); s.push(Integer(0));
-  let threw = false;
-  try { lookup('UNPICK').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session043: UNPICK with level 0 → Bad argument value');
+  assertThrows(() => { lookup('UNPICK').fn(s); }, /Bad argument value/, 'session043: UNPICK with level 0 → Bad argument value');
 }
 
 /* ---- NDUPN ---- */
@@ -585,9 +560,7 @@ import { assert, assertThrows } from './helpers.mjs';
   // R→C with bad types
   const s = new Stack();
   s.push(Str('bad')); s.push(Real(3));
-  let threw = false;
-  try { lookup('R→C').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session043: R→C with String operand → Bad argument type');
+  assertThrows(() => { lookup('R→C').fn(s); }, /Bad argument type/, 'session043: R→C with String operand → Bad argument type');
 }
 {
   // Vector branch: two real vectors → complex vector
@@ -606,9 +579,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)]));
   s.push(Vector([Real(3)]));
-  let threw = false;
-  try { lookup('R→C').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session043: R→C on mismatched vectors → Invalid dimension');
+  assertThrows(() => { lookup('R→C').fn(s); }, /Invalid dimension/, 'session043: R→C on mismatched vectors → Invalid dimension');
 }
 {
   // C→R on vector of complex → two real vectors
@@ -670,9 +641,7 @@ import { assert, assertThrows } from './helpers.mjs';
   // Bad type
   const s = new Stack();
   s.push(Str('nope'));
-  let threw = false;
-  try { lookup('XPON').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session043: XPON on String → Bad argument type');
+  assertThrows(() => { lookup('XPON').fn(s); }, /Bad argument type/, 'session043: XPON on String → Bad argument type');
 }
 
 /* ==================================================================
@@ -696,9 +665,7 @@ import { assert, assertThrows } from './helpers.mjs';
   // Domain boundary x <= -1 → Infinite result
   const s = new Stack();
   s.push(Real(-1));
-  let threw = false;
-  try { lookup('LNP1').fn(s); } catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session043: LNP1 -1 → Infinite result');
+  assertThrows(() => { lookup('LNP1').fn(s); }, /Infinite result/, 'session043: LNP1 -1 → Infinite result');
 }
 {
   const s = new Stack();
@@ -777,9 +744,7 @@ import { assert, assertThrows } from './helpers.mjs';
   // Out-of-range precision throws
   const s = new Stack();
   s.push(Real(3.14)); s.push(Integer(20));
-  let threw = false;
-  try { lookup('RND').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session043: RND with precision > 11 → Bad argument value');
+  assertThrows(() => { lookup('RND').fn(s); }, /Bad argument value/, 'session043: RND with precision > 11 → Bad argument value');
 }
 {
   // Integer input with non-negative places returns the Integer unchanged
@@ -829,17 +794,13 @@ import { assert, assertThrows } from './helpers.mjs';
   // Division by zero in %T
   const s = new Stack();
   s.push(Real(0)); s.push(Real(10));
-  let threw = false;
-  try { lookup('%T').fn(s); } catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session043: 0 10 %T → Infinite result');
+  assertThrows(() => { lookup('%T').fn(s); }, /Infinite result/, 'session043: 0 10 %T → Infinite result');
 }
 {
   // Division by zero in %CH
   const s = new Stack();
   s.push(Real(0)); s.push(Real(10));
-  let threw = false;
-  try { lookup('%CH').fn(s); } catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session043: 0 10 %CH → Infinite result');
+  assertThrows(() => { lookup('%CH').fn(s); }, /Infinite result/, 'session043: 0 10 %CH → Infinite result');
 }
 {
   // Symbolic operand lifts
@@ -850,11 +811,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// End session 043 additions
-// ------------------------------------------------------------------
-
-// ------------------------------------------------------------------
-// Session 044: MAXR / MINR constants and HMS family
+// MAXR / MINR constants and HMS family
 // ------------------------------------------------------------------
 
 // MAXR: largest finite Real
@@ -971,9 +928,7 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   const s = new Stack();
   s.push(Real(1.60));   // not a valid HMS (60 minutes)
-  let threw = false;
-  try { lookup('HMS→').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session044: 1.60 HMS→ throws Bad argument value');
+  assertThrows(() => { lookup('HMS→').fn(s); }, /Bad argument value/, 'session044: 1.60 HMS→ throws Bad argument value');
 }
 
 // ASCII aliases work
@@ -1005,25 +960,17 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   const s = new Stack();
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('→HMS').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session044: (1,2) →HMS throws Bad argument type');
+  assertThrows(() => { lookup('→HMS').fn(s); }, /Bad argument type/, 'session044: (1,2) →HMS throws Bad argument type');
 }
 
 // ------------------------------------------------------------------
-// End session 044 additions
-// ------------------------------------------------------------------
-
-// ------------------------------------------------------------------
-// Session 045: Complex-aware unary math
+// Complex-aware unary math
 // ------------------------------------------------------------------
 //
-// Previously EXP / LN / LOG / ALOG / SIN / COS / TAN / ASIN / ACOS /
-// ATAN / SINH / COSH / TANH / ASINH / ACOSH / ATANH rejected Complex
-// inputs via toRealOrThrow (threw 'Bad argument type').  Session 045
-// adds principal-branch complex formulas to all of them so HP50-style
-// complex workflows work.  Real inputs still go through the original
-// real-only paths unchanged.
+// EXP / LN / LOG / ALOG / SIN / COS / TAN / ASIN / ACOS / ATAN /
+// SINH / COSH / TANH / ASINH / ACOSH / ATANH accept Complex inputs
+// via principal-branch formulas so HP50-style complex workflows work.
+// Real inputs still go through the real-only paths.
 // ------------------------------------------------------------------
 
 const _CX_EPS = 1e-10;
@@ -1218,9 +1165,7 @@ function _cxApprox(got, re, im, label) {
 {
   const s = new Stack();
   s.push(Complex(0, 0));
-  let threw = false;
-  try { lookup('LN').fn(s); } catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session045: LN((0, 0)) throws Infinite result');
+  assertThrows(() => { lookup('LN').fn(s); }, /Infinite result/, 'session045: LN((0, 0)) throws Infinite result');
 }
 
 // Symbolic operand still lifts (not touched by Complex branch)
@@ -1235,12 +1180,8 @@ function _cxApprox(got, re, im, label) {
 // Reset angle mode to default
 setAngle('rad');
 
-// ------------------------------------------------------------------
-// End session 045 additions (Complex-aware unary math)
-// ------------------------------------------------------------------
-
 // ==================================================================
-// Session 047 — factorial `!` bang, →Q rationalize
+// factorial `!` bang, →Q rationalize
 // ==================================================================
 
 /* ---- `!` as FACT alias — Integer input stays exact ---- */
@@ -1276,9 +1217,7 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Integer(-3));
-  let threw = false;
-  try { lookup('!').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'session047: -3 ! throws Bad argument value');
+  assertThrows(() => { lookup('!').fn(s); }, null, 'session047: -3 ! throws Bad argument value');
 }
 
 /* ---- `!` parses from an entry buffer as an ident ---- */
@@ -1366,9 +1305,7 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('→Q').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'session047: Complex →Q throws Bad argument type');
+  assertThrows(() => { lookup('→Q').fn(s); }, null, 'session047: Complex →Q throws Bad argument type');
 }
 
 /* ---- ->Q ASCII alias ---- */
@@ -1382,11 +1319,7 @@ setAngle('rad');
 }
 
 // ------------------------------------------------------------------
-// End session 047 additions (factorial `!`, →Q rationalize)
-// ------------------------------------------------------------------
-
-// ------------------------------------------------------------------
-// Session 048 — Q→ decompose, D→HMS / HMS→D bridges
+// Q→ decompose, D→HMS / HMS→D bridges
 // ------------------------------------------------------------------
 
 /* ---- Q→ on Symbolic 1/2 → ( 1 2 ) ---- */
@@ -1476,9 +1409,7 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Real(3.14));
-  let threw = false;
-  try { lookup('Q→').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'session048: Q→ of non-integer Real throws Bad argument value');
+  assertThrows(() => { lookup('Q→').fn(s); }, null, 'session048: Q→ of non-integer Real throws Bad argument value');
 }
 
 /* ---- Q→ on wrong Symbolic shape (SIN(x)) throws ---- */
@@ -1493,18 +1424,14 @@ setAngle('rad');
   const { Symbolic } = await import('../src/rpl/types.js');
   const s = new Stack();
   s.push(Symbolic(Fn('SIN', [{ kind: 'var', name: 'X' }])));
-  let threw = false;
-  try { lookup('Q→').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'session048: Q→ of SIN(X) throws Bad argument type');
+  assertThrows(() => { lookup('Q→').fn(s); }, null, 'session048: Q→ of SIN(X) throws Bad argument type');
 }
 
 /* ---- Q→ on Complex throws ---- */
 {
   const s = new Stack();
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('Q→').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'session048: Q→ of Complex throws Bad argument type');
+  assertThrows(() => { lookup('Q→').fn(s); }, null, 'session048: Q→ of Complex throws Bad argument type');
 }
 
 /* ---- Q-> ASCII alias ---- */
@@ -1602,17 +1529,14 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('D→HMS').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'session048: D→HMS on Complex throws');
+  assertThrows(() => { lookup('D→HMS').fn(s); }, null, 'session048: D→HMS on Complex throws');
 }
 
 // ------------------------------------------------------------------
-// End session 048 additions (Q→, D→HMS / HMS→D)
 // ------------------------------------------------------------------
 
 // ------------------------------------------------------------------
-// Session 052 — →Qπ / ->Qπ: rationalize as rational multiple of π
+// →Qπ / ->Qπ: rationalize as rational multiple of π
 // ------------------------------------------------------------------
 
 /* ---- →Qπ on π itself → Sym(PI) ---- */
@@ -1707,9 +1631,7 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('→Qπ').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session052: Complex →Qπ throws');
+  assertThrows(() => { lookup('→Qπ').fn(s); }, /Bad argument/, 'session052: Complex →Qπ throws');
 }
 
 /* ---- ASCII alias ->Qπ works identically ---- */
@@ -1722,13 +1644,12 @@ setAngle('rad');
 }
 
 // ------------------------------------------------------------------
-// End session 052 additions (→Qπ / ->Qπ)
 // ------------------------------------------------------------------
 
 // ------------------------------------------------------------------
 
 // ==================================================================
-// Session 053 — number-theoretic ops (CAS §11, integer subset)
+// number-theoretic ops (CAS §11, integer subset)
 // ==================================================================
 
 /* ---- ISPRIME? on small cases ---- */
@@ -1755,9 +1676,7 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Real(2.5));
-  let threw = false;
-  try { lookup('ISPRIME?').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: ISPRIME? 2.5 throws');
+  assertThrows(() => { lookup('ISPRIME?').fn(s); }, /Bad argument/, 'session053: ISPRIME? 2.5 throws');
 }
 
 /* ---- ISPRIME? on larger Miller-Rabin witness cases ---- */
@@ -1801,9 +1720,7 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('PREVPRIME').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: PREVPRIME 2 throws (no prime < 2)');
+  assertThrows(() => { lookup('PREVPRIME').fn(s); }, /Bad argument/, 'session053: PREVPRIME 2 throws (no prime < 2)');
 }
 
 /* ---- EULER (Euler totient φ) ---- */
@@ -1822,14 +1739,10 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('EULER').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: EULER 0 throws');
+  assertThrows(() => { lookup('EULER').fn(s); }, /Bad argument/, 'session053: EULER 0 throws');
 
   s.push(Integer(-5n));
-  threw = false;
-  try { lookup('EULER').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: EULER -5 throws');
+  assertThrows(() => { lookup('EULER').fn(s); }, /Bad argument/, 'session053: EULER -5 throws');
 }
 
 /* ---- DIVIS ---- */
@@ -1860,9 +1773,7 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('DIVIS').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: DIVIS 0 throws');
+  assertThrows(() => { lookup('DIVIS').fn(s); }, /Bad argument/, 'session053: DIVIS 0 throws');
 }
 
 /* ---- FACTORS ---- */
@@ -1954,18 +1865,14 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Integer(-1n));
-  let threw = false;
-  try { lookup('IBERNOULLI').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: IBERNOULLI -1 throws');
+  assertThrows(() => { lookup('IBERNOULLI').fn(s); }, /Bad argument/, 'session053: IBERNOULLI -1 throws');
 }
 
 /* ---- IBERNOULLI cap ---- */
 {
   const s = new Stack();
   s.push(Integer(1000n));
-  let threw = false;
-  try { lookup('IBERNOULLI').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: IBERNOULLI 1000 throws (cap)');
+  assertThrows(() => { lookup('IBERNOULLI').fn(s); }, /Bad argument/, 'session053: IBERNOULLI 1000 throws (cap)');
 }
 
 /* ---- IEGCD ---- */
@@ -2024,9 +1931,7 @@ setAngle('rad');
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(2n)]));
   s.push(RList([Integer(0n), Integer(4n)]));
-  let threw = false;
-  try { lookup('ICHINREM').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: ICHINREM inconsistent throws');
+  assertThrows(() => { lookup('ICHINREM').fn(s); }, /Bad argument/, 'session053: ICHINREM inconsistent throws');
 }
 
 /* ---- IABCUV ---- */
@@ -2049,13 +1954,11 @@ setAngle('rad');
   s.push(Integer(6n));
   s.push(Integer(9n));
   s.push(Integer(5n));     // gcd(6,9) = 3, 5 not divisible by 3
-  let threw = false;
-  try { lookup('IABCUV').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: IABCUV 6 9 5 (no solution) throws');
+  assertThrows(() => { lookup('IABCUV').fn(s); }, /Bad argument/, 'session053: IABCUV 6 9 5 (no solution) throws');
 }
 
 // ==================================================================
-// Session 053 — STD / FIX / SCI / ENG (display-mode state)
+// STD / FIX / SCI / ENG (display-mode state)
 // ==================================================================
 
 /* ---- FIX n sets displayMode = 'FIX' and displayDigits = n ---- */
@@ -2114,31 +2017,25 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Integer(-1n));
-  let threw = false;
-  try { lookup('FIX').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: FIX -1 throws');
+  assertThrows(() => { lookup('FIX').fn(s); }, /Bad argument/, 'session053: FIX -1 throws');
 }
 
 /* ---- FIX with non-integer Real throws ---- */
 {
   const s = new Stack();
   s.push(Real(3.5));
-  let threw = false;
-  try { lookup('FIX').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: FIX 3.5 throws');
+  assertThrows(() => { lookup('FIX').fn(s); }, /Bad argument/, 'session053: FIX 3.5 throws');
 }
 
 /* ---- FIX with non-numeric throws Bad argument type ---- */
 {
   const s = new Stack();
   s.push(Name('X'));
-  let threw = false;
-  try { lookup('FIX').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: FIX Name throws');
+  assertThrows(() => { lookup('FIX').fn(s); }, /Bad argument/, 'session053: FIX Name throws');
 }
 
 /* =================================================================
-   Session 054 — CMPLX / CMPLX? mode toggle.
+   CMPLX / CMPLX? mode toggle.
    ================================================================= */
 
 /* ---- CMPLX op toggles state.complexMode ---- */
@@ -2167,9 +2064,7 @@ setAngle('rad');
   setComplexMode(false);
   const s = new Stack();
   s.push(Real(-1));
-  let threw = false;
-  try { lookup('LN').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session054: LN(-1) throws under CMPLX OFF');
+  assertThrows(() => { lookup('LN').fn(s); }, /Bad argument value/, 'session054: LN(-1) throws under CMPLX OFF');
 }
 
 /* ---- CMPLX ON: LN(-1) → (0, π) ---- */
@@ -2184,10 +2079,9 @@ setAngle('rad');
   setComplexMode(false);
 }
 
-/* ---- ACOS(2) always lifts to Complex (session 045 default); CMPLX
- *      doesn't gate that path.  This test pins the behavior so a later
- *      session doesn't accidentally tie ACOS to CMPLX without a
- *      conscious decision. ---- */
+/* ---- ACOS(2) always lifts to Complex; CMPLX doesn't gate that path.
+ *      This test pins the behavior so a future change doesn't
+ *      accidentally tie ACOS to CMPLX without a conscious decision. ---- */
 {
   setComplexMode(true);
   setAngle('RAD');
@@ -2230,7 +2124,7 @@ setAngle('rad');
 }
 
 /* ================================================================
-   Session 055 — C→P / P→C complex cartesian ↔ polar.
+   C→P / P→C complex cartesian ↔ polar.
 
    Angle-mode aware: `fromRadians` writes the θ coordinate out of
    C→P in the current angle mode, and P→C reads it back via
@@ -2342,23 +2236,19 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)]));
-  let threw = false;
-  try { lookup('C→P').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session055: C→P rejects Vector');
+  assertThrows(() => { lookup('C→P').fn(s); }, /Bad argument type/, 'session055: C→P rejects Vector');
 }
 
 /* ======================================================================
-   Session 062 — type-support widening.
+   Type-support widening.
 
-   FLOOR / CEIL / IP / FP / SIGN / ARG / MOD / MIN / MAX were previously
-   restricted to scalar Real/Integer (SIGN/ARG additionally handling
-   Complex + Vector for SIGN).  This session widens them with:
+   FLOOR / CEIL / IP / FP / SIGN / ARG / MOD / MIN / MAX widen with:
      - Symbolic lift on Name/Symbolic operands
      - Vector/Matrix element-wise on FLOOR/CEIL/IP/FP/SIGN/ARG
      - Tagged transparency (unary: re-tags result; binary: drops tag)
-   Complex remains rejected on FLOOR/CEIL/IP/FP/MOD/MIN/MAX — ℂ has no
+   Complex is rejected on FLOOR/CEIL/IP/FP/MOD/MIN/MAX — ℂ has no
    total ordering or well-defined integer-part, matching HP50 behavior.
+   SIGN/ARG handle Complex + Vector natively for SIGN.
    ====================================================================== */
 
 /* ---- FLOOR / CEIL / IP / FP: Symbolic lift on Name ---- */
@@ -2484,18 +2374,12 @@ setAngle('rad');
 {
   const s = new Stack();
   s.push(Complex(1.5, 2.5));
-  let threw = false;
-  try { lookup('FLOOR').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session062: FLOOR rejects Complex');
+  assertThrows(() => { lookup('FLOOR').fn(s); }, /Bad argument type/, 'session062: FLOOR rejects Complex');
 }
 {
   const s = new Stack();
   s.push(Complex(1.5, 2.5));
-  let threw = false;
-  try { lookup('FP').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session062: FP rejects Complex');
+  assertThrows(() => { lookup('FP').fn(s); }, /Bad argument type/, 'session062: FP rejects Complex');
 }
 
 /* ---- SIGN widenings ---- */
@@ -2616,10 +2500,7 @@ setAngle('rad');
   const s = new Stack();
   s.push(Complex(1, 1));
   s.push(Real(3));
-  let threw = false;
-  try { lookup('MOD').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session062: MOD still rejects Complex (no total order in ℂ)');
+  assertThrows(() => { lookup('MOD').fn(s); }, /Bad argument type/, 'session062: MOD still rejects Complex (no total order in ℂ)');
 }
 
 /* ---- MIN / MAX widenings: Symbolic lift, Tagged transparency ---- */
@@ -2664,10 +2545,7 @@ setAngle('rad');
   const s = new Stack();
   s.push(Complex(1, 1));
   s.push(Real(3));
-  let threw = false;
-  try { lookup('MIN').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session062: MIN still rejects Complex');
+  assertThrows(() => { lookup('MIN').fn(s); }, /Bad argument type/, 'session062: MIN still rejects Complex');
 }
 
 /* ---- Symbolic round-trip through entry parser for new KNOWN_FUNCTIONS ---- */
@@ -2697,7 +2575,7 @@ setAngle('rad');
 }
 
 /* ============================================================
- * Session 063 — Vector / Matrix element-wise + Tagged
+ * Vector / Matrix element-wise + Tagged
  *   for the trig, hyperbolic, log, sqrt, fact families.
  *
  * Every widened op picks up three new axes:
@@ -2705,8 +2583,7 @@ setAngle('rad');
  *   - Matrix (apply f to each entry, return a Matrix)
  *   - Tagged (unwrap, apply, re-tag with same label)
  *
- * FACT additionally gains Symbolic / Name lift and List
- * distribution; previously it threw on those.
+ * FACT additionally gets Symbolic / Name lift and List distribution.
  * ============================================================ */
 
 const _approx = (got, want, tol = 1e-9) =>
@@ -3011,36 +2888,24 @@ setAngle('RAD');
 {
   const s = new Stack();
   s.push(Program([Real(1)]));
-  let threw = false;
-  try { lookup('SIN').fn(s); }
-  catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session063: SIN still rejects Program (no Bad argument bypass)');
+  assertThrows(() => { lookup('SIN').fn(s); }, /Bad argument/, 'session063: SIN still rejects Program (no Bad argument bypass)');
 }
 {
   const s = new Stack();
   s.push(Program([Real(1)]));
-  let threw = false;
-  try { lookup('LN').fn(s); }
-  catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session063: LN still rejects Program');
+  assertThrows(() => { lookup('LN').fn(s); }, /Bad argument/, 'session063: LN still rejects Program');
 }
 {
   // FACT on Complex still rejects (HP50 gamma is real-only).
   const s = new Stack();
   s.push(Complex(2, 1));
-  let threw = false;
-  try { lookup('FACT').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session063: FACT still rejects Complex (no complex-Γ)');
+  assertThrows(() => { lookup('FACT').fn(s); }, /Bad argument type/, 'session063: FACT still rejects Complex (no complex-Γ)');
 }
 {
-  // FACT on negative integer → Bad argument value (unchanged from session 031).
+  // FACT on negative integer → Bad argument value.
   const s = new Stack();
   s.push(Integer(-3n));
-  let threw = false;
-  try { lookup('FACT').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session063: FACT(-3) still throws Bad argument value');
+  assertThrows(() => { lookup('FACT').fn(s); }, /Bad argument value/, 'session063: FACT(-3) still throws Bad argument value');
 }
 
 /* ---- Tagged-of-Vector on hyperbolic: tag preserved across container ---- */
@@ -3067,7 +2932,7 @@ setAngle('RAD');
 }
 
 /* ============================================================
- * Session 064 — type-widening assertions
+ * type-widening assertions
  *
  * Three clusters:
  *   (a) GCD / LCM — gain Tagged + List + Symbolic/Name.
@@ -3169,10 +3034,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Tagged('x', Real(1.5)));
   s.push(Integer(3n));
-  let threw = false;
-  try { lookup('GCD').fn(s); }
-  catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('GCD').fn(s); }, /Bad argument/,
     'session064: GCD still rejects non-integer Real inside a Tagged');
 }
 {
@@ -3180,10 +3042,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(RList([Complex(1, 2)]));
   s.push(Integer(3n));
-  let threw = false;
-  try { lookup('GCD').fn(s); }
-  catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('GCD').fn(s); }, /Bad argument/,
     'session064: GCD still rejects Complex element inside a List');
 }
 
@@ -3230,10 +3089,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Complex(1, 1));
   s.push(Real(10));
-  let threw = false;
-  try { lookup('%').fn(s); }
-  catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('%').fn(s); }, /Bad argument/,
     'session064: % still rejects Complex (scalar-only, no C path)');
 }
 {
@@ -3242,10 +3098,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Tagged('base', Real(0)));
   s.push(Real(10));
-  let threw = false;
-  try { lookup('%T').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('%T').fn(s); }, /Infinite result/,
     'session064: %T on Tagged(0) × Real still throws Infinite result');
 }
 
@@ -3301,25 +3154,19 @@ setAngle('RAD');
   // invent an inversion rule for non-numeric values).
   const s = new Stack();
   s.push(Tagged('note', Str('hi')));
-  let threw = false;
-  try { lookup('INV').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('INV').fn(s); }, /Bad argument type/,
     'session064: INV on Tagged-of-String still rejects');
 }
 {
   // Rejection: SQ on a Program still throws.
   const s = new Stack();
   s.push(Program([Real(1)]));
-  let threw = false;
-  try { lookup('SQ').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('SQ').fn(s); }, /Bad argument type/,
     'session064: SQ on Program still rejects');
 }
 
 /* ==================================================================
- * Session 065 — new ops: COMB / PERM / IDIV2 / UTPN
+ * new ops: COMB / PERM / IDIV2 / UTPN
  *
  * Each op gets at least one positive test and one rejection path.
  * Tagged / List wrappers are exercised where they apply to confirm
@@ -3416,40 +3263,28 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(3n));
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('COMB').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session065: COMB(3, 5) throws Bad argument value (m > n)');
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument value/, 'session065: COMB(3, 5) throws Bad argument value (m > n)');
 }
 {
   // Rejection: negative argument.
   const s = new Stack();
   s.push(Integer(-3n));
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('COMB').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session065: COMB(-3, 2) throws Bad argument value');
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument value/, 'session065: COMB(-3, 2) throws Bad argument value');
 }
 {
   // Rejection: non-integer Real.
   const s = new Stack();
   s.push(Real(5.5));
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('COMB').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session065: COMB(5.5, 2) throws Bad argument value');
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument value/, 'session065: COMB(5.5, 2) throws Bad argument value');
 }
 {
   // Rejection: complex argument → Bad argument type.
   const s = new Stack();
   s.push(Complex(2, 1));
   s.push(Integer(1n));
-  let threw = false;
-  try { lookup('COMB').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session065: COMB((2,1), 1) throws Bad argument type');
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/, 'session065: COMB((2,1), 1) throws Bad argument type');
 }
 
 /* ---- PERM: n! / (n−m)! ---- */
@@ -3496,20 +3331,14 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(2n));
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('PERM').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session065: PERM(2, 5) throws Bad argument value (m > n)');
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument value/, 'session065: PERM(2, 5) throws Bad argument value (m > n)');
 }
 {
   // Rejection: non-numeric type.
   const s = new Stack();
   s.push(Str('five'));
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('PERM').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session065: PERM(String, 2) throws Bad argument type');
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/, 'session065: PERM(String, 2) throws Bad argument type');
 }
 
 /* ---- IDIV2: integer quotient + remainder ---- */
@@ -3559,30 +3388,21 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(10n));
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('IDIV2').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session065: IDIV2(10, 0) throws Infinite result');
+  assertThrows(() => { lookup('IDIV2').fn(s); }, /Infinite result/, 'session065: IDIV2(10, 0) throws Infinite result');
 }
 {
   // Rejection: non-integer Real → Bad argument value.
   const s = new Stack();
   s.push(Real(7.5));
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('IDIV2').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session065: IDIV2(7.5, 2) throws Bad argument value');
+  assertThrows(() => { lookup('IDIV2').fn(s); }, /Bad argument value/, 'session065: IDIV2(7.5, 2) throws Bad argument value');
 }
 {
   // Rejection: complex operand → Bad argument type.
   const s = new Stack();
   s.push(Complex(3, 2));
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('IDIV2').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session065: IDIV2((3,2), 2) throws Bad argument type');
+  assertThrows(() => { lookup('IDIV2').fn(s); }, /Bad argument type/, 'session065: IDIV2((3,2), 2) throws Bad argument type');
 }
 
 /* ---- UTPN: upper-tail normal probability ---- */
@@ -3648,10 +3468,7 @@ setAngle('RAD');
   s.push(Real(0));
   s.push(Real(0));
   s.push(Real(0));
-  let threw = false;
-  try { lookup('UTPN').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session065: UTPN with σ²=0 throws Bad argument value');
+  assertThrows(() => { lookup('UTPN').fn(s); }, /Bad argument value/, 'session065: UTPN with σ²=0 throws Bad argument value');
 }
 {
   // Rejection: σ² < 0.
@@ -3659,10 +3476,7 @@ setAngle('RAD');
   s.push(Real(0));
   s.push(Real(-1));
   s.push(Real(0));
-  let threw = false;
-  try { lookup('UTPN').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session065: UTPN with σ²<0 throws Bad argument value');
+  assertThrows(() => { lookup('UTPN').fn(s); }, /Bad argument value/, 'session065: UTPN with σ²<0 throws Bad argument value');
 }
 {
   // Rejection: complex argument → Bad argument type.
@@ -3670,14 +3484,11 @@ setAngle('RAD');
   s.push(Real(0));
   s.push(Real(1));
   s.push(Complex(1, 1));
-  let threw = false;
-  try { lookup('UTPN').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session065: UTPN with Complex x throws Bad argument type');
+  assertThrows(() => { lookup('UTPN').fn(s); }, /Bad argument type/, 'session065: UTPN with Complex x throws Bad argument type');
 }
 
 /* ============================================================
-   Session 068 — Type-widening: Tagged transparency on the
+   Type-widening: Tagged transparency on the
    arithmetic family (+, -, *, /, ^) and on the complex / sign
    family (NEG, ABS, CONJ, RE, IM).  Plus MOD / MIN / MAX V/M
    rejection verification (matches HP50 AUR §3 scalar-only spec).
@@ -3803,10 +3614,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Tagged('p', Program([Real(1)])));
   s.push(Real(2));
-  let threw = false;
-  try { lookup('+').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('+').fn(s); }, /Bad argument type/,
     'session068: + rejects Tagged(Program) + Real with Bad argument type');
 }
 {
@@ -3814,10 +3622,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Tagged('n', Real(5)));
   s.push(Tagged('d', Real(0)));
-  let threw = false;
-  try { lookup('/').fn(s); }
-  catch (e) { threw = /(Infinite result|Undefined)/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('/').fn(s); }, /(Infinite result|Undefined)/,
     'session068: Tagged / Tagged(0) → Infinite result (tag does not mask)');
 }
 
@@ -3921,20 +3726,14 @@ setAngle('RAD');
   // Rejection: NEG on Tagged(String) still throws.
   const s = new Stack();
   s.push(Tagged('msg', Str('hello')));
-  let threw = false;
-  try { lookup('NEG').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('NEG').fn(s); }, /Bad argument type/,
     'session068: NEG on Tagged(String) still rejects with Bad argument type');
 }
 {
   // Rejection: ABS on Tagged(Program) still throws.
   const s = new Stack();
   s.push(Tagged('p', Program([Real(1)])));
-  let threw = false;
-  try { lookup('ABS').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw,
+  assertThrows(() => { lookup('ABS').fn(s); }, /Bad argument type/,
     'session068: ABS on Tagged(Program) still rejects');
 }
 
@@ -3949,51 +3748,35 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Vector([Real(7), Real(10)]));
   s.push(Real(3));
-  let threw = false;
-  try { lookup('MOD').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: MOD rejects Vector on level 2 (AUR scalar-only)');
+  assertThrows(() => { lookup('MOD').fn(s); }, /Bad argument type/, 'session068: MOD rejects Vector on level 2 (AUR scalar-only)');
 }
 {
   const s = new Stack();
   s.push(Real(17));
   s.push(Vector([Real(5), Real(3)]));
-  let threw = false;
-  try { lookup('MOD').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: MOD rejects Vector on level 1');
+  assertThrows(() => { lookup('MOD').fn(s); }, /Bad argument type/, 'session068: MOD rejects Vector on level 1');
 }
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
   s.push(Real(3));
-  let threw = false;
-  try { lookup('MOD').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: MOD rejects Matrix operand');
+  assertThrows(() => { lookup('MOD').fn(s); }, /Bad argument type/, 'session068: MOD rejects Matrix operand');
 }
 {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)]));
   s.push(Vector([Real(3), Real(4)]));
-  let threw = false;
-  try { lookup('MIN').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: MIN rejects Vector ∘ Vector (no element-wise)');
+  assertThrows(() => { lookup('MIN').fn(s); }, /Bad argument type/, 'session068: MIN rejects Vector ∘ Vector (no element-wise)');
 }
 {
   const s = new Stack();
   s.push(Real(5));
   s.push(Matrix([[Real(1), Real(9)], [Real(3), Real(7)]]));
-  let threw = false;
-  try { lookup('MAX').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: MAX rejects scalar ∘ Matrix (no broadcast)');
+  assertThrows(() => { lookup('MAX').fn(s); }, /Bad argument type/, 'session068: MAX rejects scalar ∘ Matrix (no broadcast)');
 }
 
 /* ---- MOD / MIN / MAX symbolic-lift still works for Name operands ----
-   Spot-check that widening in related cells did not regress the
-   Session 062 symbolic-lift path. */
+   Spot-check that related widening did not regress the symbolic-lift path. */
 {
   const s = new Stack();
   s.push(Name('X'));
@@ -4005,7 +3788,7 @@ setAngle('RAD');
 }
 
 /* ============================================================
- * Session 068 — new ops: IQUOT / IREMAINDER / GAMMA / LNGAMMA / UTPC
+ * new ops: IQUOT / IREMAINDER / GAMMA / LNGAMMA / UTPC
  *
  * IQUOT / IREMAINDER are single-result siblings of IDIV2 (session
  * 065).  GAMMA / LNGAMMA wrap the Lanczos helper already in ops.js.
@@ -4086,30 +3869,21 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(17n));
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('IQUOT').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session068: IQUOT(17, 0) throws Infinite result');
+  assertThrows(() => { lookup('IQUOT').fn(s); }, /Infinite result/, 'session068: IQUOT(17, 0) throws Infinite result');
 }
 {
   // Non-integer Real → Bad argument value.
   const s = new Stack();
   s.push(Real(1.5));
   s.push(Integer(3n));
-  let threw = false;
-  try { lookup('IQUOT').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session068: IQUOT(1.5, 3) throws Bad argument value');
+  assertThrows(() => { lookup('IQUOT').fn(s); }, /Bad argument value/, 'session068: IQUOT(1.5, 3) throws Bad argument value');
 }
 {
   // Complex → Bad argument type.
   const s = new Stack();
   s.push(Complex(3, 2));
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('IQUOT').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: IQUOT((3,2), 2) throws Bad argument type');
+  assertThrows(() => { lookup('IQUOT').fn(s); }, /Bad argument type/, 'session068: IQUOT((3,2), 2) throws Bad argument type');
 }
 
 /* ---- IREMAINDER: integer remainder (sign of dividend) ---- */
@@ -4184,20 +3958,14 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(17n));
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('IREMAINDER').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session068: IREMAINDER(17, 0) throws Infinite result');
+  assertThrows(() => { lookup('IREMAINDER').fn(s); }, /Infinite result/, 'session068: IREMAINDER(17, 0) throws Infinite result');
 }
 {
   // String → Bad argument type.
   const s = new Stack();
   s.push(Str('17'));
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('IREMAINDER').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: IREMAINDER on String dividend throws Bad argument type');
+  assertThrows(() => { lookup('IREMAINDER').fn(s); }, /Bad argument type/, 'session068: IREMAINDER on String dividend throws Bad argument type');
 }
 
 /* ---- GAMMA: Γ(x) via Lanczos ---- */
@@ -4285,28 +4053,19 @@ setAngle('RAD');
   // Pole at 0 → Infinite result.
   const s = new Stack();
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('GAMMA').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session068: GAMMA(0) throws Infinite result (pole)');
+  assertThrows(() => { lookup('GAMMA').fn(s); }, /Infinite result/, 'session068: GAMMA(0) throws Infinite result (pole)');
 }
 {
   // Pole at negative integer.
   const s = new Stack();
   s.push(Integer(-3n));
-  let threw = false;
-  try { lookup('GAMMA').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session068: GAMMA(-3) throws Infinite result (pole)');
+  assertThrows(() => { lookup('GAMMA').fn(s); }, /Infinite result/, 'session068: GAMMA(-3) throws Infinite result (pole)');
 }
 {
   // Complex → Bad argument type.  HP50 Γ is real-valued only.
   const s = new Stack();
   s.push(Complex(1, 1));
-  let threw = false;
-  try { lookup('GAMMA').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: GAMMA((1,1)) throws Bad argument type');
+  assertThrows(() => { lookup('GAMMA').fn(s); }, /Bad argument type/, 'session068: GAMMA((1,1)) throws Bad argument type');
 }
 
 /* ---- LNGAMMA: ln|Γ(x)| via Lanczos-log ---- */
@@ -4351,19 +4110,13 @@ setAngle('RAD');
   // Pole at 0.
   const s = new Stack();
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('LNGAMMA').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session068: LNGAMMA(0) throws Infinite result');
+  assertThrows(() => { lookup('LNGAMMA').fn(s); }, /Infinite result/, 'session068: LNGAMMA(0) throws Infinite result');
 }
 {
   // String → Bad argument type.
   const s = new Stack();
   s.push(Str('hi'));
-  let threw = false;
-  try { lookup('LNGAMMA').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: LNGAMMA on String throws Bad argument type');
+  assertThrows(() => { lookup('LNGAMMA').fn(s); }, /Bad argument type/, 'session068: LNGAMMA on String throws Bad argument type');
 }
 
 /* ---- UTPC: chi-square upper tail ---- */
@@ -4438,34 +4191,25 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(0n));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('UTPC').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session068: UTPC(0, x) throws Bad argument value (need ν ≥ 1)');
+  assertThrows(() => { lookup('UTPC').fn(s); }, /Bad argument value/, 'session068: UTPC(0, x) throws Bad argument value (need ν ≥ 1)');
 }
 {
   // Non-integer ν → rejection.
   const s = new Stack();
   s.push(Real(2.5));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('UTPC').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session068: UTPC(2.5, x) throws Bad argument value (ν must be integer)');
+  assertThrows(() => { lookup('UTPC').fn(s); }, /Bad argument value/, 'session068: UTPC(2.5, x) throws Bad argument value (ν must be integer)');
 }
 {
   // Complex rejection.
   const s = new Stack();
   s.push(Complex(2, 1));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('UTPC').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session068: UTPC with Complex ν throws Bad argument type');
+  assertThrows(() => { lookup('UTPC').fn(s); }, /Bad argument type/, 'session068: UTPC with Complex ν throws Bad argument type');
 }
 
 /* ==================================================================
-   Session 069 — Beta / erf / erfc / UTPF / UTPT.  Session-072 log.
+   Beta / erf / erfc / UTPF / UTPT.
    Each op: ≥1 positive + ≥1 rejection.  Textbook critical values /
    closed-form cross-checks cited per assertion.
    ================================================================= */
@@ -4533,28 +4277,19 @@ setAngle('RAD');
   // Non-positive integer arg → Infinite result (Γ pole).
   const s = new Stack();
   s.push(Integer(0n)); s.push(Integer(3n));
-  let threw = false;
-  try { lookup('Beta').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session069: Beta(0, 3) throws Infinite result');
+  assertThrows(() => { lookup('Beta').fn(s); }, /Infinite result/, 'session069: Beta(0, 3) throws Infinite result');
 }
 {
   // Negative integer arg → Infinite result.
   const s = new Stack();
   s.push(Integer(-2n)); s.push(Integer(3n));
-  let threw = false;
-  try { lookup('Beta').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session069: Beta(-2, 3) throws Infinite result');
+  assertThrows(() => { lookup('Beta').fn(s); }, /Infinite result/, 'session069: Beta(-2, 3) throws Infinite result');
 }
 {
   // String argument → Bad argument type (neither Real nor Integer).
   const s = new Stack();
   s.push(Str('a')); s.push(Real(1));
-  let threw = false;
-  try { lookup('Beta').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session069: Beta("a", 1) throws Bad argument type');
+  assertThrows(() => { lookup('Beta').fn(s); }, /Bad argument type/, 'session069: Beta("a", 1) throws Bad argument type');
 }
 
 /* ---- erf --------------------------------------------------------- */
@@ -4641,10 +4376,7 @@ setAngle('RAD');
   // a separate CAS-only extension that we haven't shipped).
   const s = new Stack();
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('erf').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session069: erf(Complex) throws Bad argument type');
+  assertThrows(() => { lookup('erf').fn(s); }, /Bad argument type/, 'session069: erf(Complex) throws Bad argument type');
 }
 
 /* ---- erfc -------------------------------------------------------- */
@@ -4701,19 +4433,13 @@ setAngle('RAD');
   // erfc(∞)-direction rejection — non-finite input.
   const s = new Stack();
   s.push(Real(Infinity));
-  let threw = false;
-  try { lookup('erfc').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session069: erfc(∞) throws Bad argument value');
+  assertThrows(() => { lookup('erfc').fn(s); }, /Bad argument value/, 'session069: erfc(∞) throws Bad argument value');
 }
 {
   // String rejection.
   const s = new Stack();
   s.push(Str('hello'));
-  let threw = false;
-  try { lookup('erfc').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session069: erfc("hello") throws Bad argument type');
+  assertThrows(() => { lookup('erfc').fn(s); }, /Bad argument type/, 'session069: erfc("hello") throws Bad argument type');
 }
 
 /* ---- UTPF -------------------------------------------------------- */
@@ -4774,10 +4500,7 @@ setAngle('RAD');
   s.push(Integer(0n));
   s.push(Integer(5n));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('UTPF').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session069: UTPF(0, d, F) throws Bad argument value');
+  assertThrows(() => { lookup('UTPF').fn(s); }, /Bad argument value/, 'session069: UTPF(0, d, F) throws Bad argument value');
 }
 {
   // Non-integer n rejection.
@@ -4785,20 +4508,14 @@ setAngle('RAD');
   s.push(Real(1.5));
   s.push(Integer(5n));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('UTPF').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session069: UTPF(1.5, d, F) throws Bad argument value');
+  assertThrows(() => { lookup('UTPF').fn(s); }, /Bad argument value/, 'session069: UTPF(1.5, d, F) throws Bad argument value');
 }
 {
   // Too few arguments.
   const s = new Stack();
   s.push(Integer(5n));
   s.push(Integer(10n));
-  let threw = false;
-  try { lookup('UTPF').fn(s); }
-  catch (e) { threw = /Too few arguments/.test(e.message); }
-  assert(threw, 'session069: UTPF(n, d) with no F throws Too few arguments');
+  assertThrows(() => { lookup('UTPF').fn(s); }, /Too few arguments/, 'session069: UTPF(n, d) with no F throws Too few arguments');
 }
 {
   // Complex F rejection.
@@ -4806,10 +4523,7 @@ setAngle('RAD');
   s.push(Integer(5n));
   s.push(Integer(10n));
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('UTPF').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session069: UTPF(5, 10, Complex) throws Bad argument type');
+  assertThrows(() => { lookup('UTPF').fn(s); }, /Bad argument type/, 'session069: UTPF(5, 10, Complex) throws Bad argument type');
 }
 
 /* ---- UTPT -------------------------------------------------------- */
@@ -4874,50 +4588,35 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(0n));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('UTPT').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session069: UTPT(0, t) throws Bad argument value');
+  assertThrows(() => { lookup('UTPT').fn(s); }, /Bad argument value/, 'session069: UTPT(0, t) throws Bad argument value');
 }
 {
   // Non-integer ν rejection.
   const s = new Stack();
   s.push(Real(2.5));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('UTPT').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session069: UTPT(2.5, t) throws Bad argument value (ν must be integer)');
+  assertThrows(() => { lookup('UTPT').fn(s); }, /Bad argument value/, 'session069: UTPT(2.5, t) throws Bad argument value (ν must be integer)');
 }
 {
   // Too few arguments.
   const s = new Stack();
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('UTPT').fn(s); }
-  catch (e) { threw = /Too few arguments/.test(e.message); }
-  assert(threw, 'session069: UTPT(ν) with no t throws Too few arguments');
+  assertThrows(() => { lookup('UTPT').fn(s); }, /Too few arguments/, 'session069: UTPT(ν) with no t throws Too few arguments');
 }
 {
   // Complex rejection.
   const s = new Stack();
   s.push(Integer(5n));
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('UTPT').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session069: UTPT(5, Complex) throws Bad argument type');
+  assertThrows(() => { lookup('UTPT').fn(s); }, /Bad argument type/, 'session069: UTPT(5, Complex) throws Bad argument type');
 }
 
 /* ================================================================
-   Session 072 (data-types lane) — widening cluster #1:
+   Widening cluster #1:
      FLOOR / CEIL / IP / FP on Unit operand.
    HP50 AUR §3-65 / §3-66 / §3-108: these rounders apply to the
    scalar part of a Unit and preserve the unit expression intact,
    so `1.5_m FLOOR` → `1_m`, `1.8_m FP` → `0.8_m`, etc.
-   Previous to this session `_rounderScalar` rejected Unit outright
-   with "Bad argument type" — DATA_TYPES.md had the Unit cells as `·`
-   (not applicable).  Flipping them to ✓.
    ================================================================ */
 {
   // FLOOR on a positive-fractional unit drops fractional part; unit kept.
@@ -5022,58 +4721,43 @@ setAngle('RAD');
 }
 
 /* ================================================================
-   Session 072 (data-types lane) — widening cluster #2:
+   Widening cluster #2:
      % / %T / %CH V/M rejection audit.  HP50 AUR §3-1 specifies the
      percent family as scalar-only — Real on both operands.
-     `_percentOp` already rejects V/M via `toRealOrThrow`; this block
-     just pins that behaviour with tests, mirroring session 068's
-     MOD/MIN/MAX V/M rejection audit.
+     `_percentOp` rejects V/M via `toRealOrThrow`; this block pins
+     that behaviour with tests (parallel to the MOD/MIN/MAX V/M
+     rejection audit).
    ================================================================ */
 {
   // % with Vector on level-2.
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)])); s.push(Real(10));
-  let threw = false;
-  try { lookup('%').fn(s); }
-  catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw, 'session072: %(Vec, Real) → Bad argument type');
+  assertThrows(() => { lookup('%').fn(s); }, /Bad argument type/i, 'session072: %(Vec, Real) → Bad argument type');
 }
 {
   // % with Vector on level-1 (y operand).
   const s = new Stack();
   s.push(Real(100)); s.push(Vector([Real(1), Real(2)]));
-  let threw = false;
-  try { lookup('%').fn(s); }
-  catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw, 'session072: %(Real, Vec) → Bad argument type (y-Vec branch)');
+  assertThrows(() => { lookup('%').fn(s); }, /Bad argument type/i, 'session072: %(Real, Vec) → Bad argument type (y-Vec branch)');
 }
 {
   // %T with Matrix on either side.
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
   s.push(Real(10));
-  let threw = false;
-  try { lookup('%T').fn(s); }
-  catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw, 'session072: %T(Matrix, Real) → Bad argument type');
+  assertThrows(() => { lookup('%T').fn(s); }, /Bad argument type/i, 'session072: %T(Matrix, Real) → Bad argument type');
 }
 {
   // %CH on two Vectors — no element-wise broadcast.
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)])); s.push(Vector([Real(3), Real(4)]));
-  let threw = false;
-  try { lookup('%CH').fn(s); }
-  catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw, 'session072: %CH(Vec, Vec) → Bad argument type (no broadcast)');
+  assertThrows(() => { lookup('%CH').fn(s); }, /Bad argument type/i, 'session072: %CH(Vec, Vec) → Bad argument type (no broadcast)');
 }
 {
   // %CH on two Matrices — no broadcast.
   const s = new Stack();
   s.push(Matrix([[Real(1)]])); s.push(Matrix([[Real(2)]]));
-  let threw = false;
-  try { lookup('%CH').fn(s); }
-  catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw, 'session072: %CH(Mat, Mat) → Bad argument type');
+  assertThrows(() => { lookup('%CH').fn(s); }, /Bad argument type/i, 'session072: %CH(Mat, Mat) → Bad argument type');
 }
 {
   // Regression guard: scalar %/%T/%CH still works after the audit.
@@ -5094,7 +4778,7 @@ setAngle('RAD');
 }
 
 /* ================================================================
-   Session 076 — EUCLID (Bezout) + INVMOD (modular inverse).
+   EUCLID (Bezout) + INVMOD (modular inverse).
    ================================================================ */
 
 /* ---- EUCLID on coprime pair ---- */
@@ -5164,10 +4848,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(0n));
   s.push(Integer(0n));
-  let threw = false;
-  try { lookup('EUCLID').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: EUCLID(0, 0) rejects with Bad argument value');
+  assertThrows(() => { lookup('EUCLID').fn(s); }, /Bad argument value/, 'session076: EUCLID(0, 0) rejects with Bad argument value');
 }
 
 /* ---- EUCLID rejects non-integer-valued Real ---- */
@@ -5175,10 +4856,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Real(3.5));
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('EUCLID').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: EUCLID rejects non-integer-valued Real');
+  assertThrows(() => { lookup('EUCLID').fn(s); }, /Bad argument value/, 'session076: EUCLID rejects non-integer-valued Real');
 }
 
 /* ---- EUCLID rejects String ---- */
@@ -5186,10 +4864,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Str('x'));
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('EUCLID').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session076: EUCLID on String rejects with Bad argument type');
+  assertThrows(() => { lookup('EUCLID').fn(s); }, /Bad argument type/, 'session076: EUCLID on String rejects with Bad argument type');
 }
 
 /* ---- INVMOD small case: 3^-1 mod 11 = 4 (since 3·4 = 12 ≡ 1) ---- */
@@ -5247,10 +4922,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(4n));
   s.push(Integer(6n));         // gcd(4, 6) = 2 → no inverse
-  let threw = false;
-  try { lookup('INVMOD').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: INVMOD(4, 6) rejects — no inverse (gcd = 2)');
+  assertThrows(() => { lookup('INVMOD').fn(s); }, /Bad argument value/, 'session076: INVMOD(4, 6) rejects — no inverse (gcd = 2)');
 }
 
 /* ---- INVMOD rejects modulus < 2 ---- */
@@ -5258,10 +4930,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(3n));
   s.push(Integer(1n));
-  let threw = false;
-  try { lookup('INVMOD').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: INVMOD rejects modulus = 1');
+  assertThrows(() => { lookup('INVMOD').fn(s); }, /Bad argument value/, 'session076: INVMOD rejects modulus = 1');
 }
 
 /* ---- INVMOD rejects a ≡ 0 (mod n) ---- */
@@ -5269,10 +4938,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(6n));
   s.push(Integer(3n));
-  let threw = false;
-  try { lookup('INVMOD').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: INVMOD(6, 3) rejects — 6 ≡ 0 (mod 3)');
+  assertThrows(() => { lookup('INVMOD').fn(s); }, /Bad argument value/, 'session076: INVMOD(6, 3) rejects — 6 ≡ 0 (mod 3)');
 }
 
 /* ---- INVMOD rejects non-integer-valued Real ---- */
@@ -5280,10 +4946,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Real(3.5));
   s.push(Integer(11n));
-  let threw = false;
-  try { lookup('INVMOD').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: INVMOD rejects non-integer-valued Real');
+  assertThrows(() => { lookup('INVMOD').fn(s); }, /Bad argument value/, 'session076: INVMOD rejects non-integer-valued Real');
 }
 
 /* ---- INVMOD rejects String ---- */
@@ -5291,25 +4954,18 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Str('3'));
   s.push(Integer(11n));
-  let threw = false;
-  try { lookup('INVMOD').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session076: INVMOD on String rejects with Bad argument type');
+  assertThrows(() => { lookup('INVMOD').fn(s); }, /Bad argument type/, 'session076: INVMOD on String rejects with Bad argument type');
 }
 
 /* ================================================================
-   Session 075 (unit-test lane) — DATA_TYPES ✗ rejection sweep
+   DATA_TYPES ✗ rejection sweep.
 
    Charter rule (TESTS.md): "ops marked ✗ in docs/DATA_TYPES.md should
-   have a matching rejection assertion in the tree."  Previous lanes
-   have pinned most of these, but an audit this session surfaced a
-   handful of ✗ cells with no direct test — only wrapped-in-List or
-   wrapped-in-Tagged coverage, or an English "still rejects" comment
-   with no adjacent assertion.  This block adds the missing explicit
-   rejection tests so the matrix is 1:1 with the test tree.
+   have a matching rejection assertion in the tree."  This block
+   carries the explicit rejection tests for bare (unwrapped) ✗ cells
+   so the matrix is 1:1 with the test tree.
 
-   All assertions hard-asserted — these are already-rejected cells,
-   not gaps against a sibling lane.
+   All assertions are hard-asserted — these cells reject by contract.
    ================================================================ */
 
 /* ---- GCD/LCM: Complex / Vector / Matrix rejection ---- */
@@ -5317,7 +4973,7 @@ setAngle('RAD');
   // GCD(Complex, Integer) — bare Complex, not wrapped in List or Tagged.
   // AUR §3 says GCD is integer-only.  `_gcdScalar` rejects Complex
   // unconditionally — List/Tagged wrappers unwrap first, so this bare
-  // path has no explicit test before session 075.
+  // path is pinned separately.
   const s = new Stack();
   s.push(Complex(3, 4));
   s.push(Integer(6n));
@@ -5375,8 +5031,8 @@ setAngle('RAD');
 
 /* ---- MAX(Complex, Complex) rejection ---- */
 {
-  // The existing session-014 block pinned MOD and MIN on Complex but
-  // skipped MAX — fill the gap.  No total order on ℂ → Bad argument.
+  // MOD and MIN on Complex are pinned elsewhere; MAX mirrors them.
+  // No total order on ℂ → Bad argument.
   const s = new Stack();
   s.push(Complex(1, 1));
   s.push(Complex(2, 2));
@@ -5387,8 +5043,7 @@ setAngle('RAD');
 /* ---- %T / %CH on Complex ---- */
 {
   // %T(Complex, Real) — percent family is scalar-only (AUR §3-1).
-  // %T was not directly pinned on Complex; the session-064 comment says
-  // "%/%T/%CH still refuse Complex" but only the % op had an assertion.
+  // %/%T/%CH refuse Complex; this pins the %T variant explicitly.
   const s = new Stack();
   s.push(Complex(1, 1));
   s.push(Real(10));
@@ -5406,9 +5061,8 @@ setAngle('RAD');
 
 /* ---- CEIL / IP on Complex ---- */
 {
-  // The session-062 block only explicitly pinned FLOOR and FP on Complex;
-  // CEIL and IP were implied by the "same rejection" comment but had no
-  // adjacent assertion.  Fill the gap so the matrix is 1:1.
+  // FLOOR and FP on Complex are pinned elsewhere; CEIL and IP mirror
+  // them.  Fill these so the matrix is 1:1.
   const s = new Stack();
   s.push(Complex(1.5, 2.5));
   assertThrows(() => lookup('CEIL').fn(s), /Bad argument type/,
@@ -5438,7 +5092,7 @@ setAngle('RAD');
 }
 
 /* =====================================================================
-   Session 081 — TRUNC (two-arg CAS form), PSI (digamma + polygamma)
+   TRUNC (two-arg CAS form), PSI (digamma + polygamma)
    =====================================================================
 
    TRUNC is the CAS-form sibling of TRNC: identical numeric behaviour
@@ -5707,7 +5361,7 @@ setAngle('RAD');
 }
 
 /* =====================================================================
-   Session 081 — CYCLOTOMIC (n-th cyclotomic polynomial)
+   CYCLOTOMIC (n-th cyclotomic polynomial)
    =====================================================================
 
    CYCLOTOMIC returns Φ_n(X), the monic polynomial in Z[X] whose roots
@@ -5876,7 +5530,7 @@ function _arrayEq(a, b) {
 }
 
 /* =====================================================================
-   Session 086 — ZETA (Riemann zeta), LAMBERT (Lambert W₀), XNUM / XQ
+   ZETA (Riemann zeta), LAMBERT (Lambert W₀), XNUM / XQ
 
    ZETA      HP50 AUR §2 (CAS-SPECIAL).  Real one-arg Riemann zeta.
              Euler-Maclaurin on s ≥ 1/2, functional-equation reflection

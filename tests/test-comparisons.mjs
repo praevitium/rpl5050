@@ -335,9 +335,8 @@ import { assert, assertThrows } from './helpers.mjs';
     'session072: Vector == Vector is structural — gap filed s070, fixed s072');
 }
 
-/* ---- String lexicographic < > ≤ ≥ (session 087) ----
-   HP50 User Guide App. J: string comparisons are char-code lex.
-   Gap filed session 068; widened session 087. */
+/* ---- String lexicographic < > ≤ ≥ ----
+   HP50 User Guide App. J: string comparisons are char-code lex. */
 {
   // "a" < "b" — basic ascending order
   {

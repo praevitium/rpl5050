@@ -214,8 +214,6 @@ import { assert } from './helpers.mjs';
 // VARS pushes a list of Names from the current directory, with the
 // most-recently-stored / -ORDERed name FIRST.  Matches the left-to-
 // right order of the soft-menu bank on a physical HP50 (AUR §2.8).
-// Session 047 first pushed raw insertion order (oldest first); that
-// read as backwards versus the visible menu and was flipped here.
 {
   resetHome();
   varStore('Z', Real(1));
@@ -544,7 +542,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ----------------------------------------------------------------
-   VARS soft-key descent flow (session 012).
+   VARS soft-key descent flow.
 
    We can't import src/app.js in Node — it touches document / window.
    But the decision tree inside showVarsMenu's onPress handler is
@@ -645,7 +643,7 @@ import { assert } from './helpers.mjs';
   resetHome();
 }
 
-/* ---------- session 013: STO / PURGE subdir protection ---------- */
+/* ---------- STO / PURGE subdir protection ---------- */
 
 // STO refuses to overwrite a subdirectory with a scalar.
 {
@@ -795,7 +793,7 @@ import { assert } from './helpers.mjs';
 // ------------------------------------------------------------------
 
 // ================================================================
-// Session 032 — State UNDO (variables + current directory)
+// State UNDO (variables + current directory)
 // ================================================================
 {
   const {
@@ -817,8 +815,7 @@ import { assert } from './helpers.mjs';
       'undoVarState drops Y that was added after snapshot');
   }
 
-  // ---- Session 037: var-state undo upgraded to multi-level.  Round-
-  //      trip that used to be two undos is now undo + redo. ----
+  // ---- Multi-level var-state undo round-trip: undo + redo. ----
   {
     const { redoVarState, hasVarRedo } = await import('../src/rpl/state.js');
     resetHome();
@@ -1026,7 +1023,7 @@ import { assert } from './helpers.mjs';
   resetHome();
 }
 
-/* Session 038 — stored-variable arithmetic ops (STO+ STO- STO* STO/). */
+/* stored-variable arithmetic ops (STO+ STO- STO* STO/). */
   // ---- STO+/STO-/STO*/STO/ ----
   resetHome();   // clean slate for variable tests below
   {
@@ -1087,7 +1084,7 @@ import { assert } from './helpers.mjs';
   }
 
 /* ================================================================
-   Session 040 — INCR / DECR (stored-variable ± 1) + user flag ops
+   INCR / DECR (stored-variable ± 1) + user flag ops
    (SF / CF / FS? / FC? / FS?C / FC?C).
    ================================================================ */
 
@@ -1288,7 +1285,7 @@ const {
 }
 
 /* ================================================================
-   Session 042 — STOF / RCLF (flag set save/restore).
+   STOF / RCLF (flag set save/restore).
 
    STOF: { n1 n2 … } → (clears all flags, sets exactly those in list)
    RCLF: ( → { n1 n2 … } )  (pushes sorted list of currently-set flag
@@ -1331,7 +1328,7 @@ const {
   lookup('STOF').fn(s);
   assert(s.depth === 0, 'STOF consumed its argument');
   assert(!testUserFlag(1) && !testUserFlag(2) && !testUserFlag(3),
-    'STOF cleared the previously-set flags');
+    'STOF cleared flags 1/2/3 that were set before the call');
   assert(testUserFlag(10) && testUserFlag(-20),
     'STOF set exactly the flags named in the list');
   clearAllUserFlags();
@@ -1422,7 +1419,7 @@ const {
 }
 
 // ------------------------------------------------------------------
-// Session 046 additions — SNEG / SINV / SCONJ, PGDIR
+// SNEG / SINV / SCONJ, PGDIR
 // ------------------------------------------------------------------
 
 /* ---- SNEG: negate a stored numeric ---- */
@@ -1617,12 +1614,8 @@ const {
     'SINV { P Q } inverts both stored values');
 }
 
-// ------------------------------------------------------------------
-// End session 046 SNEG/SINV/SCONJ/PGDIR additions
-// ------------------------------------------------------------------
-
 // ==================================================================
-// Session 047 — ORDER, BYTES, NEWOB, MEM
+// ORDER, BYTES, NEWOB, MEM
 // ==================================================================
 
 /* ---- ORDER reshapes the directory so VARS shows the requested order ---- */
@@ -1802,12 +1795,8 @@ const {
     'session047: MEM pushes Real(Number.MAX_SAFE_INTEGER)');
 }
 
-// ------------------------------------------------------------------
-// End session 047 ORDER/BYTES/NEWOB/MEM additions
-// ------------------------------------------------------------------
-
 // ==================================================================
-// Session 053 — VTYPE (value-type of a stored Name)
+// VTYPE (value-type of a stored Name)
 // ==================================================================
 
 /* ---- VTYPE returns HP50 type code of stored value ---- */
@@ -1848,7 +1837,7 @@ const {
 }
 
 /* =================================================================
-   Session 054 — MERGE: directory / list-of-pairs merge.
+   MERGE: directory / list-of-pairs merge.
    ================================================================= */
 
 /* ---- MERGE list of (Name, value) pairs into current dir ---- */

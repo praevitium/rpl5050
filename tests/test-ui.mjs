@@ -25,8 +25,8 @@ import { assert } from './helpers.mjs';
 
 /* ================================================================
    UI paging helpers — clampStackScroll and computeMenuPage.
-   Pure functions, no DOM required.  These drive the session-008
-   arrow-key + menu-paging wiring.
+   Pure functions, no DOM required.  These drive the arrow-key +
+   menu-paging wiring.
    ================================================================ */
 
 // clampStackScroll: basic clamping
@@ -91,7 +91,7 @@ import { assert } from './helpers.mjs';
 
 
 // ================================================================
-// Session 037 — physical-keyboard modifier shortcuts
+// physical-keyboard modifier shortcuts
 // ================================================================
 // The handler lives in src/ui/shortcuts.js as a pure function so it
 // can be exercised without a DOM.  It receives an event-shaped object
@@ -284,7 +284,7 @@ import { assert } from './helpers.mjs';
 
 
 /* =================================================================
-   Session 037 — Interactive-stack pure helpers.
+   Interactive-stack pure helpers.
 
    These exercise the DOM-free transition / manipulation functions in
    src/ui/interactive-stack.js so the controller math stays correct as
@@ -401,7 +401,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* =================================================================
-   Session 037 — Display click/tooltip rendering.
+   Display click/tooltip rendering.
 
    The Display module emits HTML; we can probe the strings produced by
    setPath without a real DOM by giving it a minimal fake statusLine.
@@ -445,11 +445,11 @@ import { assert } from './helpers.mjs';
   assert(html.includes('title="Navigate up to HOME"') &&
          html.includes('title="Current directory: A"'),
          'setPath: ancestor vs current tooltip differ');
-  // Session 039 regression: the outer #ann-mode container must NOT carry
-  // a title attribute.  The CSS rule `.annunciator[title]:hover` would
-  // otherwise highlight the braces / whitespace around the segments,
-  // turning the whole path into an apparent hit target even though only
-  // the individual segments are clickable.
+  // The outer #ann-mode container must NOT carry a title attribute.
+  // The CSS rule `.annunciator[title]:hover` would otherwise highlight
+  // the braces / whitespace around the segments, turning the whole
+  // path into an apparent hit target even though only the individual
+  // segments are clickable.
   assert(statusLine._node.title === '',
          'setPath: the #ann-mode container has no aggregate tooltip');
 }

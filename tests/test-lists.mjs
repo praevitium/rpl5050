@@ -261,7 +261,7 @@ import { assert } from './helpers.mjs';
   }
 
 /* ================================================================
-   Session 040 — SORT / REVLIST (list combinators).
+   SORT / REVLIST (list combinators).
    ================================================================ */
 
 /* ---- SORT: ascending numeric ---- */
@@ -388,7 +388,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 042 — ΣLIST / ΠLIST / ΔLIST + REPL / SREPL.
+   ΣLIST / ΠLIST / ΔLIST + REPL / SREPL.
 
    ΣLIST, ΠLIST: fold list items through + / *.
    ΔLIST: successive differences xi - x(i-1).
@@ -667,7 +667,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// Session 044: MAP combinator
+// MAP combinator
 // ------------------------------------------------------------------
 
 /* ---- MAP on a List with a doubling program ---- */
@@ -768,7 +768,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// Session 045: SEQ / DOLIST / DOSUBS / STREAM — list combinators
+// SEQ / DOLIST / DOSUBS / STREAM — list combinators
 // ------------------------------------------------------------------
 
 /* ---- SEQ: basic ascending count ---- */
@@ -1026,11 +1026,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// End session 045 additions (list combinators)
-// ------------------------------------------------------------------
-
-// ------------------------------------------------------------------
-// Session 046 additions — NSUB / ENDSUB
+// NSUB / ENDSUB
 // ------------------------------------------------------------------
 
 /* ---- NSUB / ENDSUB outside DOSUBS throw ---- */
@@ -1142,11 +1138,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// End session 046 NSUB/ENDSUB additions
-// ------------------------------------------------------------------
-
-// ------------------------------------------------------------------
-// Session 052 — GETI / PUTI  (auto-incrementing GET / PUT with wrap)
+// GETI / PUTI  (auto-incrementing GET / PUT with wrap)
 // ------------------------------------------------------------------
 
 /* ---- GETI on List: (L 2 → L 3 elt) ---- */
@@ -1362,11 +1354,10 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// End session 052 additions (GETI / PUTI)
 // ------------------------------------------------------------------
 
 // ==================================================================
-// Session 053 — APPEND (list append)
+// APPEND (list append)
 // ==================================================================
 
 /* ---- APPEND {1 2} 3 → {1 2 3} ---- */

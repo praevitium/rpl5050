@@ -23,15 +23,13 @@ import { assert, assertThrows } from './helpers.mjs';
 /* Vector / Matrix ops — SIZE / TRN / DET / INV / DOT / CROSS / NORM / IDN. */
 
 /* ================================================================
-   Session 035 — Vector / Matrix starter ops: SIZE, TRN, Vector + - .
-   First slice of the long-standing "no matrix ops" gap flagged in
-   session 034's remaining-backlog note.
+   Vector / Matrix starter ops: SIZE, TRN, Vector + - .
    ================================================================ */
 {
   // SIZE on Vector returns a 1-element list of the length.
-  // Session 036 aligned SIZE to the HP50 Advanced Guide spec: the
-  // list entries are Reals, not Integers (so downstream numeric ops
-  // don't have to deal with Integer→Real promotion at the boundary).
+  // SIZE entries are Reals, per the HP50 Advanced Guide spec, so
+  // downstream numeric ops don't have to deal with Integer→Real
+  // promotion at the boundary.
   {
     const s = new Stack();
     s.push(Vector([Real(1), Real(2), Real(3)]));
@@ -251,9 +249,8 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 036 — DOT / CROSS / IDN / NORM / DET / INV matrix ops.
+   DOT / CROSS / IDN / NORM / DET / INV matrix ops.
 
-   Fills out the MATRICES soft-menu slots stubbed in session 035.
    DET uses cofactor expansion (symbolic-safe via _scalarBinary).
    INV uses Gauss-Jordan with partial pivoting — numeric only.
    ================================================================ */
@@ -476,9 +473,9 @@ import { assert, assertThrows } from './helpers.mjs';
     assertThrows(() => lookup('INV').fn(s), /Bad argument/, 'INV on symbolic-entry matrix throws Bad argument type');
   }
 
-  // --- SIZE alignment (session 036) -----------------------------
+  // --- SIZE alignment --------------------------------------------
   {
-    // SIZE entries are Reals (session 036 spec alignment).
+    // SIZE entries are Reals, per HP50 Advanced Guide spec.
     const s = new Stack();
     s.push(Vector([Real(1), Real(2), Real(3), Real(4), Real(5)]));
     lookup('SIZE').fn(s);
@@ -499,11 +496,9 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 047 — TRACE matrix diagonal sum.
-   Closes the matrix-decomps-adjacent gap flagged in 046 while the
-   full LU/QR/SVD work waits its turn.  TRACE should lift to Symbolic
-   when any diagonal entry is symbolic, and error cleanly on
-   non-square or non-Matrix input.
+   TRACE matrix diagonal sum.  Lifts to Symbolic when any diagonal
+   entry is symbolic, and errors cleanly on non-square or non-Matrix
+   input.
    ================================================================ */
 {
   // TRACE of a 3×3 Integer matrix → 1+5+9 = 15.
@@ -576,7 +571,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 048 — RREF, RANK, CON.
+   RREF, RANK, CON.
    ================================================================ */
 {
   // Helper: compare a 2-D array of Real-values to an expected 2-D
@@ -793,7 +788,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 049 — REF, HADAMARD, RANM, LSQ.
+   REF, HADAMARD, RANM, LSQ.
    ================================================================ */
 {
   const matMatches = (matVal, expect, tol = 1e-9) => {
@@ -1164,9 +1159,9 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 050 — ROW+ / ROW- / COL+ / COL- (matrix row/col edit),
+   ROW+ / ROW- / COL+ / COL- (matrix row/col edit),
    CNRM / RNRM (column / row max-sum norms), AUGMENT (horizontal
-   concat), RAND / RDZ (seeded PRNG; RANM determinism retrofit).
+   concat), RAND / RDZ (seeded PRNG shared with RANM).
    ================================================================ */
 import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 {
@@ -1663,9 +1658,9 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 }
 
 /* ================================================================
-   Session 051 — ROW→ / →ROW / COL→ / →COL (matrix row/col
-   decompose/compose), RSWP / CSWP / RCI / RCIJ (elementary row ops).
-   Complements session-050's ROW+ / ROW- / COL+ / COL- edit cluster.
+   ROW→ / →ROW / COL→ / →COL (matrix row/col decompose/compose),
+   RSWP / CSWP / RCI / RCIJ (elementary row ops).  Complements the
+   ROW+ / ROW- / COL+ / COL- edit cluster.
    ================================================================ */
 {
   const matMatches = (matVal, expect) => {
@@ -2091,9 +2086,8 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 }
 
 /* ================================================================
-   Session 052 — Stats reductions (TOT / MEAN / VAR / SDEV) over
-   Vector / Matrix + test-matrix constructors (VANDERMONDE / HILBERT).
-   Extends the post-session-051 "Next session should" list.
+   Stats reductions (TOT / MEAN / VAR / SDEV) over Vector / Matrix +
+   test-matrix constructors (VANDERMONDE / HILBERT).
    ================================================================ */
 {
   const approx = (a, b, tol = 1e-9) => Math.abs(a - b) < tol;
@@ -2412,12 +2406,8 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     assertThrows(() => lookup('HILBERT').fn(s), /Bad argument/, 'session052: HILBERT on String throws');
   }
 }
-// ------------------------------------------------------------------
-// End session 052 additions (TOT / MEAN / VAR / SDEV / VANDERMONDE / HILBERT)
-// ------------------------------------------------------------------
-
 // ==================================================================
-// Session 053 — MEDIAN / COV / CORR
+// MEDIAN / COV / CORR
 // ==================================================================
 
 /* ---- MEDIAN of a Vector (odd count) ---- */
@@ -2542,7 +2532,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 }
 
 /* =================================================================
-   Session 054 — LU decomposition, stats aggregates, regression.
+   LU decomposition, stats aggregates, regression.
    ================================================================= */
 
 /* ---- LU: A = [[2,3],[4,7]] → P·A = L·U with row swap ---- */
@@ -2750,7 +2740,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 }
 
 /* ================================================================
-   Session 055 — GRAMSCHMIDT / QR / CHOLESKY / RDM.
+   GRAMSCHMIDT / QR / CHOLESKY / RDM.
 
    Numeric-Matrix decompositions and reshape.  Helpers below do a
    small amount of matrix multiplication / transpose / equality so
@@ -3024,7 +3014,7 @@ function _approxMatEqual(A, B, tol) {
 }
 
 /* ================================================================
-   Session 056 — LQ / COND.
+   LQ / COND.
 
    LQ is the row-analog of QR (m ≤ n); same _gramSchmidtNum helper
    applied to A^T, with output transposed back.  COND is the 1-norm
@@ -3032,7 +3022,7 @@ function _approxMatEqual(A, B, tol) {
    and CNRM, so the tests can focus on the aggregate identity and
    boundary behavior (identity, diagonal, singular, non-square).
    The helpers _matMul / _matTranspose / _matFromMatrixEntry /
-   _approxMatEqual defined for the session 055 block are reused.
+   _approxMatEqual defined above are reused.
    ================================================================ */
 
 /* ---- LQ: 2×2 identity → L = I, Q = I, P = I ---- */
@@ -3171,7 +3161,7 @@ function _approxMatEqual(A, B, tol) {
 }
 
 /* ================================================================
-   Session 057 — MAD (mean absolute deviation), AXL / AXM bridges.
+   MAD (mean absolute deviation), AXL / AXM bridges.
 
    MAD lives in the stats family alongside MEAN / VAR / SDEV /
    MEDIAN (test block above); AXL / AXM are List ↔ Matrix / Vector
@@ -3377,9 +3367,9 @@ function _approxMatEqual(A, B, tol) {
 }
 
 /* ================================================================
-   Session 058 — PREDV / PREDX (last-fit prediction).
+   PREDV / PREDX (last-fit prediction).
 
-   Every *FIT op now publishes its model into state.lastFitModel,
+   Every *FIT op publishes its model into state.lastFitModel,
    and PREDV / PREDX read that slot.  The tests here run one FIT
    op to seed the state, then call PREDV / PREDX to verify the
    round-trip.

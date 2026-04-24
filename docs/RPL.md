@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 083)
+## Current implementation status (as of session 088)
 
 
 ### Program value — parser & round-trip
@@ -72,53 +72,50 @@ open, and the next-session queue.
   tool — prefer `→` for anything that looks lexical.
 
 ### Suspended-execution substrate
-- Status: **pilot landed (session 074); widened session 083 —
-  multi-slot halted LIFO + `RUN`.** `HALT` / `CONT` / `KILL` / `RUN`
-  work for programs suspended at the *top level of a Program body* —
-  depth 0 in `evalRange`, no compiled-local frames active. The
-  general-case RunState refactor is still open (queue item 1).
+- Status: **session 088: generator-based evalRange — structural HALT
+  fully lifted.** `HALT` / `CONT` / `KILL` / `RUN` now work at any
+  structural depth: inside `IF`, `FOR`, `WHILE`, `DO`, `IFERR`, `→`
+  and arbitrary nesting. The pilot restriction (depth-0 only) is gone.
+  Remaining limitation: HALT inside a *named sub-program called via a
+  variable* (i.e. via `_evalValueSync`) still rejects — that path is
+  synchronous and cannot yield. Direct EVAL of the program works.
+- Implementation: `evalRange` and all `run*` helpers are now JS
+  generator functions (`function*`). `yield` at each HALT propagates
+  through the `yield*` delegation chain to the EVAL/CONT handler, which
+  stores the live generator in `state.haltedStack` via `setHalted`.
+  `CONT` uses `takeHalted()` (pop without closing) + `gen.next()`.
+  `KILL` uses `clearHalted()` (pop + `gen.return()`). `resetHome` calls
+  `gen.return()` for each live generator before clearing the stack so
+  `runArrow`'s `finally` blocks run and `_localFrames` stays clean.
 - HP50 ops in this family:
-  - `HALT` — ✓ **session 074 pilot**. Inside a top-level program body:
-    pushes `{ tokens, ip: i+1, length }` onto the `state.haltedStack`
-    LIFO (session 083) and throws `RPLHalt`. Inside control flow / `→`
-    body: raises `HALT: cannot suspend inside control structure or →
-    (pilot)`. Called bare outside a running program: raises `HALT: not
-    inside a running program`. `RPLHalt` is **not** an `RPLError`
-    subclass, so `IFERR` cannot trap it.
-  - `CONT` — ✓ **session 074 pilot, session 083 LIFO-aware**. Pops the
-    TOP of `state.haltedStack` (the most-recent suspension) before
-    resuming so a fresh HALT can push a new slot cleanly. Older halts
-    remain on the stack to be CONT'd next. Raises `No halted program`
-    when the LIFO is empty.
-  - `KILL` — ✓ **session 074 pilot, session 083 LIFO-aware**. Pops ONE
-    slot off the halted LIFO without resuming. Valid on an empty stack
-    (matches AUR p.2-140 "terminates any currently-halted program, or
-    does nothing"). Users who want to drain every suspension can
-    `KILL` repeatedly or rely on `resetHome`.
+  - `HALT` — ✓ **session 088: structural HALT lifted.** `yield` in
+    `evalRange` propagates through the full `yield*` chain. Called bare
+    outside a running program: raises `HALT: not inside a running
+    program`. `RPLHalt` class retained for back-compat but is no longer
+    thrown during structural HALT — the generator yield mechanism
+    replaces it.
+  - `CONT` — ✓ **session 083 LIFO-aware, session 088 generator-based**.
+    Uses `takeHalted()` (pops the top record without closing it) then
+    drives `h.generator.next()`. If it yields again (another HALT),
+    calls `setHalted` to push it back. Older halts remain. Raises
+    `No halted program` when the LIFO is empty.
+  - `KILL` — ✓ **session 083 LIFO-aware, session 088 gen.return()**.
+    Uses `clearHalted()` which calls `gen.return()` to close the
+    generator and trigger `finally` cleanup. Valid on an empty stack.
   - `RUN` — ✓ **session 083 new**. AUR p.2-177 resume op. Without DBUG
-    active, behaves identically to `CONT` (same resume semantics, same
-    error when the halted LIFO is empty). DBUG-aware branching will
-    land with the DBUG substrate (queue item 2).
-  - `ABORT` — ✓ green (session 067). Unwinds the current evaluation
-    via `RPLAbort`; not catchable by IFERR.
-  - `SST` / `SST↓` — **not started.** Needs the RunState refactor
-    below.
-  - `DBUG` — **not started.** Also blocked on RunState.
-- Pilot limitations (to lift in the full RunState work):
-  - **[LIFTED session 083]** ~~Single-slot `state.halted`~~ — now a
-    LIFO stack in `state.haltedStack`, with `state.halted` aliased to
-    the top for back-compat. `haltedDepth()` exposed for tests.
-  - HALT still rejects from inside `IF` / `FOR` / `WHILE` / `→` / any
-    nested structural scope — the `ip` to resume wouldn't be
-    meaningful without reconstructing the structural context.
-  - No serialisation across `persist.js`; a refresh drops the halted
-    LIFO (`clearAllHalted` fires on resetHome).
-- First-principles note for the full refactor: `evalRange` still has
-  to become an iterator / generator / explicit-state step fn to
-  support SST and nested HALT. The RunState class plan in queue
-  item 1 is still the design we're aiming at. Multi-slot halted is
-  a first sub-component: each RunState carries its own suspension
-  record, and the halted LIFO becomes the natural parent-link stack.
+    active, behaves identically to `CONT`.
+  - `ABORT` — ✓ green (session 067). Unwinds via `RPLAbort`.
+  - `SST` / `SST↓` — **not started.** The generator substrate is now
+    in place; SST just needs `yield` after every token (mode flag).
+  - `DBUG` — **not started.**
+- Remaining pilot limitation:
+  - HALT inside a named sub-program reached via variable lookup
+    (`evalToken` → `_evalValueSync`) still rejects. This is the
+    "sub-program call" case, not the structural control-flow case.
+    Lifting it requires `_evalValueSync` to become a generator or
+    the generator-return value to thread back through evalToken.
+  - No serialisation across `persist.js`; page refresh drops the halted
+    stack (`clearAllHalted` fires on `resetHome`).
 
 ### Program decomposition / composition
 - `OBJ→` on Program: **session 067: new**. Pushes each token then an
@@ -151,7 +148,50 @@ open, and the next-session queue.
 
 ---
 
-## Session 083 (this run) — what shipped
+## Session 088 (this run) — what shipped
+
+1. **Comment fix (R-001) + dead-import removal (X-006)** —
+   `state.js:406` comment updated to correctly state that
+   `clearAllHalted()` is used by tests (not by `resetHome`).
+   `clearAllHalted` and `haltedDepth` removed from the `./state.js`
+   import in `ops.js`; replaced with an explanatory comment.
+
+2. **Generator-based evalRange — structural HALT fully lifted** —
+   The main architectural advancement this session. `evalRange`,
+   `runControl`, `runCase`, `runIf`, `runIfErr`, `runWhile`, `runDo`,
+   `runStart`, `runFor`, `runLoopBody`, and `runArrow` converted to
+   JS generator functions (`function*`). `_evalValue` renamed
+   `_evalValueSync` with a `_driveGen` helper that rejects HALT
+   inside sub-program calls. EVAL handler drives the evalRange
+   generator with `gen.next()`; on yield (HALT), stores the live
+   generator in `state.haltedStack`. CONT uses new `takeHalted()`
+   (pop without closing the generator) + `gen.next()` to resume.
+   KILL uses `clearHalted()` which calls `gen.return()` so the
+   generator's `finally` blocks (including runArrow's
+   `_popLocalFrame()`) execute on discard. `resetHome()` and
+   `clearAllHalted()` likewise call `gen.return()` on every halted
+   generator before clearing. `state.js` gains `takeHalted()` export
+   and `_closeRecord()` private helper. `RPLHalt` class retained for
+   back-compat but is no longer thrown. New tests in
+   `tests/test-control-flow.mjs`: 35 new session088-labelled
+   assertions covering HALT inside FOR, IF, WHILE, →, nested
+   FOR-in-IF, KILL cleanup, and resetHome cleanup.
+
+3. **SIZE on Program** — `SIZE` extended to accept Program objects,
+   returning the token count as an Integer (shallow count: nested
+   sub-programs count as 1 token each). HP50 AUR §5.3 specifies
+   SIZE on programs. 5 new assertions in `tests/test-reflection.mjs`.
+
+Totals: **40 new session088-labelled assertions** in this lane
+(35 in `test-control-flow.mjs` + 5 in `test-reflection.mjs`).
+`test-all.mjs` at **3951 passing / 0 failing** (baseline 3911 at
+end of session 087, Δ+40 — all from this lane this run).
+`test-persist.mjs` unchanged (34 passing). `sanity.mjs` unchanged
+(22 passing). `node --check` clean on every touched JS file.
+
+---
+
+## Session 083 — what shipped
 
 1. **Multi-slot halted-program LIFO** — queue item 1's first concrete
    sub-component. `state.halted` flipped from a single scalar slot to
@@ -351,37 +391,55 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
 
 ## Next-session queue
 
-### High priority (substrate — continue the RunState work)
-1. **Full RunState refactor for HALT / CONT inside structured flow.**
-   Session 074 shipped the top-level pilot (HALT at depth 0, no local
-   frames). Session 083 lifted one pilot limitation — the halted LIFO
-   is now multi-slot. Lifting the remaining structural-scope
-   limitation requires the explicit-state driver we've been punting on:
-     1. Introduce `RunState` in `src/rpl/ops.js`: fields `tokens`,
-        `ip`, `localFrames`, `parentRunState`, `suspended`.
-     2. Refactor `evalRange` + `runControl` / `runIf` / `runFor` /
-        `runWhile` / `runDo` / `runCase` / `runArrow` to thread a
-        RunState instead of using JS recursion. Nested call ≡
-        `parentRunState` link, not a JS call frame.
-     3. Replace `_localFrames` with per-RunState `localFrames` so
-        HALT inside `→` captures the frame correctly.
-     4. Upgrade `RPLHalt` → carry the captured RunState; `CONT`
-        restores the full chain instead of re-entering `evalRange`.
-     5. **[shipped session 083]** Multi-slot halted LIFO
-        (`state.haltedStack`). When RunState lands, each RunState
-        carries its own suspension record and the halted LIFO
-        becomes the natural parent-link stack.
-     6. Persistence hook so a page refresh can survive a halted
-        program (wire through `persist.js`).
-   Until the structural-scope piece lands, HALT inside IF/WHILE/→
-   still rejects with the pilot-limit RPLError — the current
-   `evalRange` simply can't capture the right `ip` for a resume
-   inside a control construct.
+### High priority
+1. **`SST` / `SST↓` — single-step debugger** — The generator
+   substrate is now in place (session 088). SST just needs:
+     1. A module-level `_singleStepMode` flag.
+     2. In `evalRange`: after each `evalToken(...)` call, check
+        `_singleStepMode` and `yield` if set.
+     3. `SST` op: set `_singleStepMode = true`, then call
+        `CONT`'s logic to advance one token. Clear the flag
+        after the yield returns so subsequent tokens don't
+        single-step.
+     4. `SST↓` op: same, but for stepping INTO sub-programs.
+        Since `_evalValueSync` drives sub-programs synchronously,
+        stepping into them requires the same generator refactor
+        for `evalToken` that enables full structural HALT for
+        sub-program calls. For now SST↓ can alias SST (step at
+        the current level only).
+     5. User-reachable demo: enter a program, EVAL, press SST
+        repeatedly to step through token by token.
+   Prerequisite: none — the generator substrate is complete.
 
-2. **`SST` / `SST↓` / `DBUG`** — still blocked on the RunState
-   refactor above. `RUN` shipped as a CONT alias in session 083 so
-   at least the keyword gap is closed; full DBUG-aware resume is
-   the piece remaining.
+2. **HALT inside sub-program calls (remaining pilot limit)** —
+   `evalToken` → `_evalValueSync` → `_driveGen(evalRange(...))`:
+   the synchronous `_driveGen` rejects a yield. To lift this,
+   convert `evalToken` and `_evalValueSync` to generators and
+   use `yield*` throughout. Low urgency (structural HALT inside
+   control flow works; the sub-program-call case is rare in
+   practice) but needed for full HP50 fidelity.
+
+3. **`DBUG`** — DBUG initiates single-step mode on a program.
+   Blocked until SST lands; then `DBUG` just does SST setup
+   on EVAL of the target program.
+
+4. **Persistence of halted programs** — Generators are not
+   serialisable via JSON. To survive a page refresh, we'd need
+   to capture enough token/IP state to re-construct the generator
+   chain. Not a priority — the `resetHome` hook already clears
+   the halted stack on refresh.
+
+### Medium priority
+5. **`CONT` across a `resetHome` — UI signal** — `resetHome`
+   now closes generators correctly (session 088). Follow-up
+   remains: no UI affordance tells the user their halted program
+   was dropped. Belongs to `rpl5050-ui-development`.
+
+### Low priority / opportunistic
+6. **[shipped session 083]** CASE auto-close and IF auto-close —
+   both landed.
+
+7. **`→ARRY 0` rejection asymmetry** — documented, low priority.
 
 ### Medium priority
 3. **[shipped session 078] `→LIST` / `LIST→` parity pass on

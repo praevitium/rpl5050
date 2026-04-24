@@ -176,7 +176,7 @@ import { assert } from './helpers.mjs';
   }
 
 /* ================================================================
-   Session 040 — →ARRY / ARRY→ (array compose / decompose).
+   →ARRY / ARRY→ (array compose / decompose).
    ================================================================ */
 
 /* ---- →ARRY: bare count → Vector ---- */
@@ -312,7 +312,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 042 — V→ / →V2 / →V3 (simple vector compose/decompose).
+   V→ / →V2 / →V3 (simple vector compose/decompose).
 
    →V2 ( x y    → [ x y ]    )
    →V3 ( x y z  → [ x y z ]  )
@@ -423,7 +423,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// Session 046 additions — LAST / LASTARG
+// LAST / LASTARG
 // ------------------------------------------------------------------
 
 /* ---- LAST / LASTARG: basic 2-arg binary op ---- */
@@ -503,9 +503,7 @@ import { assert } from './helpers.mjs';
        something; LASTARG itself consumes nothing (pure growth), so the
        _lastArgs slot from the earlier `*` survives across repeated
        LASTARG calls.  Matches HP50 behaviour (user can press LASTARG
-       again to re-push the same argument list).  [Fixed session 048 —
-       previously asserted chained-LASTARG-throws, contradicting the
-       stack.js code comment that documents the idempotent design.] ---- */
+       again to re-push the same argument list). ---- */
 {
   const s = new Stack();
   s.push(Real(8));
@@ -538,12 +536,8 @@ import { assert } from './helpers.mjs';
     'session046: direct LASTARG doesn\'t overwrite _lastArgs (test-only path)');
 }
 
-// ------------------------------------------------------------------
-// End session 046 LAST/LASTARG additions
-// ------------------------------------------------------------------
-
 /* ================================================================
-   Session 064 — OBJ→ on Program + →PRG (composer)
+   OBJ→ on Program + →PRG (composer)
    ================================================================
 
    Covers the new "program-as-data" hook and its inverse:
@@ -676,7 +670,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   DECOMP — Program → String source form  (session 068)
+   DECOMP — Program → String source form.
    ================================================================ */
 
 // Basic: DECOMP produces a String whose value starts with « and ends with ».
@@ -756,7 +750,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   OBJ→ on Symbolic — peel one AST layer onto the stack (session 068)
+   OBJ→ on Symbolic — peel one AST layer onto the stack.
    ================================================================ */
 
 // `'A+B' OBJ→`  →  'A'  'B'  '+'  3
@@ -866,7 +860,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 073 — DECOMP → STR→ round-trip invariants
+   DECOMP → STR→ round-trip invariants
 
    Pins the canonical "program source-string round-trips to an
    equivalent program" invariant for a spread of program shapes.
@@ -1036,18 +1030,14 @@ function _roundTripProgram(prog) {
 }
 
 /* ================================================================
-   Session 077 — →PRG / OBJ→(Program) parity audit with →LIST /
+   →PRG / OBJ→(Program) parity audit with →LIST /
                  LIST→ / →ARRY
 
-   RPL.md queue item 3.  The cluster of decompose/compose ops should
-   present a uniform surface for the meta-programmer.  This block
-   pins the invariants after the session 077 parity widening in
-   `_toCountN` / `_toIntIdx`:
+   The cluster of decompose/compose ops presents a uniform surface
+   for the meta-programmer.  Invariants pinned here:
 
      - →PRG, →LIST, →ARRY all accept Integer / Real / BinaryInteger
-       counts.  Previous behaviour: →PRG widened to BinInt in
-       session 064, but →LIST / →ARRY rejected it with "Bad
-       argument type".
+       counts (parity handled by `_toCountN` / `_toIntIdx`).
      - Negative counts reject with "Bad argument value" (not "type").
      - Zero counts produce the empty form: « », { }, [ ].
      - OBJ→ on Program pushes tokens then an Integer count (matching
@@ -1075,7 +1065,7 @@ function _roundTripProgram(prog) {
   lookup('→PRG').fn(s);
   assert(s.depth === 1 && s.peek().type === 'program' &&
          s.peek().tokens.length === 2,
-    'session077: →PRG accepts BinaryInteger count (session 064 baseline)');
+    'session077: →PRG accepts BinaryInteger count');
 }
 {
   const s = new Stack();
@@ -1165,12 +1155,11 @@ function _roundTripProgram(prog) {
 {
   // →ARRY's bare-count form rejects 0 at the `_toIntIdx` layer —
   // historically the internal `if (n === 0) { push Vector([]); }` check
-  // inside `_toArrayOp` was unreachable because `_toIntIdx` refuses
-  // zero.  Session 077's parity audit surfaces but does NOT flip this:
-  // changing it would be a new behaviour and wants its own session to
-  // audit downstream (matrix shape validation, ARRY→ round-trip, etc.).
-  // Pin the current rejection shape so a future cleanup sees the
-  // deliberate asymmetry.  Tracked as follow-up in RPL.md.
+  // inside `_toArrayOp` is unreachable because `_toIntIdx` refuses
+  // zero.  Flipping that would be a new behaviour and needs a
+  // downstream audit (matrix shape validation, ARRY→ round-trip,
+  // etc.); the current rejection shape is pinned here so a future
+  // cleanup sees the deliberate asymmetry.  Tracked in RPL.md.
   const s = new Stack();
   s.push(Integer(0n));
   let caught = null;
@@ -1264,4 +1253,43 @@ function _roundTripProgram(prog) {
          top.items[0].type === 'real' && top.items[0].value === 3,
     'session077: ARRY→ size-spec is a LIST wrapping Real — asymmetric with '
     + 'LIST→/OBJ→(Program) by design (matches →ARRY input shape)');
+}
+
+/* ---- SIZE on Program (session088) ---- */
+{
+  resetHome();
+  const s = new Stack();
+
+  // Empty program « » → SIZE = 0
+  s.push(Program([]));
+  lookup('SIZE').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'integer' && s.peek().value === 0n,
+    'session088: SIZE on empty program returns 0');
+
+  // « 1 2 + » → 3 tokens
+  s.push(Program([ Integer(1n), Integer(2n), Name('+') ]));
+  lookup('SIZE').fn(s);
+  assert(s.peek().type === 'integer' && s.peek().value === 3n,
+    'session088: SIZE on « 1 2 + » returns 3');
+
+  // Nested program counts as one token at the outer level
+  // « « 1 2 » 3 + » has 3 tokens: [Program([1,2]), Integer(3), Name('+')]
+  const inner = Program([ Integer(1n), Integer(2n) ]);
+  s.push(Program([ inner, Integer(3n), Name('+') ]));
+  lookup('SIZE').fn(s);
+  assert(s.peek().type === 'integer' && s.peek().value === 3n,
+    'session088: SIZE on program with nested sub-program counts sub-program as 1 token');
+
+  // Single-token program
+  s.push(Program([ Name('DUP') ]));
+  lookup('SIZE').fn(s);
+  assert(s.peek().type === 'integer' && s.peek().value === 1n,
+    'session088: SIZE on single-token program returns 1');
+
+  // Error on non-program type (regression guard: Real still bad-arg)
+  let caught = null;
+  s.push(Real(1.0));
+  try { lookup('SIZE').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument type/.test(caught.message),
+    'session088: SIZE on Real still throws Bad argument type');
 }

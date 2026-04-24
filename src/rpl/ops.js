@@ -1018,9 +1018,9 @@ register('XROOT', _withListBinary((s) => {
 function _rounderScalar(name, realFn, intFn) {
   return (v) => {
     if (isInteger(v))        return intFn(v);
-    /* BinaryInteger (session 087): BinInts are always integer-valued,
-       so rounding is a no-op.  HP50 AUR §3 accepts BinInt on
-       FLOOR/CEIL/IP/FP.  FP of any integer = 0; preserve base. */
+    /* BinaryInteger: BinInts are always integer-valued, so rounding is
+       a no-op.  HP50 AUR §3 accepts BinInt on FLOOR/CEIL/IP/FP.  FP of
+       any integer = 0; preserve base. */
     if (isBinaryInteger(v))  return name === 'FP'
       ? BinaryInteger(0n, v.base)
       : v;
@@ -3663,13 +3663,13 @@ function eqValues(a, b) {
     if (a.value !== b.value) return false;
     return JSON.stringify(a.uexpr) === JSON.stringify(b.uexpr);
   }
-  /* Program structural equality (session 087).
+  /* Program structural equality.
      HP50 AUR §4-7: two Programs are == / SAME iff their token streams
      are structurally identical (token count + recursive eqValues on
      each token).  Uses _eqArr which already recurses via eqValues, so
      nested Programs round-trip correctly. */
   if (isProgram(a) && isProgram(b)) return _eqArr(a.tokens, b.tokens);
-  /* Directory reference-identity (session 087).
+  /* Directory reference-identity.
      HP50 AUR §4-7: SAME on Directories is reference identity — two
      distinct Directory allocations are never "the same", even if they
      hold the same entries.  Directories are identifiable containers,
@@ -3823,7 +3823,7 @@ function comparePair(s, cmp, op) {
     s.push(Symbolic(AstBin(op, l, r)));
     return;
   }
-  /* String lexicographic compare (session 087).
+  /* String lexicographic compare.
      HP50 User Guide App. J: string comparisons are char-code
      lexicographic.  Both operands must be Strings; mixing String
      with a non-String is "Bad argument type" (no cross-type lift). */
@@ -4648,6 +4648,12 @@ register('SIZE', (s) => {
   // not a list, on the real HP50 — we keep that shape.
   if (isString(v)) { s.push(Integer(BigInt(v.value.length))); return; }
   if (isList(v))   { s.push(Integer(BigInt(v.items.length))); return; }
+  // HP50 AUR §5.3: SIZE on a Program returns an Integer count of the
+  // objects (tokens) in the program body.  Matches the HP50's general
+  // principle that SIZE reports the number of "elements" in a composite
+  // object.  Empty program « » → 0; deeply nested programs count only
+  // the top-level tokens (sub-programs count as 1 token each).
+  if (isProgram(v)) { s.push(Integer(BigInt(v.tokens.length))); return; }
   throw new RPLError('Bad argument type');
 });
 
@@ -5891,7 +5897,7 @@ register('DLIST', (s) => OPS.get('ΔLIST').fn(s));
 
 /* ----------------------------------------------------------------
    V→ / →V2 / →V3 — simple vector compose/decompose companions
-   to the session-040 →ARRY / ARRY→ family.
+   to the →ARRY / ARRY→ family.
 
    →V2 ( x y → [x y] )        — build 2-vector from two stack scalars
    →V3 ( x y z → [x y z] )    — build 3-vector from three stack scalars
@@ -6692,21 +6698,19 @@ register('MAP', (s) => {
 });
 
 /* =================================================================
-   Session 045 — List combinators (SEQ, DOLIST, DOSUBS, STREAM),
-                 Complex-aware unary math (LN / LOG / EXP / ALOG /
-                   SIN / COS / TAN / ASIN / ACOS / ATAN /
-                   SINH / COSH / TANH / ASINH / ACOSH / ATANH),
-                 Mixed BinInt ↔ Real/Integer arithmetic promotion.
+   List combinators (SEQ, DOLIST, DOSUBS, STREAM),
+   Complex-aware unary math (LN / LOG / EXP / ALOG /
+     SIN / COS / TAN / ASIN / ACOS / ATAN /
+     SINH / COSH / TANH / ASINH / ACOSH / ATANH),
+   Mixed BinInt ↔ Real/Integer arithmetic promotion.
 
    Advanced Guide refs: §15 (list combinators), §11 (complex
      elementary functions), §10.1 (BinInt arithmetic w/ mixed types).
 
    Every op below is user-reachable via the typed catalog today; no
    keypad wiring changes are needed.  The Complex-aware unaries
-   *replace* the previous real-only registrations — call sites that
-   used to throw 'Bad argument type' on a Complex input now return
-   the principal-branch complex value.  Real inputs still go through
-   the existing real-only paths (no behavior change).
+   accept Complex inputs on the principal branch; Real inputs still
+   go through the existing real-only paths.
    ================================================================= */
 
 /* ------------------- Complex arithmetic primitives ------------------- */
@@ -6982,10 +6986,9 @@ register('TAN', _trigFwdCx('TAN', Math.tan, _cxTan));
 
 // ASIN/ACOS/ATAN: real branch keeps domain checks via Math.asin/Math.acos
 // (NaN becomes Complex); |x|>1 lifts to Complex instead of NaN.
-//
-// Session 063: ASIN/ACOS get the same Tagged + List + V/M wrapping as
-// `_trigInvCx` for ATAN (which has no bespoke domain logic and so just
-// uses the builder).
+// ASIN/ACOS get the same Tagged + List + V/M wrapping as `_trigInvCx`
+// for ATAN (which has no bespoke domain logic and so just uses the
+// builder).
 register('ASIN', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ASIN', [_toAst(v)]))); return; }
@@ -7015,9 +7018,9 @@ register('ACOS', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
 register('ATAN', _trigInvCx('ATAN', Math.atan, _cxAtan));
 
 /* --------------- List combinators — SEQ, DOLIST, DOSUBS, STREAM ---------------
-   HP50 AUR §15 "Lists and sequences".  MAP (session 044) covers the
-   1-in/1-out elementwise case; this batch adds the four remaining
-   combinators users actually reach for.
+   HP50 AUR §15 "Lists and sequences".  MAP covers the 1-in/1-out
+   elementwise case; this batch adds the four remaining combinators
+   users actually reach for.
 
      SEQ     ( expr name start end step → list )
        Evaluate `expr` with `name` bound to start, start+step, … while
@@ -7134,11 +7137,11 @@ register('DOLIST', (s) => {
   s.push(RList(out));
 });
 
-/* DOSUBS context stack (session 046): a per-call frame pushed while
-   DOSUBS iterates, so NSUB / ENDSUB called inside the window-program
-   can read the current window index and the total number of windows.
-   A JS array is used as a stack so nested DOSUBS calls nest the
-   context naturally — NSUB/ENDSUB always read the innermost frame. */
+/* DOSUBS context stack: a per-call frame pushed while DOSUBS iterates,
+   so NSUB / ENDSUB called inside the window-program can read the
+   current window index and the total number of windows.  A JS array
+   is used as a stack so nested DOSUBS calls nest the context naturally
+   — NSUB/ENDSUB always read the innermost frame. */
 const _DOSUBS_STACK = [];
 function _currentDosubsFrame() {
   return _DOSUBS_STACK.length === 0
@@ -7334,10 +7337,9 @@ function _binaryMathMixed(op) {
   };
 }
 
-/* Session 068 — Tagged transparency wrapped around the arithmetic
-   family.  `_withTaggedBinary` drops the tag(s) before the handler
-   sees either operand.  This plays correctly with every existing
-   branch:
+/* Tagged transparency wrapped around the arithmetic family.
+   `_withTaggedBinary` drops the tag(s) before the handler sees either
+   operand.  This plays correctly with every existing branch:
      - String concat inside `+` sees the untagged String (so
        `Tagged('note','hi') "!" +` → `"hi!"` rather than a type error).
      - BinInt + Real/Integer promotion operates on the untagged numeric
@@ -7347,9 +7349,9 @@ function _binaryMathMixed(op) {
    Binary ops drop the tag (there is no single obvious tag to keep).
    */
 register('+', _withTaggedBinary((s) => {
-  // Preserve the String + anything concatenation behavior from
-  // session 034; then handle BinInt + Real/Integer promotion; then
-  // fall through to the generic numeric/vector/matrix/unit binaryMath.
+  // String + anything coerces to concatenation; then handle
+  // BinInt + Real/Integer promotion; then fall through to the generic
+  // numeric/vector/matrix/unit binaryMath.
   if (s.depth >= 2) {
     const a = s.peek(2), b = s.peek(1);
     if (isString(a) || isString(b)) {
@@ -7377,15 +7379,14 @@ register('^',  _withTaggedBinary(_binaryMathMixed('^')));
 
 
 /* =================================================================
-   Session 046 — LAST / LASTARG, SNEG / SINV / SCONJ, PGDIR.
+   LAST / LASTARG, SNEG / SINV / SCONJ, PGDIR.
 
-   NSUB / ENDSUB are also session-046 additions but live next to
-   DOSUBS (see the `session 045 list combinators` block) because
-   they share the thread-local `_DOSUBS_STACK` context frame with
-   DOSUBS.  The engine-plumbing for LAST / LASTARG — Stack.runOp /
-   Stack._lastArgs — lives in `src/rpl/stack.js`; callers in
-   `src/ui/entry.js` wrap each user-facing op invocation in
-   runOp so LASTARG reflects the most-recent user command.
+   NSUB / ENDSUB live next to DOSUBS (see the list-combinators block
+   above) because they share the thread-local `_DOSUBS_STACK` context
+   frame with DOSUBS.  The engine-plumbing for LAST / LASTARG —
+   Stack.runOp / Stack._lastArgs — lives in `src/rpl/stack.js`; callers
+   in `src/ui/entry.js` wrap each user-facing op invocation in runOp
+   so LASTARG reflects the most-recent user command.
 
    Advanced Guide refs:
      §2.2   LASTARG, LAST CMD, LAST STACK (our LAST/LASTARG share
@@ -7411,12 +7412,11 @@ register('LAST',    _pushLastArgs);
 register('LASTARG', _pushLastArgs);
 
 /* --------------- SNEG / SINV / SCONJ ---------------
-   Parallel to the STO+ / STO- / STO(mul) / STO(div) family from
-   session 038.  Read the stored value,
-   apply the single-operand op, write it back.  Accepts Name or
-   String identifier on level 1.  A name that doesn't exist throws
-   'Undefined name'.  The underlying NEG / INV / CONJ ops do the
-   type-dispatch and throw on operands they can't handle (e.g.
+   Parallel to the STO+ / STO- / STO(mul) / STO(div) family.  Read the
+   stored value, apply the single-operand op, write it back.  Accepts
+   Name or String identifier on level 1.  A name that doesn't exist
+   throws 'Undefined name'.  The underlying NEG / INV / CONJ ops do
+   the type-dispatch and throw on operands they can't handle (e.g.
    SCONJ on a String stored-value — 'Bad argument type').
    ----------------------------------------------------------------- */
 function _storedUnary(opSymbol) {
@@ -7489,9 +7489,8 @@ register('PGDIR', (s) => {
 
 
 /* =================================================================
-   Session 047 — factorial `!` bang, →Q rationalize, ORDER reorder
-                 variables, BYTES / NEWOB / MEM bookkeeping trio,
-                 TRACE matrix trace.
+   Factorial `!` bang, →Q rationalize, ORDER reorder variables,
+   BYTES / NEWOB / MEM bookkeeping trio, TRACE matrix trace.
 
    All items user-reachable from the typed catalog today.  No UI
    wiring changes.  Advanced Guide refs:
@@ -7703,8 +7702,8 @@ register('TRACE', (s) => {
 
 
 /* =================================================================
-   Session 048 — Q→ decompose, D→HMS / HMS→D bridges,
-                 RREF / RANK (Gauss-Jordan), CON constant matrix/vector.
+   Q→ decompose, D→HMS / HMS→D bridges,
+   RREF / RANK (Gauss-Jordan), CON constant matrix/vector.
 
    All items user-reachable from the typed catalog today.  No UI
    wiring changes.  Advanced Guide refs:
@@ -7954,7 +7953,7 @@ register('CON', (s) => {
 
 
 /* =================================================================
-   Session 049 — REF, HADAMARD, RANM, LSQ.
+   REF, HADAMARD, RANM, LSQ.
 
    All items user-reachable from the typed catalog today.  No UI
    wiring changes.  Advanced Guide refs:
@@ -8071,8 +8070,7 @@ register('HADAMARD', (s) => {
      V       →  Vector of V's length
      M       →  Matrix of M's shape
 
-   RNG: shared seeded LCG in state.js (`nextPrngInt9`).  Session 050
-   retrofit: RANM used to call Math.random() directly, but now shares
+   RNG: shared seeded LCG in state.js (`nextPrngInt9`).  RANM shares
    state with RAND and RDZ so `RDZ 12345 { 2 3 } RANM` produces a
    deterministic matrix — exactly matching HP50 semantics where the
    same seed always regenerates the same random matrix.  Tests pin the
@@ -8284,9 +8282,9 @@ register('LSQ', (s) => {
 });
 
 /* =================================================================
-   Session 050 — ROW+ / ROW- / COL+ / COL- (matrix row/col edit),
+   ROW+ / ROW- / COL+ / COL- (matrix row/col edit),
    CNRM / RNRM (column / row max-sum norms), AUGMENT (horizontal
-   concatenate), RAND / RDZ (seeded PRNG; RANM retrofit above).
+   concatenate), RAND / RDZ (seeded PRNG; shared with RANM above).
 
    All items user-reachable from the typed catalog today.  No UI
    wiring changes.  Advanced Guide refs:
@@ -8550,9 +8548,9 @@ register('AUGMENT', (s) => {
                    into the LCG's valid range).  Takes Integer or
                    Real (integer-valued).  Complex / Symbolic throws.
 
-   The PRNG state is shared with RANM (session 050 retrofit) so
-   `RDZ 12345 { 2 3 } RANM` produces a deterministic matrix every
-   time the same seed is used — matching HP50 behaviour.
+   The PRNG state is shared with RANM so `RDZ 12345 { 2 3 } RANM`
+   produces a deterministic matrix every time the same seed is used —
+   matching HP50 behaviour.
    ----------------------------------------------------------------- */
 
 register('RAND', (s) => {
@@ -8573,25 +8571,23 @@ register('RDZ', (s) => {
 });
 
 /* =================================================================
-   Session 051 — ROW→ / →ROW / COL→ / →COL (matrix decompose / compose
-   by row or by column), RSWP / CSWP (swap rows / columns), RCI / RCIJ
-   (elementary row ops — multiply a row by a constant; add c*row_i to
-   row_j).  All items user-reachable from the typed catalog today.  No
-   UI wiring changes.
+   ROW→ / →ROW / COL→ / →COL (matrix decompose / compose by row or by
+   column), RSWP / CSWP (swap rows / columns), RCI / RCIJ (elementary
+   row ops — multiply a row by a constant; add c*row_i to row_j).
+   All items user-reachable from the typed catalog today.  No UI
+   wiring changes.
 
    Advanced Guide refs:
      §15.3  (ROW→ / →ROW / COL→ / →COL — matrix explode / assemble by
              row / column vectors)
      §15.3  (RSWP / CSWP / RCI / RCIJ — elementary row/column ops —
-             complement to ROW+ / ROW- / COL+ / COL- landed in
-             session 050)
+             complement to ROW+ / ROW- / COL+ / COL-)
 
-   Shape and index conventions reuse the `_indexAsInt` helper from
-   session 050 (accepts Integer or integer-valued Real; throws Bad
-   argument type on anything else).  ROW+ / ROW- family always
-   represents matrix rows/cols as a Vector when pushed to the stack —
-   these new ops follow the same convention so `ROW+ ROW→` and
-   `ROW→ →ROW` round-trip exactly.
+   Shape and index conventions reuse the `_indexAsInt` helper (accepts
+   Integer or integer-valued Real; throws Bad argument type on anything
+   else).  The ROW+ / ROW- family always represents matrix rows/cols as
+   a Vector when pushed to the stack — these ops follow the same
+   convention so `ROW+ ROW→` and `ROW→ →ROW` round-trip exactly.
    ================================================================= */
 
 /* --------------- ROW→ / →ROW / COL→ / →COL --------------------------
@@ -8781,10 +8777,10 @@ register('RCIJ', (s) => {
 });
 
 /* =================================================================
-   Session 052 — stats (MEAN / SDEV / VAR / TOT), test-matrix
-   constructors (VANDERMONDE / HILBERT), π-rationalization (→Qπ),
-   list iterators (GETI / PUTI).  All user-reachable today from the
-   typed catalog; no UI wiring needed.
+   Stats (MEAN / SDEV / VAR / TOT), test-matrix constructors
+   (VANDERMONDE / HILBERT), π-rationalization (→Qπ), list iterators
+   (GETI / PUTI).  All user-reachable today from the typed catalog;
+   no UI wiring needed.
 
    Advanced Guide refs:
      §18    (MEAN / SDEV / VAR / TOT — stat reductions on a
@@ -9252,11 +9248,9 @@ register('PUTI', (s) => {
 });
 
 /* =================================================================
-   Session 053 — crunch-mode expansion (2026-04-23).
-
-   This block lands fifteen substantive clusters drawn from the
-   §11 (CAS number-theory), §13 (List), §16 (Types & Tags), §19
-   (Statistics), §9 (Display), and §8 (Error/Debug) priority lists:
+   Mixed cluster drawn from §11 (CAS number-theory), §13 (List),
+   §16 (Types & Tags), §19 (Statistics), §9 (Display), and §8
+   (Error/Debug):
 
      §11 CAS: ISPRIME? / NEXTPRIME / PREVPRIME; EULER; DIVIS / FACTORS;
               IBERNOULLI; IEGCD; ICHINREM / IABCUV;
@@ -9267,11 +9261,10 @@ register('PUTI', (s) => {
      §9  Display: STD / FIX / SCI / ENG.
      §8  Errors: DOERR.
 
-   All ops are user-reachable from the typed catalog today; no UI
-   change is required to drive them from the LCD/keypad keypress path.
-   The display-mode quartet (STD/FIX/SCI/ENG) updates `state.display*`
-   fields that existing tests can assert on via `→STR`; wiring them
-   into the live LCD render is explicitly a future UI-enabled session.
+   All ops are user-reachable from the typed catalog today.  The
+   display-mode quartet (STD/FIX/SCI/ENG) updates `state.display*`
+   fields that tests assert on via `→STR`; wiring them into the live
+   LCD render is a future UI task.
    ================================================================= */
 
 /* --------------- Number-theoretic helpers (integer land) -----------
@@ -9981,7 +9974,7 @@ register('ABORT', () => {
   throw new RPLAbort('Abort');
 });
 
-/* --------------- HALT / CONT / KILL / RUN — session 073 pilot -----
+/* --------------- HALT / CONT / KILL / RUN ---------------------------
  * HP50 AUR p.2-135 / p.2-52 / p.2-140 / p.2-177.  The suspended-
  * execution substrate: HALT pauses the running program, CONT resumes
  * it where it left off, KILL clears the suspension without resuming.
@@ -9997,10 +9990,9 @@ register('ABORT', () => {
  * program" semantics HP50 implements.
  *
  * CONT reads the top of `state.haltedStack` (exposed as `state.halted`
- * for single-slot back-compat), pops it, and calls `evalRange` on the
- * saved tokens from the saved instruction pointer to the end.  The
- * token list is shared — no copy, no rehydration — so resumption is
- * O(1) in program size.
+ * for single-slot back-compat), pops it, and resumes the saved
+ * generator.  No token-list copy or rehydration — resumption is O(1)
+ * in program size.
  *
  * KILL clears the TOP halted slot without resuming.  AUR p.2-140
  * describes KILL as terminating "any currently-halted program(s)";
@@ -10008,12 +10000,10 @@ register('ABORT', () => {
  * the stack.  Users who want to drain every suspension can KILL
  * repeatedly or use the CLI/reset path.
  *
- * Session 083: the single slot became a LIFO stack of halted records.
- * Multi-slot matters when the user runs a second program from the
- * keypad while an earlier one is still halted; the second program's
- * HALT would previously overwrite the first.  CONT now resumes the
- * more recent halt first, so the older one is preserved on the stack
- * and reachable via a subsequent CONT.
+ * haltedStack is a LIFO of halted records.  Multi-slot matters when
+ * the user runs a second program from the keypad while an earlier one
+ * is still halted; CONT resumes the most recent halt first, and older
+ * ones remain reachable via subsequent CONT calls.
  * --------------------------------------------------------------- */
 
 register('HALT', () => {
@@ -10031,14 +10021,14 @@ register('CONT', (s) => {
   // resuming so that a fresh HALT inside the resumed program can
   // push a new record cleanly on top of any remaining older ones.
   //
-  // Session 083: LIFO semantics — older halted records remain on
-  // haltedStack and are reachable via subsequent CONT calls.
+  // LIFO semantics: older halted records remain on haltedStack and
+  // are reachable via subsequent CONT calls.  Generator-based
+  // resumption preserves ALL structural state (FOR counter, IF
+  // branch, → local frames) automatically.
   //
-  // Session 088: generator-based resumption preserves ALL structural
-  // state (FOR counter, IF branch, → local frames) automatically.
-  // _localFrames safety: do NOT truncate while halted — the generator's
-  // own finally blocks handle cleanup.  We only truncate when the
-  // generator finishes (done=true) or throws.
+  // _localFrames safety: do NOT truncate while halted — the
+  // generator's own finally blocks handle cleanup.  Truncation only
+  // runs when the generator finishes (done=true) or throws.
   const h = takeHalted();
   const framesAtEntry = _localFrames.length;
   let halted = false;
@@ -10059,8 +10049,8 @@ register('CONT', (s) => {
 register('KILL', () => {
   // KILL is valid even when there is no halted program — the HP50 op
   // is a no-op in that case (AUR p.2-140 "KILL terminates any
-  // currently-halted program, or does nothing").  Session 083: pops
-  // one record off the halted stack; older halts are preserved.
+  // currently-halted program, or does nothing").  KILL pops one
+  // record off the halted stack; older halts are preserved.
   clearHalted();
 });
 
@@ -10236,8 +10226,8 @@ register('CORR', (s) => {
 });
 
 /* ==================================================================
-   Session 054 — polynomial roots + division, LU, stats aggregates,
-   regression family, CMPLX mode, MERGE directory op.
+   Polynomial roots + division, LU, stats aggregates, regression
+   family, CMPLX mode, MERGE directory op.
 
    HP50 AUR: §12.6 (PROOT), §12.5 (QUOT/REMAINDER), §15.3 (LU),
    §18.1 (stats aggregates, ΣX/ΣY/…), §18.1 (LINFIT/LOGFIT/EXPFIT/
@@ -10247,10 +10237,10 @@ register('CORR', (s) => {
    UI touches.  PROOT rejects Symbolic coefficients (deferred until
    CAS polynomial-normalize lands).  Stats-aggregate family (NΣ, ΣX,
    ΣY, ΣXY, ΣX², ΣY², MAXΣ, MINΣ) takes a Matrix argument directly —
-   matches the HP50 ΣDAT-bypass convention established in session 052.
-   Regression family (LINFIT / LOGFIT / EXPFIT / PWRFIT / BESTFIT)
-   follows the same convention: takes a 2-column Matrix, returns the
-   fitted-model Symbolic (or the best-fit family label for BESTFIT).
+   matches the HP50 ΣDAT-bypass convention.  The regression family
+   (LINFIT / LOGFIT / EXPFIT / PWRFIT / BESTFIT) follows the same
+   convention: takes a 2-column Matrix, returns the fitted-model
+   Symbolic (or the best-fit family label for BESTFIT).
    ================================================================= */
 
 /* --------------- PROOT — polynomial root-finder ----------------------
@@ -10575,10 +10565,10 @@ register('LU', (s) => {
 
 /* --------------- Stats aggregates: NΣ / ΣX / ΣY / ΣXY / ΣX² / ΣY² ----
    HP50 AUR §18.1.  The full row of column-wise statistics that feeds
-   the regression family.  Per the session-052 ΣDAT-bypass decision,
-   these take the Matrix argument directly rather than reading it
-   from the hidden ΣDAT variable — so they accept Integer / Real
-   entries via `_statsNumericEntry`.
+   the regression family.  Per the ΣDAT-bypass convention, these take
+   the Matrix argument directly rather than reading it from the hidden
+   ΣDAT variable — so they accept Integer / Real entries via
+   `_statsNumericEntry`.
 
      NΣ    ( M → N )      Row count (Real).
      ΣX    ( M → Σx )     Sum of column 1.
@@ -10957,7 +10947,7 @@ register('MERGE', (s) => {
 });
 
 /* ==================================================================
-   Session 055 — PEVAL / PTAYL / GRAMSCHMIDT / QR / CHOLESKY /
+   PEVAL / PTAYL / GRAMSCHMIDT / QR / CHOLESKY /
    C→P / P→C / EPSX0 / DISTRIB / RDM.
 
    HP50 AUR: §12.6 (PEVAL / PTAYL), §15.3 (GRAMSCHMIDT / QR /
@@ -11540,7 +11530,7 @@ register('RDM', (s) => {
 });
 
 /* =================================================================
-   Session 056 — LQ, COND, HERMITE, LEGENDRE, TCHEBYCHEFF.
+   LQ, COND, HERMITE, LEGENDRE, TCHEBYCHEFF.
 
    HP50 AUR: §15.3 (LQ), §15.4 (COND), §12.5 (HERMITE / LEGENDRE /
    TCHEBYCHEFF orthogonal-polynomial generators).
@@ -11831,8 +11821,8 @@ function _tchebOp(s) {
   const [v] = s.popN(1);
   // TCHEBYCHEFF accepts Integer / integer-valued Real.  Non-negative
   // n selects the first-kind Chebyshev polynomial T_n(X); negative n
-  // selects the second-kind U_{|n|-1}(X) (session 057 extension,
-  // matching HP50 AUR §12.5).  Non-integer or non-numeric throws.
+  // selects the second-kind U_{|n|-1}(X), matching HP50 AUR §12.5.
+  // Non-integer or non-numeric throws.
   let n;
   if (isInteger(v)) {
     n = Number(v.value);
@@ -11878,7 +11868,7 @@ function _tchebOp(s) {
 register('TCHEBYCHEFF', _tchebOp);
 register('TCHEB',       _tchebOp);
 
-/* --------------- CYCLOTOMIC — nth cyclotomic polynomial (session 081)
+/* --------------- CYCLOTOMIC — nth cyclotomic polynomial --------------
    HP50 AUR §12.6.  CYCLOTOMIC(n) returns Φ_n(X) as a Symbolic in X —
    the monic polynomial in Z[X] whose roots are exactly the primitive
    n-th roots of unity.  Degree is Euler's totient φ(n).
@@ -11965,7 +11955,7 @@ register('CYCLOTOMIC', (s) => {
   s.push(_coefBigArrToSymbolicX(_cyclotomicCoefsBig(n)));
 });
 
-/* ---- ZETA — Riemann zeta (session 086) -------------------------------
+/* ---- ZETA — Riemann zeta ---------------------------------------------
    HP50 AUR §2 (CAS-SPECIAL).  One-arg Riemann zeta function.
 
      ZETA  ( s → ζ(s) )       1-arg: real Riemann zeta.
@@ -12061,7 +12051,7 @@ register('ZETA', _withTaggedUnary(_withListUnary((s) => {
   else                  s.push(_zetaScalar(v));
 })));
 
-/* ---- LAMBERT — principal-branch Lambert W₀ (session 086) -------------
+/* ---- LAMBERT — principal-branch Lambert W₀ ---------------------------
    HP50 AUR §2 (CAS-SPECIAL).  One-arg Lambert W function, principal
    branch W₀.  Solves  W · e^W = x  for W ∈ ℝ given real x ≥ -1/e.
 
@@ -12157,7 +12147,7 @@ register('LAMBERT', _withTaggedUnary(_withListUnary((s) => {
   else                  s.push(_lambertScalar(v));
 })));
 
-/* ---- XNUM / XQ — ASCII aliases (session 086) -------------------------
+/* ---- XNUM / XQ — ASCII aliases ---------------------------------------
    HP50 AUR p.2-211.  `XNUM` and `XQ` are the mode-agnostic names HP50
    firmware uses for `→NUM` and `→Q` in contexts where the arrow glyph
    is inconvenient (keyboards without `→`, textual catalog output).
@@ -12168,7 +12158,7 @@ register('XQ',   (s, entry) => { OPS.get('→Q').fn(s, entry); });
 
 
 /* ========================================================================
-   Session 057 — MAD, AXL / AXM, FROOTS, TCHEBYCHEFF second-kind.
+   MAD, AXL / AXM, FROOTS, TCHEBYCHEFF second-kind.
 
    HP50 AUR references:
      §18.1 (MAD)            column-wise Mean Absolute Deviation
@@ -12177,10 +12167,9 @@ register('XQ',   (s, entry) => { OPS.get('→Q').fn(s, entry); });
                             polynomial in X, returns roots w/
                             multiplicities as an RList `{r1 m1 r2 m2 …}`.
 
-   TCHEBYCHEFF negative-n (second-kind U_{|n|-1}) is wired into the
-   session-056 `_tchebOp` itself (immediately above), not as a new
-   op — same name / same dispatch; only the argument-sign branch is
-   new.
+   TCHEBYCHEFF negative-n (second-kind U_{|n|-1}) is handled inside
+   `_tchebOp` directly (immediately above): the argument-sign branch
+   distinguishes first- from second-kind.
    ==================================================================== */
 
 /* ---- MAD — Mean Absolute Deviation -----------------------------------
@@ -12317,16 +12306,15 @@ register('AXM', (s) => {
                           denominator containing the variable, etc.)
                           → Bad argument value.
 
-   Implementation piggy-backs on the session-054 `PROOT` Durand-Kerner
-   core: we expand the Symbolic with `algebraExpand`, walk the sum-of-
+   Implementation piggy-backs on the `PROOT` Durand-Kerner core:
+   we expand the Symbolic with `algebraExpand`, walk the sum-of-
    monomials to build a descending-degree numeric coefficient array,
    wrap that array in an `RList`, push it onto a scratch stack, and
    invoke `PROOT` directly.  That returns a Vector of roots which we
    then cluster by proximity (tolerance `1e-6 · max(|r|, 1)`) to
    collapse repeated roots into `{root, multiplicity}` entries.
 
-   Non-goals for this first slice (deferred with the full
-   `_polyNormalize` CAS work):
+   Non-goals (deferred with the full `_polyNormalize` CAS work):
      - Rational / fractional inputs.  HP50's FROOTS also emits poles
        with negative multiplicities when given a Symbolic rational
        `p(X)/q(X)`; we reject those here.
@@ -12460,7 +12448,7 @@ function _clusterRoots(roots) {
   });
 }
 
-/* ---- Session 058 — FROOTS rational-root pre-scan helper ---------------
+/* ---- FROOTS rational-root pre-scan helper ----------------------------
    Before running Durand-Kerner, enumerate candidate rational roots
    `p / q` where `p | c_0` and `q | c_n` (Rational-Root Theorem).
    Test each candidate via Horner; when it evaluates exactly to zero,
@@ -12601,10 +12589,10 @@ function _peelRationalRoots(coefs) {
 }
 
 /** Decompose `|n|` as `k² · m` with `m` squarefree, returning `{k, m}`.
- *  Session 059 — the building block for FROOTS' exact-irrational
- *  quadratic-residual pass: the radical `√|n|` simplifies to `k · √m`.
- *  Uses trial-division up to `√|n|` — fine for the discriminants we
- *  encounter (bounded by the user-typed polynomial's coefficients). */
+ *  Building block for FROOTS' exact-irrational quadratic-residual
+ *  pass: the radical `√|n|` simplifies to `k · √m`.  Uses trial
+ *  division up to `√|n|` — fine for the discriminants encountered
+ *  (bounded by the user-typed polynomial's coefficients). */
 function _squareFactorDecompose(n) {
   n = Math.abs(Math.round(n));
   if (n === 0) return { k: 0, m: 0 };
@@ -12716,10 +12704,9 @@ register('FROOTS', (s) => {
     s.push(RList([]));
     return;
   }
-  // Session 058 — rational-root pre-scan.  Peel off every `p/q` root
-  // that evaluates exactly to zero under Horner.  Keeps Integer
-  // roots Integer in the output (old path returned `2.0000…` from
-  // Durand-Kerner, then cast back to Real).
+  // Rational-root pre-scan.  Peel off every `p/q` root that evaluates
+  // exactly to zero under Horner.  Keeps Integer roots Integer in the
+  // output (a pure Durand-Kerner path would return e.g. `2.0000…`).
   const outItems = [];
   let residual = coefs;
   if (_allIntegerCoefs(coefs)) {
@@ -12730,12 +12717,12 @@ register('FROOTS', (s) => {
     }
     residual = residualCoefs;
   }
-  // Session 059 — exact-irrational quadratic-residual pass.  If what
-  // remains is a degree-2 integer polynomial with non-square positive
-  // discriminant, emit the two roots in closed form `(-b ± k·√m)/(2a)`
-  // as Symbolic so `X² - 2 FROOTS` returns `√2` / `-√2` exactly
-  // instead of falling through to Durand-Kerner floats.  D < 0 or
-  // D a perfect square fall through to the unchanged path.
+  // Exact-irrational quadratic-residual pass.  If what remains is a
+  // degree-2 integer polynomial with non-square positive discriminant,
+  // emit the two roots in closed form `(-b ± k·√m)/(2a)` as Symbolic
+  // so `X² - 2 FROOTS` returns `√2` / `-√2` exactly instead of falling
+  // through to Durand-Kerner floats.  D < 0 or D a perfect square
+  // fall through to the standard path.
   if (residual.length === 3 && _allIntegerCoefs(residual)) {
     const quadRoots = _quadraticExactResidualRoots(residual);
     if (quadRoots) {
@@ -12746,11 +12733,11 @@ register('FROOTS', (s) => {
       residual = [residual[0]];   // degree-0 leftover ⇒ no further roots.
     }
   }
-  // Session 061 — biquadratic residual pass.  Degree-4 integer residual
-  // of the shape `a·X⁴ + b·X² + c` (coef[1] = coef[3] = 0) with both
+  // Biquadratic residual pass.  Degree-4 integer residual of the
+  // shape `a·X⁴ + b·X² + c` (coef[1] = coef[3] = 0) with both
   // u = X² roots exact-irrational.  Emits ±√u₁, ±√u₂ as Symbolic so
-  // `X⁴ - 10X² + 1 FROOTS` returns `√(5+2√6)`-family radicals directly
-  // rather than deferring to Durand-Kerner floats.
+  // `X⁴ - 10X² + 1 FROOTS` returns `√(5+2√6)`-family radicals
+  // directly rather than deferring to Durand-Kerner floats.
   if (residual.length === 5 && _allIntegerCoefs(residual)) {
     const biqRoots = _biquadResidualRoots(residual);
     if (biqRoots) {
@@ -12782,15 +12769,14 @@ register('FROOTS', (s) => {
 });
 
 /* ====================================================================
-   Session 058 — PREDV / PREDX / PREVAL / TAN2SC / LAPLACE / ILAP.
+   PREDV / PREDX / PREVAL / TAN2SC / LAPLACE / ILAP.
    ====================================================================
 
-   Each op below slots into the CAS / stats family the prior sessions
-   laid down.  Cross-cutting state reuse: PREDV / PREDX read the
-   `lastFitModel` slot that LINFIT / LOGFIT / EXPFIT / PWRFIT
-   started publishing earlier in this session; the other four ops
-   are pure AST rewrites on their input.  See the per-op comment
-   for the user-reachable demo keypress sequence.
+   Each op below slots into the CAS / stats family.  Cross-cutting
+   state reuse: PREDV / PREDX read the `lastFitModel` slot published
+   by LINFIT / LOGFIT / EXPFIT / PWRFIT; the other four ops are pure
+   AST rewrites on their input.  See the per-op comment for the
+   user-reachable demo keypress sequence.
    ==================================================================== */
 
 /* ---- PREDV — evaluate last fit at a scalar x -----------------------
@@ -12889,14 +12875,14 @@ register('PREDX', (s) => {
   s.push(Real(x));
 });
 
-/* ---- VX / SVX — CAS main variable (session 076) -------------------
+/* ---- VX / SVX — CAS main variable -----------------------------------
    HP50 AUR §2.6.  VX is the CAS "main variable" the firmware falls
    back on whenever a CAS op has to pick a canonical variable from a
    multi-free-variable or constant argument: LAPLACE, ILAP, PREVAL,
    DERVX, INTVX, TABVAL, TAYLOR0, etc.  On real hardware VX is a
    directory variable in CASDIR the user stores into from the stack;
-   we back it with a dedicated `state.casVx` slot instead so the setter
-   is free of HOME/VAR bookkeeping and survives persistence.
+   we back it with a dedicated `state.casVx` slot instead so the
+   setter is free of HOME/VAR bookkeeping and survives persistence.
 
      VX   ( → Name )    push the current CAS main variable as a Name.
      SVX  ( Name → )    set the CAS main variable from a Name (or
@@ -12959,8 +12945,7 @@ register('PREVAL', (s) => {
   const [fVal, aVal, bVal] = s.popN(3);
   if (!isSymbolic(fVal)) throw new RPLError('Bad argument type');
   // Pick the variable to substitute.  HP50 firmware consults the CAS
-  // main variable (VX — session 076 real state slot).  Selection
-  // priority:
+  // main variable (VX).  Selection priority:
   //
   //   VX ∈ free(F)         → substitute VX.              (HP50 canonical)
   //   |free(F)| == 1       → substitute that single var. (classic
@@ -13061,10 +13046,7 @@ register('TAN2SC', (s) => {
    unambiguous "left" and "right" to extract.  Non-Symbolic input
    rejects with `Bad argument type`.  Both sides are returned as
    Symbolic regardless of whether the operand happens to be a lone
-   variable or a number; users who want to unwrap can apply EVAL.
-
-   Session 076 — newly registered from the lane-local COMMANDS.md
-   "Not yet supported" queue. */
+   variable or a number; users who want to unwrap can apply EVAL. */
 
 register('EXLR', (s) => {
   const [v] = s.popN(1);
@@ -13109,9 +13091,9 @@ function _lapVarName(ast) {
   const vars = algebraFreeVars(ast);
   if (vars.size === 0) return vx;
   if (vars.size === 1) return [...vars][0];
-  // Multi-variable input: HP50 uses VX.  Session 076 — the VX state
-  // slot is now real.  If the CAS main variable is one of the free
-  // vars, pick it; otherwise the first free var in iteration order.
+  // Multi-variable input: HP50 uses VX.  If the CAS main variable is
+  // one of the free vars, pick it; otherwise the first free var in
+  // iteration order.
   return vars.has(vx) ? vx : [...vars][0];
 }
 
@@ -13195,9 +13177,9 @@ function _laplaceTransform(ast, varName) {
     if (_isConstIn(ast.r, varName)) {
       return AstBin('*', ast.r, _laplaceTransform(ast.l, varName));
     }
-    // Session 061 — frequency-shift theorem: L{e^(αX)·f(X)} = F(X − α).
-    // Find one EXP(αX) factor, compute LAPLACE of the other factor,
-    // substitute X → X − α in the result.
+    // Frequency-shift theorem: L{e^(αX)·f(X)} = F(X − α).  Find one
+    // EXP(αX) factor, compute LAPLACE of the other factor, substitute
+    // X → X − α in the result.
     let expFactor = null, other = null;
     if (ast.l && ast.l.kind === 'fn' && ast.l.name === 'EXP'
         && ast.l.args && ast.l.args.length === 1) {
@@ -13218,7 +13200,7 @@ function _laplaceTransform(ast, varName) {
   // Fn(arg) family.
   if (ast.kind === 'fn' && ast.args.length === 1) {
     const arg = ast.args[0];
-    // Session 061 — HEAVISIDE / DIRAC transforms.
+    // HEAVISIDE / DIRAC transforms.
     //   L{H(X)}        = 1/X
     //   L{H(X - a)}    = e^(-aX) / X
     //   L{δ(X)}        = 1
@@ -13289,8 +13271,8 @@ function _inverseLaplace(ast, varName) {
   if (ast.kind === 'neg') {
     return AstNeg(_inverseLaplace(ast.arg, varName));
   }
-  // Session 061 — top-level EXP(β·X) ⇒ DIRAC(X + β).  For β = -a, this
-  // gives δ(X - a), matching L{δ(X - a)} = e^(-aX).
+  // Top-level EXP(β·X) ⇒ DIRAC(X + β).  For β = -a, this gives
+  // δ(X - a), matching L{δ(X - a)} = e^(-aX).
   if (ast.kind === 'fn' && ast.name === 'EXP' && ast.args.length === 1) {
     const beta = _matchAlphaX(ast.args[0], varName);
     if (beta) {
@@ -13310,8 +13292,8 @@ function _inverseLaplace(ast, varName) {
   // Also c / X ⇒ c.
   if (ast.kind === 'bin' && ast.op === '/') {
     const num = ast.l, den = ast.r;
-    // Session 061 — EXP(β·X) / X ⇒ HEAVISIDE(X + β).  For β = -a this
-    // gives H(X - a), matching L{H(X - a)} = e^(-aX) / X.
+    // EXP(β·X) / X ⇒ HEAVISIDE(X + β).  For β = -a this gives
+    // H(X - a), matching L{H(X - a)} = e^(-aX) / X.
     if (den.kind === 'var' && den.name === varName
         && num.kind === 'fn' && num.name === 'EXP' && num.args.length === 1) {
       const beta = _matchAlphaX(num.args[0], varName);
@@ -13427,16 +13409,15 @@ register('ILAP', (s) => {
 });
 
 /* ====================================================================
-   Session 059 — HALFTAN / TAN2SC2 / TAN2CS2 / inverse-trig rewrites.
+   HALFTAN / TAN2SC2 / TAN2CS2 / inverse-trig rewrites.
    ====================================================================
 
-   Closes the HP50 tangent-half-angle family that TAN2SC started in
-   session 058, plus four inverse-trig identity rewrites
-   (ACOS2S, ASIN2C, ASIN2T, ATAN2S) from the AUR's "…Ñ TRIG" menu.
-   The exact FROOTS residual-quadratic extractor above handles the
-   `a ± √b` case the session-058 rational-root pre-scan deliberately
-   left to Durand-Kerner — so `X² - 2 FROOTS` now returns
-   `Sym(√2)` / `Sym(-√2)` exactly instead of floats.
+   Closes the HP50 tangent-half-angle family that TAN2SC opens, plus
+   four inverse-trig identity rewrites (ACOS2S, ASIN2C, ASIN2T, ATAN2S)
+   from the AUR's "…Ñ TRIG" menu.  The exact FROOTS residual-quadratic
+   extractor above handles the `a ± √b` case the rational-root
+   pre-scan deliberately leaves to Durand-Kerner — so `X² - 2 FROOTS`
+   returns `Sym(√2)` / `Sym(-√2)` exactly instead of floats.
 
    All the rewrites here share the same `_trigIdentityWalk` substrate:
    a shallow AST walker that recurses into children, then consults a
@@ -13630,11 +13611,11 @@ register('ATAN2S', (s) => {
 });
 
 /* ====================================================================
-   Session 060 — TEXPAND / TLIN / TCOLLECT / EXPLN.
+   TEXPAND / TLIN / TCOLLECT / EXPLN.
    ====================================================================
 
-   Rounds out the HP50 trig-CAS family that sessions 058 (TAN2SC) and
-   059 (HALFTAN / TAN2SC2 / TAN2CS2 / inverse-trig rewrites) opened up.
+   Rounds out the HP50 trig-CAS family alongside TAN2SC and the
+   HALFTAN / TAN2SC2 / TAN2CS2 / inverse-trig rewrites.
 
      TEXPAND   — HP50 AUR §3-252.  Expand SIN/COS/TAN of sums via the
                  addition formulae.
@@ -13645,12 +13626,12 @@ register('ATAN2S', (s) => {
      EXPLN     — HP50 AUR §3-75.  Rewrite trig and hyperbolic in terms
                  of real / complex exponentials (e^x, e^(ix)).
 
-   TEXPAND and EXPLN reuse the session-059 `_trigIdentityWalk` (both
-   dispatch on the function name at a `fn` node).  TLIN and TCOLLECT
-   match on `bin` nodes instead — a multiplication for TLIN, an
-   addition/subtraction for TCOLLECT — so they each carry a small
-   custom walker.  All four are shallow-walk: rewrite results are not
-   re-processed (matching the session-059 recursion-safety invariant).
+   TEXPAND and EXPLN reuse `_trigIdentityWalk` (both dispatch on the
+   function name at a `fn` node).  TLIN and TCOLLECT match on `bin`
+   nodes instead — a multiplication for TLIN, an addition/subtraction
+   for TCOLLECT — so they each carry a small custom walker.  All four
+   are shallow-walk: rewrite results are not re-processed (recursion-
+   safety invariant).
    ==================================================================== */
 
 /* ---- TEXPAND — addition-formula expansion of SIN / COS / TAN --------
@@ -13939,11 +13920,10 @@ register('TCOLLECT', (s) => {
    rewrite map).  Non-Symbolic input throws Bad argument type.
 
    Inverse-trig (ASIN/ACOS/ATAN) and inverse-hyperbolic (ASINH/...)
-   rewrites are intentionally deferred — session 059's ACOS2S /
-   ASIN2C / ASIN2T / ATAN2S already cover the inverse-trig identity
-   surface in a non-exponential form; adding the log-of-complex forms
-   alongside makes the output even less tractable without
-   `_polyNormalize`.  Tracked in the Next-pass list. */
+   rewrites are intentionally deferred — the ACOS2S / ASIN2C / ASIN2T
+   / ATAN2S ops already cover the inverse-trig identity surface in a
+   non-exponential form; adding log-of-complex forms alongside makes
+   the output even less tractable without `_polyNormalize`. */
 
 function _iAst()  { return AstVar('i'); }
 function _negIAst() { return AstNeg(AstVar('i')); }
@@ -14004,8 +13984,8 @@ register('EXPLN', (s) => {
     SINH:  _explnSinhArg,
     COSH:  _explnCoshArg,
     TANH:  _explnTanhArg,
-    // Session 061 — inverse-trig / inverse-hyperbolic extensions.
-    // Hoisted forward refs; definitions in the Session 061 block.
+    // Inverse-trig / inverse-hyperbolic extensions.  Hoisted forward
+    // refs; definitions appear in the TSIMP / HEAVISIDE / DIRAC block.
     ASIN:  _explnAsinArg,
     ACOS:  _explnAcosArg,
     ATAN:  _explnAtanArg,
@@ -14017,25 +13997,23 @@ register('EXPLN', (s) => {
 });
 
 /* ====================================================================
-   Session 061 — TSIMP, HEAVISIDE / DIRAC, LAPLACE / ILAP extensions,
-                 EXPLN inverse family, LNCOLLECT, FROOTS biquadratic.
+   TSIMP, HEAVISIDE / DIRAC, LAPLACE / ILAP extensions, EXPLN inverse
+   family, LNCOLLECT, FROOTS biquadratic.
    ====================================================================
 
-   This run extends three surfaces that were opened in sessions 058–060:
+   Three surfaces covered:
 
-     • §11 trig-CAS (session 059 / 060):  TSIMP  — bounded fixed-point
-       Pythagorean-identity simplifier, closes the surface modulo the
-       multi-session `_polyNormalize`.
-     • EXPLN (session 060):  ASIN / ACOS / ATAN / ASINH / ACOSH / ATANH
-       rewrites to LN-of-complex forms, using the same
-       `_trigIdentityWalk` substrate (six new entries in the rewrite
-       map).
-     • LAPLACE / ILAP (session 058):  HEAVISIDE and DIRAC as first-class
-       ops, their transforms and inverses in the table, plus the
-       frequency-shift theorem L{e^(αX)·f(X)} = F(X − α) and its
-       ILAP inverse (pure Dirac round-trips).
+     • §11 trig-CAS:  TSIMP — bounded fixed-point Pythagorean-identity
+       simplifier, closes the surface modulo `_polyNormalize`.
+     • EXPLN:  ASIN / ACOS / ATAN / ASINH / ACOSH / ATANH rewrites to
+       LN-of-complex forms, using the same `_trigIdentityWalk`
+       substrate (six entries in the rewrite map).
+     • LAPLACE / ILAP:  HEAVISIDE and DIRAC as first-class ops, their
+       transforms and inverses in the table, plus the frequency-shift
+       theorem L{e^(αX)·f(X)} = F(X − α) and its ILAP inverse (pure
+       Dirac round-trips).
 
-   Two standalone additions round out the run:
+   Two standalone additions round out the cluster:
 
      • LNCOLLECT — the logarithm-collection sibling of EXPLN.  Collects
        LN(a) ± LN(b) into LN(a·b) / LN(a/b) and n·LN(a) into LN(a^n).
@@ -14043,8 +14021,8 @@ register('EXPLN', (s) => {
      • FROOTS biquadratic pass — before Durand-Kerner, detect a residual
        `X⁴ + bX² + c` (degree-4 with `coef[1] = coef[3] = 0`), treat it
        as `u² + bu + c` where u = X², find the two u-roots via the
-       session-059 quadratic-residual machinery, then emit ±√u₁, ±√u₂
-       as exact Symbolic radicals.
+       quadratic-residual machinery, then emit ±√u₁, ±√u₂ as exact
+       Symbolic radicals.
    ==================================================================== */
 
 /* ---- _astSubstVar — substitute a Var occurrence with an AST ---------
@@ -14293,8 +14271,8 @@ register('TSIMP', (s) => {
      ATANH(x) →  (1/2) · LN((1 + x) / (1 - x))     (real)
 
    The trig identities use the project-wide `Var('i')` convention for
-   the imaginary unit (see session 060's notes on `_iAst`).  The
-   hyperbolic identities are real-valued and don't reference `i`.
+   the imaginary unit (see `_iAst` above).  The hyperbolic identities
+   are real-valued and don't reference `i`.
 
    The walker is still `_trigIdentityWalk`; the new rewrites produce
    `LN` and `SQRT` nodes that are NOT re-processed (no LN / SQRT
@@ -14431,8 +14409,8 @@ register('LNCOLLECT', (s) => {
 });
 
 /* ---- FROOTS biquadratic residual pass -------------------------------
-   A natural follow-on to session 059's exact-irrational quadratic
-   residual.  If after rational-root peeling the residual polynomial is
+   A natural follow-on to the exact-irrational quadratic residual.
+   If after rational-root peeling the residual polynomial is
    degree 4 with `coef[1] = coef[3] = 0` (`X⁴ + bX² + c` with
    optional leading coefficient), treat it as the quadratic
    `u² + Bu + C` in `u = X²` where B = coefs[2]/coefs[0] and

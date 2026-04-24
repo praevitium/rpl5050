@@ -708,7 +708,7 @@ import { assert, assertThrows } from './helpers.mjs';
     // Now push LASTARG via execOp.  execOp calls runOp for LASTARG
     // itself — since LASTARG consumes nothing, that runOp records an
     // empty _lastArgs after the push.  But the args pushed are what
-    // `*` previously consumed: 12 and 3.
+    // `*` consumed 12 and 3 above.
     e.execOp('LASTARG');
     assert(s.depth === 3,
       'session046(entry): LASTARG via execOp pushes 2 args');
