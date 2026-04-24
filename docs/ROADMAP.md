@@ -186,10 +186,15 @@ These are aspirational and not on any current queue:
   transcript of the last N stack operations with formatted results
   and the entry-line keystrokes that produced them.  Useful for
   coursework and support threads.
-- **WASM CAS core.**  The symbolic layer in `src/rpl/algebra.js` is
-  pure JS and competent; a WASM backend (Symengine or an in-house
-  rewrite) would let heavy simplification and integration run a
-  couple of orders of magnitude faster.
+- **WASM CAS core (in progress — session 092).**  The hand-rolled
+  symbolic layer in `www/src/rpl/algebra.js` is being retired in
+  favour of [Giac](https://www-fourier.univ-grenoble-alpes.fr/~parisse/giac.html)
+  (Bernard Parisse, GPL-3.0+), vendored at `www/src/vendor/giac/`
+  with a main-thread sync adapter at `www/src/rpl/cas/giac-engine.mjs`.
+  Phase 1 (FACTOR) shipped in session 092 with a strict no-fallback
+  policy.  Remaining phases migrate EXPAND, DERIV, INTEG, SOLVE, and
+  the T*-family one op at a time; once every Symbolic op has moved,
+  `algebra.js` shrinks to a small AST-constructor/formatter module.
 
 ---
 

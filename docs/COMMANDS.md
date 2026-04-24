@@ -186,9 +186,22 @@ covered by the binary-integer section).
 
 ## CAS (symbolic)
 
+**CAS engine — session 092:** Symbolic CAS calls are delegated to
+**Giac** (Bernard Parisse, Institut Fourier; GPL-3.0+), vendored at
+`www/src/vendor/giac/`.  The adapter lives at
+`www/src/rpl/cas/giac-engine.mjs` (main-thread synchronous); AST ↔
+Giac-string conversion is `www/src/rpl/cas/giac-convert.mjs`.  There
+is **no legacy-algebra.js fallback**: if Giac isn't ready or the
+caseval errors, the op errors.  Integer-input fast paths (e.g.
+`FACTOR 42` via native trial division) are intentional native paths,
+not fallbacks.  Migration is incremental — rows below are flagged
+**[Giac]** once they've moved; others still run through the original
+`www/src/rpl/algebra.js` until migrated.
+
 | Command | Status | Notes |
 |---------|--------|-------|
-| `EVAL` `APPROX` `EXPAND` `FACTOR` | ✓ | |
+| `FACTOR` | ✓ | **Session 092 [Giac]** — Symbolic routed through `factor(...)`; Integer path is native trial-division (Giac's `factor(12)` prints `(2)^2*3` which doesn't match HP50 semantics). No-fallback policy: Symbolic input errors if Giac isn't ready. |
+| `EVAL` `APPROX` `EXPAND` | ✓ | |
 | `COLLECT` `DISTRIB` `TEXPAND` `TLIN` | ✓ | |
 | `LNCOLLECT` `EXPLN` `TSIMP` `TCOLLECT` | ✓ | |
 | `DERIV` `INTEG` `SUM` `SOLVE` | ✓ | |

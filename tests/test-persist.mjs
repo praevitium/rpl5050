@@ -203,7 +203,7 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value === 2 &&
 
 /* --- VX (CAS main variable) survives snapshot / rehydrate. --- */
 {
-  const { setCasVx, resetCasVx, getCasVx } = await import('../src/rpl/state.js');
+  const { setCasVx, resetCasVx, getCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   setCasVx('T');                                  // pin to T so 'X' default is clearly rejected
   const s4 = new Stack();

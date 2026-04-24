@@ -97,8 +97,8 @@ import { assert } from './helpers.mjs';
 // can be exercised without a DOM.  It receives an event-shaped object
 // plus the Entry and (optionally) a clipboard facade.
 {
-  const { handleModifierShortcut } = await import('../src/ui/shortcuts.js');
-  const { Entry } = await import('../src/ui/entry.js');
+  const { handleModifierShortcut } = await import('../www/src/ui/shortcuts.js');
+  const { Entry } = await import('../www/src/ui/entry.js');
 
   const evt = (patch) => Object.assign({
     key: '', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false,
@@ -298,7 +298,7 @@ import { assert } from './helpers.mjs';
     clampLevel, levelUp, levelDown,
     interactiveStackMenu,
     rollLevel, rollDownToLevel, dropLevel,
-  } = await import('../src/ui/interactive-stack.js');
+  } = await import('../www/src/ui/interactive-stack.js');
 
   // clampLevel bounds
   assert(clampLevel(0, 5)  === 1, 'clampLevel: below-range snaps to 1');
@@ -426,7 +426,7 @@ import { assert } from './helpers.mjs';
   }
   // Shim stackView — setPath is all we're testing so the ctor is fine
   // with these minimal stubs.
-  const { Display } = await import('../src/ui/display.js');
+  const { Display } = await import('../www/src/ui/display.js');
   const statusLine = makeStatusLine();
   const d = new Display({
     stackView: { addEventListener() {} },

@@ -1420,8 +1420,8 @@ setAngle('rad');
 }
 {
   // Import and test via a wrong-shape path:
-  const { Fn } = await import('../src/rpl/algebra.js');
-  const { Symbolic } = await import('../src/rpl/types.js');
+  const { Fn } = await import('../www/src/rpl/algebra.js');
+  const { Symbolic } = await import('../www/src/rpl/types.js');
   const s = new Stack();
   s.push(Symbolic(Fn('SIN', [{ kind: 'var', name: 'X' }])));
   assertThrows(() => { lookup('Q→').fn(s); }, null, 'session048: Q→ of SIN(X) throws Bad argument type');

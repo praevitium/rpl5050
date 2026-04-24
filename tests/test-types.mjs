@@ -1,10 +1,10 @@
 import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import {
-  Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
+  Real, Integer, Rational, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix, Symbolic,
-  isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
-  isString,
+  isReal, isInteger, isRational, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
+  isString, isNumber, promoteNumericPair,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
 import { format, formatStackTop } from '../www/src/rpl/formatter.js';
@@ -1078,4 +1078,339 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     /Bad argument type/,
     'session087: FLOOR on Complex still throws Bad argument type'
   );
+}
+
+/* ================================================================
+   Session 092 — Rational data type (Fraction.js-backed)
+
+   Introduces an exact ratio-of-integers type alongside Integer / Real /
+   Complex.  Canonical shape: { type: 'rational', n: BigInt, d: BigInt }
+   with gcd(|n|,d)=1 and d≥1.  Arithmetic runs through Fraction.js —
+   arbitrary precision via BigInt, no fallbacks.
+   ================================================================ */
+{
+  // Constructor canonicalisation — sign on numerator, reduced.
+  {
+    const r = Rational(-6, 9);
+    assert(isRational(r), 'Rational(-6, 9) is rational');
+    assert(r.n === -2n && r.d === 3n,
+      `Rational(-6, 9) canonicalises to -2/3 (got ${r.n}/${r.d})`);
+  }
+  {
+    const r = Rational(6, -9);
+    assert(r.n === -2n && r.d === 3n,
+      `Rational(6, -9) canonicalises to -2/3 (got ${r.n}/${r.d})`);
+  }
+  {
+    const r = Rational(0, 5);
+    assert(r.n === 0n && r.d === 1n,
+      `Rational(0, 5) is 0/1 (got ${r.n}/${r.d})`);
+  }
+  // Large magnitudes via BigInt — Rational is arbitrary-precision.
+  {
+    const r = Rational(2n ** 100n, 3n);
+    assert(r.n === 2n ** 100n && r.d === 3n,
+      'Rational(2^100, 3) preserves BigInt magnitude (no precision loss)');
+  }
+  // Division by zero rejected.
+  assertThrows(
+    () => Rational(1, 0),
+    /Division by zero/,
+    'Rational(1, 0) throws Division by zero'
+  );
+
+  // isNumber picks up Rational.
+  assert(isNumber(Rational(1, 2)),
+    'isNumber(Rational(1, 2)) is true');
+
+  // promoteNumericPair lattice — Integer+Rational → rational kind.
+  {
+    const p = promoteNumericPair(Integer(2), Rational(1, 3));
+    assert(p.kind === 'rational',
+      `promote(Integer, Rational) → rational kind (got ${p.kind})`);
+    assert(p.a.n === 2n && p.a.d === 1n,
+      'promote widens Integer to {n,d:1n}');
+  }
+  // Rational + Real → real kind (exactness already lost).
+  {
+    const p = promoteNumericPair(Rational(1, 3), Real(0.5));
+    assert(p.kind === 'real',
+      `promote(Rational, Real) → real kind (got ${p.kind})`);
+  }
+  // Rational + Complex → complex kind.
+  {
+    const p = promoteNumericPair(Rational(1, 2), Complex(0, 1));
+    assert(p.kind === 'complex',
+      `promote(Rational, Complex) → complex kind (got ${p.kind})`);
+  }
+
+  // Arithmetic: + - * / between Rationals and with Integers.
+  {
+    const s = new Stack();
+    s.push(Rational(1, 3));
+    s.push(Rational(1, 6));
+    lookup('+').fn(s);
+    assert(s.peek(1).type === 'rational' &&
+           s.peek(1).n === 1n && s.peek(1).d === 2n,
+      `1/3 + 1/6 = 1/2 (got ${s.peek(1).n}/${s.peek(1).d})`);
+  }
+  {
+    // 1/2 + 1/2 collapses back to Integer(1).
+    const s = new Stack();
+    s.push(Rational(1, 2));
+    s.push(Rational(1, 2));
+    lookup('+').fn(s);
+    assert(s.peek(1).type === 'integer' && s.peek(1).value === 1n,
+      '1/2 + 1/2 collapses to Integer(1)');
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(2));
+    s.push(Rational(1, 3));
+    lookup('*').fn(s);
+    assert(s.peek(1).type === 'rational' &&
+           s.peek(1).n === 2n && s.peek(1).d === 3n,
+      `2 * 1/3 = 2/3 (got ${s.peek(1).n}/${s.peek(1).d})`);
+  }
+  {
+    // Division by Rational.
+    const s = new Stack();
+    s.push(Integer(1));
+    s.push(Rational(1, 3));
+    lookup('/').fn(s);
+    assert(s.peek(1).type === 'integer' && s.peek(1).value === 3n,
+      '1 / (1/3) = Integer(3)');
+  }
+  {
+    // Integer power → stays Rational when base is Rational.
+    const s = new Stack();
+    s.push(Rational(2, 3));
+    s.push(Integer(2));
+    lookup('^').fn(s);
+    assert(s.peek(1).type === 'rational' &&
+           s.peek(1).n === 4n && s.peek(1).d === 9n,
+      `(2/3)^2 = 4/9 (got ${s.peek(1).n}/${s.peek(1).d})`);
+  }
+  {
+    // Negative-exponent inverts — still exact.
+    const s = new Stack();
+    s.push(Rational(2, 3));
+    s.push(Integer(-1));
+    lookup('^').fn(s);
+    assert(s.peek(1).type === 'rational' &&
+           s.peek(1).n === 3n && s.peek(1).d === 2n,
+      `(2/3)^-1 = 3/2 (got ${s.peek(1).n}/${s.peek(1).d})`);
+  }
+
+  // APPROX mode collapses Rational arithmetic to Real — HP50 flag -3
+  // means "I want decimals", so any op on Rationals in APPROX mode
+  // yields a Real instead of a Rational.  EXACT mode (default) keeps
+  // the exact ratio.  Integer/Integer division is likewise APPROX-
+  // aware: EXACT produces Rational, APPROX produces Real.
+  {
+    const { setApproxMode } = await import('../www/src/rpl/state.js');
+    setApproxMode(true);
+    // 1/3 + 1/6 in APPROX → Real(0.5), not Rational(1/2).
+    {
+      const s = new Stack();
+      s.push(Rational(1, 3));
+      s.push(Rational(1, 6));
+      lookup('+').fn(s);
+      assert(s.peek(1).type === 'real'
+          && Math.abs(s.peek(1).value - 0.5) < 1e-12,
+        `APPROX: Rational+Rational → Real (got ${s.peek(1).type} ${s.peek(1).value ?? s.peek(1).n+'/'+s.peek(1).d})`);
+    }
+    // 1/3 NEG in APPROX → Real(-0.333…), not Rational(-1/3).
+    {
+      const s = new Stack();
+      s.push(Rational(1, 3));
+      lookup('NEG').fn(s);
+      assert(s.peek(1).type === 'real'
+          && Math.abs(s.peek(1).value - (-1/3)) < 1e-12,
+        'APPROX: NEG on Rational → Real');
+    }
+    // 2/3 ABS in APPROX → Real.  EXACT would keep Rational.
+    {
+      const s = new Stack();
+      s.push(Rational(-2, 3));
+      lookup('ABS').fn(s);
+      assert(s.peek(1).type === 'real'
+          && Math.abs(s.peek(1).value - (2/3)) < 1e-12,
+        'APPROX: ABS on Rational → Real');
+    }
+    // 2/3 INV in APPROX → Real(1.5).
+    {
+      const s = new Stack();
+      s.push(Rational(2, 3));
+      lookup('INV').fn(s);
+      assert(s.peek(1).type === 'real'
+          && Math.abs(s.peek(1).value - 1.5) < 1e-12,
+        'APPROX: INV on Rational → Real');
+    }
+    // 1 3 / in APPROX → Real(0.333…), not Rational(1/3).
+    {
+      const s = new Stack();
+      s.push(Integer(1n)); s.push(Integer(3n));
+      lookup('/').fn(s);
+      assert(s.peek(1).type === 'real',
+        'APPROX: 1/3 (Integer/Integer non-exact) → Real, not Rational');
+    }
+    setApproxMode(false);
+  }
+
+  // EXACT mode: unary Rational ops stay exact.
+  {
+    // NEG on Rational(2/3) → Rational(-2/3).
+    {
+      const s = new Stack();
+      s.push(Rational(2, 3));
+      lookup('NEG').fn(s);
+      assert(s.peek(1).type === 'rational'
+          && s.peek(1).n === -2n && s.peek(1).d === 3n,
+        'EXACT: NEG 2/3 → -2/3');
+    }
+    // ABS on Rational(-2/3) → Rational(2/3).
+    {
+      const s = new Stack();
+      s.push(Rational(-2, 3));
+      lookup('ABS').fn(s);
+      assert(s.peek(1).type === 'rational'
+          && s.peek(1).n === 2n && s.peek(1).d === 3n,
+        'EXACT: ABS -2/3 → 2/3');
+    }
+    // INV on Rational(2/3) → Rational(3/2).
+    {
+      const s = new Stack();
+      s.push(Rational(2, 3));
+      lookup('INV').fn(s);
+      assert(s.peek(1).type === 'rational'
+          && s.peek(1).n === 3n && s.peek(1).d === 2n,
+        'EXACT: INV 2/3 → 3/2');
+    }
+    // INV on Rational(-2/3) preserves sign on numerator → Rational(-3/2).
+    {
+      const s = new Stack();
+      s.push(Rational(-2, 3));
+      lookup('INV').fn(s);
+      assert(s.peek(1).type === 'rational'
+          && s.peek(1).n === -3n && s.peek(1).d === 2n,
+        'EXACT: INV -2/3 → -3/2 (sign on numerator)');
+    }
+    // INV on Rational(0, 1) throws Infinite result — d must be non-zero
+    // in the RESULT.  The Rational constructor guards division by zero
+    // at construction, but 0/1 inverted would give 1/0.
+    {
+      const s = new Stack();
+      s.push(Rational(0, 1));
+      let threw = false;
+      try { lookup('INV').fn(s); }
+      catch (e) { threw = /Infinite result/i.test(e.message); }
+      assert(threw, 'EXACT: INV on Rational(0) → Infinite result');
+    }
+    // SQRT on a Rational perfect square → exact Rational.
+    {
+      const s = new Stack();
+      s.push(Rational(4, 9));
+      lookup('SQRT').fn(s);
+      assert(s.peek(1).type === 'rational'
+          && s.peek(1).n === 2n && s.peek(1).d === 3n,
+        'EXACT: SQRT 4/9 → 2/3 (perfect square, exact)');
+    }
+    // SQRT on a non-perfect-square Rational → Real (numeric fallback
+    // in the absence of a Symbolic simplifier path; deliberately keeps
+    // the calculator usable rather than erroring).
+    {
+      const s = new Stack();
+      s.push(Rational(2, 9));
+      lookup('SQRT').fn(s);
+      assert(s.peek(1).type === 'real'
+          && Math.abs(s.peek(1).value - Math.sqrt(2/9)) < 1e-12,
+        'EXACT: SQRT 2/9 → Real (non-perfect-square falls to float)');
+    }
+    // SQRT on a negative Rational → Complex.
+    {
+      const s = new Stack();
+      s.push(Rational(-4, 9));
+      lookup('SQRT').fn(s);
+      assert(s.peek(1).type === 'complex',
+        'EXACT: SQRT -4/9 → Complex');
+    }
+    // SQ on Rational — (a/b)^2 stays exact.
+    {
+      const s = new Stack();
+      s.push(Rational(2, 3));
+      lookup('SQ').fn(s);
+      assert(s.peek(1).type === 'rational'
+          && s.peek(1).n === 4n && s.peek(1).d === 9n,
+        'EXACT: SQ 2/3 → 4/9');
+    }
+    // FLOOR / CEIL / IP / FP on Rational — exact BigInt rounding.
+    {
+      const tests = [
+        //  n,    d, FLOOR, CEIL, IP,  FP (BigInt → Integer, [n,d] → Rational)
+        [ 7n,   2n,  3n,   4n,   3n,  [ 1n, 2n]],   //  7/2
+        [-7n,   2n, -4n,  -3n,  -3n,  [-1n, 2n]],   // -7/2
+        [ 4n,   2n,  2n,   2n,   2n,   0n       ],  //  4/2 = 2 exact
+      ];
+      for (const [n, d, fl, ce, ip, fp] of tests) {
+        const tag = `${n}/${d}`;
+        {
+          const s = new Stack();
+          s.push(Rational(n, d));
+          lookup('FLOOR').fn(s);
+          assert(s.peek(1).type === 'integer' && s.peek(1).value === fl,
+            `EXACT: FLOOR ${tag} → ${fl}`);
+        }
+        {
+          const s = new Stack();
+          s.push(Rational(n, d));
+          lookup('CEIL').fn(s);
+          assert(s.peek(1).type === 'integer' && s.peek(1).value === ce,
+            `EXACT: CEIL ${tag} → ${ce}`);
+        }
+        {
+          const s = new Stack();
+          s.push(Rational(n, d));
+          lookup('IP').fn(s);
+          assert(s.peek(1).type === 'integer' && s.peek(1).value === ip,
+            `EXACT: IP ${tag} → ${ip}`);
+        }
+        {
+          const s = new Stack();
+          s.push(Rational(n, d));
+          lookup('FP').fn(s);
+          if (typeof fp === 'bigint') {
+            assert(s.peek(1).type === 'integer' && s.peek(1).value === fp,
+              `EXACT: FP ${tag} → ${fp}`);
+          } else {
+            assert(s.peek(1).type === 'rational'
+                && s.peek(1).n === fp[0] && s.peek(1).d === fp[1],
+              `EXACT: FP ${tag} → ${fp[0]}/${fp[1]}`);
+          }
+        }
+      }
+    }
+    // SIGN on Rational — sign of the numerator (d always > 0).
+    {
+      for (const [n, d, expected] of [
+        [ 2n, 3n,  1n],
+        [-2n, 3n, -1n],
+        [ 0n, 1n,  0n],
+      ]) {
+        const s = new Stack();
+        s.push(Rational(n, d));
+        lookup('SIGN').fn(s);
+        assert(s.peek(1).type === 'integer' && s.peek(1).value === expected,
+          `EXACT: SIGN ${n}/${d} → ${expected}`);
+      }
+    }
+  }
+
+  // Formatter — Rational prints as `n/d`.
+  {
+    const s1 = format(Rational(1, 3));
+    assert(s1 === '1/3', `format(Rational(1,3)) = '1/3' (got '${s1}')`);
+    const s2 = format(Rational(-7, 4));
+    assert(s2 === '-7/4', `format(Rational(-7,4)) = '-7/4' (got '${s2}')`);
+  }
 }

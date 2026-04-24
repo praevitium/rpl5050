@@ -35,9 +35,9 @@ import { assert, assertThrows } from './helpers.mjs';
        then operate on.
    ============================================================ */
 {
-  const { Entry } = await import('../src/ui/entry.js');
-  const { formatAlgebra } = await import('../src/rpl/algebra.js');
-  const { isSymbolic, isList } = await import('../src/rpl/types.js');
+  const { Entry } = await import('../www/src/ui/entry.js');
+  const { formatAlgebra } = await import('../www/src/rpl/algebra.js');
+  const { isSymbolic, isList } = await import('../www/src/rpl/types.js');
 
   // isAlgebraic() — parity of `'` characters
   {
@@ -156,8 +156,13 @@ import { assert, assertThrows } from './helpers.mjs';
       `parsed symbolic = '${f}'`);
   }
 
-  // And then FACTOR runs cleanly on that Symbolic
+  // And then FACTOR runs cleanly on that Symbolic. FACTOR routes to
+  // Giac in Node via the MockGiacEngine; register a fixture so caseval
+  // returns what real Giac returns for this input. No fallback path.
   {
+    const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
+    giac._clear();
+    giac._setFixture('factor(X^2+2*X+1)', '(X+1)^2');
     const s = new Stack();
     const e = new Entry(s);
     for (const ch of "'X^2 + 2*X + 1'") {
@@ -168,6 +173,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('FACTOR').fn(s);
     const f = formatAlgebra(s.peek().expr);
     assert(f === '(X + 1)^2', `FACTOR('X^2 + 2*X + 1') = '${f}'`);
+    giac._clear();
   }
 
   // SOLVE flow: `'X^2 - 4' 'X' SOLVE` typed as chars ending with SOLVE
@@ -239,7 +245,7 @@ import { assert, assertThrows } from './helpers.mjs';
    key binding expects.
    ============================================================ */
 {
-  const { Entry } = await import('../src/ui/entry.js');
+  const { Entry } = await import('../www/src/ui/entry.js');
 
   // ----- hyperbolic ops -----
   {
@@ -448,8 +454,8 @@ import { assert, assertThrows } from './helpers.mjs';
 // only happens on a *successful* parse+commit; failed commits don't
 // pollute history; consecutive duplicates collapse to one.
 {
-  const { Entry } = await import('../src/ui/entry.js');
-  const { Stack } = await import('../src/rpl/stack.js');
+  const { Entry } = await import('../www/src/ui/entry.js');
+  const { Stack } = await import('../www/src/rpl/stack.js');
 
   // ---- ENTER records the committed text ----
   {
@@ -577,7 +583,7 @@ import { assert, assertThrows } from './helpers.mjs';
    the exponent's sign, not the mantissa's.  HP50 behavior.
    ================================================================ */
 {
-  const { Entry } = await import('../src/ui/entry.js');
+  const { Entry } = await import('../www/src/ui/entry.js');
 
   // Helper: new Entry with a given typed buffer and cursor at the end.
   const mk = (src) => {
@@ -679,7 +685,7 @@ import { assert, assertThrows } from './helpers.mjs';
 // through the user-facing execOp / enter paths.
 // ------------------------------------------------------------------
 {
-  const { Entry } = await import('../src/ui/entry.js');
+  const { Entry } = await import('../www/src/ui/entry.js');
   // Helper: Integer holds BigInt, Real holds JS Number.  Parser emits
   // Integer for bare digit literals in EXACT mode.  Compare as Number.
   const val = (v) => Number(v.value);

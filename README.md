@@ -53,7 +53,7 @@ www/                  Browser-loaded assets (entry point for Tauri's frontendDis
   index.html          Calculator shell
   src/app.js          Bootstrap
   src/rpl/            Stack engine, parser, evaluator, formatter, persistence
-  src/rpl/cas/        Giac worker + conversion layer
+  src/rpl/cas/        Giac engine adapter (main-thread, sync) + AST↔Giac conversion
   src/ui/             Keyboard, display, interactive stack, side panel, entry
   src/vendor/giac/    Prebuilt Giac WebAssembly (see NOTICE for provenance)
   css/                Styles

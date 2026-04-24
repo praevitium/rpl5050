@@ -1424,13 +1424,16 @@ import { assert } from './helpers.mjs';
    ================================================================= */
 
 // ---- Unary numeric: {1 4 9} SQRT → {1 2 3} ----
+// Perfect squares stay exact (Integer) in EXACT mode — session 092.
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(4n), Integer(9n)]));
   lookup('SQRT').fn(s);
   const out = s.peek();
   assert(isList(out) && out.items.length === 3
-      && out.items[0].value === 1 && out.items[1].value === 2 && out.items[2].value === 3,
+      && Number(out.items[0].value) === 1
+      && Number(out.items[1].value) === 2
+      && Number(out.items[2].value) === 3,
     'list-distribute: {1 4 9} SQRT → {1 2 3}');
 }
 
@@ -1498,15 +1501,17 @@ import { assert } from './helpers.mjs';
 }
 
 // ---- Nested lists: {1 {4 9}} SQRT → {1 {2 3}} ----
+// Perfect squares stay exact (Integer) in EXACT mode — session 092.
 {
   const s = new Stack();
   s.push(RList([Integer(1n), RList([Integer(4n), Integer(9n)])]));
   lookup('SQRT').fn(s);
   const out = s.peek();
   assert(isList(out) && out.items.length === 2
-      && out.items[0].value === 1
+      && Number(out.items[0].value) === 1
       && isList(out.items[1]) && out.items[1].items.length === 2
-      && out.items[1].items[0].value === 2 && out.items[1].items[1].value === 3,
+      && Number(out.items[1].items[0].value) === 2
+      && Number(out.items[1].items[1].value) === 3,
     'list-distribute: nested {1 {4 9}} SQRT → {1 {2 3}}');
 }
 

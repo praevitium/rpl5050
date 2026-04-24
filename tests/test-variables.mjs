@@ -798,7 +798,7 @@ import { assert } from './helpers.mjs';
 {
   const {
     saveVarStateForUndo, undoVarState, hasVarUndo, clearVarUndo,
-  } = await import('../src/rpl/state.js');
+  } = await import('../www/src/rpl/state.js');
 
   // ---- snapshot isolates live tree from stashed tree ----
   {
@@ -817,7 +817,7 @@ import { assert } from './helpers.mjs';
 
   // ---- Multi-level var-state undo round-trip: undo + redo. ----
   {
-    const { redoVarState, hasVarRedo } = await import('../src/rpl/state.js');
+    const { redoVarState, hasVarRedo } = await import('../www/src/rpl/state.js');
     resetHome();
     varStore('X', Real(5));
     saveVarStateForUndo();
@@ -925,8 +925,8 @@ import { assert } from './helpers.mjs';
 
   // ---- Entry._snapForUndo saves BOTH stack and var state ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
-    const { Stack } = await import('../src/rpl/stack.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
+    const { Stack } = await import('../www/src/rpl/stack.js');
     resetHome();
     const s = new Stack();
     s.push(Real(10));
@@ -940,8 +940,8 @@ import { assert } from './helpers.mjs';
 
   // ---- performUndo() swaps BOTH ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
-    const { Stack } = await import('../src/rpl/stack.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
+    const { Stack } = await import('../www/src/rpl/stack.js');
     resetHome();
     varStore('X', Real(5));
     const s = new Stack();
@@ -961,8 +961,8 @@ import { assert } from './helpers.mjs';
 
   // ---- performUndo throws when no stack shadow exists ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
-    const { Stack } = await import('../src/rpl/stack.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
+    const { Stack } = await import('../www/src/rpl/stack.js');
     resetHome();
     const s = new Stack();
     const e = new Entry(s);
@@ -973,8 +973,8 @@ import { assert } from './helpers.mjs';
 
   // ---- End-to-end: Entry.enter is the snap point for STO+UNDO ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
-    const { Stack } = await import('../src/rpl/stack.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
+    const { Stack } = await import('../www/src/rpl/stack.js');
     resetHome();
     const s = new Stack();
     const e = new Entry(s);
@@ -1004,8 +1004,8 @@ import { assert } from './helpers.mjs';
 
   // ---- End-to-end: PURGE via entry line is undoable ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
-    const { Stack } = await import('../src/rpl/stack.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
+    const { Stack } = await import('../www/src/rpl/stack.js');
     resetHome();
     varStore('X', Real(99));
     const s = new Stack();
@@ -1091,7 +1091,7 @@ import { assert } from './helpers.mjs';
 /* Dynamic import so state.js flag helpers are in scope here. */
 const {
   setUserFlag, clearUserFlag, testUserFlag, clearAllUserFlags,
-} = await import('../src/rpl/state.js');
+} = await import('../www/src/rpl/state.js');
 
 /* ---- INCR / DECR happy paths ---- */
 {

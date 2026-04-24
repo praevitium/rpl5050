@@ -26,6 +26,7 @@ import {
   Fn as AstFn, isFn as astIsFn, isKnownFunction,
   evalAst, freeVars, defaultFnEval,
 } from '../www/src/rpl/algebra.js';
+import { giac } from '../www/src/rpl/cas/giac-engine.mjs';
 import { assert } from './helpers.mjs';
 
 /* Symbolic algebra — parser, simplify, DERIV, EXPAND, COLLECT, FACTOR,
@@ -618,13 +619,13 @@ import { assert } from './helpers.mjs';
 // through docs/pretty-demo.html.
 {
   // Smoke test — import resolves, entry points exist.
-  const { astToSvg, layoutAst } = await import('../src/rpl/pretty.js');
+  const { astToSvg, layoutAst } = await import('../www/src/rpl/pretty.js');
   assert(typeof astToSvg === 'function',  'pretty.astToSvg is a function');
   assert(typeof layoutAst === 'function', 'pretty.layoutAst is a function');
 }
 {
   // A single variable renders to one <text> element, no bar, no path.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg, width, height } = astToSvg(parseAlgebra('X'));
   assert(svg.startsWith('<svg '), 'astToSvg result starts with <svg>');
   assert((svg.match(/<text /g) || []).length === 1, 'one <text> for plain X');
@@ -635,7 +636,7 @@ import { assert } from './helpers.mjs';
 }
 {
   // A fraction draws a <line> for the bar and two <text> elements.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg, height } = astToSvg(parseAlgebra('1/2'));
   assert(svg.includes('<line '), '1/2 draws a fraction bar <line>');
   assert((svg.match(/<text /g) || []).length === 2, '1/2 has two <text> (num + den)');
@@ -644,7 +645,7 @@ import { assert } from './helpers.mjs';
 {
   // Fraction children are never parenthesised — (X+1)/(X-1) yields
   // one <line> and zero <path> (no parens).
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('(X+1)/(X-1)'));
   assert((svg.match(/<line /g) || []).length === 1, '(X+1)/(X-1) has exactly one bar');
   assert(!svg.includes('<path '),
@@ -653,7 +654,7 @@ import { assert } from './helpers.mjs';
 {
   // Superscript renders with a smaller font-size.  Base (X) at 24,
   // exponent (2) at 24*0.7 = 16.8.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('X^2'), { size: 24 });
   assert(svg.includes('font-size="24"'), 'X^2 has a 24px base glyph');
   // Expect the exponent at 16.8px.
@@ -664,7 +665,7 @@ import { assert } from './helpers.mjs';
   // (X+1)^2: the base is a sum so it must be wrapped in parens.  Our
   // parenBox uses <path> arcs.  Expect 2 <path> elements for the
   // matching parens.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('(X+1)^2'));
   const paths = (svg.match(/<path /g) || []).length;
   assert(paths === 2,
@@ -673,7 +674,7 @@ import { assert } from './helpers.mjs';
 {
   // SIN(X^2): the function-call parens are drawn as <path>s; the
   // exponent (2) is a smaller <text>.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('SIN(X^2)'));
   assert(svg.includes('>SIN<'), 'SIN shows as a text glyph');
   assert((svg.match(/<path /g) || []).length === 2,
@@ -683,7 +684,7 @@ import { assert } from './helpers.mjs';
   // Font-family contains single quotes (for multi-word names), never
   // bare double quotes inside the attribute value (which would break
   // the outer attribute quoting).
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('X'));
   const m = svg.match(/font-family="([^"]*)"/);
   assert(m, 'font-family attribute present');
@@ -694,7 +695,7 @@ import { assert } from './helpers.mjs';
   // astToSvg accepts a derived expression directly.  Smoke test with
   // DERIV of X^X to catch regressions in the combo of fn handling,
   // power rule, and pretty-print.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const ast = deriv(parseAlgebra('X^X'), 'X');   // X*X^(X-1) + X^X*LN(X)
   const { svg } = astToSvg(ast);
   assert(svg.startsWith('<svg '),
@@ -711,7 +712,7 @@ import { assert } from './helpers.mjs';
 {
   // SQRT(X) draws the hook-and-vinculum path; no "SQRT" text glyph
   // appears.  The radicand X is a single <text>.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('SQRT(X)'));
   assert(!svg.includes('>SQRT<'),
     'SQRT renders as a glyph, not the literal text SQRT');
@@ -723,7 +724,7 @@ import { assert } from './helpers.mjs';
 {
   // A bare SQRT(X) is visibly taller than a plain X because of the
   // vinculum and hook dip.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { height: hX } = astToSvg(parseAlgebra('X'));
   const { height: hS } = astToSvg(parseAlgebra('SQRT(X)'));
   assert(hS > hX,
@@ -734,7 +735,7 @@ import { assert } from './helpers.mjs';
   // <line> for the fraction bar (NOT the radical — the radical is
   // part of a <path>), the radical hook <path>, and the
   // numerator/denominator text.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('SQRT((X+1)/2)'));
   assert((svg.match(/<line /g) || []).length === 1,
     'SQRT((X+1)/2) has one <line> (the fraction bar)');
@@ -746,7 +747,7 @@ import { assert } from './helpers.mjs';
 {
   // SQRT composes with neighbours:  1 + SQRT(2)  → "1", " + ", "2" as
   // three <text>, plus one <path> for the radical.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('1 + SQRT(2)'));
   assert((svg.match(/<path /g) || []).length === 1,
     '1 + SQRT(2) has exactly one <path> (the radical)');
@@ -765,7 +766,7 @@ import { assert } from './helpers.mjs';
 {
   // XROOT parses at the entry line.
   const a = parseAlgebra('XROOT(2, 3)');
-  const fmt = (await import('../src/rpl/algebra.js')).formatAlgebra(a);
+  const fmt = (await import('../www/src/rpl/algebra.js')).formatAlgebra(a);
   assert(fmt === 'XROOT(2,3)',
     `parseAlgebra('XROOT(2, 3)') round-trips → '${fmt}'`);
 }
@@ -775,7 +776,7 @@ import { assert } from './helpers.mjs';
   // symbolic at simplify time lets algebra.js build closed-form cube-
   // root pairs without spontaneous numeric collapse.
   const { parseAlgebra: p, simplify: s, formatAlgebra: f } =
-    await import('../src/rpl/algebra.js');
+    await import('../www/src/rpl/algebra.js');
   const out = f(s(p('XROOT(8, 3)')));
   assert(out === 'XROOT(8,3)',
     `simplify(XROOT(8, 3)) stays symbolic → '${out}'`);
@@ -784,7 +785,7 @@ import { assert } from './helpers.mjs';
   // XROOT(2, 3) draws one <path> for the radical hook+vinculum AND one
   // <text> for the radicand (2) AND one <text> for the index (3).  No
   // literal 'XROOT' glyph.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('XROOT(2, 3)'));
   assert(!svg.includes('>XROOT<'),
     'XROOT renders as a glyph, not the literal text XROOT');
@@ -799,7 +800,7 @@ import { assert } from './helpers.mjs';
 {
   // Indexed √ is wider than plain √ at the same radicand — the index
   // needs its own horizontal slot above/left of the hook peak.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { width: wSqrt } = astToSvg(parseAlgebra('SQRT(2)'));
   const { width: wX3 }   = astToSvg(parseAlgebra('XROOT(2, 3)'));
   assert(wX3 >= wSqrt,
@@ -808,7 +809,7 @@ import { assert } from './helpers.mjs';
 {
   // Indexed √ is TALLER than plain √ on the same radicand — the index
   // protrudes above the vinculum, lifting the box ascent.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { height: hSqrt } = astToSvg(parseAlgebra('SQRT(2)'));
   const { height: hX3 }   = astToSvg(parseAlgebra('XROOT(2, 3)'));
   assert(hX3 > hSqrt,
@@ -817,7 +818,7 @@ import { assert } from './helpers.mjs';
 {
   // Wide index (e.g. "10") pushes the hook further right — total width
   // for XROOT(2, 10) exceeds XROOT(2, 3).
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { width: w3 }  = astToSvg(parseAlgebra('XROOT(2, 3)'));
   const { width: w10 } = astToSvg(parseAlgebra('XROOT(2, 10)'));
   assert(w10 > w3,
@@ -827,7 +828,7 @@ import { assert } from './helpers.mjs';
   // Complex radicand composes — XROOT((X+1)/2, 3) renders a fraction
   // under the vinculum (so there are two stroked primitives: the
   // fraction's <line> bar and the radical's <path>) plus the index.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('XROOT((X+1)/2, 3)'));
   assert((svg.match(/<line /g) || []).length === 1,
     'XROOT((X+1)/2, 3) has one <line> (the fraction bar)');
@@ -838,7 +839,7 @@ import { assert } from './helpers.mjs';
 {
   // XROOT composes with neighbours: 1 + XROOT(2, 3)  — three <text>
   // for "1", "2", "3", plus " + " separator, and one <path>.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('1 + XROOT(2, 3)'));
   assert((svg.match(/<path /g) || []).length === 1,
     '1 + XROOT(2, 3) has one <path>');
@@ -1197,7 +1198,7 @@ import { assert } from './helpers.mjs';
 // --- TEXTBOOK / FLAT ops + textbookMode state flag ----
 {
   const { setTextbookMode, getTextbookMode } =
-    await import('../src/rpl/state.js');
+    await import('../www/src/rpl/state.js');
   // Normalize to flat so the TEXTBOOK-flips-it-on assertion below is
   // meaningful regardless of the module-level default.
   setTextbookMode(false);
@@ -1220,7 +1221,7 @@ import { assert } from './helpers.mjs';
 // --- textbookMode fires a state-change event -----------
 {
   const { subscribe, setTextbookMode } =
-    await import('../src/rpl/state.js');
+    await import('../www/src/rpl/state.js');
   let fired = 0;
   const off = subscribe(() => { fired++; });
   setTextbookMode(true);
@@ -1238,7 +1239,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: monic quadratic with integer roots --------------------
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // Perfect square: X^2 + 2X + 1 = (X+1)^2
   const r1 = factor(parseAlgebra('X^2 + 2*X + 1'));
   assert(formatAlgebra(r1) === '(X + 1)^2',
@@ -1270,7 +1271,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: irrational / complex / pass-through shapes ------------
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // Irrational roots (discriminant is not a perfect square) — returns
   // the EXPANDed form unchanged rather than throwing.  Stays useful
   // under composition.
@@ -1298,7 +1299,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: scalar-GCD pull (non-monic) ---------------
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // 2(X+1)^2 — gcd=2, reduced core factors as perfect square.
   const r1 = factor(parseAlgebra('2*X^2 + 4*X + 2'));
   assert(formatAlgebra(r1) === '2*(X + 1)^2',
@@ -1329,7 +1330,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: X-power GCD (common-variable factor) ------
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // X^3 + X — pulls X out, residue X^2+1 is irreducible but rebuilt
   // as a plain polynomial inside the factored form.
   const r1 = factor(parseAlgebra('X^3 + X'));
@@ -1354,14 +1355,54 @@ import { assert } from './helpers.mjs';
          `factor(X^3+X+1) pass-through (got '${formatAlgebra(r5)}')`);
 }
 
-// --- FACTOR op: stack integration ----------------------------------
+// --- FACTOR op: Giac-backed routing (session 092 CAS pilot) -------
+// Prove that FACTOR on a Symbolic routes through Giac. There is no
+// legacy fallback — the CAS is Giac, full stop. We register fixtures
+// for the cases we exercise and verify both (a) the result AST is
+// the round-tripped Giac output and (b) the call actually hit
+// giac.caseval (via the mock's call log).
 {
+  giac._clear();
+  // Giac's real output for factor(x^2+2x+1) is `(x+1)^2`; input is the
+  // HP50 uppercase var which astToGiac echoes back as-is.
+  giac._setFixture('factor(X^2+2*X+1)', '(X+1)^2');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 2*X + 1')));
   lookup('FACTOR').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === '(X + 1)^2',
-         `FACTOR op: X^2+2X+1 → '(X + 1)^2' (got '${formatAlgebra(s.peek().expr)}')`);
+         `FACTOR op via Giac: X^2+2X+1 → '(X + 1)^2' (got '${formatAlgebra(s.peek().expr)}')`);
+  const log = giac._callLogCopy();
+  assert(
+    log.includes('factor(X^2+2*X+1)'),
+    `FACTOR routed through giac.caseval — log: ${JSON.stringify(log)}`,
+  );
+  giac._clear();
+}
+{
+  giac._clear();
+  giac._setFixture('factor(X^3-1)', '(X-1)*(X^2+X+1)');
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X^3 - 1')));
+  lookup('FACTOR').fn(s);
+  assert(
+    isSymbolic(s.peek()) &&
+      formatAlgebra(s.peek().expr) === '(X - 1)*(X^2 + X + 1)',
+    `FACTOR via Giac: X^3-1 → '(X - 1)*(X^2 + X + 1)' (got '${formatAlgebra(s.peek().expr)}')`,
+  );
+  giac._clear();
+}
+{
+  // No-fallback policy: if Giac errors (or has no fixture in the mock),
+  // FACTOR propagates the error. No silent degrade to the legacy
+  // algebra.js path.
+  giac._clear();
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X^2 - 1')));
+  let threw = false;
+  try { lookup('FACTOR').fn(s); } catch (_e) { threw = true; }
+  assert(threw, 'FACTOR with no Giac fixture must throw (no fallback)');
+  giac._clear();
 }
 {
   // Non-integer Real passes through — no meaningful prime factorisation.
@@ -1411,7 +1452,7 @@ import { assert } from './helpers.mjs';
 
 // --- SUBST: single-variable numeric substitution ------------------
 {
-  const { subst } = await import('../src/rpl/algebra.js');
+  const { subst } = await import('../www/src/rpl/algebra.js');
   // X^2 + 1 with X=3 collapses to a single Num.
   const r = subst(parseAlgebra('X^2 + 1'), 'X', AstNum(3));
   assert(r.kind === 'num' && r.value === 10,
@@ -1489,7 +1530,7 @@ import { assert } from './helpers.mjs';
 
 // --- Polynomial COLLECT by variable --------------------------------
 {
-  const { collectByVar } = await import('../src/rpl/algebra.js');
+  const { collectByVar } = await import('../www/src/rpl/algebra.js');
   // Linear: X + A*X + B*X + C → (A + B + 1)*X + C
   const r1 = collectByVar(parseAlgebra('X + A*X + B*X + C'), 'X');
   assert(formatAlgebra(r1) === '(A + B + 1)*X + C',
@@ -1651,7 +1692,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: non-monic quadratic via rational roots ----
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // 2*X^2 + 3*X + 1 — roots -1/2 and -1.  Factors as (2X+1)(X+1).
   // The "larger" root (sqrtD ≥ 0) is -1/2 = r1, so it's emitted first.
   const r1 = factor(parseAlgebra('2*X^2 + 3*X + 1'));
@@ -1681,7 +1722,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: non-monic quadratic pass-through shapes ---
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // 2*X^2 + 3*X + 4 — negative discriminant → passes through.
   const r1 = factor(parseAlgebra('2*X^2 + 3*X + 4'));
   assert(formatAlgebra(r1) === '2*X^2 + 3*X + 4',
@@ -1699,7 +1740,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: sum/difference of cubes -------------------
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // X^3 + 8 — sum of cubes: (X + 2)(X^2 - 2X + 4).
   const r1 = factor(parseAlgebra('X^3 + 8'));
   assert(formatAlgebra(r1) === '(X + 2)*(X^2 - 2*X + 4)',
@@ -1730,7 +1771,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: cubes pipeline integration ----------------
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   // 2*X^3 + 16 — gcd=2 pulls first, residue X^3 + 8 → (X+2)(X^2-2X+4).
   // End result: 2*(X + 2)*(X^2 - 2*X + 4), assembled as a left-assoc
   // `*` chain so no spurious parens appear.
@@ -1759,7 +1800,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: EXPAND round-trip for new shapes ----------
 {
-  const { factor, expand } = await import('../src/rpl/algebra.js');
+  const { factor, expand } = await import('../www/src/rpl/algebra.js');
   // factor → EXPAND should return the polynomial form unchanged.
   // This is the "composition is a useful no-op" property that ties
   // the CAS together.
@@ -1783,7 +1824,7 @@ import { assert } from './helpers.mjs';
 // cubic, inputs that have no rational root (pass-through), and the
 // collapse of repeated linear factors into power notation.
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
 
   // Three distinct integer roots.
   // X^3 - 6X^2 + 11X - 6 = (X-1)(X-2)(X-3).  Search order (q=1, |p|
@@ -1910,7 +1951,7 @@ import { assert } from './helpers.mjs';
 // via evaluation at several X values rather than trusting expand()'s
 // term ordering, which isn't strictly descending-by-power.
 {
-  const { factor, expand, evalAst } = await import('../src/rpl/algebra.js');
+  const { factor, expand, evalAst } = await import('../www/src/rpl/algebra.js');
   const check = (src) => {
     const orig = parseAlgebra(src);
     const factored = factor(orig);
@@ -1935,7 +1976,7 @@ import { assert } from './helpers.mjs';
 
 // --- pretty.js: `=` renders as flat row with spaces ----
 {
-  const { astToSvg, layoutAst } = await import('../src/rpl/pretty.js');
+  const { astToSvg, layoutAst } = await import('../www/src/rpl/pretty.js');
   // Simple equation — three text glyphs in a row (X, ' = ', 3), no
   // fraction bar, no parens path.
   const { svg, width } = astToSvg(parseAlgebra('X = 3'));
@@ -1956,7 +1997,7 @@ import { assert } from './helpers.mjs';
   // Equation with a fraction on one side — the ` = ` separator sits at
   // the baseline while the fraction bar renders inside one of the
   // children.  Verify the bar still appears exactly once.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('Y = 1/2'));
   assert((svg.match(/<line /g) || []).length === 1,
          `pretty 'Y = 1/2' has one fraction bar`);
@@ -1968,7 +2009,7 @@ import { assert } from './helpers.mjs';
 {
   // Equation with a polynomial on the left — mixes superscript
   // (<text> at smaller size) with the ` = ` separator.
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   const { svg } = astToSvg(parseAlgebra('X^2 + 1 = 10'));
   // The base font is 24; the ^2 uses 24*0.7 = 16.8.  Ensure at least
   // one smaller-font <text> appears.
@@ -1984,7 +2025,7 @@ import { assert } from './helpers.mjs';
 // --- pretty.js: textbook juxtaposition drops `*` on
 //                Num × (Var|Power|Fn|ParenExpr) shapes ----
 {
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
 
   // 2*X renders as just "2" and "X" — no `*` glyph in between.
   {
@@ -2062,7 +2103,7 @@ import { assert } from './helpers.mjs';
 // - non-monic leading coefficients (e.g. 4*X^4 - 13*X^2 + 3),
 // - pass-through for polynomials with no rational roots.
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
 
   // Biquadratic with four integer roots: (X-1)(X+1)(X-2)(X+2).
   // Root 1 found first; cubic residue X^3 + X^2 - 4X - 4 factors into
@@ -2173,7 +2214,7 @@ import { assert } from './helpers.mjs';
 
 // --- simplify: (u^m)^n collapse ------------------
 {
-  const { simplify, parseAlgebra, deriv } = await import('../src/rpl/algebra.js');
+  const { simplify, parseAlgebra, deriv } = await import('../www/src/rpl/algebra.js');
   assert(formatAlgebra(simplify(parseAlgebra('(X^2)^3'))) === 'X^6',
          `simplify (X^2)^3 = X^6`);
   assert(formatAlgebra(simplify(parseAlgebra('(A^2)^3'))) === 'A^6',
@@ -2197,7 +2238,7 @@ import { assert } from './helpers.mjs';
 //   - quadratic with rational, double, surd, and complex roots
 //   - cubic / quartic routed through FACTOR
 {
-  const { solve } = await import('../src/rpl/algebra.js');
+  const { solve } = await import('../www/src/rpl/algebra.js');
   const fmt = (roots) =>
     roots.map(r => formatAlgebra(r)).join(' | ');
 
@@ -2388,7 +2429,7 @@ import { assert } from './helpers.mjs';
 
 // --- FACTOR: EXPAND round-trip for quartic ---
 {
-  const { factor, expand, evalAst } = await import('../src/rpl/algebra.js');
+  const { factor, expand, evalAst } = await import('../www/src/rpl/algebra.js');
   const check = (src) => {
     const orig = parseAlgebra(src);
     const factored = factor(orig);
@@ -2422,7 +2463,7 @@ import { assert } from './helpers.mjs';
 //     Targets quartics with no rational root that still factor over Z
 //     into two monic quadratics.
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   const eq = (src, want) => {
     const got = formatAlgebra(factor(parseAlgebra(src)));
     assert(got === want, `factor(${src}) → '${got}' (want '${want}')`);
@@ -2447,7 +2488,7 @@ import { assert } from './helpers.mjs';
 //     Germain analog, a=4), 9X⁴-1 (difference of squares, a=9),
 //     (aX²+c)² = a²X⁴+2acX²+c².
 {
-  const { factor } = await import('../src/rpl/algebra.js');
+  const { factor } = await import('../www/src/rpl/algebra.js');
   const eq = (src, want) => {
     const got = formatAlgebra(factor(parseAlgebra(src)));
     assert(got === want, `factor(${src}) → '${got}' (want '${want}')`);
@@ -2476,7 +2517,7 @@ import { assert } from './helpers.mjs';
   // Round-trip check: FACTOR then EXPAND recovers the original on each
   // of the non-monic hits.  Exercises the AST-build path with non-1
   // leading Num in quads.
-  const { expand, evalAst, replaceVar } = await import('../src/rpl/algebra.js');
+  const { expand, evalAst, replaceVar } = await import('../www/src/rpl/algebra.js');
   const roundTrip = (src) => {
     const orig = parseAlgebra(src);
     const f = factor(orig);
@@ -2507,7 +2548,7 @@ import { assert } from './helpers.mjs';
 //     polynomials degree ≥ 3.  Complements real-root bisection so
 //     `realPower` roots are always returned.
 {
-  const { solve } = await import('../src/rpl/algebra.js');
+  const { solve } = await import('../www/src/rpl/algebra.js');
 
   // The solve() cubic/quartic branch emits closed-form surds
   // (e.g. `1/2 + SQRT(3)/2*i` for X^3+1).  To keep these assertions
@@ -2649,7 +2690,7 @@ import { assert } from './helpers.mjs';
 //     shape via formatAlgebra so the test fails loudly if someone
 //     reverts the closed-form pass.
 {
-  const { solve } = await import('../src/rpl/algebra.js');
+  const { solve } = await import('../www/src/rpl/algebra.js');
 
   // Helper: get the set of root RHS strings from `solve(poly, X)`.
   const rootStrs = (poly) => {
@@ -2757,7 +2798,7 @@ import { assert } from './helpers.mjs';
 //     SQRT(f); otherwise the decimal approximation appears.  These
 //     cases exercise the boundary carefully.
 {
-  const { solve } = await import('../src/rpl/algebra.js');
+  const { solve } = await import('../www/src/rpl/algebra.js');
 
   // X^2 + X + 1 is handled by the quadratic branch, not the D-K path —
   // but its output is the reference format we want the cubic/quartic
@@ -2793,7 +2834,7 @@ import { assert } from './helpers.mjs';
 //       2.  No spurious "real approximation as complex" noise gets
 //           emitted for real roots with small numerical im.
 {
-  const { solve } = await import('../src/rpl/algebra.js');
+  const { solve } = await import('../www/src/rpl/algebra.js');
 
   // X^4 - 1 = (X-1)(X+1)(X²+1).  Real roots ±1 from FACTOR, then the
   // residue after deflation is X²+1 whose roots are ±i.
@@ -2862,7 +2903,7 @@ import { assert } from './helpers.mjs';
 //     `p/q ± r/q·i`.  Quadratic branch uses the same tail-order
 //     (`SQRT(f)·i`) so both paths emit structurally identical shapes.
 {
-  const { solve } = await import('../src/rpl/algebra.js');
+  const { solve } = await import('../www/src/rpl/algebra.js');
 
   // X^3 + 1 — D-K branch, denom=2 common between re=1/2 and im=√3/2.
   {
@@ -2949,7 +2990,7 @@ import { assert } from './helpers.mjs';
 //     factor() on the two sub-factors further decomposes them when
 //     possible — e.g. X^6−1 fully factors to (X−1)(X+1)(X²+X+1)(X²−X+1).
 {
-  const { factor, expand } = await import('../src/rpl/algebra.js');
+  const { factor, expand } = await import('../www/src/rpl/algebra.js');
 
   const shape = expr => formatAlgebra(factor(parseAlgebra(expr)));
   const expandEq = (a, b) => formatAlgebra(expand(parseAlgebra(a)))
@@ -3037,7 +3078,7 @@ import { assert } from './helpers.mjs';
 //     `(-X)^n` with n a non-negative integer folds to X^n (even n)
 //     or -(X^n) (odd n).  ABS(ABS(x)) → ABS(x).
 {
-  const { simplify, deriv } = await import('../src/rpl/algebra.js');
+  const { simplify, deriv } = await import('../www/src/rpl/algebra.js');
   const s = e => formatAlgebra(simplify(parseAlgebra(e)));
 
   // Odd functions.
@@ -3092,7 +3133,7 @@ import { assert } from './helpers.mjs';
 //     DERIV(SQRT(X^2+1)) reduces to the textbook X/SQRT(X^2+1) instead
 //     of 2*X/(2*SQRT(X^2+1)).
 {
-  const { simplify, deriv } = await import('../src/rpl/algebra.js');
+  const { simplify, deriv } = await import('../www/src/rpl/algebra.js');
 
   // The motivating case.
   {
@@ -3215,14 +3256,14 @@ import { assert } from './helpers.mjs';
   }
   // ---- FACT in algebraic mode: folds integer values, leaves others symbolic ----
   {
-    const pa = (await import('../src/rpl/algebra.js'));
+    const pa = (await import('../www/src/rpl/algebra.js'));
     const ast = pa.parseAlgebra('FACT(5)');
     const simp = pa.simplify(ast);
     // Expect it folded to Num(120)
     assert(simp.kind === 'num' && simp.value === 120, `simplify(FACT(5)) = 120, got ${JSON.stringify(simp)}`);
   }
   {
-    const pa = (await import('../src/rpl/algebra.js'));
+    const pa = (await import('../www/src/rpl/algebra.js'));
     const ast = pa.parseAlgebra('FACT(N)');
     const simp = pa.simplify(ast);
     // N not numeric → stays symbolic
@@ -3272,7 +3313,7 @@ import { assert } from './helpers.mjs';
 
   // ---- Entry.enter() snapshots before push ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     s.push(Real(10));                            // pre-existing level 1
     const e = new Entry(s);
@@ -3285,7 +3326,7 @@ import { assert } from './helpers.mjs';
 
   // ---- Entry.execOp() snapshots before op ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     s.push(Real(2)); s.push(Real(3));
     const e = new Entry(s);
@@ -3302,7 +3343,7 @@ import { assert } from './helpers.mjs';
   // that escapes the op, so the user sees the error flash with their
   // inputs still on the stack.
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     s.push(Real(1));
     s.push(Str('hello'));                        // level-1: string, level-2: 1
@@ -3318,7 +3359,7 @@ import { assert } from './helpers.mjs';
 
   // ---- Mid-commit error: buffer push succeeds, op fails, all rolls back ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     s.push(Real(42));                            // pre-existing stack item
     const e = new Entry(s);
@@ -3330,7 +3371,7 @@ import { assert } from './helpers.mjs';
 
   // ---- Entry.backspace() on empty buffer snapshots before DROP ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     s.push(Real(1)); s.push(Real(2)); s.push(Real(3));
     const e = new Entry(s);
@@ -3342,7 +3383,7 @@ import { assert } from './helpers.mjs';
 
   // ---- Backspace that only edits buffer does NOT snapshot ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     s.push(Real(99));
     const e = new Entry(s);
@@ -3355,7 +3396,7 @@ import { assert } from './helpers.mjs';
 
   // ---- Chained ops: each press overwrites snapshot (one-level) ----
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     s.push(Real(1)); s.push(Real(2));
     const e = new Entry(s);
@@ -3450,7 +3491,7 @@ import { assert } from './helpers.mjs';
 
   // Undo history is capped at Stack.UNDO_MAX to avoid unbounded growth.
   {
-    const { Stack } = await import('../src/rpl/stack.js');
+    const { Stack } = await import('../www/src/rpl/stack.js');
     const s = new Stack();
     s.push(Real(0));
     // Push UNDO_MAX + 5 snapshots; only the last UNDO_MAX must survive.
@@ -3482,8 +3523,8 @@ import { assert } from './helpers.mjs';
 
   // Entry.performRedo walks both stack + var state forward.
   {
-    const { Entry }      = await import('../src/ui/entry.js');
-    const { Stack }      = await import('../src/rpl/stack.js');
+    const { Entry }      = await import('../www/src/ui/entry.js');
+    const { Stack }      = await import('../www/src/rpl/stack.js');
     resetHome();
     const s = new Stack();
     s.push(Real(10));
@@ -3503,8 +3544,8 @@ import { assert } from './helpers.mjs';
 
   // performRedo with no redo history throws the friendly error.
   {
-    const { Entry } = await import('../src/ui/entry.js');
-    const { Stack } = await import('../src/rpl/stack.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
+    const { Stack } = await import('../www/src/rpl/stack.js');
     const s = new Stack();
     const e = new Entry(s);
     let threw = false;
@@ -3516,7 +3557,7 @@ import { assert } from './helpers.mjs';
   // Cube-root closed-form surd detection
   // ============================================================
   {
-    const { parseAlgebra, solve, formatAlgebra } = await import('../src/rpl/algebra.js');
+    const { parseAlgebra, solve, formatAlgebra } = await import('../www/src/rpl/algebra.js');
 
     // X^3 − k for small integer k: real root is ∛k = XROOT(k, 3).
     const cubic = (src, wanted) => {
@@ -3561,8 +3602,8 @@ import { assert } from './helpers.mjs';
 //   * that Bad argument type STILL fires when NO operand is symbolic
 //     and the operand type is otherwise unsupported (regression).
 {
-  const { isSymbolic, Symbolic } = await import('../src/rpl/types.js');
-  const { formatAlgebra, parseAlgebra } = await import('../src/rpl/algebra.js');
+  const { isSymbolic, Symbolic } = await import('../www/src/rpl/types.js');
+  const { formatAlgebra, parseAlgebra } = await import('../www/src/rpl/algebra.js');
 
   const asExprStr = (v) => {
     assert(isSymbolic(v), 'result is Symbolic');
@@ -3759,7 +3800,7 @@ import { assert } from './helpers.mjs';
 
   // --- End-to-end: user types `'X' ENTER 'Y' ENTER +` via Entry
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     const e = new Entry(s);
     e.type("'X'");   e.enter();
@@ -3773,7 +3814,7 @@ import { assert } from './helpers.mjs';
 
   // --- End-to-end: user builds '2*X+1' with the keypad
   {
-    const { Entry } = await import('../src/ui/entry.js');
+    const { Entry } = await import('../www/src/ui/entry.js');
     const s = new Stack();
     const e = new Entry(s);
     e.type('2');     e.enter();
@@ -3791,9 +3832,9 @@ import { assert } from './helpers.mjs';
      Symbolic result when either operand is a Name or Symbolic.
      ================================================================== */
   {
-    const { parseEntry } = await import('../src/rpl/parser.js');
-    const { formatAlgebra } = await import('../src/rpl/algebra.js');
-    const { TYPES } = await import('../src/rpl/types.js');
+    const { parseEntry } = await import('../www/src/rpl/parser.js');
+    const { formatAlgebra } = await import('../www/src/rpl/algebra.js');
+    const { TYPES } = await import('../www/src/rpl/types.js');
 
     // --- parse inside '…' for every comparison operator ---
     const parseOps = [
@@ -3898,7 +3939,7 @@ import { assert } from './helpers.mjs';
 
     // --- End-to-end keypad flow: 'x' ENTER 'y' ENTER `>` → 'x>y' ---
     {
-      const { Entry } = await import('../src/ui/entry.js');
+      const { Entry } = await import('../www/src/ui/entry.js');
       const s = new Stack();
       const e = new Entry(s);
       e.type("'x'");   e.enter();
@@ -3912,40 +3953,51 @@ import { assert } from './helpers.mjs';
   }
 }
 
-/* ========== EXACT mode keeps Integer fractions symbolic ==
+/* ========== EXACT mode keeps Integer fractions exact ==
    EXACT (the default indicator) must not reduce fractions to their
-   decimal equivalents — that is APPROX mode's job.
+   decimal equivalents — that is APPROX mode's job.  Session 092: non-
+   exact Integer/Integer division now produces a native Rational type
+   (replacing the earlier Symbolic('n/d') wrapper), backed by Fraction.js.
    ====================================================================== */
 {
-  const { setApproxMode, getApproxMode } = await import('../src/rpl/state.js');
-  const { formatAlgebra } = await import('../src/rpl/algebra.js');
-  const { TYPES } = await import('../src/rpl/types.js');
+  const { setApproxMode } = await import('../www/src/rpl/state.js');
+  const { TYPES } = await import('../www/src/rpl/types.js');
 
-  // EXACT (default): 1 3 / stays as '1/3' symbolic, not 0.333…
+  // EXACT (default): 1 3 / stays as Rational(1/3), not 0.333…
   setApproxMode(false);
   {
     const s = new Stack();
     s.push(Integer(1));
     s.push(Integer(3));
     lookup('/').fn(s);
-    assert(s.depth === 1 && s.peek(1).type === TYPES.SYMBOLIC,
-      'EXACT: 1 3 / → Symbolic (not Real)');
-    assert(formatAlgebra(s.peek(1).expr) === '1/3',
-      `EXACT: 1 3 / → '1/3', got '${formatAlgebra(s.peek(1).expr)}'`);
+    assert(s.depth === 1 && s.peek(1).type === TYPES.RATIONAL,
+      'EXACT: 1 3 / → Rational (not Real)');
+    assert(s.peek(1).n === 1n && s.peek(1).d === 3n,
+      `EXACT: 1 3 / → 1/3, got ${s.peek(1).n}/${s.peek(1).d}`);
   }
 
-  // EXACT: 6 2 / still folds to Integer(3) — clean divisions don't go
-  // through the symbolic path.
+  // EXACT: 6 2 / still folds to Integer(3) — clean divisions stay Integer.
   {
     const s = new Stack();
     s.push(Integer(6));
     s.push(Integer(2));
     lookup('/').fn(s);
     assert(s.peek(1).type === TYPES.INTEGER && s.peek(1).value === 3n,
-      'EXACT: 6 2 / → Integer(3) (clean division still folds)');
+      'EXACT: 6 2 / → Integer(3) (clean division stays Integer)');
   }
 
-  // APPROX: 1 3 / folds back to a Real decimal as before the fix.
+  // EXACT: 2 4 / reduces via GCD to Rational(1/2).
+  {
+    const s = new Stack();
+    s.push(Integer(2));
+    s.push(Integer(4));
+    lookup('/').fn(s);
+    assert(s.peek(1).type === TYPES.RATIONAL &&
+           s.peek(1).n === 1n && s.peek(1).d === 2n,
+      'EXACT: 2 4 / → Rational(1/2) (auto-reduce via Fraction.js GCD)');
+  }
+
+  // APPROX: 1 3 / folds to a Real decimal.
   setApproxMode(true);
   {
     const s = new Stack();
@@ -3953,7 +4005,7 @@ import { assert } from './helpers.mjs';
     s.push(Integer(3));
     lookup('/').fn(s);
     assert(s.peek(1).type === TYPES.REAL,
-      'APPROX: 1 3 / → Real (decimal fold restored)');
+      'APPROX: 1 3 / → Real (decimal fold)');
     assert(Math.abs(s.peek(1).value - 0.3333333333333333) < 1e-10,
       `APPROX: 1 3 / ≈ 0.333…, got ${s.peek(1).value}`);
   }
@@ -3971,7 +4023,7 @@ import { assert } from './helpers.mjs';
 // via ω = e^{2πi/3} = (−1 + i√3)/2, multiplying the real root by
 // {1, ω, ω²}.
 {
-  const { parseAlgebra, solve, formatAlgebra } = await import('../src/rpl/algebra.js');
+  const { parseAlgebra, solve, formatAlgebra } = await import('../www/src/rpl/algebra.js');
 
   const rootStrs = (src) =>
     solve(parseAlgebra(src), 'X').map(r => formatAlgebra(r.r));
@@ -4076,7 +4128,7 @@ import { assert } from './helpers.mjs';
 {
   const {
     setApproxMode, getApproxMode, toggleApproxMode,
-  } = await import('../src/rpl/state.js');
+  } = await import('../www/src/rpl/state.js');
 
   // Helper: run `'EXPR' EVAL` on a fresh stack, return the
   // top-of-stack string (via formatStackTop) so we can assert the
@@ -4208,7 +4260,7 @@ import { assert } from './helpers.mjs';
 //      `'1+0.5'` into a Real.
 // ==================================================================
 {
-  const { getApproxMode } = await import('../src/rpl/state.js');
+  const { getApproxMode } = await import('../www/src/rpl/state.js');
   // --- parser recognizes pure-numeric tick-strings as Symbolic ------
   {
     const toks = parseEntry("'1/3'");
@@ -4303,7 +4355,7 @@ import { assert } from './helpers.mjs';
 // pretty.js opSepBox tightens `+`/`-`/`=` spacing.
 // ==================================================================
 {
-  const { astToSvg } = await import('../src/rpl/pretty.js');
+  const { astToSvg } = await import('../www/src/rpl/pretty.js');
   {
     const { svg } = astToSvg(parseAlgebra('X + 1'));
     // The `+` glyph is no longer padded by full character widths —
@@ -4331,7 +4383,7 @@ import { assert } from './helpers.mjs';
 // EXACT + STD mode.
 // ==================================================================
 {
-  const prev = (await import('../src/rpl/state.js')).getApproxMode();
+  const prev = (await import('../www/src/rpl/state.js')).getApproxMode();
   setApproxMode(false);
   assert(format(Complex(1, 1)) === '(1, 1)',
          `session041: EXACT (1,1) → '(1, 1)' — got ${format(Complex(1, 1))}`);
@@ -7349,7 +7401,7 @@ function _s061HasVar(node, name) {
 
 /* ---- VX push default = Name('X') ---- */
 {
-  const { resetCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   lookup('VX').fn(s);
@@ -7360,7 +7412,7 @@ function _s061HasVar(node, name) {
 
 /* ---- SVX accepts Name and is observable via VX ---- */
 {
-  const { resetCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   s.push(Name('T'));
@@ -7375,7 +7427,7 @@ function _s061HasVar(node, name) {
 
 /* ---- SVX accepts String (HP50 accepts either at prompt) ---- */
 {
-  const { resetCasVx, getCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx, getCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   s.push(Str('Y'));
@@ -7386,7 +7438,7 @@ function _s061HasVar(node, name) {
 
 /* ---- SVX rejects Real ---- */
 {
-  const { resetCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   s.push(Real(1));
@@ -7398,7 +7450,7 @@ function _s061HasVar(node, name) {
 
 /* ---- SVX rejects empty String with Bad argument value ---- */
 {
-  const { resetCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   s.push(Str(''));
@@ -7410,7 +7462,7 @@ function _s061HasVar(node, name) {
 
 /* ---- PREVAL follows the active VX (not the single-free-var heuristic) ---- */
 {
-  const { resetCasVx, setCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx, setCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   setCasVx('Y');
   // F = X + Y, endpoints 0 → 1.  VX = Y, so F(y=0) - F(y=1) substitutes Y:
@@ -7428,7 +7480,7 @@ function _s061HasVar(node, name) {
 
 /* ---- LAPLACE picks VX when the input has multiple free vars ---- */
 {
-  const { resetCasVx, setCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx, setCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   setCasVx('T');
   // F(T) = T (linear in T), plus an unrelated free var A.  With VX=T,
@@ -7450,7 +7502,7 @@ function _s061HasVar(node, name) {
 
 /* ---- VX round-trips through SVX/VX ---- */
 {
-  const { resetCasVx } = await import('../src/rpl/state.js');
+  const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   s.push(Name('Q'));
