@@ -767,10 +767,10 @@ function _modPow(x, e, n) {
 /* -------------------------------------------------------------
    Real × Real arithmetic via decimal.js.
 
-   The Real stack payload is a Decimal instance (see types.js — the
-   session-093 migration).  `realBinary` takes the two Decimal payloads
-   straight from `promoteNumericPair` and returns a Decimal; the caller
-   wraps it with `Real(...)` which stores the Decimal directly.
+   The Real stack payload is a Decimal instance (see types.js).
+   `realBinary` takes the two Decimal payloads straight from
+   `promoteNumericPair` and returns a Decimal; the caller wraps it
+   with `Real(...)` which stores the Decimal directly.
 
    Why keep it in Decimal end-to-end?  A chain like `1 3 / 3 *` rounds
    to 12 digits on the HP50 (`0.999999999999`) — storing the Decimal
@@ -779,9 +779,8 @@ function _modPow(x, e, n) {
    (`0.333333333333333148…`), which then compounds across further ops.
 
    Division-by-zero stays explicit: throw 'Infinite result'.  Decimal
-   would otherwise return `Infinity`; we preserve the pre-migration
-   error message so callers and tests don't have to special-case the
-   library's behaviour.
+   would otherwise return `Infinity`; the explicit throw gives callers
+   and tests a stable error message instead of a sentinel value.
 
    No fallback: any other Decimal error propagates untouched.
    ------------------------------------------------------------- */
@@ -3622,9 +3621,9 @@ function _symConstantValue(name) {
  *  If the generator yields — meaning a HALT was encountered inside a
  *  sub-program that was reached via _evalValueSync (i.e. a variable
  *  lookup, IFT action, SEQ body, etc.) rather than a direct EVAL —
- *  throw a pilot error.  This preserves the historical restriction for
- *  program-in-variable calls while the direct-EVAL path (which stores
- *  the live generator) now supports HALT at any structural depth. */
+ *  throw.  Program-in-variable calls cannot suspend; HALT is only
+ *  supported on the direct-EVAL path (which stores the live generator
+ *  and suspends at any structural depth). */
 function _driveGen(gen) {
   const result = gen.next();
   if (!result.done) {
@@ -7450,8 +7449,8 @@ register('ACOSH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   }
   const x = toRealOrThrow(v);
   if (x >= 1) { s.push(Real(Math.acosh(x))); return; }
-  // Real x < 1 now lifts to Complex (principal branch) rather than
-  // throwing — matches HP50's complex-mode behavior.
+  // Real x < 1 lifts to Complex (principal branch) — matches HP50's
+  // complex-mode behavior.
   const r = _cxAcosh({ re: x, im: 0 });
   s.push(Complex(r.re, r.im));
 }))));
@@ -12833,8 +12832,7 @@ register('AXM', (s) => {
    sees a flat sum-of-monomials.  Does NOT combine like terms — the
    walker itself accumulates `coef · X^power` terms into a coefficient
    array, so `X·X·X` (three factors contributing 1 to the power) is
-   fine without a `X^3` fold.  Mirrors the minimum surface the retired
-   `algebraExpand` path provided to _symbolicPolyToNumCoefs. */
+   fine without a `X^3` fold. */
 function _frootsAdditiveTerms(ast) {
   const out = [];
   (function walk(n, sign) {
@@ -13234,9 +13232,8 @@ function _quadraticExactResidualRoots(coefs) {
 /** Convert a `{ num, den }` pair into a stack value: Integer when
  *  den=1, Symbolic(num/den) otherwise.  Symbolic rationals match the
  *  HP50 convention where `→Q` / `Q→` exchange `n/d` as a Symbolic —
- *  which means FROOTS can now emit `Integer(2) 1 Integer(3) 1` for
- *  `X^2 − 5X + 6` and `Sym(1/2) 1 Sym(1/3) 1` for
- *  `6X^2 − 5X + 1`. */
+ *  so FROOTS emits `Integer(2) 1 Integer(3) 1` for `X^2 − 5X + 6`
+ *  and `Sym(1/2) 1 Sym(1/3) 1` for `6X^2 − 5X + 1`. */
 function _rationalRootValue(num, den) {
   if (den === 1) return Integer(BigInt(num));
   // Construct the Symbolic fraction with a sign-bearing numerator.
@@ -14379,9 +14376,8 @@ register('DIRAC', (s) => {
 /* ---- TSIMP — trig simplifier (Giac-backed) --------------------------
    HP50 AUR §3-254.  `tsimplify(expr)` runs Giac's Pythagorean-identity
    surface (SIN²+COS²→1, 1−SIN²→COS², TAN·COS→SIN, SIN/COS→TAN, and
-   their duals) followed by its own simplify pass — the same loop the
-   retired native walker (`_pythagoreanWalk` + `algebraSimplify`)
-   approximated.  Non-Symbolic input throws Bad argument type. */
+   their duals) followed by its own simplify pass.  Non-Symbolic input
+   throws Bad argument type. */
 
 register('TSIMP', (s) => {
   const [v] = s.popN(1);

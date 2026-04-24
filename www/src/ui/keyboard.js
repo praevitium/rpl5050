@@ -158,18 +158,18 @@ export const MAIN_KEYS = [
   // Shifts (orange / red):
   //   LASTARG: — / —            (HP50 printed this position "HIST", but
   //                              the command-line history lives in the
-  //                              side-panel History tab now; the key
-  //                              does LASTARG instead so prior args are
+  //                              side-panel History tab; this key does
+  //                              LASTARG instead so prior args are
   //                              reachable without a soft-menu dive.)
   //   EVAL:  —     / —          (PRG / CHARS replaced by side-panel tabs)
   //   ':     —     / —          (MTRW / EQW out of scope)
   //   UNDO:  REDO  / —          (HP50 printed this position "SYMB"; the
   //                              CAS entry point lives in the side-panel
-  //                              Commands tab now.  UNDO is the more
-  //                              useful default and earns the primary
-  //                              slot since it's the one-handed recovery
-  //                              key people reach for; shift-L is REDO
-  //                              so the reverse is right there too.)
+  //                              Commands tab.  UNDO is the more useful
+  //                              default and earns the primary slot
+  //                              since it's the one-handed recovery key
+  //                              people reach for; shift-L is REDO so
+  //                              the reverse is right there too.)
   //   ⌫:     DEL   / CLEAR      (delete / clear stack)
   mk('LASTARG', { alpha: 'M', action: typeExecName('LASTARG') }),
   // EVAL has no shift-L/R actions — PRG keywords and the char palette
@@ -330,8 +330,8 @@ export const MAIN_KEYS = [
              action: type('2') }),
   // 3 shift-L # types a `#` (binary-literal prefix — the entry parser
   // already accepts e.g. `#FFh`).  Shift-R `'` types a literal apostrophe
-  // character — freed up because the primary algebraic delimiter is now
-  // the backtick on the `` ` `` key.
+  // character — freed up because the primary algebraic delimiter is the
+  // backtick on the `` ` `` key.
   mk('3',  { kind: 'digit', shiftL: '#', shiftR: "'",
              action:       type('3'),
              shiftLAction: type('#'),

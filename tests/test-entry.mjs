@@ -758,8 +758,9 @@ import { assert, assertThrows } from './helpers.mjs';
 
    `parseEntry` must not silently fall through to
    `Name(body, {quoted:true})` when `parseAlgebra` throws on an
-   algebraic-looking body — that used to mint ghost Names like
-   `Name("SIN(X ")` that polluted the stack and blew up inside CAS ops.
+   algebraic-looking body — a silent fallback would mint ghost Names
+   like `Name("SIN(X ")` that would pollute the stack and blow up
+   inside CAS ops.
 
    Two paired behaviours cover that surface:
 

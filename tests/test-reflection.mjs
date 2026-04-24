@@ -1164,12 +1164,12 @@ function _roundTripProgram(prog) {
 }
 {
   // →ARRY's bare-count form rejects 0 at the `_toIntIdx` layer —
-  // historically the internal `if (n === 0) { push Vector([]); }` check
-  // inside `_toArrayOp` is unreachable because `_toIntIdx` refuses
-  // zero.  Flipping that would be a new behaviour and needs a
-  // downstream audit (matrix shape validation, ARRY→ round-trip,
-  // etc.); the current rejection shape is pinned here so a future
-  // cleanup sees the deliberate asymmetry.  Tracked in RPL.md.
+  // the internal `if (n === 0) { push Vector([]); }` check inside
+  // `_toArrayOp` is unreachable because `_toIntIdx` refuses zero.
+  // Flipping that would be a new behaviour and needs a downstream
+  // audit (matrix shape validation, ARRY→ round-trip, etc.); the
+  // current rejection shape is pinned here so a future cleanup sees
+  // the deliberate asymmetry.  Tracked in RPL.md.
   const s = new Stack();
   s.push(Integer(0n));
   let caught = null;

@@ -1884,7 +1884,7 @@ giac._setFixtures({
     const parseOps = [
       ["`x<y`",  'x<y'],
       ["`x>y`",  'x>y'],
-      ["`x=y`",  'x = y'],      // `=` keeps legacy spaced print
+      ["`x=y`",  'x = y'],      // `=` prints with surrounding spaces
       ["`x≠y`",  'x≠y'],
       ["`x<=y`", 'x≤y'],         // `<=` normalised to ≤
       ["`x>=y`", 'x≥y'],

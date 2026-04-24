@@ -634,8 +634,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 /* ---- TYPE / KIND distinguish Real ≠ Integer ≠ BinaryInteger ---- */
 {
   // HP50 has three distinct numeric types.  This is a common "these
-  // should never collide" regression point — the code has changed
-  // whenever someone refactored promoteNumericPair.
+  // should never collide" regression point — easy to break when
+  // touching promoteNumericPair.
   const real = new Stack(); real.push(Real(5));       lookup('TYPE').fn(real);
   const integer = new Stack(); integer.push(Integer(5n)); lookup('TYPE').fn(integer);
   const bin = new Stack(); bin.push(BinaryInteger(5n, 'h')); lookup('TYPE').fn(bin);

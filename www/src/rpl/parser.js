@@ -279,8 +279,8 @@ export function parseEntry(src) {
             if (isValidHpIdentifier(body)) {
               // Valid identifier shape — treat as plain Name (quoted).
             } else if (/^[+\-*/^=≠<>≤≥]$/.test(body)) {
-              // Bare operator atom like `+`, `≤` — keep legacy
-              // round-trip behaviour.
+              // Bare operator atom like `+`, `≤` — accept as quoted
+              // Name so `'+' '≤'` round-trips.
             } else {
               throw new RPLError(`Invalid algebraic: ${e.message}`);
             }
