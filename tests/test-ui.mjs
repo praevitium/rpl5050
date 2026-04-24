@@ -181,16 +181,14 @@ import { assert } from './helpers.mjs';
   }
 
   // ---- Stack-only saveForUndo stays in lockstep with var-state ----
-  // Regression: pure stack mutations (physical Backspace→DROP, ▶ SWAP,
-  // interactive-stack PICK/ROLL/ROLLD/DROP, ▼ editLevel1) used to call
-  // stack.saveForUndo() without the companion saveVarStateForUndo(),
-  // putting the two histories out of sync.  performUndo then threw
-  // "No undo available" from the var-state side even though the stack
-  // had an undo slot, and a later REDO could replay a stale var
-  // snapshot.  The fix routes these sites through Entry._snapForUndo
-  // which pushes both slots.  This test simulates that lockstep by
-  // exercising _snapForUndo directly and verifying UNDO/REDO succeed
-  // when only the stack content actually changed.
+  // Pure stack mutations (physical Backspace→DROP, ▶ SWAP, interactive-
+  // stack PICK/ROLL/ROLLD/DROP, ▼ editLevel1) must push both the
+  // stack undo slot and the var-state undo slot, or performUndo will
+  // trip "No undo available" from the var-state side even when the
+  // stack has an undo slot, and a later REDO can replay a stale var
+  // snapshot.  These sites route through Entry._snapForUndo which
+  // pushes both slots.  This test exercises _snapForUndo directly and
+  // verifies UNDO/REDO succeed when only the stack content changed.
   {
     const s = new Stack();
     s.push(Real(1));
