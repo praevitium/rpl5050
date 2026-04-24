@@ -403,9 +403,13 @@ export function clearLastFitModel() {
      getHalted()     — return the top (= state.halted), or null.
      clearHalted()   — pop one record.  state.halted follows the top
                        of the post-pop stack.  Emits if the top changed.
-     clearAllHalted()— drain the whole stack.  Used by resetHome().
+     clearAllHalted()— drain the whole stack.  Used by tests
+                       (test-control-flow.mjs); resetHome() inlines the
+                       equivalent drain directly so it can emit exactly once
+                       (clearAllHalted() emits too — two _emit() calls would
+                       be wrong).
      haltedDepth()   — number of currently-halted programs on the stack
-                       (zero = no suspensions).
+                       (zero = no suspensions).  Used by tests only.
    ------------------------------------------------------------------ */
 
 export function setHalted(h) {
@@ -416,9 +420,40 @@ export function setHalted(h) {
 
 export function getHalted() { return state.halted; }
 
+/** Close a halted record's generator (if present) so its finally
+ *  blocks run — particularly `_popLocalFrame()` inside runArrow.
+ *  Calling `gen.return()` sends a "return" signal that propagates
+ *  through the full `yield*` delegation chain, running every active
+ *  `finally` block and cleanly releasing any compiled-local frames
+ *  that were live at the point of suspension.  Safe to call on
+ *  records that have no generator field (legacy or test-injected). */
+function _closeRecord(record) {
+  if (record && record.generator) {
+    try { record.generator.return(); } catch (_) { /* ignore */ }
+  }
+}
+
+/** Remove the top halted record WITHOUT resuming or closing it.
+ *  Used by CONT, which needs the live generator to call gen.next().
+ *  Returns the popped record (may be null if the stack was empty). */
+export function takeHalted() {
+  if (state.haltedStack.length === 0) return null;
+  const record = state.haltedStack.pop();
+  const top = state.haltedStack.length === 0
+    ? null
+    : state.haltedStack[state.haltedStack.length - 1];
+  state.halted = top;
+  _emit();
+  return record;
+}
+
+/** Remove and CLOSE the top halted record (discards the generator).
+ *  Used by KILL — the generator's finally blocks run via gen.return()
+ *  so any compiled-local frames are properly cleaned up. */
 export function clearHalted() {
   if (state.haltedStack.length === 0) return;
-  state.haltedStack.pop();
+  const record = state.haltedStack.pop();
+  _closeRecord(record);
   const top = state.haltedStack.length === 0
     ? null
     : state.haltedStack[state.haltedStack.length - 1];
@@ -428,6 +463,7 @@ export function clearHalted() {
 
 export function clearAllHalted() {
   if (state.haltedStack.length === 0 && state.halted === null) return;
+  for (const record of state.haltedStack) _closeRecord(record);
   state.haltedStack.length = 0;
   state.halted = null;
   _emit();
@@ -727,6 +763,10 @@ export function currentPath() {
  *  hazard for the HALT/CONT substrate.  Both the scalar `state.halted`
  *  view and the backing `haltedStack` are cleared so no record survives. */
 export function resetHome() {
+  // Close every halted generator before discarding so their finally
+  // blocks (_popLocalFrame in runArrow, etc.) run and clean up any
+  // compiled-local frames still live on _localFrames.
+  for (const record of state.haltedStack) _closeRecord(record);
   _home.entries.clear();
   state.current = _home;
   state.halted = null;                   // no-emit direct reset

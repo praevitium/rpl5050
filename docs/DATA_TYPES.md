@@ -5,9 +5,10 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 082 (2026-04-23) — last substantive change.
-Sessions 075 / 076 / 078 / 079 / 080 / 081 did not touch the
-type-acceptance matrix itself (they were unit-tests / review /
+**Last updated.** Session 087 (2026-04-23) — == / SAME on Program + Directory; BinaryInteger on FLOOR/CEIL/IP/FP; String lex < > ≤ ≥.
+Session 082 was the prior substantive change.
+Sessions 083 / 084 / 085 / 086 did not touch the
+type-acceptance matrix itself (they were rpl-programming / unit-tests / code-review /
 command-support work).  See "Resolved this session (082)" below.
 
 ---
@@ -77,10 +78,10 @@ follow-on candidates and listed at the bottom.
 
 | Op    | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| FLOOR | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U (`1.5_m FLOOR` → `1_m`, uexpr preserved). Complex ✗ — no total order. |
-| CEIL  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. |
-| IP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Compound uexpr (`m/s^2`) round-trips. |
-| FP    | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. `FP(-1.8_m)` = `-0.8_m` (sign preserved). |
+| FLOOR | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U (`1.5_m FLOOR` → `1_m`, uexpr preserved). Session 087 added B (no-op — BinInt always integer). Complex ✗ — no total order. |
+| CEIL  | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. |
+| IP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Compound uexpr (`m/s^2`) round-trips. |
+| FP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B (`FP #Xb` = `#0b`, same base). `FP(-1.8_m)` = `-0.8_m` (sign preserved). |
 | SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. |
 | ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. |
 
@@ -139,10 +140,10 @@ list below.
 
 | Op   | R | Z | B | C* | N | Sy | L | V | M | T | U | S | Notes |
 |------|---|---|---|----|---|----|---|---|---|---|---|---|-------|
-| `<`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). |
-| `>`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Same. |
-| `≤`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Same. |
-| `≥`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✗ | Same. |
+| `<`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). |
+| `>`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. |
+| `≤`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. |
+| `≥`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. |
 
 *`~` on Complex = accepted only when both `im === 0`; otherwise `Bad argument type`.
 
@@ -156,8 +157,8 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
 
 | Op   | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
 |------|---|---|---|---|---|----|---|---|---|---|---|---|-------|
-| ==   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Session 072 added Sy/L/V/M/T/U structural compare (gap filed s070). Session 074 added BinInt × BinInt (masked against current wordsize) plus cross-family BinInt × Integer / Real / Complex widening at the `==` / `≠` / `<>` outer level via `_binIntCrossNormalize`. Nested lists / matrix rows recurse via `_eqArr`. Tagged: same tag AND same value. Unit: same numeric value AND same `uexpr` (so `1_m == 1_km` = 0). |
-| SAME | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Same widening — `SAME` always returns Real 1./0., never a Symbolic. Session 074: BinInt × BinInt value compare through the same eqValues branch, BUT `SAME` deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0 — AUR §4-7 "SAME does not type-coerce"). |
+| ==   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Session 072 added Sy/L/V/M/T/U structural compare (gap filed s070). Session 074 added BinInt × BinInt (masked against current wordsize) plus cross-family BinInt × Integer / Real / Complex widening at the `==` / `≠` / `<>` outer level via `_binIntCrossNormalize`. Nested lists / matrix rows recurse via `_eqArr`. Tagged: same tag AND same value. Unit: same numeric value AND same `uexpr` (so `1_m == 1_km` = 0). **Session 087**: Program ✓ (structural, pointwise eqValues over `.tokens`); Directory ✓ (reference identity — `a === b`). |
+| SAME | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Same widening — `SAME` always returns Real 1./0., never a Symbolic. Session 074: BinInt × BinInt value compare through the same eqValues branch, BUT `SAME` deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0 — AUR §4-7 "SAME does not type-coerce"). **Session 087**: Program ✓ (structural); Directory ✓ (reference identity — same rule as `==`). |
 
 ---
 
@@ -176,26 +177,34 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
 3. **Detail rows for `+` / `-` / `*` / `/` / `^`** — pull these out of the
    compact reference table into per-op sections with Unit-dim-algebra notes
    and BinaryInteger STWS masking notes.  Doc-only; low effort.
-4. **String lexicographic `<` / `>` / `≤` / `≥`** — currently
-   `comparePair()` in `src/rpl/ops.js` rejects Strings with
-   `Bad argument type`.  HP50 User Guide App-J defines char-code lex
-   ordering.  Gap filed against this lane by the unit-tests lane
-   (session 070); the soft-assert in `test-comparisons.mjs` still
-   accepts either outcome.  Estimated ~1 hr: widen `comparePair`,
-   add 5 positive + 2 rejection tests, flip the soft-assert to hard.
-5. **`==` / `SAME` on Program, Directory** — out of scope for session
-   072.  Program is conceptually structural over its tokens (could
-   reuse `_eqArr`); Directory is a live mutable container so `SAME`
-   should probably be reference-identity only.  Read HP50 AUR §4-7
-   before widening.
-6. **Dim-equivalence `==` on Units** — distinct from today's strict
+4. **Dim-equivalence `==` on Units** — distinct from today's strict
    structural `==`.  Could be a new op (`UEQUAL`?) or a flag that
    flips `==` semantics.  Read AUR §20 first.
-7. **BinaryInteger widening on floor/ceil/ip/fp** — today BinInt on the
-   rounders is rejected because `_rounderScalar` only dispatches on
-   `isReal(v) || isInteger(v) || isUnit(v)`.  For BinInts rounding is
-   a no-op — they are already integers — but the type should still be
-   accepted rather than rejected (HP50 AUR §3).  Quick widening.
+
+### Resolved this session (087)
+
+- **`==` / `SAME` on Program and Directory.**  Two branches added to
+  `eqValues()` in `src/rpl/ops.js`.  Program: structural equality via
+  `_eqArr(a.tokens, b.tokens)` (recurses through eqValues so nested
+  Programs and mixed-type tokens all compare correctly).  Directory:
+  reference identity (`a === b`) — two distinct Directory allocations
+  are never equal even if they share the same name or entries.
+  Five soft-asserts from the session 084 KNOWN-GAP block promoted to
+  hard; three regression guards were already hard and remain passing.
+
+- **BinaryInteger on `FLOOR` / `CEIL` / `IP` / `FP`.**  `_rounderScalar`
+  now accepts `isBinaryInteger(v)` before the Real branch.  FLOOR/CEIL/IP
+  return the same BinInt unchanged (rounding is a no-op on an integer).
+  FP returns `BinaryInteger(0n, v.base)` (fractional part of any integer
+  is zero, base preserved).  Four positive tests + one rejection guard
+  (Complex still rejected).
+
+- **String lexicographic `<` / `>` / `≤` / `≥`.**  `comparePair()` now
+  handles `isString(a) && isString(b)` before the `!isNumber` guard,
+  delegating to JS string compare (which is char-code lexicographic —
+  matching HP50 User Guide App. J).  Mixed String + non-String still
+  throws `Bad argument type`.  Six tests (5 positive + 1 rejection);
+  the session 068 soft-assert block replaced entirely.
 
 ### Resolved this session (082)
 

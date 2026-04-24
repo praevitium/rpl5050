@@ -5874,3 +5874,215 @@ function _arrayEq(a, b) {
   assertThrows(() => lookup('CYCLOTOMIC').fn(s), /Bad argument value/,
     'session081: CYCLOTOMIC(201) rejects (precision cap — MAX_SAFE_INTEGER guard)');
 }
+
+/* =====================================================================
+   Session 086 — ZETA (Riemann zeta), LAMBERT (Lambert W₀), XNUM / XQ
+
+   ZETA      HP50 AUR §2 (CAS-SPECIAL).  Real one-arg Riemann zeta.
+             Euler-Maclaurin on s ≥ 1/2, functional-equation reflection
+             below.  Accurate to double precision except at s=1 (pole).
+
+   LAMBERT   HP50 AUR §2 (CAS-SPECIAL).  Principal branch W₀.  Halley
+             iteration seeded with a Puiseux expansion near the branch
+             point so W(-1/e) = -1 exactly in double precision.
+
+   XNUM/XQ   HP50 AUR p.2-211.  ASCII aliases for →NUM / →Q.
+   ===================================================================== */
+
+// ZETA — closed-form exact match against known series values
+{
+  const s = new Stack();
+  s.push(Real(2));
+  lookup('ZETA').fn(s);
+  // ζ(2) = π²/6 to double precision.
+  assert(isReal(s.peek()) && Math.abs(s.peek().value - Math.PI * Math.PI / 6) < 1e-12,
+    'session086: ZETA(2) = π²/6');
+}
+{
+  const s = new Stack();
+  s.push(Real(4));
+  lookup('ZETA').fn(s);
+  // ζ(4) = π⁴/90.
+  assert(Math.abs(s.peek().value - Math.pow(Math.PI, 4) / 90) < 1e-12,
+    'session086: ZETA(4) = π⁴/90');
+}
+{
+  const s = new Stack();
+  s.push(Real(3));
+  lookup('ZETA').fn(s);
+  // Apéry's constant ζ(3) ≈ 1.2020569031595942853997…
+  assert(Math.abs(s.peek().value - 1.2020569031595942) < 1e-12,
+    "session086: ZETA(3) = Apéry's constant");
+}
+{
+  const s = new Stack();
+  s.push(Integer(0n));
+  lookup('ZETA').fn(s);
+  // ζ(0) = -1/2 — falls straight out of the code, not iteration.
+  assert(isReal(s.peek()) && s.peek().value === -0.5,
+    'session086: ZETA(0) = -1/2');
+}
+{
+  const s = new Stack();
+  s.push(Integer(-1n));
+  lookup('ZETA').fn(s);
+  // ζ(-1) = -1/12 via functional-equation reflection.
+  assert(Math.abs(s.peek().value - (-1/12)) < 1e-13,
+    'session086: ZETA(-1) = -1/12 via reflection');
+}
+{
+  const s = new Stack();
+  s.push(Integer(-2n));
+  lookup('ZETA').fn(s);
+  // Trivial zero at a negative even integer — returned as exact 0, not
+  // a computed near-zero from sin(πs/2).
+  assert(s.peek().value === 0,
+    'session086: ZETA(-2) = 0 (trivial zero, exact)');
+}
+{
+  const s = new Stack();
+  s.push(Real(0.5));
+  lookup('ZETA').fn(s);
+  // ζ(1/2) ≈ -1.4603545088095868 — right at the EM branch cutover.
+  assert(Math.abs(s.peek().value - (-1.4603545088095868)) < 1e-11,
+    'session086: ZETA(0.5) ≈ -1.460354508…');
+}
+
+// ZETA — domain & type rejections
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  assertThrows(() => lookup('ZETA').fn(s), /Infinite result/,
+    'session086: ZETA(1) rejects with Infinite result (simple pole)');
+}
+{
+  const s = new Stack();
+  s.push(Str('foo'));
+  assertThrows(() => lookup('ZETA').fn(s), /Bad argument type/,
+    'session086: ZETA(String) rejects Bad argument type');
+}
+{
+  // Symbolic lift — ZETA(X) stays symbolic.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  lookup('ZETA').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'ZETA',
+    'session086: ZETA(Name X) lifts to Symbolic ZETA(X)');
+}
+{
+  // List distribution.
+  const s = new Stack();
+  s.push(RList([Real(2), Real(4)]));
+  lookup('ZETA').fn(s);
+  const items = s.peek().items;
+  assert(items.length === 2
+      && Math.abs(items[0].value - Math.PI * Math.PI / 6) < 1e-12
+      && Math.abs(items[1].value - Math.pow(Math.PI, 4) / 90) < 1e-12,
+    'session086: ZETA distributes over RList');
+}
+{
+  // Tagged transparency.
+  const s = new Stack();
+  s.push(Tagged('Z', Real(4)));
+  lookup('ZETA').fn(s);
+  const v = s.peek();
+  assert(v.type === 'tagged' && v.tag === 'Z'
+      && Math.abs(v.value.value - Math.pow(Math.PI, 4) / 90) < 1e-12,
+    'session086: ZETA preserves tag wrapper');
+}
+
+// LAMBERT — closed-form values.
+{
+  const s = new Stack();
+  s.push(Real(0));
+  lookup('LAMBERT').fn(s);
+  assert(s.peek().value === 0, 'session086: LAMBERT(0) = 0');
+}
+{
+  const s = new Stack();
+  s.push(Real(1));
+  lookup('LAMBERT').fn(s);
+  // Ω constant — W(1) = 0.5671432904097838729999686622…
+  assert(Math.abs(s.peek().value - 0.5671432904097838) < 1e-14,
+    'session086: LAMBERT(1) = Ω (omega constant)');
+}
+{
+  const s = new Stack();
+  s.push(Real(Math.E));
+  lookup('LAMBERT').fn(s);
+  // W(e) = 1 — the defining identity (1 * e^1 = e).
+  assert(Math.abs(s.peek().value - 1) < 1e-14,
+    'session086: LAMBERT(e) = 1');
+}
+{
+  const s = new Stack();
+  s.push(Real(-1 / Math.E));
+  lookup('LAMBERT').fn(s);
+  // Branch point — Puiseux seeding lets Halley hit -1 exactly.
+  assert(s.peek().value === -1,
+    'session086: LAMBERT(-1/e) = -1 exactly (branch point)');
+}
+
+// LAMBERT — inverse property W(x)·e^W(x) = x over a wide x range.
+{
+  for (const x of [5, 10, 100, -0.1, -0.3, 0.5, -0.35]) {
+    const s = new Stack();
+    s.push(Real(x));
+    lookup('LAMBERT').fn(s);
+    const w = s.peek().value;
+    assert(Math.abs(w * Math.exp(w) - x) < 1e-12 * Math.max(1, Math.abs(x)),
+      `session086: LAMBERT inverse property W·e^W = x for x=${x}`);
+  }
+}
+
+// LAMBERT — rejections.
+{
+  const s = new Stack();
+  s.push(Real(-1));
+  assertThrows(() => lookup('LAMBERT').fn(s), /Bad argument value/,
+    'session086: LAMBERT(-1) rejects (below -1/e, no real solution)');
+}
+{
+  const s = new Stack();
+  s.push(Str('foo'));
+  assertThrows(() => lookup('LAMBERT').fn(s), /Bad argument type/,
+    'session086: LAMBERT(String) rejects Bad argument type');
+}
+{
+  // Symbolic lift.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  lookup('LAMBERT').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'LAMBERT',
+    'session086: LAMBERT(Name X) lifts to Symbolic LAMBERT(X)');
+}
+
+// XNUM / XQ — ASCII aliases delegate to →NUM / →Q.
+{
+  assert(lookup('XNUM') !== undefined && lookup('XQ') !== undefined,
+    'session086: XNUM and XQ are registered');
+}
+{
+  // XQ 0.5 → Symbolic 1/2.  Mirrors the known →Q behaviour.
+  const s = new Stack();
+  s.push(Real(0.5));
+  lookup('XQ').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'bin' && v.expr.op === '/'
+      && v.expr.l.value === 1 && v.expr.r.value === 2,
+    'session086: XQ 0.5 → Symbolic 1/2 (delegates to →Q)');
+}
+{
+  // XNUM of a Symbolic evaluates numerically — same contract as →NUM.
+  // Use a simple rational to keep this locked to the delegation check,
+  // not to the specifics of →NUM's evaluator.
+  const s = new Stack();
+  s.push(Real(0.25));
+  lookup('XQ').fn(s);              // Real(0.25) → Symbolic 1/4
+  lookup('XNUM').fn(s);            // Symbolic 1/4 → Real 0.25
+  const v = s.peek();
+  assert(isReal(v) && Math.abs(v.value - 0.25) < 1e-15,
+    'session086: XNUM evaluates Symbolic numerically (→NUM delegate)');
+}

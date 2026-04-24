@@ -54,7 +54,9 @@ import {
   setUserFlag, clearUserFlag, testUserFlag, clearAllUserFlags,
   seedPrng, nextPrngUnit, nextPrngInt9, getPrngSeed,
   setLastFitModel, getLastFitModel,
-  setHalted, getHalted, clearHalted,
+  setHalted, getHalted, clearHalted, takeHalted,
+  // clearAllHalted and haltedDepth are exported from state.js and used
+  // directly by tests/test-control-flow.mjs; no op handler calls them.
   setCasVx, getCasVx,
 } from './state.js';
 // Used by OBJ→ on String: re-parse the string as RPL source.  parser.js
@@ -111,9 +113,8 @@ register('CLEAR', (s) => s.clear());
 register('DEPTH', (s) => s.push(Integer(s.depth)));
 
 /* ------------------- multi-level UNDO / REDO -----------------------
-   Session 031 introduced one-slot UNDO.  Session 037 upgraded it to
-   a full history stack with a companion REDO stack (user ask:
-   "UNDO should be multi-level").
+   Multi-level UNDO/REDO backed by a history stack and a companion
+   redo stack.
 
    Commands:
      `UNDO` / `LASTSTACK` — pop the most recent snapshot and restore.
@@ -151,16 +152,15 @@ register('DROPN', (s) => {
 /* ------------------------------------------------------------------
    Arithmetic — real + complex + integer promotion
 
-   Session 032 extends every binary / unary numeric op so that a
-   Symbolic or Name operand lifts the whole expression into the
-   symbolic domain, producing a Symbolic result with an AST assembled
-   from the operator plus coerced operands.  HP50 behavior: any op on
-   at least one symbolic/name operand returns the symbolic form, e.g.
-   `'X' 'Y' +` → `'X+Y'` and `'X' SIN` → `'SIN(X)'`.  Constants on the
-   other side coerce to Num:  `5 'X' +` → `'5+X'`.  This is what makes
-   the keypad usable for algebra entry at all — before this change
-   every operator key threw "Bad argument type" the instant a Name
-   landed on the stack.
+   Every binary / unary numeric op lifts into the symbolic domain when
+   a Symbolic or Name operand is present, producing a Symbolic result
+   whose AST is assembled from the operator plus coerced operands.
+   HP50 behavior: any op on at least one symbolic/name operand returns
+   the symbolic form, e.g. `'X' 'Y' +` → `'X+Y'` and `'X' SIN` →
+   `'SIN(X)'`.  Constants on the other side coerce to Num:
+   `5 'X' +` → `'5+X'`.  This is what makes the keypad usable for
+   algebra entry at all — without it every operator key would throw
+   "Bad argument type" the instant a Name landed on the stack.
    ------------------------------------------------------------------ */
 
 /** Return true if `v` is a value that forces the symbolic code path.
@@ -432,7 +432,7 @@ function _withTaggedBinary(handler) {
   };
 }
 
-/* ---- Vector / Matrix element-wise unary dispatch (session 063) ----
+/* ---- Vector / Matrix element-wise unary dispatch ----
    For unary numeric ops whose Vector/Matrix semantics are simply
    "apply f to every element", wrapping with `_withVMUnary` adds that
    coverage with no per-op duplication.  At a leaf scalar the inner
@@ -597,9 +597,9 @@ function binaryMath(op) {
      * Division is BigInt truncated division.  `#7h #2h /` → `#3h`.
      * Division by zero throws 'Division by zero' — the integer-family
        error (HP50 0x303), distinct from 'Infinite result' (0x305) that
-       fires for Real /0 (where IEEE-754 would yield ±Infinity).  Kept
-       separate since session 018: BinInts follow the integer/BinInt
-       error family, Reals follow the floating-point family.
+       fires for Real /0 (where IEEE-754 would yield ±Infinity).
+       BinInts follow the integer/BinInt error family; Reals follow
+       the floating-point family.
      * Pow (^) is wordsize-masked modular exponentiation.
 
    Also used by the AND/OR/XOR bitwise path; those have their own
@@ -716,8 +716,7 @@ function complexBinary(op, a, b) {
  *    123   "ABC" +  →  "123ABC"
  *    "ABC" 'X'   +  →  "ABCX"        (Name renders without ticks here —
  *                                      in-string context)
- *  Non-string `+` keeps the numeric/symbolic dispatch in binaryMath.
- *  Session 034. */
+ *  Non-string `+` keeps the numeric/symbolic dispatch in binaryMath. */
 function _stringCoerce(v) {
   if (isString(v))  return v.value;
   if (isInteger(v)) return v.value.toString();
@@ -759,10 +758,10 @@ register('^', binaryMath('^'));
    stub that shows 'ABS(X)' but we don't represent an ABS AST node;
    adding one is straightforward once users ask for it).
    ---------------------------------------------------------------- */
-/* Session 068: NEG gains Tagged transparency.  The unary wrapper
-   unwraps the tag, applies NEG, and re-tags with the same label
-   ("reactive:-x" stays "reactive:-x"-shaped).  List and V/M branches
-   in the inner handler run unchanged. */
+/* NEG has Tagged transparency.  The unary wrapper unwraps the tag,
+   applies NEG, and re-tags with the same label ("reactive:-x" stays
+   "reactive:-x"-shaped).  List and V/M branches in the inner handler
+   run unchanged. */
 register('NEG', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstNeg(_toAst(v)))); return; }
@@ -775,11 +774,10 @@ register('NEG', _withTaggedUnary(_withListUnary((s) => {
   else throw new RPLError('Bad argument type');
 })));
 
-/* Session 064: INV gains Tagged transparency.  The List wrapper was
-   already present (session 036); V/M is NOT element-wise for INV —
-   a Matrix here means "compute the matrix inverse", not "invert each
-   element".  Tagged wraps outside List so `Tagged('M', RList(…))` and
-   `Tagged('M', Matrix(…))` both retag the result. */
+/* INV has Tagged + List transparency.  V/M is NOT element-wise for
+   INV — a Matrix here means "compute the matrix inverse", not "invert
+   each element".  Tagged wraps outside List so `Tagged('M', RList(…))`
+   and `Tagged('M', Matrix(…))` both retag the result. */
 register('INV', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  {
@@ -800,7 +798,7 @@ register('INV', _withTaggedUnary(_withListUnary((s) => {
     if (v.value === 0) throw new RPLError('Infinite result');
     s.push(_makeUnit(1 / v.value, inverseUexpr(v.uexpr)));
   } else if (isMatrix(v)) {
-    // Matrix inverse (session 036).  Requires square + numeric entries.
+    // Matrix inverse.  Requires square + numeric entries.
     // Non-square throws 'Invalid dimension'; singular throws 'Infinite
     // result' (matches scalar INV's division-by-zero error).  See
     // _invMatrixNumeric below.
@@ -812,9 +810,9 @@ register('INV', _withTaggedUnary(_withListUnary((s) => {
   } else throw new RPLError('Bad argument type');
 })));
 
-/* Session 068: ABS gains Tagged transparency.  The inner V/M branches
-   compute the Frobenius norm (a scalar); the re-tag then wraps that
-   scalar, e.g. `v:[3 4] ABS` → `v:5`. */
+/* ABS has Tagged transparency.  The inner V/M branches compute the
+   Frobenius norm (a scalar); the re-tag then wraps that scalar, e.g.
+   `v:[3 4] ABS` → `v:5`. */
 register('ABS', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstFn('ABS', [_toAst(v)]))); return; }
@@ -824,9 +822,9 @@ register('ABS', _withTaggedUnary(_withListUnary((s) => {
   else if (isUnit(v))    s.push(Unit(Math.abs(v.value), v.uexpr));
   else if (isVector(v)) {
     // HP50 Advanced Guide: ABS on an array returns the Frobenius
-    // (Euclidean) norm — identical behavior to NORM.  Session 037
-    // closes this data-type gap so users can reach for ABS without
-    // remembering the array-specific alias.
+    // (Euclidean) norm — identical behavior to NORM.  Bridges the
+    // data-type gap so users can reach for ABS without remembering
+    // the array-specific alias.
     let sum = 0;
     for (const x of v.items) { const r = toRealOrThrow(x); sum += r * r; }
     s.push(Real(Math.sqrt(sum)));
@@ -839,11 +837,10 @@ register('ABS', _withTaggedUnary(_withListUnary((s) => {
   } else throw new RPLError('Bad argument type');
 })));
 
-/* Session 064: SQ gains Tagged transparency.  V/M is NOT wrapped —
-   HP50 SQ on a Vector is `V · V` (dot product, scalar) and on a Matrix
-   is `M · M` (matmul), both handled by the `*` op today; an element-
-   wise wrapper here would silently break that semantic.  See also
-   session 063 next-step notes. */
+/* SQ has Tagged transparency.  V/M is NOT wrapped — HP50 SQ on a
+   Vector is `V · V` (dot product, scalar) and on a Matrix is `M · M`
+   (matmul), both handled by the `*` op; an element-wise wrapper here
+   would silently break that semantic. */
 register('SQ', _withTaggedUnary(_withListUnary((s) => {             // ^2
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstBin('^', _toAst(v), AstNum(2)))); return; }
@@ -857,10 +854,10 @@ register('SQ', _withTaggedUnary(_withListUnary((s) => {             // ^2
   else throw new RPLError('Bad argument type');
 })));
 
-// Session 063: SQRT picks up Tagged transparency and Vector/Matrix
-// element-wise dispatch.  Element-wise on Vector/Matrix is the HP50
-// behavior — there's no whole-array SQRT (matrix square root is a
-// SCHUR-style decomposition the calculator doesn't expose).
+// SQRT has Tagged transparency and Vector/Matrix element-wise
+// dispatch.  Element-wise on Vector/Matrix is the HP50 behavior —
+// there's no whole-array SQRT (matrix square root is a SCHUR-style
+// decomposition the calculator doesn't expose).
 register('SQRT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstFn('SQRT', [_toAst(v)]))); return; }
@@ -934,14 +931,14 @@ register('LOG',   unaryReal('LOG',  Math.log10));
 register('EXP',   unaryReal('EXP',  Math.exp));
 register('ALOG',  unaryReal('ALOG', x => Math.pow(10, x)));
 
-/* --------------------- hyperbolic (session 030) ---------------------
-   Session 029 added SINH/COSH/TANH/ASINH/ACOSH/ATANH to KNOWN_FUNCTIONS
-   for parseAlgebra so they could participate in symbolic odd/even
-   identities.  Session 030 registers them as stack ops so the MTH→HYP
-   soft-menu can dispatch to them directly.  ACOSH requires x ≥ 1 and
-   ATANH requires |x| < 1 — we defer to Math.acosh / Math.atanh which
-   already return NaN for out-of-domain inputs, and throw RPLError
-   to match how other domain-violation ops report.
+/* --------------------- hyperbolic ---------------------
+   SINH/COSH/TANH/ASINH/ACOSH/ATANH live in KNOWN_FUNCTIONS for
+   parseAlgebra (so they participate in symbolic odd/even identities)
+   and are registered here as stack ops so the MTH->HYP soft-menu can
+   dispatch to them directly.  ACOSH requires x >= 1 and ATANH requires
+   |x| < 1 — we defer to Math.acosh / Math.atanh which already return
+   NaN for out-of-domain inputs, and throw RPLError to match how other
+   domain-violation ops report.
    -------------------------------------------------------------------- */
 register('SINH',  unaryReal('SINH',  Math.sinh));
 register('COSH',  unaryReal('COSH',  Math.cosh));
@@ -962,7 +959,7 @@ register('ATANH', (s) => {
   s.push(Real(Math.atanh(x)));
 });
 
-/* -------- XROOT (session 030) — n-th root, `y x XROOT` = y^(1/x) ----
+/* -------- XROOT — n-th root, `y x XROOT` = y^(1/x) ----
    HP50 behavior: xth root of y (two-arg op).  Delegates to the binary
    `^` machinery so it picks up the Real/Integer/Complex coercion
    already implemented there.  We push `1/x` and then `^`.  Pure
@@ -1005,26 +1002,31 @@ register('XROOT', _withListBinary((s) => {
    `toFixed(0)`-adjacent semantics).
    ------------------------------------------------------------------ */
 
-/* Session 062: FLOOR/CEIL/IP/FP widened beyond the original R/Z path.
-   Added element-wise on Vector / Matrix, Symbolic lift via KNOWN_FUNCTIONS,
-   and Tagged transparency (tag is preserved across the unary op).  Complex
-   remains rejected — HP50 raises "Bad Argument Type" on these for Complex
-   since there is no well-defined ordering on ℂ.  The symbolic form round-
-   trips through the entry parser because FLOOR/CEIL/IP/FP are now
+/* FLOOR/CEIL/IP/FP cover R/Z plus element-wise on Vector / Matrix,
+   Symbolic lift via KNOWN_FUNCTIONS, Tagged transparency (tag is
+   preserved across the unary op), and Unit carriers.  Complex is
+   rejected — HP50 raises "Bad Argument Type" on these for Complex
+   since there is no well-defined ordering on C.  The symbolic form
+   round-trips through the entry parser because FLOOR/CEIL/IP/FP are
    registered in KNOWN_FUNCTIONS (algebra.js).
 
-   Session 072: Unit widening.  HP50 applies FLOOR/CEIL/IP/FP to the
-   numeric part of a unit object and preserves the unit expression —
-   `1.5_m FLOOR` → `1_m`, `1.8_m FP` → `.8_m`.  This is the real-valued
-   scalar case (FP's fallback intFn returning `Integer(0n)` is never
-   reached — a Unit carries a Real-typed value by construction, per
-   types.js §Unit). */
+   Unit: HP50 applies FLOOR/CEIL/IP/FP to the numeric part of a unit
+   object and preserves the unit expression — `1.5_m FLOOR` -> `1_m`,
+   `1.8_m FP` -> `.8_m`.  This is the real-valued scalar case (FP's
+   fallback intFn returning `Integer(0n)` is never reached — a Unit
+   carries a Real-typed value by construction, per types.js §Unit). */
 function _rounderScalar(name, realFn, intFn) {
   return (v) => {
-    if (isInteger(v))    return intFn(v);
-    if (isReal(v))       return Real(realFn(v.value));
-    if (isUnit(v))       return Unit(realFn(v.value), v.uexpr);
-    if (_isSymOperand(v))return Symbolic(AstFn(name, [_toAst(v)]));
+    if (isInteger(v))        return intFn(v);
+    /* BinaryInteger (session 087): BinInts are always integer-valued,
+       so rounding is a no-op.  HP50 AUR §3 accepts BinInt on
+       FLOOR/CEIL/IP/FP.  FP of any integer = 0; preserve base. */
+    if (isBinaryInteger(v))  return name === 'FP'
+      ? BinaryInteger(0n, v.base)
+      : v;
+    if (isReal(v))           return Real(realFn(v.value));
+    if (isUnit(v))           return Unit(realFn(v.value), v.uexpr);
+    if (_isSymOperand(v))    return Symbolic(AstFn(name, [_toAst(v)]));
     throw new RPLError('Bad argument type');
   };
 }
@@ -1046,10 +1048,9 @@ _registerRounder('CEIL',  _ceilScalar);
 _registerRounder('IP',    _ipScalar);
 _registerRounder('FP',    _fpScalar);
 
-/* Session 062: SIGN widened.  Already had R/Z/C plus Vector (unit
-   direction).  Added Matrix element-wise (HP50's Matrix-SIGN is
-   scalar-element-wise — a matrix has no single direction), Symbolic
-   lift, and Tagged transparency. */
+/* SIGN covers R/Z/C plus Vector (unit direction), Matrix element-wise
+   (HP50's Matrix-SIGN is scalar-element-wise — a matrix has no single
+   direction), Symbolic lift, and Tagged transparency. */
 register('SIGN', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (isReal(v)) {
@@ -1063,9 +1064,9 @@ register('SIGN', _withTaggedUnary(_withListUnary((s) => {
     if (mag === 0) s.push(Complex(0, 0));
     else s.push(Complex(v.re / mag, v.im / mag));
   } else if (isVector(v)) {
-    // Session 037: HP50 Advanced Guide defines SIGN on a vector as
-    // v / ‖v‖ (unit vector in the direction of v).  Zero vector
-    // stays zero — matches the scalar-SIGN convention on 0.
+    // HP50 Advanced Guide defines SIGN on a vector as v / ||v||
+    // (unit vector in the direction of v).  Zero vector stays zero —
+    // matches the scalar-SIGN convention on 0.
     let sum = 0;
     for (const x of v.items) { const r = toRealOrThrow(x); sum += r * r; }
     const mag = Math.sqrt(sum);
@@ -1091,21 +1092,20 @@ register('SIGN', _withTaggedUnary(_withListUnary((s) => {
   }
 })));
 
-/* ------------------- complex-number ops (session 030) ---------------
+/* ------------------- complex-number ops ---------------
    ARG    argument θ of a complex number, in the active angle mode.
           On real inputs:  ≥0 → 0,  <0 → π (180° / 200 grad).
    CONJ   complex conjugate a+bi → a−bi; identity on Real/Integer.
    RE     real part: Real(a) from a+bi, identity on Real/Integer.
    IM     imaginary part:  b from a+bi,  0 from Real/Integer.
 
-   Backs the session-030 CMPLX soft-menu (SHIFT-R + 1 → ABS / ARG /
-   CONJ / RE / IM / i) and the shifted ÷ key (ARG) that's been
-   label-wired since session 018.
+   Backs the CMPLX soft-menu (SHIFT-R + 1 → ABS / ARG / CONJ / RE /
+   IM / i) and the shifted ÷ key (ARG).
    -------------------------------------------------------------------- */
-/* Session 062: ARG widened with Vector / Matrix element-wise, Symbolic
-   lift, and Tagged transparency.  Scalar cases unchanged.  Result on
-   a Real/Integer is angle-mode-sensitive (negative → π, non-negative
-   → 0) — element-wise just broadcasts that. */
+/* ARG covers scalars (R/Z/C) plus Vector / Matrix element-wise,
+   Symbolic lift, and Tagged transparency.  Result on a Real/Integer
+   is angle-mode-sensitive (negative → π, non-negative → 0) —
+   element-wise just broadcasts that. */
 function _argScalar(v) {
   if (isReal(v))    return Real(fromRadians(v.value < 0 ? Math.PI : 0));
   if (isInteger(v)) return Real(fromRadians(v.value < 0n ? Math.PI : 0));
@@ -1120,11 +1120,10 @@ register('ARG', _withTaggedUnary(_withListUnary((s) => {
   else                  s.push(_argScalar(v));
 })));
 
-/* Session 037: CONJ / RE / IM extended to element-wise on Vector &
-   Matrix.  Today every entry is Real/Integer/Symbolic so CONJ is
-   identity, RE is identity, and IM is a zero-valued array — but the
-   element-wise dispatch is already in place for a future session that
-   puts Complex entries into arrays. */
+/* CONJ / RE / IM extend to element-wise on Vector & Matrix.  Today
+   every entry is Real/Integer/Symbolic so CONJ is identity, RE is
+   identity, and IM is a zero-valued array — but the element-wise
+   dispatch is in place for when Complex entries can appear in arrays. */
 function _conjScalar(v) {
   if (isReal(v) || isInteger(v)) return v;
   if (isComplex(v)) return Complex(v.re, -v.im);
@@ -1144,9 +1143,9 @@ function _imScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('IM', [_toAst(v)]));
   throw new RPLError('Bad argument type');
 }
-/* Session 068: CONJ / RE / IM gain Tagged transparency.  Each uses the
-   standard unary-Tagged shape: unwrap tag, apply, re-tag with the same
-   label.  Vector and Matrix inputs are element-wise and retag as
+/* CONJ / RE / IM have Tagged transparency.  Each uses the standard
+   unary-Tagged shape: unwrap tag, apply, re-tag with the same label.
+   Vector and Matrix inputs are element-wise and retag as
    Tagged(label, Vector/Matrix) — matches HP50 where the tag survives
    structural operations that return the same shape. */
 register('CONJ', _withTaggedUnary(_withListUnary((s) => {
@@ -1168,7 +1167,7 @@ register('IM', _withTaggedUnary(_withListUnary((s) => {
   else s.push(_imScalar(v));
 })));
 
-/* ------------------- integer GCD / LCM (session 030) ----------------
+/* ------------------- integer GCD / LCM ----------------
    `a b GCD` → greatest common divisor of two Integers.  For Reals
    we coerce to BigInt via trunc; non-integer Reals throw since HP50
    rejects non-integer inputs to GCD/LCM.
@@ -1187,8 +1186,7 @@ function _bigGcd(a, b) {
   while (b !== 0n) { [a, b] = [b, a % b]; }
   return a;
 }
-/* Session 064: GCD / LCM widen to Tagged + List + Symbolic/Name.
-   Both ops were R/Z-only before.  Now:
+/* GCD / LCM cover Tagged + List + Symbolic/Name:
      - `_withTaggedBinary`  — unwrap either/both tags; binary drops tag.
      - `_withListBinary`    — element-wise distribution (same length
                               lists pair up; scalar broadcasts).
@@ -1199,7 +1197,7 @@ function _bigGcd(a, b) {
                               lift here gets `'M' 'N' GCD` → `'GCD(M,N)'`
                               on the stack and round-tripping through
                               the entry parser via KNOWN_FUNCTIONS.
-   Integer-only rejection for non-integer Real stays — matches HP50. */
+   Integer-only rejection for non-integer Real — matches HP50. */
 register('GCD', _withTaggedBinary(_withListBinary((s) => {
   const [a, b] = s.popN(2);
   if (_isSymOperand(a) || _isSymOperand(b)) {
@@ -1225,7 +1223,7 @@ register('LCM', _withTaggedBinary(_withListBinary((s) => {
   s.push(Integer(_bigAbs(ai / g * bi)));
 })));
 
-/* ------------------- factorial (session 031) ------------------------
+/* ------------------- factorial ------------------------
    `n FACT` → n!.  Non-negative Integer input stays exact (BigInt).
    Non-negative Real input uses a Lanczos gamma approximation and
    returns `Γ(n+1)` as a Real — HP50 FACT accepts non-integer real
@@ -1266,14 +1264,13 @@ function _gamma(x) {
   const t = x + _LANCZOS_G + 0.5;
   return Math.sqrt(2 * Math.PI) * Math.pow(t, x + 0.5) * Math.exp(-t) * a;
 }
-/* Session 063: FACT widens from R/Z-only to also accept
-   Symbolic/Name (lifts to FACT(X) — KNOWN_FUNCTIONS already had a
-   non-negative-integer evaluator so constant-fold still works), List
-   (element-wise — `{3 4 5} FACT` → `{6 24 120}`), Vector/Matrix
-   (element-wise — `[2 3 4] FACT` → `[2 6 24]`), and Tagged
-   (transparent — `n=5` `FACT` → `n=120`).
+/* FACT accepts R/Z plus Symbolic/Name (lifts to FACT(X) —
+   KNOWN_FUNCTIONS has a non-negative-integer evaluator so constant-
+   fold still works), List (element-wise — `{3 4 5} FACT` →
+   `{6 24 120}`), Vector/Matrix (element-wise — `[2 3 4] FACT` →
+   `[2 6 24]`), and Tagged (transparent — `n=5 FACT` → `n=120`).
 
-   Complex remains rejected: HP50's gamma is real-valued and the
+   Complex is rejected: HP50's gamma is real-valued and the
    calculator's FACT throws "Bad argument type" on Complex (the AUR
    describes Γ via the Lanczos series only). */
 register('FACT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
@@ -1331,11 +1328,10 @@ function _hp50ModBigInt(a, b) {
   return r;
 }
 
-/* Session 062: MOD now lifts to Symbolic when either operand is a
-   Name / Symbolic (matches how +, -, * already lift), and is
-   transparent across Tagged wrappers.  Complex remains rejected —
-   HP50 has no complex-MOD definition (ordering & sign of divisor make
-   no sense in ℂ). */
+/* MOD lifts to Symbolic when either operand is a Name / Symbolic
+   (matches how +, -, * lift), and is transparent across Tagged
+   wrappers.  Complex is rejected — HP50 has no complex-MOD definition
+   (ordering & sign of divisor make no sense in C). */
 register('MOD', _withTaggedBinary(_withListBinary((s) => {
   const [a, b] = s.popN(2);
   if (_isSymOperand(a) || _isSymOperand(b)) {
@@ -1353,9 +1349,9 @@ register('MOD', _withTaggedBinary(_withListBinary((s) => {
   }
 })));
 
-/* Session 062: MIN/MAX widened with Symbolic lift (leaves MIN(X,3)
-   un-evaluated when X is unbound) and Tagged transparency.  Complex
-   still rejected — ℂ has no total ordering. */
+/* MIN/MAX have Symbolic lift (leaves MIN(X,3) un-evaluated when X is
+   unbound) and Tagged transparency.  Complex is rejected — C has no
+   total ordering. */
 function _minMax(s, pick, name) {
   const [a, b] = s.popN(2);
   if (_isSymOperand(a) || _isSymOperand(b)) {
@@ -1377,13 +1373,12 @@ register('MIN', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x 
 register('MAX', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x >= y, 'MAX'))));
 
 /* ------------------------------------------------------------------
-   Session 064 — combinatorics + integer div-mod + normal-CDF cluster
+   Combinatorics + integer div-mod + normal-CDF cluster
 
-   COMB / PERM / IDIV2 / UTPN.  All four were absent from the registry
-   before this session and are commonly-used HP50 ops (COMB and PERM
+   COMB / PERM / IDIV2 / UTPN.  Commonly-used HP50 ops (COMB and PERM
    live under the MTH-NUM menu; IDIV2 under MTH-NUM-INTEG; UTPN on the
-   STAT-DIST menu).  Added here rather than in a new file so the
-   Tagged/List wrappers in scope are easy to reuse for the binary ops.
+   STAT-DIST menu).  Kept co-located with the binary-op wrappers so the
+   Tagged/List wrappers in scope are easy to reuse.
 
    ─── COMB(n, m) and PERM(n, m) ─────────────────────────────────
    Stack signature: level 2 = n, level 1 = m.  Both must be
@@ -1535,18 +1530,15 @@ register('UTPN', (s) => {
 });
 
 /* ==================================================================
-   Session 068 — integer-division siblings, special functions, and
-   the next STAT-DIST upper-tail.
-
-   Ops shipped this block (all five absent from the registry at start
-   of session 068; fuller rationale in logs/session-068.md):
+   Integer-division siblings, special functions, and a STAT-DIST
+   upper-tail.
 
      ─── IQUOT(a, b) / IREMAINDER(a, b) ─────────────────────────
-     Single-result siblings of IDIV2 (session 065).  IQUOT returns
-     the truncated quotient; IREMAINDER returns the remainder with
-     the sign of the dividend.  Both wrap in Tagged + List
-     transparency — unlike IDIV2, they produce a single stack result
-     so the wrappers compose cleanly.  HP50 AUR p.3-37.
+     Single-result siblings of IDIV2.  IQUOT returns the truncated
+     quotient; IREMAINDER returns the remainder with the sign of the
+     dividend.  Both wrap in Tagged + List transparency — unlike
+     IDIV2, they produce a single stack result so the wrappers
+     compose cleanly.  HP50 AUR p.3-37.
 
      ─── GAMMA(x) / LNGAMMA(x) ──────────────────────────────────
      The gamma function and its natural log.  GAMMA is HP50 AUR §3
@@ -1566,7 +1558,7 @@ register('UTPN', (s) => {
      range.  ν must be a strictly positive integer (degrees of
      freedom); x ≥ 0 for a finite tail.  Real / Integer arguments
      only; no Symbolic lift (terminal numeric op — same rationale
-     as UTPN in session 065).
+     as UTPN).
    ================================================================== */
 
 /** Unwrap (Integer | integer-valued Real) to a BigInt.  Throws
@@ -1618,7 +1610,7 @@ register('IREMAINDER', _withTaggedBinary(_withListBinary((s) => {
   s.push(Integer(ba - q * bb));
 })));
 
-/* ---- Extended Euclidean algorithm (session 076) --------------------
+/* ---- Extended Euclidean algorithm --------------------
    Returns `{ g, s, t }` with the invariant `s·a + t·b = g`, where
    `g = gcd(|a|, |b|)` is always non-negative.  Caller deals with the
    sign.  Handles a = 0 or b = 0 cleanly (gcd(0, b) = |b| with
@@ -1692,9 +1684,8 @@ register('EUCLID', (s) => {
    uses for MODULO-style output.  Integer-valued Reals coerce
    through `_intQuotientArg` the same way IQUOT / IREMAINDER do.
 
-   Session 076.  When the MODULO state slot lands, add a single-arg
-   form that consults it; the two-arg form stays for explicit
-   callers. */
+   When the MODULO state slot lands, add a single-arg form that
+   consults it; the two-arg form stays for explicit callers. */
 
 register('INVMOD', (s) => {
   const [a, n] = s.popN(2);
@@ -1773,6 +1764,165 @@ register('LNGAMMA', _withTaggedUnary(_withListUnary((s) => {
   else                  s.push(_lngammaScalar(v));
 })));
 
+/* ---- PSI — digamma + polygamma ----------------------
+   HP50 AUR §2 (CAS-SPECIAL).  One- and two-argument forms.
+
+     PSI  ( x → ψ(x) )             1-arg: digamma  ψ(x) = Γ'(x)/Γ(x)
+     PSI  ( x n → ψ^(n)(x) )       2-arg: n-th polygamma (n ≥ 0 integer).
+                                   n = 0 is equivalent to the 1-arg form.
+
+   Dispatch: if the top-of-stack is a non-negative Integer (or integer-
+   valued Real) AND there is a second argument below it, the op is the
+   two-arg form.  Otherwise 1-arg.  This matches the HP50 firmware
+   convention used by the same command.
+
+   Domain: both forms throw `Infinite result` at non-positive integers
+   (the poles of ψ and its derivatives) and `Bad argument value` on
+   non-finite input.  Symbolic / Name inputs lift to `PSI(x)` or
+   `PSI(x, n)` AST nodes so round-trip through the parser is exact.
+
+   Numerical implementation (real x, real n):
+     - Digamma: reflection for x < 0.5 (ψ(1−x) − π cot πx), then
+       integer-shift recurrence ψ(x+1) = ψ(x) + 1/x up to x ≥ 8,
+       then the Bernoulli asymptotic
+           ψ(x) ≈ ln x − 1/(2x) − Σ_k B_{2k}/(2k · x^{2k})
+       truncated at 2k = 12 (gives ~1e−13 error at x = 8).
+     - Polygamma (n ≥ 1): shift x up via
+           ψ^(n)(x) = ψ^(n)(x+1) + (−1)^(n+1) n! / x^(n+1)
+       accumulated as a running tail sum, then the asymptotic
+           ψ^(n)(y) ≈ (−1)^(n+1) [(n−1)!/y^n + n!/(2 y^{n+1})
+                    + Σ_k B_{2k} (2k+n−1)!/(2k)! / y^{2k+n}]
+       with the same 2k = 12 truncation.
+*/
+
+function _digamma(x) {
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  if (x <= 0 && Number.isInteger(x)) throw new RPLError('Infinite result');
+  // Reflection: ψ(x) = ψ(1 − x) − π cot(πx).  Used for x < 0.5 so the
+  // recurrence-and-asymptotic pair below always starts with x ≥ 0.5.
+  if (x < 0.5) {
+    return _digamma(1 - x) - Math.PI / Math.tan(Math.PI * x);
+  }
+  let r = 0;
+  while (x < 8) { r -= 1 / x; x += 1; }
+  const xi  = 1 / x;
+  const xi2 = xi * xi;
+  r += Math.log(x) - 0.5 * xi;
+  // − Σ_k B_{2k}/(2k) · x^−2k   with  B_2..B_12 signs absorbed into
+  // the factored Horner form below (alternating subtraction/addition).
+  r -= xi2 * (1/12 - xi2 * (1/120 - xi2 * (1/252 - xi2 * (1/240
+       - xi2 * (1/132 - xi2 * 691/32760)))));
+  return r;
+}
+
+function _polygamma(n, x) {
+  if (n === 0) return _digamma(x);
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  if (x <= 0 && Number.isInteger(x)) throw new RPLError('Infinite result');
+  if (x < 0.5) {
+    // Reflection for polygamma is messier than digamma (involves
+    // d^n/dx^n cot πx).  For the expected use cases (integer n ≥ 1,
+    // x not tiny-positive) we instead shift up from any positive-real
+    // starting point using the recurrence tail sum; for x < 0.5 we
+    // use the same recurrence but accept more shift iterations.
+    let r = 0;
+    const sgnShift = (n % 2 === 0) ? -1 : 1;   // (−1)^(n+1)
+    let nf = 1;
+    for (let i = 2; i <= n; i++) nf *= i;
+    let y = x;
+    while (y < 10) {
+      r += sgnShift * nf * Math.pow(y, -(n + 1));
+      y += 1;
+    }
+    return r + _polygammaAsymptotic(n, y);
+  }
+  const sgnShift = (n % 2 === 0) ? -1 : 1;   // (−1)^(n+1)
+  let nf = 1;
+  for (let i = 2; i <= n; i++) nf *= i;
+  let y = x;
+  let tail = 0;
+  while (y < 10) {
+    tail += Math.pow(y, -(n + 1));
+    y += 1;
+  }
+  return sgnShift * nf * tail + _polygammaAsymptotic(n, y);
+}
+
+function _polygammaAsymptotic(n, y) {
+  // (−1)^(n+1) · [(n−1)!/y^n + n!/(2 y^{n+1}) + Σ B_{2k} rf(2k)/y^{2k+n}]
+  // where rf(2k) = (2k+1)(2k+2)…(2k+n−1) = (2k+n−1)!/(2k)! — evaluated
+  // by a (n−1)-term running product.
+  const sgn = (n % 2 === 0) ? -1 : 1;   // (−1)^(n+1)
+  let nm1f = 1;
+  for (let i = 2; i <= n - 1; i++) nm1f *= i;
+  let nf = nm1f * n;
+  let out = nm1f * Math.pow(y, -n) + (nf / 2) * Math.pow(y, -(n + 1));
+  // B_{2k} for k = 1..6
+  const B = [1/6, -1/30, 1/42, -1/30, 5/66, -691/2730];
+  for (let k = 1; k <= B.length; k++) {
+    const twoK = 2 * k;
+    let rf = 1;
+    for (let i = 1; i <= n - 1; i++) rf *= (twoK + i);
+    out += B[k - 1] * rf * Math.pow(y, -(twoK + n));
+  }
+  return sgn * out;
+}
+
+function _psiScalar(v) {
+  if (_isSymOperand(v)) return Symbolic(AstFn('PSI', [_toAst(v)]));
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  if (x === null) throw new RPLError('Bad argument type');
+  return Real(_digamma(x));
+}
+
+function _polygammaScalar(n, v) {
+  if (_isSymOperand(v)) return Symbolic(AstFn('PSI', [_toAst(v), AstNum(n)]));
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  if (x === null) throw new RPLError('Bad argument type');
+  return Real(_polygamma(n, x));
+}
+
+register('PSI', (s) => {
+  if (s.depth === 0) throw new RPLError('Too few arguments');
+  // Two-arg dispatch: top is an Integer / integer-valued Real n ≥ 0,
+  // and there is a second argument below.  Matches HP50 firmware.
+  if (s.depth >= 2) {
+    const top = s.peek(1);
+    let n = null;
+    if (isInteger(top)) {
+      n = Number(top.value);
+    } else if (isReal(top) && Number.isFinite(top.value) &&
+               Number.isInteger(top.value)) {
+      n = top.value;
+    }
+    if (n !== null && n >= 0) {
+      const [x] = s.popN(2).slice(0, 1);   // popN returns [x, n]
+      // (n is discarded here — we already read it above)
+      if (isList(x)) {
+        s.push(RList(x.items.map(it => _polygammaScalar(n, it))));
+      } else if (isTagged(x)) {
+        s.push(Tagged(x.tag, _polygammaScalar(n, x.value)));
+      } else {
+        s.push(_polygammaScalar(n, x));
+      }
+      return;
+    }
+  }
+  // 1-arg: digamma.  List / Tagged dispatch mirrors GAMMA / LNGAMMA.
+  const v = s.pop();
+  if (isList(v)) {
+    s.push(RList(v.items.map(_psiScalar)));
+  } else if (isTagged(v)) {
+    s.push(Tagged(v.tag, _psiScalar(v.value)));
+  } else if (isVector(v)) {
+    s.push(Vector(v.items.map(_psiScalar)));
+  } else if (isMatrix(v)) {
+    s.push(Matrix(v.rows.map(r => r.map(_psiScalar))));
+  } else {
+    s.push(_psiScalar(v));
+  }
+});
+
 /** Regularised upper incomplete gamma Q(a, x) = Γ(a, x) / Γ(a).
  *  Implementation follows Numerical Recipes (Press et al.) §6.2:
  *
@@ -1842,10 +1992,10 @@ register('UTPC', (s) => {
 });
 
 /* ============================================================
-   Session 069 — Beta-family special functions + STAT-DIST UTPF /
-   UTPT + erf / erfc.
+   Beta-family special functions + STAT-DIST UTPF / UTPT + erf /
+   erfc.
 
-   Builds on session 068:
+   Builds on the UTPC machinery:
      - `_regGammaQ(a, x)` (upper-incomplete, already registered
        under UTPC) and its complement P(a, x) = 1 − Q(a, x)
        drive erf / erfc.
@@ -2183,9 +2333,7 @@ register('PURGE', (s) => {
 register('VARS', (s) => {
   // Reverse-insertion order: the most-recently-stored / most-recently-
   // ORDERed name ends up at list[0], matching the left-to-right order
-  // of names on a physical HP50 VAR menu (AUR §2.8).  Session 047
-  // initially pushed raw insertion order (oldest first) and reported
-  // that as backwards versus how the bank reads.  ORDER still has a
+  // of names on a physical HP50 VAR menu (AUR §2.8).  ORDER has a
   // visible effect on this list, just in reversed orientation.
   s.push(RList(varOrder().slice().reverse().map(id => Name(id))));
 });
@@ -2299,9 +2447,9 @@ const MAX_EVAL_DEPTH = 256;
    (THEN/ELSE/REPEAT/UNTIL) are block-internal separators.  These
    are NOT registered as ops — they're only meaningful while walking
    a Program's token stream, and are recognized here by name.
-   Session 064 added CASE; its inner grammar (clauses of the shape
+   CASE has an inner grammar of clauses of the shape
    `test THEN action END`, each clause self-delimited by its own END,
-   with one extra outer END closing the CASE itself) is handled by
+   with one extra outer END closing the CASE itself; handled by
    runCase.  CASE is still a CF_OPENER for the purposes of scanAtDepth0
    so a CASE nested inside another block counts toward that block's
    depth — but runCase never delegates to scanAtDepth0 across an
@@ -2440,27 +2588,27 @@ function _pushLocalFrame(names, values) {
 function _popLocalFrame() { _localFrames.pop(); }
 
 /** Restore `_localFrames` to a previously-captured length.  Pops any
- *  extra entries that accumulated on top.  Session 077: used by
- *  `register('EVAL')` / `register('CONT')` in a top-level `finally` so
- *  that an abnormal unwind (non-RPLError throw, JS TypeError from a
- *  broken op, unanticipated path through a future refactor) can't
- *  leak a half-popped frame and poison the HALT pilot check that runs
- *  inside `evalRange`.  The normal path through `runArrow`'s own
- *  `finally` restores the length itself, so this is a no-op in the
- *  common case.  Kept internal to the module — no export needed. */
+ *  extra entries that accumulated on top.  Used by `register('EVAL')`
+ *  / `register('CONT')` in a top-level `finally` so that an abnormal
+ *  unwind (non-RPLError throw, JS TypeError from a broken op, or an
+ *  unanticipated path) can't leak a half-popped frame and poison the
+ *  HALT pilot check that runs inside `evalRange`.  The normal path
+ *  through `runArrow`'s own `finally` restores the length itself, so
+ *  this is a no-op in the common case.  Kept internal to the module —
+ *  no export needed. */
 function _truncateLocalFrames(toLength) {
   while (_localFrames.length > toLength) _localFrames.pop();
 }
 
-/** Read-only view of the current local-frame depth.  Session 077:
- *  exposed so tests can assert the post-EVAL invariant
- *  `localFramesDepth() === 0` after a resetHome / resetState call. */
+/** Read-only view of the current local-frame depth.  Exposed so tests
+ *  can assert the post-EVAL invariant `localFramesDepth() === 0` after
+ *  a resetHome / resetState call. */
 export function localFramesDepth() { return _localFrames.length; }
 
 /** Execute a `→ n1 n2 … body` form starting at `toks[arrowIdx]`.
  *  Returns the index immediately past the body token.  Throws
  *  `RPLError` on malformed syntax or too-few stack values.  */
-function runArrow(s, toks, arrowIdx, to, depth) {
+function* runArrow(s, toks, arrowIdx, to, depth) {
   // Collect consecutive bare (unquoted) Name tokens as local names.
   // Stop at the first non-Name / quoted-Name — that must be the body.
   const names = [];
@@ -2494,11 +2642,12 @@ function runArrow(s, toks, arrowIdx, to, depth) {
   _pushLocalFrame(names, values);
   try {
     if (isProgram(body)) {
-      evalRange(s, body.tokens, 0, body.tokens.length, depth + 1);
+      yield* evalRange(s, body.tokens, 0, body.tokens.length, depth + 1);
     } else {
       // Symbolic body — EVAL leaves the (possibly partially reduced)
-      // value on the stack, matching HP50 behaviour.
-      _evalValue(s, body, depth + 1);
+      // value on the stack, matching HP50 behaviour.  Symbolic eval is
+      // synchronous (no HALT path), so no yield* needed.
+      _evalValueSync(s, body, depth + 1);
     }
   } finally {
     _popLocalFrame();
@@ -2508,8 +2657,11 @@ function runArrow(s, toks, arrowIdx, to, depth) {
 
 /** Evaluate tokens in [from, to) as a flat sequence, respecting any
  *  nested control-flow structures.  `s` is the stack, `depth` tracks
- *  recursion.  Mutates the stack; returns nothing. */
-function evalRange(s, toks, from, to, depth) {
+ *  recursion.  Generator function: yields at every HALT encountered
+ *  anywhere in the token stream — including inside control structures
+ *  and `→` bodies — so the calling handler (EVAL/CONT) can store the
+ *  live generator as the halted continuation.  Mutates the stack. */
+function* evalRange(s, toks, from, to, depth) {
   if (depth > MAX_EVAL_DEPTH) {
     throw new RPLError('EVAL recursion too deep');
   }
@@ -2518,33 +2670,29 @@ function evalRange(s, toks, from, to, depth) {
     const tok = toks[i];
     const id = bareNameId(tok);
     if (id && CF_OPENERS.has(id)) {
-      i = runControl(s, toks, i, to, depth);
+      i = yield* runControl(s, toks, i, to, depth);
       continue;
     }
     // Compiled local environment: `→ n1 n2 … body`.  `runArrow` collects
     // the local names, pops that many values from the stack, pushes a
     // binding frame, runs the body (Program or Symbolic), and pops the
-    // frame.  Session 068.
+    // frame.
     if (id === '→') {
-      i = runArrow(s, toks, i, to, depth);
+      i = yield* runArrow(s, toks, i, to, depth);
       continue;
     }
-    // HALT — session 073 pilot.  Capture the continuation point at the
-    // top of a Program body and throw RPLHalt so the outer EVAL wrapper
-    // swallows the signal cleanly.  Requires that we are at depth 0 and
-    // no compiled-local frame is live; otherwise the runArrow /
-    // runControl finally-blocks further up the stack would tear down
-    // state we'd need for CONT to resume correctly.  Report the pilot
-    // limitation via a standard RPLError so IFERR can trap it (the
-    // limitation is a user-visible syntax constraint, not a program
-    // termination).
+    // HALT — generator-based suspension.  `yield` here propagates up
+    // through all `yield*` delegations to the top-level EVAL/CONT
+    // handler, which stores this generator in state.haltedStack.  On
+    // CONT, gen.next() resumes exactly here; we then advance past the
+    // HALT token and continue the loop — matching the HP50's "resume
+    // at the instruction after HALT" semantics.  Because the generator
+    // preserves every call-frame on the JS engine's stack, HALT works
+    // correctly at any structural depth (inside FOR, IF, →, etc.).
     if (id === 'HALT') {
-      if (depth !== 0 || _localFrames.length !== 0) {
-        throw new RPLError(
-          'HALT: cannot suspend inside control structure or → (pilot)');
-      }
-      setHalted({ tokens: toks, ip: i + 1, length: to });
-      throw new RPLHalt();
+      yield;
+      i++;          // resume: advance past HALT
+      continue;
     }
     if (id && (CF_CLOSERS.has(id) || CF_INNERS.has(id))) {
       // Orphan control keyword at depth 0 — skip silently (matches HP50
@@ -2563,17 +2711,17 @@ function evalRange(s, toks, from, to, depth) {
 function evalToken(s, tok, depth) {
   if (isName(tok)) {
     if (tok.quoted) { s.push(tok); return; }
-    // Compiled-local bindings shadow both ops and globals.  Session 068.
+    // Compiled-local bindings shadow both ops and globals.
     const localVal = _localLookup(tok.id);
     if (localVal !== undefined) {
-      _evalValue(s, localVal, depth + 1);
+      _evalValueSync(s, localVal, depth + 1);
       return;
     }
     const op = lookup(tok.id);
     if (op) { _dispatchOp(op, s, tok.id); return; }
     const bound = varRecall(tok.id);
     if (bound !== undefined) {
-      _evalValue(s, bound, depth + 1);
+      _evalValueSync(s, bound, depth + 1);
     } else {
       s.push(tok);
     }
@@ -2598,25 +2746,20 @@ function _dispatchOp(op, s, name) {
 }
 
 /** Dispatch a control-flow structure starting at `toks[i]` (an opener).
- *  Returns the index immediately past the matching closer. */
-function runControl(s, toks, i, bound, depth) {
+ *  Generator: delegates to the appropriate run* generator so that a
+ *  HALT inside any branch propagates yield up to the EVAL/CONT handler.
+ *  Returns (via the generator return value) the index past the closer. */
+function* runControl(s, toks, i, bound, depth) {
   const opener = bareNameId(toks[i]);
 
   switch (opener) {
-    case 'IF':
-      return runIf(s, toks, i, depth);
-    case 'IFERR':
-      return runIfErr(s, toks, i, depth);
-    case 'WHILE':
-      return runWhile(s, toks, i, depth);
-    case 'DO':
-      return runDo(s, toks, i, depth);
-    case 'START':
-      return runStart(s, toks, i, depth);
-    case 'FOR':
-      return runFor(s, toks, i, depth);
-    case 'CASE':
-      return runCase(s, toks, i, depth);
+    case 'IF':    return yield* runIf(s, toks, i, depth);
+    case 'IFERR': return yield* runIfErr(s, toks, i, depth);
+    case 'WHILE': return yield* runWhile(s, toks, i, depth);
+    case 'DO':    return yield* runDo(s, toks, i, depth);
+    case 'START': return yield* runStart(s, toks, i, depth);
+    case 'FOR':   return yield* runFor(s, toks, i, depth);
+    case 'CASE':  return yield* runCase(s, toks, i, depth);
   }
   throw new RPLError(`Bad opener: ${opener}`);
 }
@@ -2655,14 +2798,14 @@ function runControl(s, toks, i, bound, depth) {
  *       (counting remaining THENs as "pending ENDs").  If false,
  *       advance past the clause's inner END and loop to the next
  *       clause. */
-function runCase(s, toks, openIdx, depth) {
-  // Auto-close policy (session 074).  Any forward scan that falls off the
-  // end of the token list is treated as an implicit END — matching the
-  // parser's existing convenience on `«`, `}`, `]` (parser.js auto-closes
-  // when the source runs out before the closing delimiter).  A Program
-  // built from user input like `« CASE X THEN 1 END X>0 THEN 2` (missing
-  // the trailing `END`) now evaluates cleanly instead of raising "CASE
-  // without END".
+function* runCase(s, toks, openIdx, depth) {
+  // Auto-close policy.  Any forward scan that falls off the end of the
+  // token list is treated as an implicit END — matching the parser's
+  // existing convenience on `«`, `}`, `]` (parser.js auto-closes when
+  // the source runs out before the closing delimiter).  A Program built
+  // from user input like `« CASE X THEN 1 END X>0 THEN 2` (missing the
+  // trailing `END`) evaluates cleanly instead of raising "CASE without
+  // END".
   const bound = toks.length;
   let i = openIdx + 1;
 
@@ -2670,13 +2813,13 @@ function runCase(s, toks, openIdx, depth) {
     const scan = scanAtDepth0(toks, i, new Set(['THEN']));
     if (!scan) {
       // Auto-close: no END found — [i, bound) is the default clause.
-      evalRange(s, toks, i, bound, depth + 1);
+      yield* evalRange(s, toks, i, bound, depth + 1);
       return bound;
     }
 
     if (scan.kind === 'END') {
       // No THEN found — the range [i, scan.idx) is the default clause.
-      evalRange(s, toks, i, scan.idx, depth + 1);
+      yield* evalRange(s, toks, i, scan.idx, depth + 1);
       return scan.idx + 1;
     }
 
@@ -2685,7 +2828,7 @@ function runCase(s, toks, openIdx, depth) {
     }
 
     const thenIdx = scan.idx;
-    evalRange(s, toks, i, thenIdx, depth + 1);
+    yield* evalRange(s, toks, i, thenIdx, depth + 1);
     const test = s.pop();
 
     const innerEnd = scanAtDepth0(toks, thenIdx + 1, null);
@@ -2695,7 +2838,7 @@ function runCase(s, toks, openIdx, depth) {
     const innerAutoClosed = (innerEndIdx === bound);
 
     if (isTruthy(test)) {
-      evalRange(s, toks, thenIdx + 1, innerEndIdx, depth + 1);
+      yield* evalRange(s, toks, thenIdx + 1, innerEndIdx, depth + 1);
       if (innerAutoClosed) return bound;
       // Short-circuit to the outer CASE END.  After the inner END
       // we've matched one of N+1 depth-0 ENDs (one per clause plus
@@ -2742,39 +2885,71 @@ function runCase(s, toks, openIdx, depth) {
   return bound;
 }
 
-function runIf(s, toks, openIdx, depth) {
+function* runIf(s, toks, openIdx, depth) {
   // IF <test> THEN <true-branch> [ELSE <false-branch>] END
+  //
+  // Auto-close policy (mirrors CASE and IFERR): a forward scan that
+  // falls off the end of the token list is treated as an implicit END.
+  // So
+  //   « IF test THEN … »           runs the true-branch on truthy test
+  //                                 and is otherwise a no-op — identical
+  //                                 to the fully-closed « IF test THEN … END ».
+  //   « IF test THEN … ELSE … »    also auto-closes the else-branch.
+  // A missing THEN stays a hard error — we have no sensible default
+  // clause for IF (unlike CASE where the whole body becomes the
+  // default).  Motivating case: a CASE nested inside an IF whose own
+  // END is missing would throw "IF without END" because
+  // _skipPastCaseEnd returned toks.length and the outer scanAtDepth0
+  // fell off the end.  With this auto-close the whole thing is
+  // well-formed — same convenience as the parser's `« `/`{`/`[`
+  // auto-close on unterminated openers.
+  const bound = toks.length;
   const thenScan = scanAtDepth0(toks, openIdx + 1, new Set(['THEN']));
   if (!thenScan || thenScan.kind !== 'THEN') {
     throw new RPLError("IF without THEN");
   }
   const thenIdx = thenScan.idx;
-  evalRange(s, toks, openIdx + 1, thenIdx, depth + 1);
+  yield* evalRange(s, toks, openIdx + 1, thenIdx, depth + 1);
   const test = s.pop();
   const branchScan = scanAtDepth0(toks, thenIdx + 1, new Set(['ELSE']));
-  if (!branchScan) throw new RPLError("IF without END");
 
   let endIdx;
-  if (branchScan.kind === 'ELSE') {
+  let autoClosed = false;
+  if (!branchScan) {
+    // No ELSE or END found — auto-close at the end of the token list.
+    // [thenIdx+1, bound) is the true-branch; no else-branch.
+    endIdx = bound;
+    autoClosed = true;
+    if (isTruthy(test)) {
+      yield* evalRange(s, toks, thenIdx + 1, endIdx, depth + 1);
+    }
+  } else if (branchScan.kind === 'ELSE') {
     const endScan = scanAtDepth0(toks, branchScan.idx + 1, null);
     if (!endScan || endScan.kind !== 'END') {
-      throw new RPLError("IF/ELSE without END");
-    }
-    endIdx = endScan.idx;
-    if (isTruthy(test)) {
-      evalRange(s, toks, thenIdx + 1, branchScan.idx, depth + 1);
+      // ELSE present but no END — auto-close at the end of the token
+      // list.  [branchScan.idx+1, bound) is the else-branch.
+      endIdx = bound;
+      autoClosed = true;
     } else {
-      evalRange(s, toks, branchScan.idx + 1, endIdx, depth + 1);
+      endIdx = endScan.idx;
+    }
+    if (isTruthy(test)) {
+      yield* evalRange(s, toks, thenIdx + 1, branchScan.idx, depth + 1);
+    } else {
+      yield* evalRange(s, toks, branchScan.idx + 1, endIdx, depth + 1);
     }
   } else if (branchScan.kind === 'END') {
     endIdx = branchScan.idx;
     if (isTruthy(test)) {
-      evalRange(s, toks, thenIdx + 1, endIdx, depth + 1);
+      yield* evalRange(s, toks, thenIdx + 1, endIdx, depth + 1);
     }
   } else {
     throw new RPLError(`IF/THEN: unexpected ${branchScan.kind}`);
   }
-  return endIdx + 1;
+  // Auto-close returns `bound` (same as IFERR / CASE) so the outer
+  // evalRange's `while (i < to)` terminates immediately on the next
+  // iteration without a spurious off-by-one.
+  return autoClosed ? bound : endIdx + 1;
 }
 
 /** IFERR <trap> THEN <error clause> [ELSE <normal clause>] END
@@ -2803,11 +2978,10 @@ function runIf(s, toks, openIdx, depth) {
  *  exit so an outer IFERR still sees its own caught error if an
  *  inner IFERR runs between catch and outer reference.  (A rare
  *  case, but the alternative is subtle action-at-a-distance.) */
-function runIfErr(s, toks, openIdx, depth) {
-  // Session 077 auto-close policy.  Mirrors the CASE auto-close shipped
-  // in session 074 and the parser's existing "forgot the `»`" / "forgot
-  // the `}`" convenience: a forward scan that falls off the end of the
-  // token list is treated as an implicit END.  So
+function* runIfErr(s, toks, openIdx, depth) {
+  // Auto-close policy (mirrors CASE and the parser's "forgot the `»`"
+  // / "forgot the `}`" convenience): a forward scan that falls off the
+  // end of the token list is treated as an implicit END.  So
   //   `« IFERR … THEN … »`     runs the error handler on throw and is
   //                            otherwise a no-op — identical to the
   //                            fully-terminated `« IFERR … THEN … END »`.
@@ -2854,7 +3028,7 @@ function runIfErr(s, toks, openIdx, depth) {
   const savedOuterError = getLastError();
   let caught = null;
   try {
-    evalRange(s, toks, openIdx + 1, thenIdx, depth + 1);
+    yield* evalRange(s, toks, openIdx + 1, thenIdx, depth + 1);
   } catch (e) {
     if (!(e instanceof RPLError)) throw e;    // let non-HP50 bugs bubble
     caught = e;
@@ -2864,7 +3038,7 @@ function runIfErr(s, toks, openIdx, depth) {
     s.restore(snap);
     setLastError(caught);
     try {
-      evalRange(s, toks, thenIdx + 1, (elseIdx >= 0 ? elseIdx : endIdx), depth + 1);
+      yield* evalRange(s, toks, thenIdx + 1, (elseIdx >= 0 ? elseIdx : endIdx), depth + 1);
     } finally {
       // Restore whatever last-error was visible to the outer scope once
       // the trap's THEN clause has had a chance to read it.  This keeps
@@ -2872,7 +3046,7 @@ function runIfErr(s, toks, openIdx, depth) {
       restoreLastError(savedOuterError);
     }
   } else if (elseIdx >= 0) {
-    evalRange(s, toks, elseIdx + 1, endIdx, depth + 1);
+    yield* evalRange(s, toks, elseIdx + 1, endIdx, depth + 1);
   }
   // When we auto-closed at the program boundary, return `bound` (same
   // index, not `bound + 1`) so the outer evalRange's `while (i < to)`
@@ -2881,7 +3055,7 @@ function runIfErr(s, toks, openIdx, depth) {
   return autoClosed ? bound : endIdx + 1;
 }
 
-function runWhile(s, toks, openIdx, depth) {
+function* runWhile(s, toks, openIdx, depth) {
   // WHILE <test> REPEAT <body> END
   const repeatScan = scanAtDepth0(toks, openIdx + 1, new Set(['REPEAT']));
   if (!repeatScan || repeatScan.kind !== 'REPEAT') {
@@ -2896,15 +3070,15 @@ function runWhile(s, toks, openIdx, depth) {
     if (++iterations > MAX_LOOP_ITERATIONS) {
       throw new RPLError('WHILE loop iteration limit');
     }
-    evalRange(s, toks, openIdx + 1, repeatScan.idx, depth + 1);
+    yield* evalRange(s, toks, openIdx + 1, repeatScan.idx, depth + 1);
     const test = s.pop();
     if (!isTruthy(test)) break;
-    evalRange(s, toks, repeatScan.idx + 1, endScan.idx, depth + 1);
+    yield* evalRange(s, toks, repeatScan.idx + 1, endScan.idx, depth + 1);
   }
   return endScan.idx + 1;
 }
 
-function runDo(s, toks, openIdx, depth) {
+function* runDo(s, toks, openIdx, depth) {
   // DO <body> UNTIL <test> END
   const untilScan = scanAtDepth0(toks, openIdx + 1, new Set(['UNTIL']));
   if (!untilScan || untilScan.kind !== 'UNTIL') {
@@ -2919,15 +3093,15 @@ function runDo(s, toks, openIdx, depth) {
     if (++iterations > MAX_LOOP_ITERATIONS) {
       throw new RPLError('DO loop iteration limit');
     }
-    evalRange(s, toks, openIdx + 1, untilScan.idx, depth + 1);
-    evalRange(s, toks, untilScan.idx + 1, endScan.idx, depth + 1);
+    yield* evalRange(s, toks, openIdx + 1, untilScan.idx, depth + 1);
+    yield* evalRange(s, toks, untilScan.idx + 1, endScan.idx, depth + 1);
     const test = s.pop();
     if (isTruthy(test)) break;
   }
   return endScan.idx + 1;
 }
 
-function runStart(s, toks, openIdx, depth) {
+function* runStart(s, toks, openIdx, depth) {
   // <start> <end> START <body> NEXT | STEP
   const [startVal, endVal] = s.popN(2);
   // Integer-preserving: if both bounds are Integers, keep the counter
@@ -2939,11 +3113,11 @@ function runStart(s, toks, openIdx, depth) {
   if (!closeScan || (closeScan.kind !== 'NEXT' && closeScan.kind !== 'STEP')) {
     throw new RPLError("START without NEXT/STEP");
   }
-  runLoopBody(s, toks, openIdx + 1, closeScan.idx, closeScan.kind, a, b, null, intMode, depth);
+  yield* runLoopBody(s, toks, openIdx + 1, closeScan.idx, closeScan.kind, a, b, null, intMode, depth);
   return closeScan.idx + 1;
 }
 
-function runFor(s, toks, openIdx, depth) {
+function* runFor(s, toks, openIdx, depth) {
   // <start> <end> FOR <var> <body> NEXT | STEP
   const [startVal, endVal] = s.popN(2);
   const intMode = isInteger(startVal) && isInteger(endVal);
@@ -2959,7 +3133,7 @@ function runFor(s, toks, openIdx, depth) {
   // Save any prior binding for this name so we can restore it after the loop.
   const saved = varRecall(varName);
   try {
-    runLoopBody(s, toks, openIdx + 2, closeScan.idx, closeScan.kind, a, b, varName, intMode, depth);
+    yield* runLoopBody(s, toks, openIdx + 2, closeScan.idx, closeScan.kind, a, b, varName, intMode, depth);
   } finally {
     if (saved === undefined) varPurge(varName);
     else varStore(varName, saved);
@@ -2989,7 +3163,7 @@ const MAX_LOOP_ITERATIONS = 1_000_000;
  *  the step's direction; a positive step stops at counter > endVal,
  *  a negative step stops at counter < endVal.  A zero step, as on the
  *  real machine, is an infinite loop — we throw instead. */
-function runLoopBody(s, toks, bodyFrom, bodyTo, closer, startVal, endVal, varName, intMode, depth) {
+function* runLoopBody(s, toks, bodyFrom, bodyTo, closer, startVal, endVal, varName, intMode, depth) {
   let counter = startVal;
   let bound   = endVal;
   let mode    = intMode;            // may flip to false if a Real STEP arrives
@@ -3002,7 +3176,7 @@ function runLoopBody(s, toks, bodyFrom, bodyTo, closer, startVal, endVal, varNam
     if (varName !== null) {
       varStore(varName, mode ? Integer(counter) : Real(counter));
     }
-    evalRange(s, toks, bodyFrom, bodyTo, depth + 1);
+    yield* evalRange(s, toks, bodyFrom, bodyTo, depth + 1);
     let step;
     if (closer === 'STEP') {
       const stepVal = s.pop();
@@ -3032,7 +3206,7 @@ function runLoopBody(s, toks, bodyFrom, bodyTo, closer, startVal, endVal, varNam
 
 /** Built-in numeric constants — only folded in APPROX mode.  PI and E
  *  live here rather than as ordinary variable bindings because they are
- *  not user-owned and should stay symbolic under EXACT.  Session 041. */
+ *  not user-owned and should stay symbolic under EXACT. */
 /** Built-in symbolic constants.  The keys are spellings the user may
  *  type (parser and keypad both emit Name tokens with these ids) and
  *  the values are the RPL objects they fold to under APPROX / →NUM.
@@ -3116,15 +3290,34 @@ function _symConstantValue(name) {
   return undefined;
 }
 
-/** Evaluate an arbitrary value (entry point for EVAL and the top level
- *  of the entry loop).  Delegates Program evaluation to evalRange. */
-function _evalValue(s, v, depth) {
+/** Drive an evalRange generator to completion synchronously.
+ *  If the generator yields — meaning a HALT was encountered inside a
+ *  sub-program that was reached via _evalValueSync (i.e. a variable
+ *  lookup, IFT action, SEQ body, etc.) rather than a direct EVAL —
+ *  throw a pilot error.  This preserves the historical restriction for
+ *  program-in-variable calls while the direct-EVAL path (which stores
+ *  the live generator) now supports HALT at any structural depth. */
+function _driveGen(gen) {
+  const result = gen.next();
+  if (!result.done) {
+    throw new RPLError(
+      'HALT: cannot suspend inside a sub-program call (use EVAL directly)');
+  }
+}
+
+/** Evaluate an arbitrary value synchronously.  Used by all callers
+ *  OTHER than the top-level EVAL/CONT handlers; those use the generator
+ *  path directly so that HALT can yield through structural control flow.
+ *  Delegates Program evaluation to evalRange via _driveGen (which
+ *  rejects a HALT with a clear error rather than leaving the caller
+ *  in an undefined state). */
+function _evalValueSync(s, v, depth) {
   if (depth > MAX_EVAL_DEPTH) {
     throw new RPLError('EVAL recursion too deep');
   }
 
   if (isProgram(v)) {
-    evalRange(s, v.tokens, 0, v.tokens.length, depth);
+    _driveGen(evalRange(s, v.tokens, 0, v.tokens.length, depth));
     return;
   }
 
@@ -3132,7 +3325,7 @@ function _evalValue(s, v, depth) {
     // In APPROX mode (incl. the →NUM span), built-in constants like PI
     // and E resolve to their numeric value even when tick-quoted —
     // `'PI' →NUM` should give 3.14159….  EXACT keeps them symbolic so
-    // `'PI' EVAL` round-trips.  Session 041.
+    // `'PI' EVAL` round-trips.
     if (getApproxMode()) {
       const crpl = _symConstantRpl(v.id);
       if (crpl !== undefined) { s.push(crpl); return; }
@@ -3140,15 +3333,15 @@ function _evalValue(s, v, depth) {
     // A quoted Name stays a Name — EVAL on `'X'` is a no-op, same as on
     // a number or string.  This is what lets `'X' EVAL` round-trip.
     if (v.quoted) { s.push(v); return; }
-    // Compiled-local bindings shadow globals.  Session 068.
+    // Compiled-local bindings shadow globals.
     const localVal = _localLookup(v.id);
     if (localVal !== undefined) {
-      _evalValue(s, localVal, depth + 1);
+      _evalValueSync(s, localVal, depth + 1);
       return;
     }
     const bound = varRecall(v.id);
     if (bound !== undefined) {
-      _evalValue(s, bound, depth + 1);
+      _evalValueSync(s, bound, depth + 1);
     } else {
       s.push(v);
     }
@@ -3156,13 +3349,13 @@ function _evalValue(s, v, depth) {
   }
 
   if (isTagged(v)) {
-    _evalValue(s, v.value, depth + 1);
+    _evalValueSync(s, v.value, depth + 1);
     return;
   }
 
-  // Symbolic: since session 017, EVAL attempts to numerically reduce
-  // the AST by substituting any bound variables in the active
-  // directory and evaluating function calls in the active angle mode.
+  // Symbolic: EVAL attempts to numerically reduce the AST by
+  // substituting any bound variables in the active directory and
+  // evaluating function calls in the active angle mode.
   //
   //   1. Walk the AST with algebraEvalAst:
   //      - Var(X) → Num(lookup(X)) when X resolves to a real-valued
@@ -3182,9 +3375,9 @@ function _evalValue(s, v, depth) {
   if (isSymbolic(v)) {
     const approx = getApproxMode();
     const lookup = (name) => {
-      // Compiled-local bindings shadow globals.  Session 068: so that
-      // an algebraic body under `→ a b 'a+b'` resolves a/b against the
-      // frame pushed by runArrow.
+      // Compiled-local bindings shadow globals so that an algebraic
+      // body under `→ a b 'a+b'` resolves a/b against the frame
+      // pushed by runArrow.
       const localVal = _localLookup(name);
       if (localVal !== undefined) {
         if (isReal(localVal)) return localVal.value;
@@ -3198,7 +3391,7 @@ function _evalValue(s, v, depth) {
         return null;
       }
       // Built-in constants resolve only in APPROX mode — EXACT keeps
-      // them symbolic so `'SIN(PI/4)' EVAL` stays as a Symbolic. Session 041.
+      // them symbolic so `'SIN(PI/4)' EVAL` stays as a Symbolic.
       if (approx) {
         const cval = _symConstantValue(name);
         if (cval !== undefined) return cval;
@@ -3208,7 +3401,7 @@ function _evalValue(s, v, depth) {
     // In EXACT mode, thread the approx gate through so pure-numeric
     // Bin folds that produce a non-integer result are left symbolic
     // (`'1/3'` stays as '1/3', not 0.333…).  In APPROX, no gate → fold
-    // everything.  Session 041.
+    // everything.
     const binGate = approx
       ? null
       : (_op, args, result) => _approxGate(result, args);
@@ -3241,8 +3434,8 @@ function _evalValue(s, v, depth) {
  *  fromRadians.  Everything else falls back to the mode-independent
  *  table in algebra.js.
  *
- *  Session 032: honors the EXACT/APPROX flag.  APPROX returns whatever
- *  JS Math produces; EXACT returns null (→ leave symbolic) unless the
+ *  Honors the EXACT/APPROX flag.  APPROX returns whatever JS Math
+ *  produces; EXACT returns null (→ leave symbolic) unless the
  *  computation stays entirely in integer-land — every arg is integer,
  *  and the result is integer within 1e-12.  So `SQRT(9) → 3` folds
  *  under EXACT but `SQRT(2)` stays as `'SQRT(2)'`.  Rationale: HP50
@@ -3285,41 +3478,49 @@ register('EVAL', (s) => {
   //
   // RPLAbort (thrown by ABORT) is deliberately NOT restored: HP50
   // ABORT preserves stack state at the point of the abort rather than
-  // rewinding to pre-EVAL, so we let the signal pass through
-  // untouched.  The top-level entry-point loop treats it as a clean
-  // program termination.
+  // rewinding to pre-EVAL, so we let the signal pass through untouched.
   //
-  // RPLHalt (thrown by HALT, session 073) is handled the same way:
-  // stack state at the point of the halt is the user's natural
-  // resumption baseline, so we let the signal through and rely on
-  // the outer loop to catch it cleanly.  CONT later picks up
-  // state.halted and resumes the program where HALT left off.
+  // HALT inside a Program is handled via the generator mechanism:
+  //   1. evalRange is a generator; it yields when a HALT token is hit.
+  //   2. EVAL drives the generator with gen.next().
+  //   3. If the generator yields (not done), the live generator is stored
+  //      in state.haltedStack via setHalted.  We do NOT truncate
+  //      _localFrames — the generator is still live and any → frames
+  //      it pushed are still needed.
+  //   4. CONT calls gen.next() to resume from exactly where HALT left off.
+  //   The generator mechanism captures all structural context (FOR
+  //   counter, IF branch, → locals) automatically, so HALT now works at
+  //   any depth — not just at the flat top level of the pilot.
   //
-  // Session 077: snapshot `_localFrames.length` on entry and restore
-  // it in a finally so any unexpected unwind (non-RPLError throw, or
-  // a future path we haven't anticipated) can't leak a half-popped
-  // frame into subsequent top-level EVAL calls.  This hardens
-  // against the HALT/CONT ordering flake reported in session 075:
-  // a phantom local frame here would flip the pilot-HALT check's
-  // `_localFrames.length !== 0` branch and convert a valid top-level
-  // HALT into a "cannot suspend inside → (pilot)" RPLError (or worse).
+  // Non-Program values (Name, Symbolic, Number, etc.) go through the
+  // synchronous _evalValueSync path — they cannot HALT, so no special
+  // handling is needed for them.
+  //
+  // _localFrames safety net: truncate to framesAtEntry only when the
+  // generator finishes (done=true) or throws.  While halted, leave the
+  // frames intact so the generator can see them on resume.
   const framesAtEntry = _localFrames.length;
   const snap = s.save();
+  let halted = false;
   try {
     const v = s.pop();
-    _evalValue(s, v, 0);
-  } catch (e) {
-    if (e instanceof RPLHalt) {
-      // HALT is a clean suspension — the halted slot is already
-      // populated by evalRange, the stack is the user's natural
-      // resumption baseline, nothing more to do here.  Silently
-      // swallow so the UI's entry loop sees a normal return.
-      return;
+    if (isProgram(v)) {
+      const gen = evalRange(s, v.tokens, 0, v.tokens.length, 0);
+      const result = gen.next();
+      if (!result.done) {
+        // Program suspended at HALT — store live generator, leave frames.
+        halted = true;
+        setHalted({ generator: gen });
+        return;
+      }
+    } else {
+      _evalValueSync(s, v, 0);
     }
+  } catch (e) {
     if (!(e instanceof RPLAbort)) s.restore(snap);
     throw e;
   } finally {
-    _truncateLocalFrames(framesAtEntry);
+    if (!halted) _truncateLocalFrames(framesAtEntry);
   }
 });
 
@@ -3328,9 +3529,8 @@ register('EVAL', (s) => {
 
    HP50 flag -105 controls whether numeric ops fold transcendentals.
    `APPROX` (flag SET) folds `SQRT(2)` to 1.41421356237; `EXACT` (flag
-   CLEAR) leaves it symbolic.  Since the web calculator boots in APPROX
-   (backwards-compat with every pre-session-032 test), `EXACT` is the
-   "call me when you actually need a number" mode.
+   CLEAR) leaves it symbolic.  The web calculator boots in APPROX;
+   `EXACT` is the "call me when you actually need a number" mode.
 
    `→NUM` (SHIFT-R ENTER on the physical unit) forces APPROX for a
    single EVAL and restores the previous setting.  Users in EXACT mode
@@ -3374,7 +3574,7 @@ register('IFT', (s) => {
   const snap = s.save();
   try {
     const [test, action] = s.popN(2);
-    if (isTruthy(test)) _evalValue(s, action, 0);
+    if (isTruthy(test)) _evalValueSync(s, action, 0);
   } catch (e) {
     s.restore(snap);
     throw e;
@@ -3385,7 +3585,7 @@ register('IFTE', (s) => {
   const snap = s.save();
   try {
     const [test, tAction, fAction] = s.popN(3);
-    _evalValue(s, isTruthy(test) ? tAction : fAction, 0);
+    _evalValueSync(s, isTruthy(test) ? tAction : fAction, 0);
   } catch (e) {
     s.restore(snap);
     throw e;
@@ -3418,21 +3618,19 @@ function eqValues(a, b) {
     if (p.kind === 'integer')  return p.a === p.b;
     return p.a === p.b;
   }
-  /* Session 074 — BinaryInteger structural equality.
-     BinInt stays out of `isNumber` (types.js L225 rationale: base-
-     preservation rules for arithmetic), so BinInt × BinInt used to
-     fall through to `return false` — even for reference-identical
-     inputs.  HP50 AUR §4-1 compares BinInts by masked numeric value:
-     display base is not semantic, so `#FFh == #255d` is 1.  Cross-
-     family BinInt × Integer / Real / Complex widening is done in the
-     `==` / `≠` / `<>` op wrappers (NOT here) so that `SAME` — which
-     uses `eqValues` directly — stays strict on types.  This session
-     fixes the previously identified BinInt structural-equality gap.
+  /* BinaryInteger structural equality.
+     BinInt stays out of `isNumber` (base-preservation rules for
+     arithmetic), so BinInt × BinInt handled here explicitly.  HP50
+     AUR §4-1 compares BinInts by masked numeric value: display base
+     is not semantic, so `#FFh == #255d` is 1.  Cross-family BinInt ×
+     Integer / Real / Complex widening is done in the `==` / `≠` /
+     `<>` op wrappers (NOT here) so that `SAME` — which uses
+     `eqValues` directly — stays strict on types.
      Masking note: `BinaryInteger()` does NOT apply the wordsize mask
-     at construction (types.js L88), so `#100h` at ws=8 stores
-     `value = 256n`, not `0n`.  We mask both operands against the
-     current wordsize before comparing so HP50-visible equal values
-     (all bits outside the wordsize are meaningless) compare equal. */
+     at construction, so `#100h` at ws=8 stores `value = 256n`, not
+     `0n`.  We mask both operands against the current wordsize before
+     comparing so HP50-visible equal values (all bits outside the
+     wordsize are meaningless) compare equal. */
   if (isBinaryInteger(a) && isBinaryInteger(b)) {
     const m = getWordsizeMask();
     return (a.value & m) === (b.value & m);
@@ -3440,11 +3638,9 @@ function eqValues(a, b) {
   // Name / String / everything else: structural comparison by id/value.
   if (isName(a) && isName(b)) return a.id === b.id;
   if (isString(a) && isString(b)) return a.value === b.value;
-  /* Session 072: structural equality on collection and expression types.
-     Previously `{1 2} {1 2} ==` returned 0 because eqValues fell through
-     to `return false`.  HP50 AUR §4-2 documents == / SAME as structural
-     equality for Lists / Vectors / Matrices; §4-7 ditto for Symbolics.
-     Filed as a KNOWN GAP by the unit-tests lane in session 070. */
+  /* Structural equality on collection and expression types.
+     HP50 AUR §4-2 documents == / SAME as structural equality for
+     Lists / Vectors / Matrices; §4-7 ditto for Symbolics. */
   if (isList(a)   && isList(b))   return _eqArr(a.items, b.items);
   if (isVector(a) && isVector(b)) return _eqArr(a.items, b.items);
   if (isMatrix(a) && isMatrix(b)) {
@@ -3467,11 +3663,24 @@ function eqValues(a, b) {
     if (a.value !== b.value) return false;
     return JSON.stringify(a.uexpr) === JSON.stringify(b.uexpr);
   }
+  /* Program structural equality (session 087).
+     HP50 AUR §4-7: two Programs are == / SAME iff their token streams
+     are structurally identical (token count + recursive eqValues on
+     each token).  Uses _eqArr which already recurses via eqValues, so
+     nested Programs round-trip correctly. */
+  if (isProgram(a) && isProgram(b)) return _eqArr(a.tokens, b.tokens);
+  /* Directory reference-identity (session 087).
+     HP50 AUR §4-7: SAME on Directories is reference identity — two
+     distinct Directory allocations are never "the same", even if they
+     hold the same entries.  Directories are identifiable containers,
+     not values. `==` follows the same rule because there is no
+     meaningful "structural" notion of directory equality on the HP50. */
+  if (isDirectory(a) && isDirectory(b)) return a === b;
   return false;
 }
 
 /** Elementwise eqValues over two arrays (used by List / Vector / Matrix-row
- *  structural compare).  Session 072. */
+ *  structural compare). */
 function _eqArr(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -3480,7 +3689,7 @@ function _eqArr(a, b) {
   return true;
 }
 
-/** Structural compare of two Symbolic AST nodes.  Session 072.
+/** Structural compare of two Symbolic AST nodes.
  *  Mirrors `astEqual` in algebra.js but stays local to ops.js so we don't
  *  add another import for a four-line helper.  Supports the four AST
  *  node kinds produced by the parser (`num`, `var`, `neg`, `bin`, `fn`). */
@@ -3512,8 +3721,7 @@ function _astStructEqual(a, b) {
  *  return true.  Otherwise return false so the caller proceeds with a
  *  numeric comparison.  Used by every comparison op (=, ==, ≠, <, >, ≤,
  *  ≥, and their ASCII aliases) — matches HP50 behaviour where comparing
- *  symbolic operands defers evaluation by building an equation.
- *  Session 034. */
+ *  symbolic operands defers evaluation by building an equation. */
 function _trySymCompare(s, a, b, op) {
   if (!_isSymOperand(a) && !_isSymOperand(b)) return false;
   const l = _toAst(a);
@@ -3524,9 +3732,8 @@ function _trySymCompare(s, a, b, op) {
 }
 
 // `=` is the equation-builder: always produces a symbolic result, even
-// when both operands are numeric.  `2 3 =` → `'2=3'`.  This matches how
-// HP50's EquationWriter treats the `=` key.  Registered as a stack op in
-// session 034; previously `=` was only an infix operator inside '…'.
+// when both operands are numeric.  `2 3 =` → `'2=3'`.  Matches how
+// HP50's EquationWriter treats the `=` key.
 register('=', (s) => {
   const [a, b] = s.popN(2);
   const l = _toAst(a);
@@ -3539,7 +3746,7 @@ register('=', (s) => {
  *  `≠` family.  HP50 AUR §4-1: `==` compares numeric operands by value
  *  across the numeric family, so `#10h == Integer(16)` is 1.  SAME is
  *  explicitly NOT in this widening — it stays strict on types
- *  (`SAME #10h Integer(16)` = 0).  Session 074. */
+ *  (`SAME #10h Integer(16)` = 0). */
 function _binIntCrossNormalize(a, b) {
   // Apply the wordsize mask before coercing to Integer — `#100h` at
   // ws=8 compares as 0, not 256.  Matches the masking rule in the
@@ -3557,8 +3764,8 @@ function _binIntCrossNormalize(a, b) {
 register('==', (s) => {
   // `==` is a strict structural equality test — it always returns a
   // boolean (1./0.), even on symbolic operands.  Use `=` instead to
-  // build an equation: `'X' 'X' =` → `'X=X'`.  Session 034.
-  // Session 074: cross-family BinInt widening at the outer level
+  // build an equation: `'X' 'X' =` → `'X=X'`.
+  // Cross-family BinInt widening at the outer level
   // (see _binIntCrossNormalize above).
   const [a0, b0] = s.popN(2);
   const [a, b] = _binIntCrossNormalize(a0, b0);
@@ -3569,7 +3776,7 @@ register('SAME', (s) => {
   // values it coincides with ==.  We use the same comparator.  SAME
   // stays strictly boolean — it does NOT lift to symbolic, since SAME's
   // contract is "are these the same object?", not "are they equal?".
-  // Session 074: deliberately does NOT cross-normalize BinInt — `SAME
+  // Deliberately does NOT cross-normalize BinInt — `SAME
   // #10h Integer(16)` = 0 per AUR §4-7 ("SAME does not type-coerce").
   const [a, b] = s.popN(2);
   s.push(eqValues(a, b) ? TRUE : FALSE);
@@ -3578,43 +3785,50 @@ register('SAME', (s) => {
 register('≠', (s) => {
   const [a0, b0] = s.popN(2);
   if (_trySymCompare(s, a0, b0, '≠')) return;
-  const [a, b] = _binIntCrossNormalize(a0, b0);   // session 074
+  const [a, b] = _binIntCrossNormalize(a0, b0);
   s.push(eqValues(a, b) ? FALSE : TRUE);
 });
 register('<>', (s) => {
   // ASCII alias for ≠.
   const [a0, b0] = s.popN(2);
   if (_trySymCompare(s, a0, b0, '≠')) return;
-  const [a, b] = _binIntCrossNormalize(a0, b0);   // session 074
+  const [a, b] = _binIntCrossNormalize(a0, b0);
   s.push(eqValues(a, b) ? FALSE : TRUE);
 });
 
 function comparePair(s, cmp, op) {
   let [a, b] = s.popN(2);                 // a = level 2, b = level 1
-  /* Session 074 — BinaryInteger comparator widening.
+  /* BinaryInteger comparator widening.
      HP50 AUR §4-1 accepts BinInts on `<` / `>` / `≤` / `≥` by
-     masked numeric value.  `isNumber` deliberately excludes BinInt
-     (see types.js L225), so before this session the check below
-     would throw `Bad argument type`.  Promote each BinInt operand
-     to an Integer with the masked BigInt payload — that lets the
-     symbolic-lift path lift via `_toAst` (which accepts Integer),
-     and the numeric path route through `promoteNumericPair` with
-     the `integer` kind.  Display base is dropped here because it
-     isn't semantic for comparison (cf. == widening above).  Apply
-     the wordsize mask to the payload — `#100h < #200h` at ws=8
-     must compare masked values (both 0), not unmasked payloads. */
+     masked numeric value.  `isNumber` deliberately excludes BinInt,
+     so we promote each BinInt operand to an Integer with the masked
+     BigInt payload — that lets the symbolic-lift path lift via
+     `_toAst` (which accepts Integer), and the numeric path route
+     through `promoteNumericPair` with the `integer` kind.  Display
+     base is dropped here because it isn't semantic for comparison
+     (cf. == widening above).  Apply the wordsize mask to the
+     payload — `#100h < #200h` at ws=8 must compare masked values
+     (both 0), not unmasked payloads. */
   {
     const m = getWordsizeMask();
     if (isBinaryInteger(a)) a = Integer(a.value & m);
     if (isBinaryInteger(b)) b = Integer(b.value & m);
   }
   // Symbolic lift first — `x y >` with Name/Symbolic operands yields
-  // `'x>y'` instead of an error.  Session 034.
+  // `'x>y'` instead of an error.
   if (_isSymOperand(a) || _isSymOperand(b)) {
     const l = _toAst(a);
     const r = _toAst(b);
     if (!l || !r) throw new RPLError('Bad argument type');
     s.push(Symbolic(AstBin(op, l, r)));
+    return;
+  }
+  /* String lexicographic compare (session 087).
+     HP50 User Guide App. J: string comparisons are char-code
+     lexicographic.  Both operands must be Strings; mixing String
+     with a non-String is "Bad argument type" (no cross-type lift). */
+  if (isString(a) && isString(b)) {
+    s.push(cmp(a.value, b.value) ? TRUE : FALSE);
     return;
   }
   if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
@@ -3719,10 +3933,9 @@ register('ERRM', (s) => {
 
 register('ERRN', (s) => {
   // HP50: ERRN returns a Binary Integer in hex (e.g. #502h for
-  // "Directory not allowed").  Before session 014 we returned a plain
-  // Integer which displayed as decimal (1282); users had to mentally
-  // convert.  Now the stack shows `#502h` directly, matching what the
-  // Advanced User's Reference uses as the canonical error form.
+  // "Directory not allowed").  The stack shows `#502h` directly,
+  // matching what the Advanced User's Reference uses as the
+  // canonical error form.
   //
   // `le.number === 0` when no classification matched (unknown error,
   // or no error since the last ERR0) — still emit it as `#0h` so the
@@ -3778,8 +3991,7 @@ register('BIN', () => { setBinaryBase('b'); });
  *  renders in its stored base (HP50 default behavior before any
  *  HEX/DEC/OCT/BIN has been issued).  Padding to STWS is also
  *  dropped — the address hasn't been mode-locked, so minimum-
- *  width rendering is used.  Added session 017 to close a known-
- *  issue gap from session 014.  (HP50 firmware doesn't ship this
+ *  width rendering is used.  (HP50 firmware doesn't ship this
  *  exact name; the closest built-in is clearing flag -67.  We use
  *  CLB for brevity — `CLear Binary mode`.) */
 register('CLB', () => { setBinaryBase(null); });
@@ -3814,7 +4026,7 @@ register('SPHERE', () => { setCoordMode('SPHERE'); });
    HP50 expresses the same thing via system flag -80 — we provide
    named ops for discoverability / keypad-reachability without taking
    a position on flag numbers yet.  The flag-bit wiring can land
-   alongside once flags land as a feature.  Added session 019. */
+   alongside once flags land as a feature. */
 register('TEXTBOOK', () => { setTextbookMode(true); });
 register('FLAT',     () => { setTextbookMode(false); });
 
@@ -3958,8 +4170,7 @@ register('CONVERT', (s) => {
    Unsupported operand shapes (rational / negative / non-numeric
    exponents, fractional bases, etc.) pass through unchanged — EXPAND
    is partial by design and composes with DERIV / EVAL.  Constants
-   and lone variables are idempotent.  Added session 019 as the first
-   slice of the CAS simplification wishlist.
+   and lone variables are idempotent.
    ------------------------------------------------------------------ */
 
 register('EXPAND', (s) => {
@@ -3982,22 +4193,18 @@ register('EXPAND', (s) => {
    COLLECT  ( expr -- collected )                      (1-arg form)
    COLLECT  ( expr 'var' -- collected )                (2-arg form)
 
-   Session 020 introduced the 1-arg form as a simplify alias so the
-   CAS menu's COLLECT slot had a sensible target.  Session 021
-   promotes it to a real polynomial collector: when the top of stack
-   is a quoted Name (or a String), the op pops it as the collection
-   variable and groups the expression below by powers of that
-   variable:
+   The 1-arg form is a simplify alias so the CAS menu's COLLECT slot
+   has a sensible target.  The 2-arg form is a polynomial collector:
+   when the top of stack is a quoted Name (or a String), the op pops
+   it as the collection variable and groups the expression below by
+   powers of that variable:
 
      'X + A*X + B*X + C' 'X' COLLECT   →  '(A + B + 1)*X + C'
      'X^2 + 2*X^2 + X'  'X' COLLECT   →  '3*X^2 + X'
 
-   The 1-arg form (expr alone) is unchanged — it still runs the
-   simplifier's like-terms combiner.  Dispatch rule: look at the
-   top of stack; if it's a Name / String AND the level-2 value is a
-   Symbolic, treat it as the 2-arg form.  Otherwise fall back to
-   1-arg (preserves the session-020 pass-through for Real / bare
-   Name stacks of depth 1).  Added session 021.
+   Dispatch rule: look at the top of stack; if it's a Name / String
+   AND the level-2 value is a Symbolic, treat it as the 2-arg form.
+   Otherwise fall back to 1-arg (simplifier's like-terms combiner).
 
    Idempotent on numbers and bare names with stack depth 1, matching
    EXPAND's behavior so users can blindly compose either against any
@@ -4006,7 +4213,7 @@ register('EXPAND', (s) => {
 register('COLLECT', (s) => {
   // 2-arg form — top is a variable specifier and level-2 is a Symbolic.
   // We test level-2 first so a lone Name at depth 1 still hits the
-  // session-020 pass-through path below.
+  // pass-through path below.
   if (s.depth >= 2) {
     const top = s.peek(1);
     const below = s.peek(2);
@@ -4034,7 +4241,7 @@ register('COLLECT', (s) => {
 /* ------------------------------------------------------------------
    FACTOR  ( expr -- factored )
 
-   Session 021.  Attempts to factor a polynomial.  Current coverage:
+   Attempts to factor a polynomial.  Current coverage:
 
      monic quadratic with integer roots
        'X^2 + 2*X + 1'  FACTOR  →  '(X + 1)^2'
@@ -4123,8 +4330,8 @@ function _factorsToAst(factors) {
    SOLVE  ( eqn 'var' -- { eqn1 eqn2 ... } )
    SOLVE  ( expr 'var' -- { eqn1 eqn2 ... } )     (expr = 0 implied)
 
-   Session 025.  Solve a single-variable linear or quadratic
-   equation.  Returns a list of Symbolic equations — one per root,
+   Solve a single-variable linear or quadratic equation.  Returns a
+   list of Symbolic equations — one per root,
    in the order the closed-form formula produces them (larger root
    first for quadratics; rational-root order for cubic / quartic
    via FACTOR).
@@ -4178,7 +4385,7 @@ register('SOLVE', (s) => {
    SUBST  ( expr 'var' value -- result )                (3-arg form)
    SUBST  ( expr { 'var' value ... } -- result )        (2-arg list)
 
-   Session 021.  Substitute a value into an expression.  The
+   Substitute a value into an expression.  The
    3-argument form takes a Name / String as the target variable and
    any AST-representable value (Real, Integer, Symbolic, Name).  The
    list form accepts a List of alternating (name, value) pairs for
@@ -4202,8 +4409,8 @@ register('SUBST', (s) => {
   // Form A: list form.  Walks items looking for either a
   //   Symbolic equation (one item, Bin('=', Var, rhs)), or
   //   a (name, value) pair (two consecutive items).
-  // Session 022 added equation-entry support; session 021's
-  // strict-pair semantics are preserved when no equations appear.
+  // Equation entries coexist with strict-pair semantics: pairs are
+  // used when no equations appear.
   if (isList(top)) {
     const items = top.items;
     s.pop();
@@ -4238,7 +4445,7 @@ register('SUBST', (s) => {
   }
 
   // Form B: equation on top.  `expr 'X = 3' SUBST` — the HP50-canonical
-  // 2-arg form.  Session 022.
+  // 2-arg form.
   if (s.depth >= 2 && _isEquationSymbolic(top)) {
     const eqn = s.pop();
     const exprVal = s.pop();
@@ -4400,26 +4607,15 @@ register('SUM', (s) => {
 });
 
 /* ================================================================
-   Matrix / Vector ops (session 035 — starter set)
+   Matrix / Vector ops — starter set
 
-   The first slice of the Vector/Matrix story that session 034's log
-   flagged as the single biggest remaining feature gap.  We start with
-   the ops that don't require rewriting the main + - * / dispatch —
-   SIZE and TRN both take one argument and neither commits us to a
-   promotion rule for mixed scalar/matrix inputs.  Element-wise +/-
-   on two Vectors of equal length is also in this session, bolted onto
-   the existing `+` handler and `binaryMath('-')` dispatch at the
-   head of this file — see the handling just above the `_addNumeric`
-   wrapper for the entry point.
+   SIZE and TRN are 1-arg ops that don't commit to a promotion rule
+   for mixed scalar/matrix inputs.  Element-wise +/- on two Vectors
+   of equal length is wired into the main `+` handler and
+   `binaryMath('-')` dispatch at the head of this file — see the
+   handling just above the `_addNumeric` wrapper for the entry point.
 
-   Not yet covered (carry forward to future sessions):
-     * Matrix * Matrix and Matrix * Vector multiplication
-     * Scalar * Vector, Scalar * Matrix
-     * DET, INV, RREF, EGVL, DOT, CROSS, IDN, RANM, NORM
-     * V→ (decompose vector onto stack)
-     * →V2, →V3 (compose 2-/3-vector from stack)
-
-   HP50 SIZE/TRN semantics that we match:
+   HP50 SIZE/TRN semantics:
      SIZE  Vector([a b c])      → { 3 }            list of one integer
      SIZE  Matrix([[...][...]]) → { rows cols }    list of two integers
      TRN   Matrix m×n           → Matrix n×m       (pure transpose —
@@ -4432,9 +4628,9 @@ register('SUM', (s) => {
 register('SIZE', (s) => {
   const [v] = s.popN(1);
   // HP50 Advanced Guide spec: SIZE on array-shaped values returns a
-  // list of REAL numbers (not Integers).  Session 036 aligns us to
-  // that spec so downstream ops reading the list don't have to worry
-  // about Integer → Real promotion at the boundary.
+  // list of REAL numbers (not Integers).  Aligned so downstream ops
+  // reading the list don't have to worry about Integer → Real
+  // promotion at the boundary.
   if (isVector(v)) {
     s.push(RList([Real(v.items.length)]));
     return;
@@ -4474,11 +4670,10 @@ register('TRN', (s) => {
 });
 
 /* ================================================================
-   Matrix / Vector ops (session 036)
+   Matrix / Vector ops — MATRICES soft-menu slots
 
-   Builds on session 035's starter set (SIZE, TRN, element-wise +/-,
-   dot-on-`*`, matmul) to cover the remaining MATRICES soft-menu slots
-   that were stubs:
+   Builds on the starter set (SIZE, TRN, element-wise +/-, dot-on-`*`,
+   matmul) with the remaining MATRICES soft-menu ops:
 
      DOT    V V →  scalar       — explicit dot product (alias of `V V *`)
      CROSS  V V →  V            — 3-vector cross product
@@ -4498,7 +4693,7 @@ register('TRN', (s) => {
      - CROSS requires both operands length 3 → 'Invalid dimension'
      - Singular matrix to INV → 'Infinite result' (matches scalar INV)
      - Non-numeric entry reaching INV → 'Bad argument type' (symbolic
-       matrix inverse is not yet supported; DET does tolerate symbolic
+       matrix inverse is not supported; DET does tolerate symbolic
        entries because cofactor expansion routes through _scalarBinary
        which lifts Name/Symbolic to AST form).
    ================================================================ */
@@ -4667,10 +4862,10 @@ function _invMatrixNumeric(rows) {
 }
 
 /* ================================================================
-   Session 038 — List ops: GET / PUT / HEAD / TAIL / SUB
-                           →LIST / LIST→ / POS
-                 Stored-var arithmetic: STO+ / STO- / STO* / STO/
-                 Reflection: TYPE / OBJ→
+   List ops: GET / PUT / HEAD / TAIL / SUB
+             →LIST / LIST→ / POS
+   Stored-var arithmetic: STO+ / STO- / STO* / STO/
+   Reflection: TYPE / OBJ→
 
    User Guide refs: §3 (Lists) and §2 (Types / OBJ→).
 
@@ -4707,10 +4902,9 @@ function _invMatrixNumeric(rows) {
 // Rejects non-ints, negatives, and zero — matches HP50 "Bad Argument
 // Type" for anything that isn't a plain non-negative whole number.
 //
-// Session 077: BinaryInteger branch added to match the BinInt widening
-// that `_toCountIdx` (→PRG, →STREAM, etc.) already had.  Parity audit
-// from RPL.md queue item 3: `→LIST 3 ENTER #3h ENTER` should behave
-// identically to `→LIST 3 ENTER 3 ENTER` now that BinInt is a
+// BinaryInteger branch matches the BinInt widening that
+// `_toCountIdx` (→PRG, →STREAM, etc.) has.  `→LIST 3 ENTER #3h ENTER`
+// behaves identically to `→LIST 3 ENTER 3 ENTER` — BinInt is a
 // first-class integer type throughout the stack.
 function _toIntIdx(v) {
   if (isInteger(v)) {
@@ -4732,7 +4926,7 @@ function _toIntIdx(v) {
 }
 
 // Same as _toIntIdx but permits 0 (used by counts like →LIST N).
-// Session 077: BinaryInteger branch added for parity with →PRG.
+// BinaryInteger branch added for parity with →PRG.
 function _toCountN(v) {
   if (isInteger(v)) {
     const n = Number(v.value);
@@ -5071,17 +5265,16 @@ register('TYPE', (s) => {
      Vector [ x1 … xn ]  → x1 … xn { n }
      Matrix [[...][...]] → x11 x12 … xmn { m n }
      String  "src"       → evaluate src (parse + push each result)
-     Program « t1 … tn » → t1 … tn n          (session 064)
+     Program « t1 … tn » → t1 … tn n
 
-   The Program case (session 064) is the "program-as-data" hook RPL
-   metaprogrammers reach for: `« ... » OBJ→` returns each token (as a
-   stack-pushable value) followed by the integer token count.  The
-   inverse is `→PRG` (see below).  Round-trip is guaranteed for any
-   program token stream since each token is itself a value-type —
-   Names, numbers, strings, nested Programs, etc.
+   The Program case is the "program-as-data" hook RPL metaprogrammers
+   reach for: `« ... » OBJ→` returns each token (as a stack-pushable
+   value) followed by the integer token count.  The inverse is `→PRG`
+   (see below).  Round-trip is guaranteed for any program token stream
+   since each token is itself a value-type — Names, numbers, strings,
+   nested Programs, etc.
 
-   Skipped for this session (callers can ask later):
-     Symbolic  (would traverse AST)
+   Not yet implemented:
      Unit      (needs full Unit support)
    ---------------------------------------------------------------- */
 register('OBJ→', (s) => {
@@ -5122,18 +5315,18 @@ register('OBJ→', (s) => {
     return;
   }
   if (isProgram(v)) {
-    // Session 064: push each token followed by an Integer count.
-    // Matches the List decomposition shape so generic metaprogramming
-    // loops can treat the two symmetrically.  The tokens are already
-    // value-typed (from the parser) so no re-wrapping is needed.
+    // Push each token followed by an Integer count.  Matches the List
+    // decomposition shape so generic metaprogramming loops can treat
+    // the two symmetrically.  The tokens are already value-typed (from
+    // the parser) so no re-wrapping is needed.
     for (const tok of v.tokens) s.push(tok);
     s.push(Integer(BigInt(v.tokens.length)));
     return;
   }
   if (isSymbolic(v)) {
-    // Session 068: peel one layer off the algebraic.  For a leaf Num or
-    // Var we push the corresponding RPL scalar (Real / quoted Name) and
-    // a count of 1.  For a Bin / Fn / Neg node, we push each argument
+    // Peel one layer off the algebraic.  For a leaf Num or Var we
+    // push the corresponding RPL scalar (Real / quoted Name) and a
+    // count of 1.  For a Bin / Fn / Neg node, we push each argument
     // as its own pushable value (leaves unwrap to Real / Name; non-leaf
     // subtrees stay Symbolic) followed by a quoted-Name for the head
     // (operator or function id) and a total count = args + 1.
@@ -5215,20 +5408,16 @@ function _parseStringForObjTo(src) {
 }
 
 /* ================================================================
-   Session 040 — INCR / DECR
-                  →ARRY / ARRY→ (array compose / decompose)
-                  SORT / REVLIST (list combinators)
-                  SF / CF / FS? / FC? / FS?C / FC?C (user flags)
-                  CHR / NUM (string codepoint ops)
+   INCR / DECR
+   →ARRY / ARRY→ (array compose / decompose)
+   SORT / REVLIST (list combinators)
+   SF / CF / FS? / FC? / FS?C / FC?C (user flags)
+   CHR / NUM (string codepoint ops)
 
    Advanced Guide refs: §3 (INCR / DECR), §13 (→ARRY / ARRY→),
    §5 (SORT / REVLIST), §2 (flag ops), §14 (CHR / NUM).
 
-   All 14 ops are user-reachable from the typed catalog today; none
-   require a new keyboard or UI capability.  Tests for each live in
-   the split files (tests/test-variables.mjs for INCR/DECR and flags,
-   tests/test-reflection.mjs for →ARRY/ARRY→, tests/test-lists.mjs
-   for SORT/REVLIST, tests/test-types.mjs for CHR/NUM).
+   All 14 ops are user-reachable from the typed catalog.
    ================================================================ */
 
 /* ----------------------------------------------------------------
@@ -5289,10 +5478,14 @@ register('DECR', _incrDecrOp('-'));
    ---------------------------------------------------------------- */
 
 // Convert a level-1 "dimension spec" to either a 1-elem [n] or
-// 2-elem [m,n] integer array.  A bare Real / Integer → [n].  A List
-// → each item is a positive integer index.
+// 2-elem [m,n] integer array.  A bare Real / Integer / BinaryInteger
+// → [n].  A List → each item is a positive integer index.
+//
+// BinaryInteger is accepted as a bare count to match →PRG / →LIST.
+// Inside a size-list the branch is `_toIntIdx` which also accepts
+// BinInt.
 function _toDimSpec(v) {
-  if (isInteger(v) || isReal(v)) {
+  if (isInteger(v) || isReal(v) || isBinaryInteger(v)) {
     return [_toIntIdx(v)];
   }
   if (isList(v)) {
@@ -5507,30 +5700,23 @@ register('NUM', (s) => {
 });
 
 /* ================================================================
-   Session 042 — STOF / RCLF (flag save/restore)
-                  →STR / STR→ (object ⇄ string)
-                  ΣLIST / ΠLIST / ΔLIST (list aggregations)
-                  V→ / →V2 / →V3 (vector compose/decompose)
-                  REPL / SREPL (string and list replacement)
+   STOF / RCLF (flag save/restore)
+   →STR / STR→ (object ⇄ string)
+   ΣLIST / ΠLIST / ΔLIST (list aggregations)
+   V→ / →V2 / →V3 (vector compose/decompose)
+   REPL / SREPL (string and list replacement)
 
    Advanced Guide refs: §2 (STOF/RCLF), §4 (→STR/STR→), §5 (ΣLIST,
    ΠLIST, ΔLIST), §13 (V→/→V2/→V3, REPL), §14 (SREPL).
-
-   All 13 ops register directly against the typed catalog — a user can
-   reach every one today without any new keypad or UI work.  Tests are
-   split across test-variables.mjs (STOF/RCLF), test-types.mjs
-   (→STR/STR→), test-lists.mjs (ΣLIST/ΠLIST/ΔLIST and REPL/SREPL), and
-   test-reflection.mjs (V→/→V2/→V3).
    ================================================================ */
 
 /* ----------------------------------------------------------------
    STOF / RCLF — save and restore the current flag-set.
 
    HP50 Advanced Guide §2 documents STOF / RCLF in terms of a pair of
-   64-bit binary integers (user + system), one bit per flag.  Session
-   040 introduced a Set<number> representation for the same bookkeeping
-   surface; we carry that forward here instead of re-working the state
-   shape.  The practical surface:
+   64-bit binary integers (user + system), one bit per flag.  We use a
+   Set<number> representation for the same bookkeeping surface.  The
+   practical surface:
 
      RCLF (   → { n1 n2 … } )
        Pushes a List of the currently-set flag numbers, sorted
@@ -5545,8 +5731,8 @@ register('NUM', (s) => {
        partially-mutated on a bad element (we validate up front).
 
    This is the "simpler" half of HP50's pair: programs can snapshot
-   and restore a flag set without juggling 64-bit words.  A future
-   session can layer the binary-integer variant on top.
+   and restore a flag set without juggling 64-bit words.  The
+   binary-integer variant can be layered on later.
    ---------------------------------------------------------------- */
 
 register('RCLF', (s) => {
@@ -5868,19 +6054,15 @@ register('SREPL', (s) => {
 });
 
 /* =================================================================
-   Session 043 — more stack ops (DUPN/NIP/PICK3/ROLL/ROLLD/UNPICK/
-                                 DUPDUP/NDUPN)
-                 Complex decomposition (C→R / R→C)
-                 Real decomposition  (XPON / MANT)
-                 Numerically-stable log/exp (LNP1 / EXPM)
-                 Rounding (RND / TRNC)
-                 Percent family (%, %T, %CH)
+   More stack ops (DUPN/NIP/PICK3/ROLL/ROLLD/UNPICK/DUPDUP/NDUPN)
+   Complex decomposition (C→R / R→C)
+   Real decomposition  (XPON / MANT)
+   Numerically-stable log/exp (LNP1 / EXPM)
+   Rounding (RND / TRNC)
+   Percent family (%, %T, %CH)
 
    Advanced Guide refs: §3 (stack), §6 (complex), §3.1 (XPON/MANT/
    RND/TRNC/%), §3.1/13.6 (LNP1/EXPM).
-
-   Every item keyboard-reachable via the typed catalog today — no
-   new keypad wiring needed.
    ================================================================= */
 
 // Helpers: pull an Integer count from a stack value.  Rejects non-real,
@@ -6097,10 +6279,10 @@ register('MANT', (s) => {
    fused operations.  Symbolic inputs lift to LNP1(X) / EXPM(X) AST
    nodes so they round-trip through the parser.
    ---------------------------------------------------------------- */
-// Session 063: LNP1 / EXPM pick up Tagged + Vector / Matrix element-wise
-// dispatch, matching the broader log / exp family.  Complex is *not*
-// added here — the stable-near-zero formulations are real-only on the
-// HP50 (no Complex log1p / expm1 in the Advanced Reference).
+// LNP1 / EXPM support Tagged + Vector / Matrix element-wise dispatch,
+// matching the broader log / exp family.  Complex is *not* included —
+// the stable-near-zero formulations are real-only on the HP50 (no
+// Complex log1p / expm1 in the Advanced Reference).
 register('LNP1', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('LNP1', [_toAst(v)]))); return; }
@@ -6171,6 +6353,38 @@ function _roundingOp(name, fn) {
 register('RND',  _roundingOp('RND',  _roundHalfAwayFromZero));
 register('TRNC', _roundingOp('TRNC', _truncTowardZero));
 
+/* --------------- TRUNC — CAS-form truncate ---------------
+   HP50 AUR §3.1 lists TRUNC as a CAS sibling of TRNC with identical
+   numeric semantics but an additional Symbolic lift: a Name / Symbolic
+   value leaves an unevaluated `TRUNC(x, n)` node on the stack instead
+   of erroring.  Same (x, n → y) stack shape as TRNC; same half-digit
+   behaviour; same rejection error strings.  Reuses `_roundingOp` so
+   any future precision fix on the rounding helpers lands on both ops.
+
+   Symbolic lift applies when either argument is a Name or Symbolic:
+   `'X' 3 TRUNC` → `'TRUNC(X,3)'`.  If `n` is symbolic, we keep the
+   expression unevaluated (the CAS caller may substitute later).  The
+   numeric rejection rules from `_roundingOp` still fire for plain
+   numeric inputs — e.g. non-integer `n`, `n` outside [-11, 11].  */
+
+function _truncOp() {
+  const numeric = _roundingOp('TRUNC', _truncTowardZero);
+  return (s) => {
+    if (s.depth < 2) throw new RPLError('Too few arguments');
+    const nv = s.peek(1);
+    const xv = s.peek(2);
+    if (_isSymOperand(xv) || _isSymOperand(nv)) {
+      s.popN(2);
+      const l = _toAst(xv), r = _toAst(nv);
+      if (!l || !r) throw new RPLError('Bad argument type');
+      s.push(Symbolic(AstFn('TRUNC', [l, r])));
+      return;
+    }
+    numeric(s);
+  };
+}
+register('TRUNC', _truncOp());
+
 /* --------------- Percent family — %, %T, %CH ---------------
    HP50 AUR p.3-1.
      %   ( x y → x*y/100 )                 percent of a number
@@ -6187,12 +6401,11 @@ function _percentAst(kind, l, r) {
   /* PCTCH */         return AstBin('/', AstBin('*', AstNum(100),
                           AstBin('-', r, l)), l);
 }
-/* Session 064: the percent family widens from "scalar + Sy/N only" to
-   pick up Tagged transparency and List distribution.  V/M broadcast
-   is intentionally NOT added — HP50 AUR describes %/%T/%CH only for
-   scalar operands; making them broadcast element-wise over a vector
-   would be a unilateral invention.  Complex rejection is preserved
-   (existing behavior — `toRealOrThrow` on Complex throws). */
+/* The percent family picks up Tagged transparency and List distribution.
+   V/M broadcast is intentionally NOT added — HP50 AUR describes
+   %/%T/%CH only for scalar operands; making them broadcast element-wise
+   over a vector would be a unilateral invention.  Complex is rejected
+   (`toRealOrThrow` on Complex throws). */
 function _percentOp(kind, computeNumeric, errorsOnZeroX) {
   return _withTaggedBinary(_withListBinary((s) => {
     const y = s.pop();
@@ -6212,19 +6425,14 @@ register('%T',  _percentOp('PCTT',  (x, y) => 100 * y / x,          true));
 register('%CH', _percentOp('PCTCH', (x, y) => 100 * (y - x) / x,    true));
 
 /* =================================================================
-   Session 044 — real constants (MAXR / MINR),
-                 HMS family (→HMS / HMS→ / HMS+ / HMS-),
-                 BinInt shift / rotate (SL, SR, SLB, SRB, ASR,
-                                        RL, RR, RLB, RRB),
-                 List/Vector/Matrix combinator (MAP).
+   Real constants (MAXR / MINR),
+   HMS family (→HMS / HMS→ / HMS+ / HMS-),
+   BinInt shift / rotate (SL, SR, SLB, SRB, ASR,
+                          RL, RR, RLB, RRB),
+   List/Vector/Matrix combinator (MAP).
 
    Advanced Guide refs: §3.1 (MAXR/MINR), §3.3 (HMS family),
    §10.1 (shift/rotate), §15 (MAP).
-
-   Every op below is user-reachable via the typed catalog today — no
-   keypad wiring changes are needed.  Matches the session-043 scope
-   rules: one substantive cluster each item, all reachable, all type-
-   branch + error-path tested.
    ================================================================= */
 
 /* --------------- MAXR / MINR — real-literal constants ---------------
@@ -6448,7 +6656,7 @@ register('RRB', (s) => { const v = s.pop(); s.push(_rotateRight(v, 8)); });
 function _mapOneValue(s, prog, e) {
   const before = s.depth;
   s.push(e);
-  _evalValue(s, prog, 0);
+  _evalValueSync(s, prog, 0);
   const delta = s.depth - before;
   if (delta !== 1) {
     // Undo any partial effect so the error message is actionable.
@@ -6620,15 +6828,14 @@ function _cxAtan(z) {
 // Build a unary op that accepts Real/Integer or Complex, falling through
 // to a Symbolic lift for Name/Symbolic operands.
 //
-// Session 063: every Cx-aware builder now also picks up Vector/Matrix
-// element-wise dispatch (`_withVMUnary`) and Tagged transparency
-// (`_withTaggedUnary`).  The wrapper order — Tagged → List → V/M →
-// scalar — matches the convention established in session 062 (FLOOR /
-// CEIL / IP / FP / SIGN / ARG): Tagged outermost so a tagged-of-list
-// or tagged-of-matrix unwraps before dispatch and re-tags the
-// container; List inside Tagged so list distribution re-enters the
-// scalar handler at each leaf; V/M innermost so a bare Vector/Matrix
-// distributes to per-element scalar handling.
+// Every Cx-aware builder also picks up Vector/Matrix element-wise
+// dispatch (`_withVMUnary`) and Tagged transparency (`_withTaggedUnary`).
+// Wrapper order — Tagged → List → V/M → scalar — matches the convention
+// used by FLOOR / CEIL / IP / FP / SIGN / ARG: Tagged outermost so a
+// tagged-of-list or tagged-of-matrix unwraps before dispatch and
+// re-tags the container; List inside Tagged so list distribution
+// re-enters the scalar handler at each leaf; V/M innermost so a bare
+// Vector/Matrix distributes to per-element scalar handling.
 function _unaryCx(name, realFn, cxFn) {
   return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const v = s.pop();
@@ -6647,7 +6854,7 @@ function _unaryCx(name, realFn, cxFn) {
       // Out-of-domain real.  Under CMPLX mode (flag -103 SET) lift to
       // the principal complex branch; otherwise raise a clean RPL
       // error rather than letting the Real() constructor throw
-      // TypeError (session 054).
+      // TypeError.
       if (getComplexMode() && cxFn) {
         const r = cxFn({ re: x, im: 0 });
         s.push(Complex(r.re, r.im));
@@ -6661,9 +6868,8 @@ function _unaryCx(name, realFn, cxFn) {
 
 // Trig forward (SIN/COS/TAN): angle in active mode on reals; Complex
 // inputs are treated as radians (the only mathematically well-defined
-// convention) and return a Complex.
-//
-// Session 063: same Tagged / List / V/M wrapping as `_unaryCx`.
+// convention) and return a Complex.  Same Tagged / List / V/M wrapping
+// as `_unaryCx`.
 function _trigFwdCx(name, realFn, cxFn) {
   return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const v = s.pop();
@@ -6685,9 +6891,8 @@ function _trigFwdCx(name, realFn, cxFn) {
 // radian value are both scaled through fromRadians (a no-op in RAD,
 // the standard HP50-style behavior in DEG/GRD — the real part becomes
 // degrees, the imaginary part is scaled the same so angle-mode
-// round-trips through SIN/COS/TAN).
-//
-// Session 063: same Tagged / List / V/M wrapping as `_unaryCx`.
+// round-trips through SIN/COS/TAN).  Same Tagged / List / V/M wrapping
+// as `_unaryCx`.
 function _trigInvCx(name, realFn, cxFn) {
   return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const v = s.pop();
@@ -6703,9 +6908,8 @@ function _trigInvCx(name, realFn, cxFn) {
     const x = toRealOrThrow(v);
     const y = realFn(x);
     if (!Number.isFinite(y)) {
-      // Session 054: |x| > 1 for ASIN/ACOS (or other out-of-domain
-      // input) lifts to Complex under CMPLX mode, throws
-      // "Bad argument value" otherwise.
+      // |x| > 1 for ASIN/ACOS (or other out-of-domain input) lifts to
+      // Complex under CMPLX mode, throws "Bad argument value" otherwise.
       if (getComplexMode() && cxFn) {
         const r = cxFn({ re: x, im: 0 });
         s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
@@ -6736,11 +6940,10 @@ register('ASINH', _unaryCx('ASINH', Math.asinh, _cxAsinh));
 // ACOSH and ATANH preserve their domain checks on the real branch
 // (x ≥ 1 for ACOSH, |x| < 1 for ATANH); Complex input goes to the
 // principal-branch formula without a domain check.
-// Session 063: same Tagged / List / V/M wrapping as the rest of the
-// hyperbolic family.  ACOSH and ATANH have hand-written domain logic
-// (ACOSH lifts x<1 to Complex; ATANH throws on x=±1) so they can't be
-// expressed as plain `_unaryCx` calls — but the wrapper layers below
-// are identical.
+// Same Tagged / List / V/M wrapping as the rest of the hyperbolic
+// family.  ACOSH and ATANH have hand-written domain logic (ACOSH lifts
+// x<1 to Complex; ATANH throws on x=±1) so they can't be expressed as
+// plain `_unaryCx` calls — but the wrapper layers below are identical.
 register('ACOSH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ACOSH', [_toAst(v)]))); return; }
@@ -6848,7 +7051,7 @@ function _combinatorProgCheck(prog) {
 
 // Pop one return value after evaluating prog; guard against non-1 delta.
 function _popOneReturn(s, prog, baseDepth, errLabel) {
-  _evalValue(s, prog, 0);
+  _evalValueSync(s, prog, 0);
   const delta = s.depth - baseDepth;
   if (delta !== 1) throw new RPLError(errLabel + ': bad program');
   return s.pop();
@@ -6887,7 +7090,7 @@ register('SEQ', (s) => {
       if (++iterations > MAX_LOOP_ITERATIONS) throw new RPLError('Loop iteration limit');
       varStore(varName, Real(i));
       const baseDepth = s.depth;
-      _evalValue(s, expr, 0);
+      _evalValueSync(s, expr, 0);
       const delta = s.depth - baseDepth;
       if (delta !== 1) throw new RPLError('SEQ: bad program');
       out.push(s.pop());
@@ -7003,7 +7206,7 @@ register('STREAM', (s) => {
   for (let i = 1; i < items.length; i++) {
     const baseDepth = s.depth - 1;       // the accumulator is already on top
     s.push(items[i]);
-    _evalValue(s, prog, 0);
+    _evalValueSync(s, prog, 0);
     const delta = s.depth - baseDepth;
     if (delta !== 1) throw new RPLError('STREAM: bad program');
   }
@@ -9778,10 +9981,12 @@ register('ABORT', () => {
   throw new RPLAbort('Abort');
 });
 
-/* --------------- HALT / CONT / KILL — session 073 pilot ---------------
- * HP50 AUR p.2-135 / p.2-52 / p.2-140.  The suspended-execution
- * substrate: HALT pauses the running program, CONT resumes it where it
- * left off, KILL clears the suspension without resuming.
+/* --------------- HALT / CONT / KILL / RUN — session 073 pilot -----
+ * HP50 AUR p.2-135 / p.2-52 / p.2-140 / p.2-177.  The suspended-
+ * execution substrate: HALT pauses the running program, CONT resumes
+ * it where it left off, KILL clears the suspension without resuming.
+ * RUN is a debug-aware resume — without DBUG active, it behaves
+ * identically to CONT (AUR p.2-177).
  *
  * HALT is intercepted by `evalRange` before it can dispatch to an op
  * — it needs the token list and instruction pointer, which `evalRange`
@@ -9791,16 +9996,24 @@ register('ABORT', () => {
  * inside a program body) produces the same "HALT used outside a
  * program" semantics HP50 implements.
  *
- * CONT reads `state.halted`, clears it, and calls `evalRange` on the
+ * CONT reads the top of `state.haltedStack` (exposed as `state.halted`
+ * for single-slot back-compat), pops it, and calls `evalRange` on the
  * saved tokens from the saved instruction pointer to the end.  The
- * token list is shared — no copy, no rehydration — so the resumption
- * is O(1) in program size.
+ * token list is shared — no copy, no rehydration — so resumption is
+ * O(1) in program size.
  *
- * KILL clears the halted slot without resuming.  Pilot limitation:
- * only one halted program is tracked at a time (AUR describes a
- * stack of halted programs, to be added in a later RunState refactor).
- * If a later HALT fires while an earlier HALT is still halted, the
- * earlier one is overwritten — matches the single-slot pilot model.
+ * KILL clears the TOP halted slot without resuming.  AUR p.2-140
+ * describes KILL as terminating "any currently-halted program(s)";
+ * we match the singular reading — one KILL peels one suspension off
+ * the stack.  Users who want to drain every suspension can KILL
+ * repeatedly or use the CLI/reset path.
+ *
+ * Session 083: the single slot became a LIFO stack of halted records.
+ * Multi-slot matters when the user runs a second program from the
+ * keypad while an earlier one is still halted; the second program's
+ * HALT would previously overwrite the first.  CONT now resumes the
+ * more recent halt first, so the older one is preserved on the stack
+ * and reachable via a subsequent CONT.
  * --------------------------------------------------------------- */
 
 register('HALT', () => {
@@ -9811,37 +10024,56 @@ register('HALT', () => {
 });
 
 register('CONT', (s) => {
-  const h = getHalted();
-  if (!h) throw new RPLError('No halted program');
-  // Clear the slot BEFORE resuming: if the resumed program HALTs
-  // again, evalRange will write a fresh slot and we don't want the
-  // old one to leak in if the new HALT fails to throw for some
-  // reason.  On failure (resumed program throws RPLError), the slot
-  // stays cleared — matches HP50 "CONT on an errored halt starts
-  // fresh" behavior.
+  if (!getHalted()) throw new RPLError('No halted program');
+  // takeHalted pops the top record WITHOUT closing its generator —
+  // clearHalted (used by KILL) closes it; takeHalted leaves it live
+  // so gen.next() below can resume it.  The slot is removed before
+  // resuming so that a fresh HALT inside the resumed program can
+  // push a new record cleanly on top of any remaining older ones.
   //
-  // Session 077: same `_localFrames` defensive restore as EVAL —
-  // see that handler's comment for the flake hypothesis this guards
-  // against.
+  // Session 083: LIFO semantics — older halted records remain on
+  // haltedStack and are reachable via subsequent CONT calls.
+  //
+  // Session 088: generator-based resumption preserves ALL structural
+  // state (FOR counter, IF branch, → local frames) automatically.
+  // _localFrames safety: do NOT truncate while halted — the generator's
+  // own finally blocks handle cleanup.  We only truncate when the
+  // generator finishes (done=true) or throws.
+  const h = takeHalted();
   const framesAtEntry = _localFrames.length;
-  clearHalted();
+  let halted = false;
   try {
-    evalRange(s, h.tokens, h.ip, h.length, 0);
+    const result = h.generator.next();
+    if (!result.done) {
+      // Generator yielded again (another HALT) — push it back.
+      halted = true;
+      setHalted({ generator: h.generator });
+    }
   } catch (e) {
-    // A fresh HALT re-populates state.halted and throws RPLHalt; we
-    // swallow it so CONT returns cleanly, matching the top-level EVAL
-    // wrapper's behaviour.  Any other error bubbles up normally.
-    if (!(e instanceof RPLHalt)) throw e;
+    throw e;
   } finally {
-    _truncateLocalFrames(framesAtEntry);
+    if (!halted) _truncateLocalFrames(framesAtEntry);
   }
 });
 
 register('KILL', () => {
   // KILL is valid even when there is no halted program — the HP50 op
   // is a no-op in that case (AUR p.2-140 "KILL terminates any
-  // currently-halted program, or does nothing").
+  // currently-halted program, or does nothing").  Session 083: pops
+  // one record off the halted stack; older halts are preserved.
   clearHalted();
+});
+
+/* RUN — AUR p.2-177.  With no DBUG session active, RUN is a synonym
+ * for CONT.  When DBUG lands (queue item 2), this handler will grow
+ * a branch that disables single-stepping on the resumed program
+ * before re-entering evalRange.  For now the body delegates directly
+ * to CONT so users typing `RUN` from the keypad get the same resume
+ * semantics they'd get from CONT — closes a small HP50 keyword gap
+ * without blocking on the full DBUG substrate. */
+register('RUN', (s) => {
+  const contOp = OPS.get('CONT');
+  contOp.fn(s);
 });
 
 /* --------------- APPEND — add element to end of a list ---------------
@@ -11645,6 +11877,295 @@ function _tchebOp(s) {
 }
 register('TCHEBYCHEFF', _tchebOp);
 register('TCHEB',       _tchebOp);
+
+/* --------------- CYCLOTOMIC — nth cyclotomic polynomial (session 081)
+   HP50 AUR §12.6.  CYCLOTOMIC(n) returns Φ_n(X) as a Symbolic in X —
+   the monic polynomial in Z[X] whose roots are exactly the primitive
+   n-th roots of unity.  Degree is Euler's totient φ(n).
+
+     CYCLOTOMIC  ( n → Sy )
+
+   Computed recursively via the identity
+       X^n − 1 = ∏_{d | n} Φ_d(X)
+   rearranged to
+       Φ_n(X) = (X^n − 1) / ∏_{d | n, d < n} Φ_d(X)
+   Walking d = 1 upward and caching every Φ_d produces Φ_n in n exact
+   polynomial divisions over Z[X].  BigInt coefficients internally
+   because cyclotomic coefficients can explode in magnitude for
+   composite n (Φ_105 has a −2, Φ_385 has a −22, and the family grows
+   unboundedly).  Output rides through `_coefArrToSymbolicX` after
+   converting BigInt→Number with a MAX_SAFE_INTEGER guard; n > 200
+   rejects with `Bad argument value` because that's the practical
+   boundary where coefficient magnitude can exceed 2^53 in rare cases
+   and the in-tree Symbolic AST uses plain-Number literals.
+
+   Rejections:
+     n ≤ 0                 → Bad argument value
+     non-integer Real      → Bad argument value (via _nFromIntegerArg)
+     non-numeric           → Bad argument type (via _nFromIntegerArg)
+     n > 200               → Bad argument value (precision cap).
+*/
+
+function _polyDivBig(p, q) {
+  // p / q, both descending-degree BigInt arrays; assumes q divides p
+  // exactly over Z[X] (cyclotomic invariant).  Returns the quotient.
+  const pa = p.slice();
+  const ql = q.length;
+  const qLead = q[0];
+  const quotLen = pa.length - ql + 1;
+  const out = new Array(quotLen);
+  for (let i = 0; i < quotLen; i++) {
+    const factor = pa[i] / qLead;
+    out[i] = factor;
+    for (let j = 0; j < ql; j++) {
+      pa[i + j] -= factor * q[j];
+    }
+  }
+  return out;
+}
+
+function _cyclotomicCoefsBig(n) {
+  // n ≥ 1.  Φ_n as a descending-degree BigInt coefficient array.
+  if (n === 1) return [1n, -1n];
+  const phi = new Map();
+  phi.set(1, [1n, -1n]);
+  for (let k = 2; k <= n; k++) {
+    // Numerator X^k − 1  →  [1, 0, …, 0, −1]  (length k+1)
+    let num = new Array(k + 1).fill(0n);
+    num[0] = 1n;
+    num[k] = -1n;
+    for (let d = 1; d < k; d++) {
+      if (k % d === 0) num = _polyDivBig(num, phi.get(d));
+    }
+    phi.set(k, num);
+  }
+  return phi.get(n);
+}
+
+function _coefBigArrToSymbolicX(coefs) {
+  // Convert BigInt descending-degree coef array to Symbolic(X), via
+  // the same helper the Hermite/Legendre/Tcheb families use.  Throws
+  // `Bad argument value` if any coefficient exceeds MAX_SAFE_INTEGER
+  // (i.e. BigInt→Number loses precision).
+  const asNums = coefs.map(c => {
+    const asNum = Number(c);
+    if (!Number.isFinite(asNum) || BigInt(asNum) !== c) {
+      throw new RPLError('Bad argument value');
+    }
+    return asNum;
+  });
+  return _coefArrToSymbolicX(asNums);
+}
+
+register('CYCLOTOMIC', (s) => {
+  const [v] = s.popN(1);
+  const n = _nFromIntegerArg(v);
+  if (n < 1) throw new RPLError('Bad argument value');
+  if (n > 200) throw new RPLError('Bad argument value');
+  s.push(_coefBigArrToSymbolicX(_cyclotomicCoefsBig(n)));
+});
+
+/* ---- ZETA — Riemann zeta (session 086) -------------------------------
+   HP50 AUR §2 (CAS-SPECIAL).  One-arg Riemann zeta function.
+
+     ZETA  ( s → ζ(s) )       1-arg: real Riemann zeta.
+
+   Domain handling:
+     s = 1                    → Infinite result   (simple pole)
+     s = even negative Integer → exact 0           (trivial zeros)
+     s = 0                    → -1/2 (Real)
+     s < 1/2 (and s ≠ 0)      → functional-equation reflection
+                                 ζ(s) = 2ˢ π^(s-1) sin(πs/2) Γ(1-s) ζ(1-s)
+     s ≥ 1/2 (and s ≠ 1)      → Euler-Maclaurin direct summation
+
+   Euler-Maclaurin (NR §5.3):
+     ζ(s) ≈ Σ_{k=1}^{N-1} k⁻ˢ + N^(1-s)/(s-1) + (1/2)N⁻ˢ
+            + Σ_{j=1}^{M} (B_{2j}/(2j)!) (s)_{2j-1} N^(-s-2j+1)
+   with N = 15 and M = 6 Bernoulli terms (B_2 … B_12 used).
+   Accuracy ≲ 1e-13 over s ∈ [1/2, ∞)\{1} in double precision; plenty
+   for the HP50 10-digit display.
+
+   Symbolic / Name input lifts to `ZETA(x)`; Tagged transparent;
+   List / Vector / Matrix distribute element-wise.
+*/
+const _ZETA_EM_N = 15;
+const _ZETA_EM_B = Object.freeze([
+  1/6,        // B_2
+  -1/30,      // B_4
+  1/42,       // B_6
+  -1/30,      // B_8
+  5/66,       // B_10
+  -691/2730,  // B_12
+]);
+const _ZETA_EM_F = Object.freeze([
+  2,          // 2!
+  24,         // 4!
+  720,        // 6!
+  40320,      // 8!
+  3628800,    // 10!
+  479001600,  // 12!
+]);
+
+function _zetaEulerMaclaurin(s) {
+  // Precondition: s >= 0.5 and s !== 1.  Direct summation with EM tail.
+  let sum = 0;
+  for (let k = 1; k < _ZETA_EM_N; k++) sum += Math.pow(k, -s);
+  sum += Math.pow(_ZETA_EM_N, 1 - s) / (s - 1);
+  sum += 0.5 * Math.pow(_ZETA_EM_N, -s);
+  // EM correction — add Σ (B_{2j}/(2j)!) · (s)_{2j-1} · N^(-s-2j+1).
+  // (Derived from Σ_{k≥N} f(k) ≈ ∫ + f(N)/2 − Σ B_{2m}/(2m)! f^(2m-1)(N);
+  //  f^(2m-1)(N) = −(s)_{2m-1} N^(-s-2m+1), so the two minuses combine to +.)
+  let poch = s;                              // (s)_1 at j = 1
+  let Nexp = Math.pow(_ZETA_EM_N, -s - 1);   // N^(-s-2j+1) at j = 1
+  const invNsq = 1 / (_ZETA_EM_N * _ZETA_EM_N);
+  for (let j = 1; j <= _ZETA_EM_B.length; j++) {
+    sum += (_ZETA_EM_B[j - 1] / _ZETA_EM_F[j - 1]) * poch * Nexp;
+    // Step: Pochhammer picks up two more factors (s+2j-1)(s+2j);
+    // exponent drops by 2 (multiply by 1/N²).
+    poch *= (s + 2 * j - 1) * (s + 2 * j);
+    Nexp *= invNsq;
+  }
+  return sum;
+}
+
+function _zeta(s) {
+  if (!Number.isFinite(s)) throw new RPLError('Bad argument value');
+  if (s === 1) throw new RPLError('Infinite result');
+  if (s === 0) return -0.5;
+  // Trivial zeros: ζ(-2k) = 0 for k ≥ 1.  Catch as exact 0 so the
+  // reflection path doesn't multiply Γ(1-s) → finite by a computed
+  // sin(πs/2) that's only near-zero.
+  if (s < 0 && Number.isInteger(s) && (s % 2) === 0) return 0;
+  if (s < 0.5) {
+    // Reflection: ζ(s) = 2^s π^(s-1) sin(πs/2) Γ(1-s) ζ(1-s).
+    // 1-s ≥ 0.5, so the recursive call lands in the EM branch.
+    const sinPart = Math.sin(Math.PI * s / 2);
+    const g = _gamma(1 - s);
+    const z = _zeta(1 - s);
+    return Math.pow(2, s) * Math.pow(Math.PI, s - 1) * sinPart * g * z;
+  }
+  return _zetaEulerMaclaurin(s);
+}
+
+function _zetaScalar(v) {
+  if (_isSymOperand(v)) return Symbolic(AstFn('ZETA', [_toAst(v)]));
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  if (x === null) throw new RPLError('Bad argument type');
+  return Real(_zeta(x));
+}
+
+register('ZETA', _withTaggedUnary(_withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_zetaScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_zetaScalar))));
+  else                  s.push(_zetaScalar(v));
+})));
+
+/* ---- LAMBERT — principal-branch Lambert W₀ (session 086) -------------
+   HP50 AUR §2 (CAS-SPECIAL).  One-arg Lambert W function, principal
+   branch W₀.  Solves  W · e^W = x  for W ∈ ℝ given real x ≥ -1/e.
+
+     LAMBERT  ( x → W₀(x) )
+
+   Domain:
+     x < -1/e              → Bad argument value (no real solution)
+     x = -1/e              → W₀(-1/e) = -1  (branch point)
+     x = 0                 → 0
+     x > 0                 → unique positive W
+     -1/e < x < 0          → unique W in (-1, 0)
+
+   Numerical method: Halley iteration on f(W) = W eᵂ − x.  Halley's
+   correction vs. plain Newton kills the quadratic-convergence edge
+   cases near the branch point (where f' → 0) by factoring in f''.
+   Starting guess:
+     x ≥ e         : W₀ ≈ ln x − ln ln x          (asymptotic)
+     |x| ≤ 0.5     : W₀ ≈ x − x² + (3/2)x³        (Taylor)
+     elsewhere     : W₀ ≈ log(1 + x) / (1 + 0.5·log(1+x))
+
+   Converges in ≲ 8 iterations to machine precision for all x.
+
+   Symbolic / Name input lifts to `LAMBERT(x)`; Tagged transparent;
+   List / Vector / Matrix distribute element-wise.
+*/
+const _INV_E = -1 / Math.E;
+
+function _lambertW0(x) {
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  // Guard the branch point via p² = 2(ex + 1) ≥ 0.  Using ep1 directly
+  // tolerates the 1-ulp roundoff in a computed -1/e without an ad-hoc
+  // fudge constant, and gives the Puiseux series a ready-made argument.
+  const ep1 = Math.E * x + 1;
+  if (ep1 < 0) {
+    if (ep1 < -1e-13) throw new RPLError('Bad argument value');
+    return -1;
+  }
+  if (x === 0) return 0;
+  // Choose a starting guess that puts Halley in its monotone regime.
+  let w;
+  if (ep1 < 0.25) {
+    // Puiseux series at the branch point (Corless et al. 1996, eq 4.22):
+    //   W(x) = -1 + p − p²/3 + 11 p³/72 − 43 p⁴/540 + 769 p⁵/17280 − …
+    // with p = √(2(ex+1)).  Gives f ≲ 1e-10 at the initial guess, so
+    // Halley's cubic convergence then hits machine precision in ≤ 2
+    // steps — fixes the linear-convergence stall at the branch point,
+    // where f'(−1) = 0 would otherwise defeat Halley alone.
+    const p = Math.sqrt(2 * ep1);
+    w = -1 + p * (1 + p * (-1/3 + p * (11/72 + p * (-43/540 + p * (769/17280)))));
+  } else if (x >= Math.E) {
+    const ln1 = Math.log(x);
+    w = ln1 - Math.log(ln1);
+  } else if (Math.abs(x) <= 0.5) {
+    // Taylor around 0: W(x) = x − x² + (3/2)x³ − …
+    w = x * (1 - x + 1.5 * x * x);
+  } else {
+    const l = Math.log(1 + x);
+    w = l / (1 + 0.5 * l);
+  }
+  // Halley: W ← W − f/(f' − f f''/(2 f'))
+  //          f   = W eᵂ − x
+  //          f'  = eᵂ (W + 1)
+  //          f'' = eᵂ (W + 2)
+  for (let i = 0; i < 32; i++) {
+    const e = Math.exp(w);
+    const wew = w * e;
+    const f = wew - x;
+    if (f === 0) return w;
+    const fp = e * (w + 1);
+    if (fp === 0) break;  // avoid singular update at the branch point
+    const fpp = e * (w + 2);
+    const delta = f / (fp - (f * fpp) / (2 * fp));
+    const wNext = w - delta;
+    if (Math.abs(wNext - w) <= 1e-15 * Math.max(1, Math.abs(wNext))) {
+      return wNext;
+    }
+    w = wNext;
+  }
+  return w;
+}
+
+function _lambertScalar(v) {
+  if (_isSymOperand(v)) return Symbolic(AstFn('LAMBERT', [_toAst(v)]));
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  if (x === null) throw new RPLError('Bad argument type');
+  return Real(_lambertW0(x));
+}
+
+register('LAMBERT', _withTaggedUnary(_withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_lambertScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_lambertScalar))));
+  else                  s.push(_lambertScalar(v));
+})));
+
+/* ---- XNUM / XQ — ASCII aliases (session 086) -------------------------
+   HP50 AUR p.2-211.  `XNUM` and `XQ` are the mode-agnostic names HP50
+   firmware uses for `→NUM` and `→Q` in contexts where the arrow glyph
+   is inconvenient (keyboards without `→`, textual catalog output).
+   Implement as thin wrappers that delegate to the shipped handlers.
+*/
+register('XNUM', (s, entry) => { OPS.get('→NUM').fn(s, entry); });
+register('XQ',   (s, entry) => { OPS.get('→Q').fn(s, entry); });
+
 
 /* ========================================================================
    Session 057 — MAD, AXL / AXM, FROOTS, TCHEBYCHEFF second-kind.

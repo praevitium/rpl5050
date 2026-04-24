@@ -328,8 +328,8 @@ import { assert } from './helpers.mjs';
    ================================================================ */
 
 // FOR/NEXT: sum I for I = 1..5 → 15
-//   Session 016 change: both bounds Integer ⇒ loop counter stays Integer
-//   (BigInt) for the whole loop, so the accumulator stays Integer too.
+//   Both bounds Integer ⇒ loop counter stays Integer (BigInt) for
+//   the whole loop, so the accumulator stays Integer too.
 {
   resetHome();
   const s = new Stack();
@@ -537,8 +537,7 @@ import { assert } from './helpers.mjs';
          'ERRM inside THEN returns "Infinite result"');
 }
 
-// ERRN inside THEN returns the error number as a BinaryInteger in hex
-// (session 014: ERRN now returns BinaryInteger, not Integer).
+// ERRN inside THEN returns the error number as a BinaryInteger in hex.
 {
   resetHome();
   clearLastError();
@@ -1749,40 +1748,47 @@ import { assert } from './helpers.mjs';
     'session073: CONT with empty halted slot raises No halted program');
 }
 
-/* ---- HALT inside structured control flow rejects (pilot limit) ---- */
+/* ---- HALT inside structured control flow now works (session088:
+       generator-based evalRange lifted the pilot limitation) ---- */
 {
   resetHome(); clearHalted();
   const s = new Stack();
-  // « IF 1 THEN HALT END »   — HALT under IF's runIf evalRange call
+  // « IF 1 THEN HALT END »  —  HALT inside IF's true-branch now suspends
+  // cleanly; the generator captures the full IF context.
   s.push(Program([
     Name('IF'), Integer(1n), Name('THEN'),
     Name('HALT'),
     Name('END'),
   ]));
-  let caught = null;
-  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
-  assert(caught && /HALT.*inside control structure/.test(caught.message),
-    'session073: HALT inside IF raises pilot-limit RPLError');
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session088: HALT inside IF suspends program (halted slot populated)');
+  // CONT resumes after HALT — IF/THEN/END closes normally, nothing more
+  // to push, so stack is unchanged.
+  lookup('CONT').fn(s);
   assert(getHalted() === null,
-    'session073: pilot-limit rejection does not populate halted slot');
+    'session088: CONT after HALT-inside-IF resumes and finishes cleanly');
 }
 
-/* ---- HALT inside a compiled-local `→` frame rejects ---- */
+/* ---- HALT inside a compiled-local `→` frame now works ---- */
 {
   resetHome(); clearHalted();
   const s = new Stack();
-  // 5 → a « HALT »   — HALT fires under runArrow
+  // 5 → a « a HALT a »  — HALT inside → body suspends with a on stack;
+  // CONT resumes and pushes the second a, leaving [5, 5] on stack.
   s.push(Integer(5n));
   s.push(Program([
     Name('→'), Name('a'),
-    Program([ Name('HALT') ]),
+    Program([ Name('a'), Name('HALT'), Name('a') ]),
   ]));
-  let caught = null;
-  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
-  assert(caught && /HALT.*pilot/.test(caught.message),
-    'session073: HALT inside → raises pilot-limit RPLError');
-  assert(getHalted() === null,
-    'session073: pilot limit blocks halted-slot write from inside →');
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null && s.depth === 1 && s.peek().value === 5n,
+    'session088: HALT inside → suspends with a=5 on stack');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null && s.depth === 2,
+    'session088: CONT after HALT-inside-→ resumes and finishes, 2 items on stack');
+  assert(s.peek().value === 5n,
+    'session088: second item pushed by resumed → body is also 5');
 }
 
 /* ---- Bare HALT on the stack (not inside EVAL) reports the bare-op
@@ -2521,4 +2527,198 @@ import { assert } from './helpers.mjs';
     'session083: RUN resumes the LIFO top (= B), running 100 + on the 2 → 102');
   assert(haltedDepth() === 1,
     'session083: after RUN, the older halt remains on the LIFO');
+}
+
+/* ================================================================
+   Session 088 — Generator-based evalRange: HALT at any structural depth
+   ================================================================
+
+   These tests verify that HALT now works inside control structures
+   and compiled-local frames, lifting the "pilot" restriction.
+   The generator mechanism preserves all structural context automatically.
+   ================================================================ */
+
+/* ---- HALT inside FOR loop ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 3 FOR i i HALT NEXT »
+  // Iteration 1: stores i=1, pushes 1, HALTs.  CONT resumes:
+  //   stores i=2, pushes 2, HALTs.  CONT resumes: stores i=3,
+  //   pushes 3, loop ends.  Stack: [1, 2, 3].
+  s.push(Program([
+    Integer(1n), Integer(3n),
+    Name('FOR'), Name('i'),
+    Name('i'), Name('HALT'),
+    Name('NEXT'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1, 'session088: FOR-HALT iteration-1: haltedDepth=1');
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session088: FOR-HALT iteration-1: i=1 on stack');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 1, 'session088: FOR-HALT iteration-2: haltedDepth=1');
+  assert(s.depth === 2 && s.peek().value === 2n,
+    'session088: FOR-HALT iteration-2: i=2 on stack');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0, 'session088: FOR-HALT done: haltedDepth=0');
+  assert(s.depth === 3 && s.peek().value === 3n,
+    'session088: FOR-HALT iteration-3: i=3 on stack (loop done)');
+  assert(localFramesDepth() === 0, 'session088: FOR-HALT: localFrames clean after completion');
+}
+
+/* ---- HALT inside IF true branch ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « IF 1 THEN 42 HALT 99 END »
+  // Runs 42, HALTs.  CONT resumes and runs 99.  Stack: [42, 99].
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'),
+    Integer(42n), Name('HALT'), Integer(99n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session088: HALT-inside-IF: haltedDepth=1 after suspend');
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session088: HALT-inside-IF: 42 on stack at suspension');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session088: HALT-inside-IF: haltedDepth=0 after resume');
+  assert(s.depth === 2 && s.peek().value === 99n,
+    'session088: HALT-inside-IF: 99 pushed by resumed branch');
+}
+
+/* ---- HALT inside WHILE body ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Counter in a variable.  « 0 'cnt' STO  WHILE cnt 3 < REPEAT cnt 1 + 'cnt' STO  cnt HALT  END »
+  // We'll use a simpler shape: accumulate on the stack.
+  // « 1 WHILE DUP 4 < REPEAT DUP 1 + HALT END »
+  //   starts: push 1
+  //   iter1 test: DUP(1) 4 <  → true
+  //   iter1 body: DUP(1)→[1,1], 1+→[1,2], HALT
+  //   CONT: iter2 test: DUP(2) 4< → true
+  //   iter2 body: DUP(2)→[1,2,2], 1+→[1,2,3], HALT
+  //   CONT: iter3 test: DUP(3) 4< → true
+  //   iter3 body: DUP(3)→[1,2,3,3], 1+→[1,2,3,4], HALT
+  //   CONT: iter4 test: DUP(4) 4< → false → exit, stack: [1,2,3,4]
+  s.push(Program([
+    Integer(1n),
+    Name('WHILE'), Name('DUP'), Integer(4n), Name('<'), Name('REPEAT'),
+      Name('DUP'), Integer(1n), Name('+'), Name('HALT'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 2 && s.peek().value === 2n,
+    'session088: HALT-inside-WHILE iter1: stack=[1,2]');
+  lookup('CONT').fn(s);
+  assert(s.depth === 3 && s.peek().value === 3n,
+    'session088: HALT-inside-WHILE iter2: stack=[1,2,3]');
+  lookup('CONT').fn(s);
+  assert(s.depth === 4 && s.peek().value === 4n,
+    'session088: HALT-inside-WHILE iter3: stack=[1,2,3,4]');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session088: HALT-inside-WHILE finished: haltedDepth=0');
+  assert(s.depth === 4 && s.peek().value === 4n,
+    'session088: HALT-inside-WHILE loop exited cleanly');
+}
+
+/* ---- HALT inside → body ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 10 → a « a HALT a a + » »
+  // Pushes a=10, HALTs.  CONT: pushes a=10, a+a=20.  Stack: [10, 10, 20].
+  s.push(Integer(10n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([ Name('a'), Name('HALT'), Name('a'), Name('a'), Name('+') ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session088: HALT-inside-arrow: suspended');
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session088: HALT-inside-arrow: a=10 on stack at suspension');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session088: HALT-inside-arrow: resumed and finished');
+  assert(s.depth === 3 && s.peek().value === 20n,
+    'session088: HALT-inside-arrow: top is a+a=20 after resume');
+  assert(localFramesDepth() === 0,
+    'session088: HALT-inside-arrow: frame popped after generator completes');
+}
+
+/* ---- KILL on a structural HALT cleans up _localFrames ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Halt inside → — then KILL instead of CONT.
+  // The generator's finally must still run to pop the frame.
+  s.push(Integer(7n));
+  s.push(Program([
+    Name('→'), Name('x'),
+    Program([ Name('x'), Name('HALT') ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session088: KILL-arrow: halted inside →');
+  assert(localFramesDepth() === 1,
+    'session088: KILL-arrow: one local frame live during suspension');
+  lookup('KILL').fn(s);
+  assert(haltedDepth() === 0,
+    'session088: KILL-arrow: haltedDepth=0 after KILL');
+  assert(localFramesDepth() === 0,
+    'session088: KILL-arrow: _localFrames cleaned up by KILL via gen.return()');
+}
+
+/* ---- resetHome on a structural HALT cleans up _localFrames ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Integer(3n));
+  s.push(Program([
+    Name('→'), Name('y'),
+    Program([ Name('y'), Name('HALT') ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(localFramesDepth() === 1,
+    'session088: resetHome-arrow: frame live at suspension');
+  resetHome();
+  assert(haltedDepth() === 0,
+    'session088: resetHome-arrow: haltedDepth=0 after resetHome');
+  assert(localFramesDepth() === 0,
+    'session088: resetHome-arrow: _localFrames clean after resetHome');
+}
+
+/* ---- HALT inside nested FOR-inside-IF ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « IF 1 THEN 1 3 FOR i i HALT NEXT END »
+  // HALT inside FOR which is inside IF.  All three context levels
+  // must be preserved.
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'),
+      Integer(1n), Integer(3n),
+      Name('FOR'), Name('i'),
+        Name('i'), Name('HALT'),
+      Name('NEXT'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session088: nested FOR-in-IF: iter-1 i=1');
+  lookup('CONT').fn(s);
+  assert(s.depth === 2 && s.peek().value === 2n,
+    'session088: nested FOR-in-IF: iter-2 i=2');
+  lookup('CONT').fn(s);
+  assert(s.depth === 3 && s.peek().value === 3n,
+    'session088: nested FOR-in-IF: iter-3 i=3');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 3,
+    'session088: nested FOR-in-IF: finished cleanly');
 }

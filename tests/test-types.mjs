@@ -943,8 +943,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(p1); s.push(p2);
     lookup('==').fn(s);
     const v = s.peek().value;
-    assert(v === 0 || v === 1,
-      `session084: KNOWN GAP — Program == Program structural (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+    assert(v === 1,
+      'session087: Program == Program structural (identical tokens) = 1');
   }
   // ---- Program × Program SAME equivalent ----
   {
@@ -954,8 +954,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(p1); s.push(p2);
     lookup('SAME').fn(s);
     const v = s.peek().value;
-    assert(v === 0 || v === 1,
-      `session084: KNOWN GAP — SAME on identical-token Programs (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+    assert(v === 1,
+      'session087: SAME on identical-token Programs = 1');
   }
   // ---- Program × Program: differing tokens → 0 (already correct) ----
   // Hard assert: a different token list MUST compare not-equal.  This
@@ -988,8 +988,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(p1); s.push(p2);
     lookup('==').fn(s);
     const v = s.peek().value;
-    assert(v === 0 || v === 1,
-      `session084: KNOWN GAP — empty Program == empty Program (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+    assert(v === 1,
+      'session087: empty Program == empty Program = 1');
   }
 
   // ---- Directory × Directory: reference identity (same object) ----
@@ -1001,8 +1001,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(d); s.push(d);
     lookup('SAME').fn(s);
     const v = s.peek().value;
-    assert(v === 0 || v === 1,
-      `session084: KNOWN GAP — SAME on the same Directory ref (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+    assert(v === 1,
+      'session087: SAME on the same Directory ref = 1');
   }
   // ---- Directory × Directory: same-name distinct objects → 0 ----
   // Hard regression guard: even after widening, two *distinct*
@@ -1025,7 +1025,57 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(d); s.push(d);
     lookup('==').fn(s);
     const v = s.peek().value;
-    assert(v === 0 || v === 1,
-      `session084: KNOWN GAP — Directory == Directory same-ref (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+    assert(v === 1,
+      'session087: Directory == Directory same-ref = 1');
   }
+}
+
+/* ================================================================
+   session087: BinaryInteger on FLOOR / CEIL / IP / FP
+   HP50 AUR §3 accepts BinInt on the rounders; rounding is a no-op
+   (BinInts are always integer-valued).  FP yields #0 in same base.
+   ================================================================ */
+{
+  // ---- FLOOR: BinInt → same BinInt (no-op) ----
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(7n, 'h'));
+    lookup('FLOOR').fn(s);
+    const r = s.peek();
+    assert(isBinaryInteger(r) && r.value === 7n && r.base === 'h',
+      'session087: FLOOR #7h → #7h (BinInt no-op, preserves base)');
+  }
+  // ---- CEIL: BinInt → same BinInt ----
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'd'));
+    lookup('CEIL').fn(s);
+    const r = s.peek();
+    assert(isBinaryInteger(r) && r.value === 10n && r.base === 'd',
+      'session087: CEIL #10d → #10d (BinInt no-op)');
+  }
+  // ---- IP: BinInt → same BinInt ----
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(255n, 'h'));
+    lookup('IP').fn(s);
+    const r = s.peek();
+    assert(isBinaryInteger(r) && r.value === 255n && r.base === 'h',
+      'session087: IP #FFh → #FFh (BinInt no-op, preserves hex base)');
+  }
+  // ---- FP: BinInt → #0 in same base (integer part IS the whole value) ----
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(42n, 'o'));
+    lookup('FP').fn(s);
+    const r = s.peek();
+    assert(isBinaryInteger(r) && r.value === 0n && r.base === 'o',
+      'session087: FP #42o → #0o (FP of BinInt always 0, preserves base)');
+  }
+  // ---- rejection: Complex still rejected by FLOOR ----
+  assertThrows(
+    () => { const s = new Stack(); s.push(Complex(1, 2)); lookup('FLOOR').fn(s); },
+    /Bad argument type/,
+    'session087: FLOOR on Complex still throws Bad argument type'
+  );
 }

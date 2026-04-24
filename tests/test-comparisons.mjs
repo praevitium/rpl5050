@@ -335,22 +335,56 @@ import { assert, assertThrows } from './helpers.mjs';
     'session072: Vector == Vector is structural — gap filed s070, fixed s072');
 }
 
-/* ---- GAP: String lexicographic < > ≤ ≥ ----
-   HP50 User Guide App. J: string comparisons are lexicographic by
-   char code.  Our comparePair() rejects String operands with
-   "Bad argument type". */
+/* ---- String lexicographic < > ≤ ≥ (session 087) ----
+   HP50 User Guide App. J: string comparisons are char-code lex.
+   Gap filed session 068; widened session 087. */
 {
-  const s = new Stack();
-  s.push(Str('a')); s.push(Str('b'));
-  let threw = false;
-  let gotValue = null;
-  try { lookup('<').fn(s); gotValue = s.peek().value; }
-  catch (e) { threw = /Bad argument type/i.test(e.message); }
-  // Current behavior: threw.  HP50 behavior: gotValue === 1.  Accept
-  // either, document the expected outcome so the test stays useful.
-  assert(threw || gotValue === 1,
-    `session068: "a" < "b" (current: ${threw ? 'THREW' : 'value=' + gotValue}; `
-    + 'HP50 expected: 1 — gap if THREW, filed against rpl5050-data-types)');
+  // "a" < "b" — basic ascending order
+  {
+    const s = new Stack();
+    s.push(Str('a')); s.push(Str('b'));
+    lookup('<').fn(s);
+    assert(s.peek().value === 1,
+      'session087: "a" < "b" = 1 (String lex <)');
+  }
+  // "b" > "a"
+  {
+    const s = new Stack();
+    s.push(Str('b')); s.push(Str('a'));
+    lookup('>').fn(s);
+    assert(s.peek().value === 1,
+      'session087: "b" > "a" = 1 (String lex >)');
+  }
+  // "abc" ≤ "abd"
+  {
+    const s = new Stack();
+    s.push(Str('abc')); s.push(Str('abd'));
+    lookup('≤').fn(s);
+    assert(s.peek().value === 1,
+      'session087: "abc" ≤ "abd" = 1 (String lex ≤, differ at last char)');
+  }
+  // "z" ≥ "z" (equal strings)
+  {
+    const s = new Stack();
+    s.push(Str('z')); s.push(Str('z'));
+    lookup('≥').fn(s);
+    assert(s.peek().value === 1,
+      'session087: "z" ≥ "z" = 1 (equal strings)');
+  }
+  // "b" < "a" = 0 (regression guard)
+  {
+    const s = new Stack();
+    s.push(Str('b')); s.push(Str('a'));
+    lookup('<').fn(s);
+    assert(s.peek().value === 0,
+      'session087: "b" < "a" = 0 (regression guard)');
+  }
+  // Mixed String + Real still rejected
+  assertThrows(
+    () => { const s = new Stack(); s.push(Str('x')); s.push(Real(1)); lookup('<').fn(s); },
+    /Bad argument type/,
+    'session087: String < Real throws Bad argument type (no cross-type lift for <)'
+  );
 }
 
 /* ---- SAME on structurally identical Symbolics ----

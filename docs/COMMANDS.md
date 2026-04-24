@@ -21,18 +21,21 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 081 — 2026-04-23)
+## Counts (as of session 086 — 2026-04-23)
 
-- Fully shipped (✓): 412
+- Fully shipped (✓): 416
 - Partially shipped (~): 0
-- Not yet implemented (✗): 27 (see "Not yet supported" below)
+- Not yet implemented (✗): 23 (see "Not yet supported" below)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" src/rpl/ops.js` = **441** at the end of session 081
-(was 437 at the end of session 076); the Fully-shipped count above
-reflects new HP50 ops shipped this run (`TRUNC` two-arg, `PSI`
-digamma + polygamma, `CYCLOTOMIC` — 3 rows flipped ✗ → ✓).
+`grep -c "register(" src/rpl/ops.js` = **447** at the end of session 086
+(was 441 at the end of session 081).  4 rows flipped ✗ → ✓:
+`ZETA`, `LAMBERT`, `XNUM`, `XQ`.  The +6 grep delta vs. +4 op delta
+reflects 2 shipped-prior-session rows that the grep-based count had not
+been re-tallied after (the on-disk register count is authoritative;
+the Fully-shipped count reflects HP50 ops with a user-visible
+entry point).
 
 Session 081 also cleaned up two code-review findings from session 080's
 `docs/REVIEW.md`: **C-001** (split the stale `MEM TVARS` row —
@@ -53,7 +56,7 @@ covered by the binary-integer section).
 | `MAXR` `MINR` | ✓ | Machine Max/Min Real. |
 | `RND` `TRNC` `TRUNC` | ✓ | **Session 081** — `TRUNC` two-arg form `(x n → round-toward-zero to n places)` shipped; shares `_truncTowardZero` with `TRNC`, Symbolic lift on `x` or `n`, Integer passthrough. |
 | `MANT` `XPON` | ✓ | |
-| `FLOOR` `CEIL` `IP` `FP` | ✓ | Session 062 — Tagged + List + V/M + Sym lift.  Session 072 — Unit (`1.5_m FLOOR` → `1_m`, uexpr preserved). |
+| `FLOOR` `CEIL` `IP` `FP` | ✓ | Session 062 — Tagged + List + V/M + Sym lift.  Session 072 — Unit (`1.5_m FLOOR` → `1_m`, uexpr preserved).  Session 087 — BinaryInteger accepted (no-op; FP of BinInt = `#0` in same base). |
 | `MOD` | ✓ | Floor-div (sign-of-divisor).  Session 062 Sym lift.  Session 068 pinned V/M rejection. |
 | `MIN` `MAX` | ✓ | Session 062 Sym lift + Tagged.  Session 068 pinned V/M rejection (HP50 AUR §3 scalar-only). |
 | `GCD` `LCM` | ✓ | Session 064 — Sy/N/L/T. |
@@ -66,6 +69,8 @@ covered by the binary-integer section).
 | `Beta` | ✓ | **Session 069** — B(a, b) = Γ(a)Γ(b)/Γ(a+b) via Lanczos log-gamma, Tagged + List + Sy. |
 | `erf` `erfc` | ✓ | **Session 069** — erf via P(1/2, x²); erfc via Q(1/2, x²) for no-cancellation large-x tail. |
 | `PSI` | ✓ | **Session 081** — digamma ψ(x) (1-arg) + polygamma ψ⁽ⁿ⁾(x) (2-arg with integer n ≥ 0).  Reflection for x < 0.5, integer-shift recurrence, Bernoulli asymptotic (2k=12).  Poles at non-positive integers throw `Infinite result`.  Tagged + List + V/M + Sym lift. |
+| `ZETA` | ✓ | **Session 086** — Riemann zeta ζ(s).  Euler-Maclaurin (N=15, M=6 Bernoulli terms) for s ≥ 0.5, functional-equation reflection below.  s=0 → -1/2; s=1 → `Infinite result` (simple pole); negative even integers → exact 0 (trivial zeros).  Tagged + List + V/M + Sym lift. |
+| `LAMBERT` | ✓ | **Session 086** — Lambert W₀ (principal branch).  Halley iteration seeded with a Puiseux expansion near x=-1/e so the branch point returns -1 exactly in double precision.  x < -1/e → `Bad argument value`.  Tagged + List + V/M + Sym lift. |
 | `XROOT` | ✓ | Sy lift. |
 | `EXP` `EXPM` `LN` `LNP1` `LOG` `ALOG` | ✓ | |
 | `SIN` `COS` `TAN` `ASIN` `ACOS` `ATAN` | ✓ | Angle-mode aware. |
@@ -75,9 +80,9 @@ covered by the binary-integer section).
 
 | Command | Status | Notes |
 |---------|--------|-------|
-| `==` `=` `<>` `≠` `<` `>` `<=` `>=` `≤` `≥` | ✓ | Session 072 — `==` widened to structural compare on List / Vector / Matrix / Symbolic / Tagged / Unit (was: returned 0 for all such pairs). Session 074 — BinaryInteger widening: `==` / `≠` / `<>` cross-base and cross-family (BinInt × Integer/Real/Complex) through `_binIntCrossNormalize`; `<` / `>` / `≤` / `≥` widened in `comparePair` by promoting BinInt to Integer(value & wordsize-mask). |
+| `==` `=` `<>` `≠` `<` `>` `<=` `>=` `≤` `≥` | ✓ | Session 072 — `==` widened to structural compare on List / Vector / Matrix / Symbolic / Tagged / Unit (was: returned 0 for all such pairs). Session 074 — BinaryInteger widening: `==` / `≠` / `<>` cross-base and cross-family (BinInt × Integer/Real/Complex) through `_binIntCrossNormalize`; `<` / `>` / `≤` / `≥` widened in `comparePair` by promoting BinInt to Integer(value & wordsize-mask). Session 087 — `<` / `>` / `≤` / `≥` accept String × String (char-code lex; HP50 User Guide App. J); `==` / `SAME` widen to Program (structural) and Directory (reference identity). |
 | `AND` `OR` `XOR` `NOT` | ✓ | Real/Int/Binary. |
-| `SAME` | ✓ | Strict structural equality.  Session 072 same widening as `==`; never lifts to Symbolic. Session 074 — accepts BinInt × BinInt value compare (cross-base) via the eqValues BinInt branch, but deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0). |
+| `SAME` | ✓ | Strict structural equality.  Session 072 same widening as `==`; never lifts to Symbolic. Session 074 — accepts BinInt × BinInt value compare (cross-base) via the eqValues BinInt branch, but deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0). Session 087 — Program (structural) and Directory (reference identity). |
 | `TRUE` `FALSE` | ✓ | |
 
 ## Bitwise / BinaryInteger
@@ -126,6 +131,7 @@ covered by the binary-integer section).
 | `NEWOB` | ✓ | Deep copy. |
 | `BYTES` | ✓ | |
 | `APPROX` `EXACT` `→NUM` `→Q` `→Qπ` | ✓ | |
+| `XNUM` `XQ` | ✓ | **Session 086** — ASCII aliases for `→NUM` / `→Q`.  Thin wrappers that delegate via `OPS.get('→NUM').fn` / `OPS.get('→Q').fn` so they pick up any future refinement automatically. |
 
 ## Lists
 
@@ -268,8 +274,6 @@ can be picked up as a group.
 
 | Command | Cluster | Priority | Notes |
 |---------|---------|----------|-------|
-| `ZETA` | CAS-special | low | Riemann zeta — only integer args practical. |
-| `LAMBERT` | CAS-special | low | W-function — iterative. |
 | `Ei` `Si` `Ci` | CAS-special | low | Exponential / sine / cosine integrals. |
 | `GREDUCE` `GXROOT` | CAS | low | Groebner reduction — deferred behind SOLVE. |
 | `CHARPOL` `EGVL` `EGV` | Matrix | medium | Characteristic poly + eigenvalues. |
@@ -279,7 +283,6 @@ can be picked up as a group.
 | `TVARS` | reflection | low | TVARS selects vars by type.  (MEM shipped — see L242.) |
 | `BARPLOT` `HISTPLOT` `SCATRPLOT` | graphics | ui-lane | (graphics — not in this lane) |
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
-| `XNUM` `XQ` | number mode | low | "Numeric / exact" toggles — aliases of →NUM / →Q. |
 | `POLYEVAL` `MULTMOD` | modular | low | Modular poly ops — `EUCLID` / `INVMOD` shipped session 076; these two remain (need MODULO state). |
 | `PA2B2` `PROPFRAC` `PARTFRAC` | algebra | medium | PARTFRAC is the big one. |
 | `COSSIN` | trig-form | low | Rewrite in cos/sin basis. |
@@ -308,6 +311,23 @@ If a user asks for one of these, the correct response is to point at
 
 Maintain chronologically, most recent first.
 
+- **session 086** (2026-04-23) — `ZETA`, `LAMBERT`, `XNUM`, `XQ`.
+  `ZETA`: Riemann ζ(s) — Euler-Maclaurin (N=15, M=6 Bernoulli terms)
+  for s ≥ 0.5; functional-equation reflection `ζ(s)=2ˢπ^(s-1)sin(πs/2)Γ(1-s)ζ(1-s)`
+  below; trivial zeros at negative even integers returned as exact 0;
+  `s=1` → `Infinite result`; `s=0` → -1/2.  Verified ζ(2)=π²/6,
+  ζ(4)=π⁴/90, ζ(-1)=-1/12, ζ(0.5)=-1.460354…, all to ≤ 1e-12.
+  `LAMBERT`: principal branch W₀ via Halley iteration seeded with the
+  Corless-et-al. Puiseux expansion `W = -1 + p − p²/3 + 11p³/72 − …`
+  (p = √(2(ex+1))) for ep1 < 0.25, fixing Halley's linear-convergence
+  stall at the branch point.  `LAMBERT(-1/e) = -1` exactly in double
+  precision; `LAMBERT(1) = Ω`; inverse property `W·e^W = x` verified
+  across x ∈ {5, 10, 100, -0.1, -0.3, 0.5, -0.35}.  `x < -1/e` →
+  `Bad argument value`.  `XNUM` / `XQ`: ASCII aliases delegating to
+  `→NUM` / `→Q` via `OPS.get(...).fn`.  All four ops get Tagged + List
+  + V/M + Sym lift via the standard `_withTaggedUnary` / `_withListUnary`
+  wrappers.  Four rows flipped ✗ → ✓.  +25 assertions in
+  `tests/test-numerics.mjs`.  3911 passing.  See `logs/session-086.md`.
 - **session 081** (2026-04-23) — `TRUNC` two-arg + `PSI` (digamma +
   polygamma) + `CYCLOTOMIC`.  `TRUNC` shares the toward-zero kernel
   with the existing one-arg `TRNC` and lifts to Symbolic when `x` or
