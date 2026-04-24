@@ -1,15 +1,15 @@
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, Unit, isReal, isUnit, isInteger,
-} from '../src/rpl/types.js';
-import { parseEntry } from '../src/rpl/parser.js';
-import { format } from '../src/rpl/formatter.js';
+} from '../www/src/rpl/types.js';
+import { parseEntry } from '../www/src/rpl/parser.js';
+import { format } from '../www/src/rpl/formatter.js';
 import {
   parseUnitExpr, formatUnitExpr, normalizeUexpr,
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
-} from '../src/rpl/units.js';
+} from '../www/src/rpl/units.js';
 import { assert, assertThrows } from './helpers.mjs';
 
 /* ================================================================

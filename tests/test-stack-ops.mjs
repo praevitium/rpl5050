@@ -14,9 +14,9 @@
    Values on the stack are Integers so we can compare .value directly
    without worrying about Real-vs-Integer promotion. */
 
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
-import { Real, Integer, isInteger, isReal } from '../src/rpl/types.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
+import { Real, Integer, isInteger, isReal } from '../www/src/rpl/types.js';
 import { assert } from './helpers.mjs';
 
 /* Helper: return an array of .value fields from level-N-down to level-1.

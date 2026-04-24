@@ -1,22 +1,22 @@
 /* Round-trip test for src/rpl/persist.js — snapshot() + rehydrate()
    without touching localStorage or the DOM. */
 
-import { Stack } from '../src/rpl/stack.js';
+import { Stack } from '../www/src/rpl/stack.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Program,
   RList, Vector, Matrix, Tagged, Symbolic,
   isReal, isInteger, isBinaryInteger, isComplex, isString, isName,
   isList, isVector, isMatrix, isProgram, isTagged, isSymbolic,
   isDirectory,
-} from '../src/rpl/types.js';
-import { Num, Var, Bin } from '../src/rpl/algebra.js';
+} from '../www/src/rpl/types.js';
+import { Num, Var, Bin } from '../www/src/rpl/algebra.js';
 import {
   state as calcState, setAngle,
   varStore, resetHome, currentPath,
   makeSubdir, goInto,
   seedPrng, getPrngSeed, resetPrng, nextPrngUnit,
-} from '../src/rpl/state.js';
-import { snapshot, rehydrate } from '../src/rpl/persist.js';
+} from '../www/src/rpl/state.js';
+import { snapshot, rehydrate } from '../www/src/rpl/persist.js';
 
 let failed = 0;
 function assert(cond, msg) {

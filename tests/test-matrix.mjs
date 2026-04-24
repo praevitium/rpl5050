@@ -1,13 +1,13 @@
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString, isMatrix, isVector, isList, isSymbolic,
-} from '../src/rpl/types.js';
-import { parseEntry } from '../src/rpl/parser.js';
-import { format, formatStackTop } from '../src/rpl/formatter.js';
+} from '../www/src/rpl/types.js';
+import { parseEntry } from '../www/src/rpl/parser.js';
+import { format, formatStackTop } from '../www/src/rpl/formatter.js';
 import {
   state as calcState, setAngle, cycleAngle, toRadians, fromRadians,
   varStore, varRecall, varList, varPurge, resetHome, currentPath,
@@ -16,8 +16,8 @@ import {
   setWordsize, getWordsize, getWordsizeMask,
   setBinaryBase, getBinaryBase, resetBinaryState,
   setApproxMode,
-} from '../src/rpl/state.js';
-import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
+} from '../www/src/rpl/state.js';
+import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
 import { assert, assertThrows } from './helpers.mjs';
 
 /* Vector / Matrix ops — SIZE / TRN / DET / INV / DOT / CROSS / NORM / IDN. */
@@ -1163,7 +1163,7 @@ import { assert, assertThrows } from './helpers.mjs';
    CNRM / RNRM (column / row max-sum norms), AUGMENT (horizontal
    concat), RAND / RDZ (seeded PRNG shared with RANM).
    ================================================================ */
-import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
+import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
 {
   const matMatches = (matVal, expect) => {
     if (!isMatrix(matVal)) return false;

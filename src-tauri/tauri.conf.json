@@ -1,12 +1,11 @@
 {
   "productName": "rp5050sx",
   "version": "0.1.0",
-  "identifier": "com.rpl5050.app",
+  "identifier": "com.rpl5050.rp5050sx",
   "build": {
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
-    "devPath": ".",
-    "frontendDist": "."
+    "frontendDist": "../www"
   },
   "app": {
     "windows": [
@@ -24,14 +23,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "deb",
-      "dmg",
-      "msi",
-      "AppImage"
-    ],
-    "deb": {
-      "depends": []
+    "targets": "all",
+    "linux": {
+      "deb": {
+        "depends": []
+      }
     },
     "macOS": {
       "frameworks": [],

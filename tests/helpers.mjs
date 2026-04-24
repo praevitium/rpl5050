@@ -119,8 +119,8 @@ export function rplEqual(a, b) {
  * Imports `Stack` and `lookup` via the callers' module namespace; we
  * import them here directly to keep call sites terse.
  */
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
 export function runOp(opName, ...preStack) {
   const s = new Stack();
   for (const v of preStack) s.push(v);

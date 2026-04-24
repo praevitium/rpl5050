@@ -18,12 +18,12 @@
    "Bad argument value".  Non-numeric entries throw
    "Bad argument type". */
 
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, Complex, Str, Vector, Matrix,
   isReal, isInteger, isVector,
-} from '../src/rpl/types.js';
+} from '../www/src/rpl/types.js';
 import { assert, assertThrows } from './helpers.mjs';
 
 /* Dataset from HP50 AUR §18.2 example (simplified):

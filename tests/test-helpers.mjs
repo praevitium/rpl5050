@@ -9,7 +9,7 @@
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Tagged, Unit,
   RList, Vector, Matrix, Symbolic, Program, Directory,
-} from '../src/rpl/types.js';
+} from '../www/src/rpl/types.js';
 import { assert, assertThrows, rplEqual, runOp, runOpStack } from './helpers.mjs';
 
 /* ================================================================

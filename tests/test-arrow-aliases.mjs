@@ -32,15 +32,15 @@
      →UNIT / ->UNIT        Real + template Unit → Unit
 */
 
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Str, Name, Tagged, Unit,
   RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isBinaryInteger, isComplex, isTagged, isUnit,
   isString, isVector, isSymbolic,
-} from '../src/rpl/types.js';
-import { setBinaryBase, resetBinaryState, setWordsize } from '../src/rpl/state.js';
+} from '../www/src/rpl/types.js';
+import { setBinaryBase, resetBinaryState, setWordsize } from '../www/src/rpl/state.js';
 import { assert } from './helpers.mjs';
 
 /* Helper: deep-equal for the common RPL value shapes we hit here.

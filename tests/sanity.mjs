@@ -25,14 +25,14 @@
    can be swapped into the full suite for debugging without
    double-counting. */
 
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, Str, Name, Program,
   isReal, isInteger, isProgram, isString,
-} from '../src/rpl/types.js';
-import { parseEntry } from '../src/rpl/parser.js';
-import { setAngle, resetHome } from '../src/rpl/state.js';
+} from '../www/src/rpl/types.js';
+import { parseEntry } from '../www/src/rpl/parser.js';
+import { setAngle, resetHome } from '../www/src/rpl/state.js';
 import { assert, state } from './helpers.mjs';
 
 const t0 = Date.now();

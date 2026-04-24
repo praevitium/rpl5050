@@ -1,14 +1,14 @@
-import { Stack } from '../src/rpl/stack.js';
-import { lookup } from '../src/rpl/ops.js';
+import { Stack } from '../www/src/rpl/stack.js';
+import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString,
   Symbolic, isSymbolic,
-} from '../src/rpl/types.js';
-import { parseEntry } from '../src/rpl/parser.js';
-import { format, formatStackTop } from '../src/rpl/formatter.js';
+} from '../www/src/rpl/types.js';
+import { parseEntry } from '../www/src/rpl/parser.js';
+import { format, formatStackTop } from '../www/src/rpl/formatter.js';
 import {
   state as calcState, setAngle, cycleAngle, toRadians, fromRadians,
   varStore, varRecall, varList, varPurge, resetHome, currentPath,
@@ -17,15 +17,15 @@ import {
   setWordsize, getWordsize, getWordsizeMask,
   setBinaryBase, getBinaryBase, resetBinaryState,
   setApproxMode,
-} from '../src/rpl/state.js';
-import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
+} from '../www/src/rpl/state.js';
+import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
 import {
   parseAlgebra, simplify, deriv, expand, formatAlgebra,
   Num as AstNum, Var as AstVar, Bin as AstBin, Neg as AstNeg,
   astEqual,
   Fn as AstFn, isFn as astIsFn, isKnownFunction,
   evalAst, freeVars, defaultFnEval,
-} from '../src/rpl/algebra.js';
+} from '../www/src/rpl/algebra.js';
 import { assert } from './helpers.mjs';
 
 /* Symbolic algebra — parser, simplify, DERIV, EXPAND, COLLECT, FACTOR,
