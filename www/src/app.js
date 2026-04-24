@@ -595,6 +595,7 @@ class App {
       this.entry.flashError({ message: 'Too few arguments' });
       return;
     }
+    this.entry._snapForUndo();
     this.entry.safeRun(() => lookup('SWAP').fn(this.stack, this.entry), 'SWAP');
   }
 
@@ -623,7 +624,7 @@ class App {
     if (this._pendingEditValue !== null && this._pendingEditValue !== undefined) {
       return;
     }
-    this.stack.saveForUndo();
+    this.entry._snapForUndo();
     const v = this.stack.pop();
     this._pendingEditValue = v;
     const text = format(v);
@@ -784,19 +785,19 @@ class App {
         this.entry.focus();
       }),
       onPick:   doAndExit(() => {
-        this.stack.saveForUndo();
+        this.entry._snapForUndo();
         this.stack.pick(this._interactive.level);  // pick mutates + pushes
       }),
       onRoll:   doAndExit(() => {
-        this.stack.saveForUndo();
+        this.entry._snapForUndo();
         rollLevel(this.stack, this._interactive.level);
       }),
       onRollD:  doAndExit(() => {
-        this.stack.saveForUndo();
+        this.entry._snapForUndo();
         rollDownToLevel(this.stack, this._interactive.level);
       }),
       onDrop:   doAndExit(() => {
-        this.stack.saveForUndo();
+        this.entry._snapForUndo();
         dropLevel(this.stack, this._interactive.level);
       }),
       onCancel: () => this._exitInteractiveStack(),
@@ -1064,7 +1065,7 @@ class App {
             // skip Entry.backspace itself so a stale non-empty buffer
             // doesn't get delete-char'd (the user asked for DROP, not
             // edit, when the editor isn't active).
-            this.stack.saveForUndo();
+            this.entry._snapForUndo();
             try { this.stack.drop(); } catch (err) { this.entry.flashError(err); }
             return e.preventDefault();
           case 'Tab':

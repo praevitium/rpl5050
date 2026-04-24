@@ -180,6 +180,34 @@ import { assert } from './helpers.mjs';
       'Ctrl-Y with empty redo shows No redo error');
   }
 
+  // ---- Stack-only saveForUndo stays in lockstep with var-state ----
+  // Regression: pure stack mutations (physical Backspace→DROP, ▶ SWAP,
+  // interactive-stack PICK/ROLL/ROLLD/DROP, ▼ editLevel1) used to call
+  // stack.saveForUndo() without the companion saveVarStateForUndo(),
+  // putting the two histories out of sync.  performUndo then threw
+  // "No undo available" from the var-state side even though the stack
+  // had an undo slot, and a later REDO could replay a stale var
+  // snapshot.  The fix routes these sites through Entry._snapForUndo
+  // which pushes both slots.  This test simulates that lockstep by
+  // exercising _snapForUndo directly and verifying UNDO/REDO succeed
+  // when only the stack content actually changed.
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    s.push(Real(2));
+    const e = new Entry(s);
+    e._snapForUndo();                 // what swapTop / backspace should do
+    s.drop();                          // stack-only mutation, no var change
+    assert(s.depth === 1, 'pre-undo sanity: { 1 } after DROP');
+    const handled = handleModifierShortcut(evt({ key: 'z', ctrlKey: true }), e);
+    assert(handled === true, 'Ctrl-Z handled after stack-only mutation');
+    assert(s.depth === 2 && s.peek(1).value.eq(2),
+      'Ctrl-Z restores the pre-DROP stack when only stack state changed');
+    handleModifierShortcut(evt({ key: 'y', ctrlKey: true }), e);
+    assert(s.depth === 1 && s.peek(1).value.eq(1),
+      'Ctrl-Y re-applies the DROP');
+  }
+
   // ---- Ctrl-V → paste clipboard contents ----
   // Inject a fake clipboard facade whose readText resolves synchronously
   // via a Promise; await resolution to assert buffer was populated.

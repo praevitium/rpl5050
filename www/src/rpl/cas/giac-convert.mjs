@@ -344,17 +344,34 @@ export function splitGiacList(giacStr) {
  */
 export function stripGiacQuotes(s) {
   if (typeof s !== "string") return s;
-  if (s.length >= 2 && s.charCodeAt(0) === 0x22 && s.charCodeAt(s.length - 1) === 0x22) {
-    const inner = s.slice(1, -1);
-    // Undo the handful of backslash escapes Giac uses when it wraps a
-    // result in quotes: \" \\ \n \t. Anything else passes through.
-    return inner.replace(/\\(["\\nt])/g, (_m, c) => {
-      if (c === "n") return "\n";
-      if (c === "t") return "\t";
-      return c;
-    });
-  }
-  return s;
+  // Iteratively strip layers of surrounding double-quotes.  Giac
+  // sometimes nests the wrap: when a semicolon-sequence (as built by
+  // `buildGiacCmd` — `purge(X); factor(...)`) returns a value that is
+  // itself string-typed on the Giac side, the output arrives
+  // double-wrapped as `"\"...\""` — one `""` layer from the sequence,
+  // another from the inner string type.  A single strip leaves a
+  // leading `"` that `parseAlgebra` then trips on
+  // (`Unexpected character '"' at pos 0`).  Loop until stable.
+  let prev;
+  let cur = s;
+  do {
+    prev = cur;
+    if (
+      cur.length >= 2 &&
+      cur.charCodeAt(0) === 0x22 &&
+      cur.charCodeAt(cur.length - 1) === 0x22
+    ) {
+      const inner = cur.slice(1, -1);
+      // Undo the handful of backslash escapes Giac uses when it wraps a
+      // result in quotes: \" \\ \n \t. Anything else passes through.
+      cur = inner.replace(/\\(["\\nt])/g, (_m, c) => {
+        if (c === "n") return "\n";
+        if (c === "t") return "\t";
+        return c;
+      });
+    }
+  } while (cur !== prev);
+  return cur;
 }
 
 /**
