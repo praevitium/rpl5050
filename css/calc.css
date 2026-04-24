@@ -1,0 +1,905 @@
+/* =================================================================
+   HP50 Web — High-resolution reimplementation
+   Colors and proportions inspired by the HP 50g but crisp/modern.
+   Layout fills the available viewport — lots of LCD viewing area.
+   ================================================================= */
+
+:root {
+  --body-bg:        #1f2430;
+  --bezel-1:        #2b2f3c;
+  --bezel-2:        #1a1d26;
+  --bezel-edge:     #0d0f15;
+
+  --screen-bg:      #a9b89a;       /* LCD greenish-gray */
+  --screen-bg-2:    #95a487;
+  --screen-text:    #0e1510;
+  --screen-dim:     #2a3528;
+
+  --key-face:       #2f3441;
+  --key-face-2:     #262a36;
+  --key-text:       #f2efe3;
+  --key-edge:       #0a0c12;
+  --key-shadow:     rgba(0,0,0,.45);
+
+  --key-enter:      #ced2c0;       /* light enter key */
+  --key-enter-text: #141a14;
+  --key-menu:       #3a4252;       /* the six menu keys on row 1 */
+
+  --shift-left:     #e6a64a;       /* left shift (orange/yellow) */
+  --shift-right:    #e85a5a;       /* right shift (red) */
+  --alpha-color:    #6bb5e0;       /* alpha shift (blue) */
+
+  --radius-body:    14px;
+  --radius-screen:  10px;
+  --radius-key:     6px;
+
+  --font-lcd: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+  --font-ui:  "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  background: var(--body-bg);
+  font-family: var(--font-ui);
+  color: var(--key-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+/* --------------------------- Calculator body ---------------------------
+   Fills the full viewport — no max-width cap, so on wide monitors the
+   bezel / LCD / keypad stretch to fill whatever horizontal space the
+   side-panel leaves behind.
+   -------------------------------------------------------------------- */
+.calculator {
+  flex: 1 1 auto;
+  display: flex;
+  user-select: none;
+  justify-content: center;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.bezel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(180deg, var(--bezel-1), var(--bezel-2) 65%, #11141c 100%);
+  padding: 10px 10px 12px;
+  gap: 6px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.04) inset;
+  border-left: 1px solid var(--bezel-edge);
+  border-right: 1px solid var(--bezel-edge);
+}
+
+.brand-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px 2px;
+  color: #cdd3de;
+  letter-spacing: .5px;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 13.5px;
+  background: #000;
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 3px;
+  letter-spacing: 1px;
+}
+
+.model {
+  font-size: 10.5px;
+  color: #aab1bd;
+  letter-spacing: .6px;
+}
+.model-sub { color: var(--shift-left); font-weight: 700; margin-right: 4px; }
+
+/* ------------------------------ Screen ------------------------------
+   The LCD fills the remaining vertical space between the brand row and
+   the keyboard.  Its inner area is a flex column: status line, stack
+   view (grows), command line, menu bar.
+   ------------------------------------------------------------------ */
+.screen {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  background:
+    linear-gradient(180deg, var(--screen-bg), var(--screen-bg-2));
+  border-radius: var(--radius-screen);
+  padding: 10px;
+  box-shadow:
+    inset 0 2px 6px rgba(0,0,0,.35),
+    0 1px 0 rgba(255,255,255,.04);
+}
+
+.screen-inner {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;              /* let wide child content be clipped,
+                                not expand the LCD past the bezel */
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,.02) 0 1px,
+      transparent 1px 2px
+    ),
+    linear-gradient(180deg, #b5c3a6, #9fae92);
+  border-radius: 6px;
+  padding: 6px 8px 8px;
+  color: var(--screen-text);
+  font-family: var(--font-lcd);
+}
+
+.status-line {
+  flex: 0 0 auto;
+  display: flex;
+  /* Center annunciators vertically so each one hugs its glyphs rather
+     than stretching to the flex container's min-height (which would
+     leave empty space below each label — visible as a "bottom margin"
+     on hover backgrounds and as uneven baselines between short and
+     tall glyphs). */
+  align-items: center;
+  gap: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  min-height: 32px;
+  border-bottom: 1px dashed rgba(0,0,0,.25);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+
+.annunciator {
+  color: var(--screen-dim);
+  opacity: .35;
+}
+.annunciator.on { opacity: 1; color: var(--screen-text); }
+#ann-mode {
+  margin-left: auto;
+  opacity: 1;
+  font-weight: 500;
+  /* Let the path shrink below its content width when the LCD is narrow,
+     and truncate from the LEFT with an ellipsis so the CURRENT directory
+     (rightmost segment) stays visible.  `direction: rtl` moves the
+     `text-overflow: ellipsis` cut to the visual-left side; `.path-inner`
+     restores LTR flow for the actual segments. */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+}
+#ann-mode .path-inner {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.stack-view {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  font-size: clamp(16px, 2.2vh, 26px);
+  line-height: 1.35;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+}
+
+.stack-row {
+  display: flex;
+  gap: 10px;
+  padding: 0 2px;
+  /* Pin the row to the LCD width AND clip its content.  The
+     combination matters: `overflow: hidden` here prevents a long
+     `.value` from expanding the row past the LCD and dragging
+     ancestors wider, which was why the ellipsis wasn't triggering. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+  /* Keep each row at its natural height so a tall stack scrolls off
+     the top of the LCD (clipped by .stack-view's overflow: hidden)
+     rather than compressing every row to fit the container. */
+  flex: 0 0 auto;
+}
+
+.stack-row .level {
+  flex: 0 0 auto;
+  color: var(--screen-dim);
+  min-width: 2.4em;
+  text-align: right;
+}
+
+.stack-row .value {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  /* Flex container that pushes short text to the right edge (HP50
+     style).  The inner `.value-text` owns the overflow/ellipsis so
+     long content truncates with `…` instead of stretching the row
+     and the inner span stays right-anchored against the LCD edge. */
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+.stack-row .value-text {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Textbook mode (session 019): Symbolic rows render as SVG via
+   pretty.js.  The SVG already carries its own intrinsic size from
+   astToSvg; right-align it and let it breathe a little beyond the
+   flat-text line-height when it holds a fraction.  `color: inherit`
+   threads the LCD's foreground color into `fill="currentColor"` on
+   the SVG. */
+.stack-row .value.textbook {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  color: inherit;
+}
+.stack-row .value.textbook svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Blank row used to push real stack rows upward when the user has
+   scrolled up with ▲.  Same height as a normal row; visually empty. */
+.stack-row.scroll-pad { visibility: hidden; }
+
+/* Session 037 — interactive stack visual cursor and mouse hover.
+   Each stack row is clickable (echo to cmdline) and shows a highlight
+   on hover.  `.selected` marks the cursor in interactive-stack mode —
+   heavier inversion so the user can tell at a glance which level the
+   ECHO/PICK/ROLL soft-keys will operate on.  `.hover` is lighter and
+   purely visual feedback for pointer targeting. */
+.stack-row { cursor: pointer; }
+.stack-row.hover {
+  background: rgba(0, 0, 0, .08);
+  border-radius: 2px;
+}
+.stack-row.selected {
+  background: rgba(0, 0, 0, .22);
+  outline: 1px solid rgba(0, 0, 0, .35);
+  border-radius: 2px;
+}
+/* Selected row always wins over hover — user's current selection in
+   interactive mode shouldn't wash out when the pointer happens to be
+   on another row. */
+.stack-row.selected.hover { background: rgba(0, 0, 0, .22); }
+
+/* Clickable annunciators (angle, approx, alpha) and path segments.
+   Any annunciator with a `title` attribute is interactive — same for
+   every `.path-segment` inside `#ann-mode`.  Pointer cursor + a soft
+   text-hugging highlight on hover.  We use `inline-block` with a
+   tight `line-height: 1` so the highlight pill tracks the glyphs
+   rather than the surrounding status-line's 32px min-height. */
+.annunciator[title],
+.path-segment {
+  cursor: pointer;
+  display: inline-block;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 3px;
+  /* The status-line is a flex container with `min-height: 32px`, so
+     annunciators (as direct flex children) would stretch to that
+     cross-axis height by default — leaving an empty strip below the
+     glyphs that the hover background would fill.  `align-self: center`
+     shrinks the item to content height so the pill hugs just the text
+     top-and-bottom.  `.path-segment` lives inside `#ann-mode` (not a
+     flex container) so align-self is a harmless no-op there. */
+  align-self: center;
+}
+.annunciator[title]:hover,
+.path-segment:hover {
+  background: rgba(0, 0, 0, .14);
+}
+
+/* Small visual hint that the user is looking at a scrolled stack
+   (level 1 is no longer the bottom row).  Rendered as an upward
+   chevron in the top-right of the stack view. */
+.stack-view { position: relative; }
+.stack-view[data-scrolled="1"]::before {
+  content: "▲";
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 8.25px;
+  color: var(--screen-dim);
+  opacity: .55;
+  pointer-events: none;
+}
+
+.cmdline {
+  flex: 0 0 auto;
+  min-height: 22px;
+  border-top: 1px solid rgba(0,0,0,.25);
+  margin-top: 6px;
+  padding-top: 4px;
+  font-size: clamp(15px, 2vh, 22px);
+  line-height: 1.25;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cmdline.empty::after { content: ""; }
+.cmdline .cursor {
+  display: inline-block;
+  width: .55em;
+  height: 1em;
+  background: var(--screen-text);
+  vertical-align: -2px;
+  animation: blink 1s steps(2, end) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.menu-bar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-align: center;
+}
+.menu-bar .slot {
+  background: rgba(0,0,0,.18);
+  color: var(--screen-text);
+  padding: 3px 2px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  min-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-bar .slot:empty { background: transparent; }
+
+/* ------------------------------ Keys ------------------------------
+   Three stacked grids — faithful to the physical HP50 layout:
+     .soft-row  — 6 cols — F1..F6 (menu soft-keys)
+     .nav-row   — 5 cols × 2 rows — APPS/MODE/TOOL + VAR/STO▶/NXT on the
+                  left side, 4-way arrow diamond spanning cols 4-5 on
+                  the right (the two cells are a 3×3 sub-grid so the
+                  arrows form a plus/diamond shape).
+     .keypad    — 5 cols × 7 rows — the canonical main HP50 grid
+                  (HIST/EVAL/'/SYMB/⌫, Y^X/√X/SIN/COS/TAN,
+                  EEX/+/-/X/1/X/÷, α/7/8/9/×, LS/4/5/6/−,
+                  RS/1/2/3/+, ON/0/./SPC/ENTER).
+   All three grids are content-sized so the screen gets slack space.
+   --------------------------------------------------------------- */
+.soft-row,
+.nav-row,
+.keypad {
+  display: grid;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.soft-row {
+  grid-template-columns: repeat(6, 1fr);
+}
+.nav-row {
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: auto auto;
+}
+.keypad {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+/* Arrow cluster: fills the 2-row area on the right of .nav-row as a
+   nested 3-col × 2-row grid arranged as an inverted T — ▲ alone on
+   top, ◀ ▼ ▶ across the bottom.  Arrow keys inherit the default
+   .key sizing so their heights match every other key in the grid.  */
+.arrow-cluster {
+  grid-column: 4 / span 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 6px;
+}
+.arrow-cluster .arrow-up    { grid-area: 1 / 2 / 2 / 3; }
+.arrow-cluster .arrow-left  { grid-area: 2 / 1 / 3 / 2; }
+.arrow-cluster .arrow-down  { grid-area: 2 / 2 / 3 / 3; }
+.arrow-cluster .arrow-right { grid-area: 2 / 3 / 3 / 4; }
+/* 📖 catalog button — session 038.  Parked to the right of ▲ in the
+   top row of the cluster (row 1, col 3).  Uses the same row-1 slot
+   the old layout left empty.  The open-book emoji reads as "browse
+   the catalog". */
+.arrow-cluster .cat-key {
+  grid-area: 1 / 3 / 2 / 4;
+}
+.arrow-cluster .cat-key .primary {
+  font-size: 15px;
+  line-height: 1;
+}
+/* 🔧 — HP50 Custom menu key.  Fills the previously-empty row-1 col-1
+   slot, so row 1 reads [🔧][▲][📖] and row 2 still reads [◀][▼][▶]. */
+.arrow-cluster .cst-key {
+  grid-area: 1 / 1 / 2 / 2;
+}
+.arrow-cluster .cst-key .primary {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.key {
+  position: relative;
+  background: linear-gradient(180deg, var(--key-face), var(--key-face-2));
+  border: 1px solid var(--key-edge);
+  border-radius: var(--radius-key);
+  color: var(--key-text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 15.75px;                /* session 013: bigger key fonts */
+  padding: 3px;
+  /* Fix every non-arrow key to the same height so rows across the
+     soft-row, nav-row, and 5×7 keypad visually align regardless of
+     which labels a given key carries (digit vs ENTER vs shifted). */
+  box-sizing: border-box;
+  height: 40.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.08) inset,
+    0 2px 0 var(--key-shadow);
+  transition: transform .04s ease, box-shadow .04s ease;
+}
+.key:hover { filter: brightness(1.08); }
+.key:active,
+.key.pressed {
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.04) inset,
+    0 1px 0 var(--key-shadow);
+}
+
+.key .primary {
+  display: block;
+  font-size: 16.875px;               /* session 013: was 15px */
+  line-height: 1.1;
+}
+/* Dynamic soft-menu label (F1..F6 filled from the active menu).
+   Bright cyan + extra weight + subtle glow so live menu content
+   reads as unmistakably different from the static F1..F6 labels
+   and from the orange/red shift glyphs. */
+.key .primary.menu-label {
+  color: #67e8f9;
+  font-weight: 800;
+  text-shadow: 0 0 4px rgba(103, 232, 249, .45);
+}
+.key .shift-l, .key .shift-r, .key .alpha {
+  position: absolute;
+  font-size: 11.25px;                /* session 013: was 9px */
+  font-weight: 700;
+  letter-spacing: .4px;
+  line-height: 1;
+}
+.key .shift-l { top: 3px;  left: 5px;  color: var(--shift-left); }
+.key .shift-r { top: 3px;  right: 5px; color: var(--shift-right); }
+.key .alpha   { bottom: 4px; right: 5px; color: var(--alpha-color); }
+
+/* On the real HP50, ENTER and the backspace key are both one-cell
+   keys — ENTER sits in the bottom-right of a 5-col grid, not spanning
+   two cells.  We keep the light colour treatment though. */
+.key.enter {
+  background: linear-gradient(180deg, var(--key-enter), #b9bfae);
+  color: var(--key-enter-text);
+}
+.key.menu { background: linear-gradient(180deg, #3a4252, #2b3141); }
+.key.shift-l-key { background: linear-gradient(180deg, #d79239, #b57420); }
+.key.shift-r-key { background: linear-gradient(180deg, #c94a4a, #9c2e2e); }
+.key.alpha-key   { background: linear-gradient(180deg, #4b7fa1, #345d7c); }
+
+.key.shift-l-key, .key.shift-r-key, .key.alpha-key { color: #fff; }
+
+/* Digits row a bit bigger */
+.key.digit .primary { font-size: 20.25px; } /* session 013: was 17px */
+
+/* Pressed shift indicator pulse */
+.key.sticky {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+/* Alpha-LOCK indicator on the α key — bolder, double-ring outline so
+   the user can tell lock is on vs. single-shot alpha.  Kept distinct
+   from .sticky to let both classes compose. */
+.key.alpha-key.locked {
+  outline: 3px double #fff;
+  outline-offset: -3px;
+}
+
+/* LCD alpha annunciator: visible whenever alpha or alphaLock is on.
+   Made bold for lock so the marker reads at a glance. */
+#ann-alpha.on          { color: var(--alpha-color); }
+#ann-alpha.on.locked   { color: var(--alpha-color); font-weight: 900; }
+
+/* Export / Import toolbar at the top of the side-panel Files tab.
+   Two equal-width buttons matching the rest of the panel's dark
+   surface. */
+.sp-io {
+  display: flex;
+  gap: 6px;
+  padding: 0 0 6px;
+}
+.sp-io-btn {
+  flex: 1 1 0;
+  padding: 5px 8px;
+  font-size: 13px;
+  letter-spacing: .4px;
+  border: 1px solid #4a5260;
+  background: #20242c;
+  color: #cdd3de;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.sp-io-btn:hover  { background: #2b313c; color: #fff; }
+.sp-io-btn:active { background: #151820; }
+
+/* =================================================================
+   Side panel (session 038) — Commands / History / Characters catalog.
+   Slides in from the right edge of the viewport; sits above the
+   calculator bezel via fixed positioning so it's never clipped by the
+   LCD's overflow: hidden.  Closed (`.hidden`) → translated off-screen
+   to preserve the transition; open → pinned at right: 0.
+   ================================================================= */
+.side-panel {
+  position: relative;
+  width: 360px;
+  max-width: 85vw;
+  height: 100vh;
+  background: linear-gradient(180deg, #23283a, #181c28);
+  color: var(--key-text);
+  font-family: var(--font-ui);
+  border-left: 1px solid var(--bezel-edge);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+}
+.side-panel.hidden {
+  display: none;
+}
+
+/* Drag-to-resize handle.  A 6px vertical strip pinned to the panel's
+   left edge.  Sits above the header so the cursor lands on it before
+   the tabs.  Double-click resets to the default width. */
+.side-panel-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 6px;
+  margin-left: -3px;                 /* center on the border */
+  cursor: ew-resize;
+  z-index: 10;
+  background: transparent;
+}
+.side-panel-resizer:hover,
+body.sp-resizing .side-panel-resizer {
+  background: rgba(103, 232, 249, .25);
+}
+/* While dragging, stop text-selection flicker across the page. */
+body.sp-resizing {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+/* #sidePanelRoot is the first DOM child of <body>; push it visually to
+   the right of the calculator when docked in-flow. */
+#sidePanelRoot { order: 1; }
+
+.side-panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+.side-panel-tabs {
+  display: flex;
+  gap: 4px;
+}
+.sp-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #aab1bd;
+  padding: 4px 10px;
+  /* Tabs are now emoji glyphs — bump up so they read at a glance. */
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: .4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sp-tab:hover { color: #fff; background: rgba(255, 255, 255, .04); }
+.sp-tab.active {
+  color: #fff;
+  background: rgba(103, 232, 249, .14);
+  border-color: rgba(103, 232, 249, .35);
+}
+.sp-close {
+  background: transparent;
+  border: none;
+  color: #aab1bd;
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.sp-close:hover { color: #fff; background: rgba(255, 255, 255, .06); }
+
+.side-panel-filter {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, .04);
+}
+.sp-filter {
+  flex: 1 1 auto;
+  background: #15181f;
+  border: 1px solid #3a4252;
+  color: #e7ebf2;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  outline: none;
+}
+.sp-filter:focus { border-color: rgba(103, 232, 249, .5); }
+.sp-sort {
+  background: #20242c;
+  border: 1px solid #3a4252;
+  color: #cdd3de;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sp-sort:hover { background: #2b313c; color: #fff; }
+.sp-sort.hidden { display: none; }
+
+.side-panel-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 8px 12px;
+}
+
+/* Command / character grid.  Sections are <details>/<summary> so the
+   headers collapse/expand natively; the arrow on the left of each
+   summary flips closed/open via the :not([open]) selector. */
+.sp-section {
+  margin: 0;
+}
+.sp-section + .sp-section {
+  margin-top: 4px;
+}
+.sp-cat {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: #7d8596;
+  margin: 10px 2px 4px;
+  /* When used inside <details>, `summary` gets a default list marker.
+     Swap it for a custom chevron that rotates with the open state. */
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sp-cat::-webkit-details-marker { display: none; }
+.sp-cat::before {
+  content: '▾';
+  font-size: 10px;
+  color: #5a6273;
+  transition: transform .12s ease;
+}
+.sp-section:not([open]) > .sp-cat::before {
+  transform: rotate(-90deg);
+}
+.sp-cat:hover { color: #cdd3de; }
+.sp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 4px;
+}
+.sp-chars-grid {
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+}
+.sp-cmd, .sp-char {
+  background: #2a2f3d;
+  border: 1px solid #3a4252;
+  color: #e7ebf2;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-char { font-size: 18px; padding: 7px 2px; }
+.sp-cmd:hover, .sp-char:hover {
+  background: #353b4c;
+  border-color: #4e586d;
+}
+.sp-cmd:active, .sp-char:active { background: #1f2330; }
+.sp-cmd-stub {
+  color: #737a88;
+  border-style: dashed;
+  background: #1f232d;
+}
+/* Unit-symbol buttons in the Commands/Units section insert `_<name>`
+   rather than running an op.  Lighter accent so they read as separate
+   from the ops they share the section with. */
+.sp-cmd-unit {
+  background: #2f3a2e;
+  border-color: #4a5547;
+  color: #d9e6d7;
+}
+.sp-cmd-unit:hover  { background: #3a4638; border-color: #5d6a58; }
+.sp-cmd-unit:active { background: #242d22; }
+
+/* History list */
+.sp-history { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
+.sp-hist {
+  background: #2a2f3d;
+  border: 1px solid #3a4252;
+  color: #e7ebf2;
+  font-family: var(--font-lcd);
+  font-size: 14.5px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-hist:hover { background: #353b4c; border-color: #4e586d; }
+
+.sp-empty {
+  color: #7d8596;
+  font-size: 14px;
+  padding: 16px 4px;
+  text-align: center;
+}
+
+/* Files tab — breadcrumb + flat list of dir/var entries.  Mirrors
+   state.current; clicks descend / push / navigate via the app. */
+.sp-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px 8px;
+  font-size: 14px;
+  color: #aab1bd;
+}
+.sp-crumb {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #aab1bd;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.sp-crumb:hover { color: #fff; background: rgba(255, 255, 255, .05); }
+.sp-crumb-current {
+  color: #e7ebf2;
+  background: rgba(103, 232, 249, .12);
+  border-color: rgba(103, 232, 249, .3);
+  cursor: default;
+}
+.sp-crumb-sep { color: #5a6273; }
+
+.sp-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sp-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #2a2f3d;
+  border: 1px solid #3a4252;
+  color: #e7ebf2;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  padding: 7px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+.sp-file:hover { background: #353b4c; border-color: #4e586d; }
+.sp-file-dir {
+  background: #2b3141;
+  border-color: #4a5472;
+}
+.sp-file-dir .sp-file-name { font-weight: 700; }
+.sp-file-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-file-type {
+  flex: 0 0 auto;
+  font-size: 12px;
+  letter-spacing: .6px;
+  color: #7d8596;
+  text-transform: uppercase;
+}
+.sp-file-dir .sp-file-type { color: #9aa8c4; }
+
+/* Short viewports — drop some vertical padding so keys fit. */
+@media (max-height: 640px) {
+  .key { padding: 3px; min-height: 28.5px; }
+  .soft-row, .nav-row, .keypad { gap: 4px; }
+  .bezel { gap: 6px; padding: 10px 12px 12px; }
+}
+
+/* =================================================================
+   Chrome density modes.  `.brand` cycles through full → simple →
+   minimal; `.model` toggles the side panel.  Mode class lives on
+   <body> so any descendant can be targeted without climbing.
+     full     — everything visible (baseline, no rule needed)
+     simple   — hide F-row, nav-row, and the top two keypad rows
+                (the first five key rows of the keyboard)
+     minimal  — display only: hide every key row
+   ================================================================= */
+.brand, .model { cursor: pointer; }
+
+body.mode-simple .soft-row,
+body.mode-simple .nav-row {
+  display: none;
+}
+body.mode-simple .keypad > .key:nth-child(-n+10) {
+  display: none;
+}
+
+body.mode-minimal .soft-row,
+body.mode-minimal .nav-row,
+body.mode-minimal .keypad {
+  display: none;
+}

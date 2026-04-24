@@ -1,0 +1,325 @@
+/* =================================================================
+   Render the stack and command line onto the LCD DOM nodes.
+   ================================================================= */
+
+import { formatStackTop, DEFAULT_DISPLAY } from '../rpl/formatter.js';
+import { astToSvg } from '../rpl/pretty.js';
+import { isSymbolic } from '../rpl/types.js';
+import { state as calcState } from '../rpl/state.js';
+
+export class Display {
+  constructor({ stackView, cmdline, statusLine, menuBar }) {
+    this.stackView  = stackView;
+    this.cmdline    = cmdline;
+    this.statusLine = statusLine;
+    this.menuBar    = menuBar;
+    this.displayOpts = { ...DEFAULT_DISPLAY };
+    this.menuSlots = ['', '', '', '', '', ''];
+    // How many rows to push the bottom of the visible window up past
+    // level 1.  0 = level 1 is the bottom row (default HP50 view).
+    // The App layer owns the clamp; renderStack just uses whatever
+    // offset is passed in.
+    this.stackScroll = 0;
+    // Session 037 — interactive stack visual cursor.  null means no
+    // level is selected (normal rendering); otherwise the 1-based
+    // level is highlighted with `.stack-row.selected`.
+    this.selectedLevel = null;
+    // Session 037 — optional click/hover callbacks injected by App.
+    // Left null by default so the Display stays standalone for tests.
+    this.onStackRowClick    = null;  // (level:number) => void
+    this.onIndicatorClick   = null;  // (id:string) => void
+    this.onPathSegmentClick = null;  // (index:number) => void
+    this._installInteractiveHandlers();
+  }
+
+  /* -------- session 037: interactive display event wiring --------
+     The Display owns the DOM for the LCD and is the cheapest place
+     to attach click / hover listeners.  We use event delegation so
+     the handlers survive re-renders of stack rows and annunciators.
+     The App layer plugs in its own `onStackRowClick` / etc. callbacks
+     after construction; when a callback is null the DOM event is a
+     no-op (the CSS cursor hint also drops off — see calc.css). */
+  _installInteractiveHandlers() {
+    if (!this.stackView || typeof this.stackView.addEventListener !== 'function') {
+      return;                                   // non-DOM test harness
+    }
+    // Stack rows: click → onStackRowClick(level); mouseover / mouseout
+    // toggles the hover class so CSS can light up the hovered row.
+    this.stackView.addEventListener('click', (ev) => {
+      if (!this.onStackRowClick) return;
+      const row = ev.target.closest?.('.stack-row');
+      if (!row || !row.dataset.level) return;
+      const level = Number(row.dataset.level);
+      if (Number.isFinite(level)) this.onStackRowClick(level);
+    });
+    this.stackView.addEventListener('mouseover', (ev) => {
+      const row = ev.target.closest?.('.stack-row');
+      if (!row || !row.dataset.level) return;
+      row.classList.add('hover');
+    });
+    this.stackView.addEventListener('mouseout', (ev) => {
+      const row = ev.target.closest?.('.stack-row');
+      if (!row) return;
+      row.classList.remove('hover');
+    });
+
+    // Status line: click an indicator → onIndicatorClick(id);
+    //              click a path segment → onPathSegmentClick(index).
+    if (this.statusLine && typeof this.statusLine.addEventListener === 'function') {
+      this.statusLine.addEventListener('click', (ev) => {
+        const seg = ev.target.closest?.('.path-segment');
+        if (seg && seg.dataset.index != null && this.onPathSegmentClick) {
+          this.onPathSegmentClick(Number(seg.dataset.index));
+          return;
+        }
+        const ann = ev.target.closest?.('.annunciator');
+        if (ann && ann.id && this.onIndicatorClick) {
+          // Annunciator IDs are 'ann-angle', 'ann-approx', 'ann-mode', etc.
+          // Swallow #ann-mode clicks that missed a .path-segment — the
+          // user clicked the braces or whitespace.  Those aren't
+          // interactive; only the named segments are.
+          if (ann.id === 'ann-mode') return;
+          const id = ann.id.replace(/^ann-/, '');
+          this.onIndicatorClick(id);
+        }
+      });
+    }
+  }
+
+  renderStack(stack) {
+    const snap = stack.snapshot();                 // [level1, level2, ...]
+    // LCD renders level N at top, level 1 at bottom.  We reverse so the
+    // DOM order is [levelN, ..., level1].  Higher levels that don't
+    // fit in the LCD are clipped at the top by CSS (the flex column is
+    // justify-content: flex-end, overflow: hidden — so the newest items
+    // (levels 1..M) stay visible while older items scroll off-top).
+    //
+    // "Scrolling up" in this LCD means exposing the *higher* levels
+    // that are clipped off the top.  The container is flex-end + hidden,
+    // so the bottommost DOM child is what stays visible.  To shift the
+    // whole window up by N rows, we append N empty spacer rows *after*
+    // the real rows — those spacers anchor to the bottom and push the
+    // real content upward, which drops higher levels into view at the
+    // top and drops lower levels out at the bottom.
+    const rows = snap.slice().reverse();
+    this.stackView.innerHTML = '';
+    rows.forEach((val, i) => {
+      const level = rows.length - i;
+      const row = document.createElement('div');
+      row.className = 'stack-row';
+      // data-level lets the click delegate read the level without
+      // a DOM walk, and anchors CSS :hover and .selected styling.
+      row.dataset.level = String(level);
+      if (this.selectedLevel === level) row.classList.add('selected');
+      // Tooltip: session 037 — hover reveals the level number and a
+      // hint that clicking echoes the value to the entry line.
+      row.title = `Stack level ${level} — click to copy to the command line`;
+      // `.value` is a flex container that right-aligns its inner
+      // `.value-text` span.  The inner span owns overflow / ellipsis,
+      // so short values hug the right edge (HP50-style) AND long
+      // values truncate with `…` rather than spilling past the LCD.
+      row.innerHTML = `
+        <span class="level">${level}:</span>
+        <span class="value"><span class="value-text"></span></span>
+      `;
+      // formatStackTop forces HP50-style tick rendering on bare Names —
+      // on the stack an identifier is always a name literal, so `X`
+      // displays as `'X'` regardless of how it was pushed.  `format`
+      // (no stack context) is still used from inside the formatter
+      // for nested program / list / vector / matrix / tagged cells.
+      //
+      // Textbook mode (session 019): when calcState.textbookMode is on
+      // AND the value is a Symbolic, swap the flat-text rendering for
+      // the SVG pretty-print from src/rpl/pretty.js.  Everything else
+      // (Real, Integer, BinInt, Complex, List, …) keeps flat text —
+      // textbook only affects algebraic expressions.
+      const cell = row.querySelector('.value');
+      const inner = row.querySelector('.value-text');
+      if (calcState.textbookMode && isSymbolic(val)) {
+        const { svg } = astToSvg(val.expr, { size: 22 });
+        inner.innerHTML = svg;
+        cell.classList.add('textbook');
+      } else {
+        inner.textContent = formatStackTop(val, this.displayOpts);
+        cell.classList.remove('textbook');
+      }
+      this.stackView.appendChild(row);
+    });
+    for (let k = 0; k < this.stackScroll; k++) {
+      const pad = document.createElement('div');
+      pad.className = 'stack-row scroll-pad';
+      pad.innerHTML = '<span class="level">&nbsp;</span><span class="value">&nbsp;</span>';
+      this.stackView.appendChild(pad);
+    }
+    // Annunciator hint: show a small "↕" indicator when scrolled so the
+    // user knows they're not looking at level 1 at the bottom.  Done via
+    // a data attribute the CSS can style without forcing a reflow here.
+    this.stackView.dataset.scrolled = this.stackScroll > 0 ? '1' : '0';
+  }
+
+  /** Set the scroll offset and re-render with the given stack snapshot.
+   *  Does NOT clamp — callers own clamping (see clampStackScroll). */
+  setStackScroll(offset, stack) {
+    this.stackScroll = offset;
+    if (stack) this.renderStack(stack);
+  }
+
+  renderCmdline(entry) {
+    const { buffer, cursor, error } = entry;
+
+    if (error) {
+      this.cmdline.textContent = error;
+      this.cmdline.classList.remove('empty');
+      return;
+    }
+    if (buffer.length === 0) {
+      this.cmdline.innerHTML = '';
+      this.cmdline.classList.add('empty');
+      return;
+    }
+    this.cmdline.classList.remove('empty');
+    const pre = document.createTextNode(buffer.slice(0, cursor));
+    const cur = document.createElement('span'); cur.className = 'cursor';
+    const post = document.createTextNode(buffer.slice(cursor));
+    this.cmdline.innerHTML = '';
+    this.cmdline.append(pre, cur, post);
+  }
+
+  setMenu(slots) {
+    this.menuSlots = slots.slice(0, 6);
+    while (this.menuSlots.length < 6) this.menuSlots.push('');
+    if (!this.menuBar) return;     // on-screen menu bar is optional
+    this.menuBar.innerHTML = '';
+    this.menuSlots.forEach(label => {
+      const d = document.createElement('div');
+      d.className = 'slot';
+      d.textContent = label || '';
+      this.menuBar.appendChild(d);
+    });
+  }
+
+  setAnnunciator(id, on) {
+    const el = this.statusLine.querySelector(`#ann-${id}`);
+    if (!el) return;
+    el.classList.toggle('on', !!on);
+    // Session 037: attach a helpful tooltip on first use.  The map below
+    // keeps copy in one place so every annunciator has a short hint the
+    // user sees on hover (and the App layer can still click to act).
+    if (!el.title) {
+      const hints = {
+        alpha: 'α — alpha (letter) typing mode; click to cycle off → α → α-lock → off',
+        halt: 'HALT — program execution paused',
+        hex:  'HEX — binary display base',
+        xyz:  'XYZ — rectangular coordinate mode',
+        r:    'R — polar / cylindrical mode',
+      };
+      if (hints[id]) el.title = hints[id];
+    }
+  }
+
+  /** Update the angle-mode annunciator (DEG/RAD/GRD).  The annunciator
+   *  stays visible — HP50 always shows the active angle mode.
+   *  Session 037: tooltip advertises the click-to-cycle behavior. */
+  setAngleMode(mode) {
+    const el = this.statusLine.querySelector('#ann-angle');
+    if (!el) return;
+    el.textContent = mode;
+    el.classList.add('on');
+    el.title = `Angle mode: ${mode} — click to cycle DEG → RAD → GRD`;
+  }
+
+  /** Update the EXACT/APPROX annunciator.  HP50 flag -105: when CLEAR
+   *  ("EXACT") the calculator keeps symbolic results symbolic and shows
+   *  an `=` glyph; when SET ("APPROX") results fold to decimals and the
+   *  annunciator flips to `~`.  Always lit — the user should be able
+   *  to glance at the LCD and tell which mode they're in without
+   *  opening the MODES menu.  Added session 035 to kill the class of
+   *  confusion where the `=` glyph on the keypad made users believe
+   *  EXACT was active when in fact the calculator was booting in
+   *  APPROX. */
+  setApproxAnnunciator(approx) {
+    const el = this.statusLine?.querySelector('#ann-approx');
+    if (!el) return;
+    el.textContent = approx ? '~' : '=';
+    el.classList.add('on');
+    el.title = approx
+      ? 'APPROX mode (flag -105 set) — click to switch to EXACT'
+      : 'EXACT mode (flag -105 clear) — click to switch to APPROX';
+  }
+
+  /** Show the current BinaryInteger display-base override as a short
+   *  label (HEX / DEC / OCT / BIN) in the status line.  When the
+   *  override is cleared (`null`) the annunciator hides — BinInts
+   *  then render in their own stored base, matching HP50 behaviour
+   *  where this annunciator only lights up when a mode is actively
+   *  forcing a base.  Reach the modes by typing HEX / DEC / OCT /
+   *  BIN (or via the Commands side-panel).  Reuses the `#ann-hex`
+   *  slot for DOM stability. */
+  setBinaryBaseAnnunciator(base) {
+    const el = this.statusLine?.querySelector('#ann-hex');
+    if (!el) return;
+    const labels = { h: 'HEX', d: 'DEC', o: 'OCT', b: 'BIN' };
+    const label = labels[base];
+    if (!label) {
+      el.textContent = '';
+      el.classList.remove('on');
+      el.removeAttribute('title');
+      return;
+    }
+    el.textContent = label;
+    el.classList.add('on');
+    el.title = `${label} — BinaryInteger display base (click to cycle)`;
+  }
+
+  /** Show the current coordinate mode (XYZ / R∠Z / R∠∠) for complex /
+   *  vector display.  Always lit — the user should see at a glance
+   *  whether (1,1) renders as `(1, 1)` or `(SQRT(2), PI/4)`.  Occupies
+   *  the slot directly after the angle annunciator (`#ann-coord`). */
+  setCoordMode(mode) {
+    const el = this.statusLine?.querySelector('#ann-coord');
+    if (!el) return;
+    const glyphs = { RECT: 'XYZ', CYLIN: 'R∠Z', SPHERE: 'R∠∠' };
+    el.textContent = glyphs[mode] || 'XYZ';
+    el.classList.add('on');
+    el.title = `Coord mode: ${el.textContent} — click to cycle RECT → CYLIN → SPHERE`;
+  }
+
+  /** Update the directory-path annunciator — `{ HOME }` at startup;
+   *  `{ HOME A }` once subdirs land.  Accepts an array of segments.
+   *
+   *  Session 037: each segment is wrapped in a clickable
+   *  `<span class="path-segment" data-index="N" title="…">NAME</span>`
+   *  so the user can jump straight back to an ancestor directory by
+   *  clicking on its name in the path annunciator.  The App layer wires
+   *  onPathSegmentClick to navigate there.  Non-segment glyphs — the
+   *  `{` / `}` braces and the inter-segment spaces — stay as plain
+   *  text so they're not clickable. */
+  setPath(segments) {
+    const el = this.statusLine.querySelector('#ann-mode');
+    if (!el) return;
+    const segs = Array.isArray(segments) && segments.length ? segments : ['HOME'];
+    // Wrap the whole path in a single .path-inner so the outer #ann-mode
+    // can truncate-from-the-left via `direction: rtl` + overflow: hidden
+    // without reversing the order of the inner click-targets.  .path-inner
+    // forces `direction: ltr` so the segments render in order.
+    const parts = ['<span class="path-inner">{ '];
+    segs.forEach((name, i) => {
+      if (i > 0) parts.push(' ');
+      const hint = i === segs.length - 1
+        ? `Current directory: ${name}`
+        : `Navigate up to ${name}`;
+      const esc = String(name).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      parts.push(
+        `<span class="path-segment" data-index="${i}" title="${hint}">${esc}</span>`
+      );
+    });
+    parts.push(' }</span>');
+    el.innerHTML = parts.join('');
+    // Deliberately do NOT set a title on #ann-mode itself — only the
+    // inner .path-segment spans should be interactive.  Giving the outer
+    // annunciator a title would (a) trigger the .annunciator[title]:hover
+    // highlight across the whole `{ HOME … }` area including the braces,
+    // and (b) suggest the braces themselves are clickable.  Only the
+    // segment names get the pointer cursor and the hover pill.
+  }
+}

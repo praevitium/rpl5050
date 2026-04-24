@@ -1,0 +1,902 @@
+/* =================================================================
+   Global calculator modes / flags.
+
+   This module owns cross-cutting state that the RPL core, UI display
+   and keyboard all need to read or mutate in lockstep — angle mode
+   today; number display mode and flags in later sessions.
+
+   Keep it small and synchronous.  Anything that should react to
+   changes can subscribe().  Ops mutate via the `set*` helpers so the
+   subscribers fire exactly once per change.
+   ================================================================= */
+
+import { Directory, TYPES, BIN_BASES } from './types.js';
+
+export const ANGLE_MODES = Object.freeze(['DEG', 'RAD', 'GRD']);
+export const COORD_MODES = Object.freeze(['RECT', 'CYLIN', 'SPHERE']);
+
+const _listeners = new Set();
+
+/* The HOME directory is the top-level variable container.  It lives
+   for the lifetime of the app.  `current` is the directory the user is
+   "in" — matches the { HOME } / { HOME A } annunciator on the HP50.
+   Subdirectories aren't creatable yet, but the data model is ready. */
+const _home = Directory({ name: 'HOME' });
+
+export const WORDSIZE_MIN = 1;
+export const WORDSIZE_MAX = 64;
+export const WORDSIZE_DEFAULT = 64;
+
+export const state = {
+  angle:   'RAD',            // 'DEG' | 'RAD' | 'GRD'  (HP50 default via flag -17)
+  // Coordinate display mode for Complex / Vector values.  'RECT' is the
+  // HP50 default (flag -15/-16 both clear) and renders (1,1) as
+  // `(1, 1)`; 'CYLIN' renders the same as `(SQRT(2), π/4)`; 'SPHERE'
+  // extends that to 3-vectors.  The formatter is the sole consumer —
+  // only the on-screen display changes; stored values stay rectangular.
+  coordMode: 'RECT',         // 'RECT' | 'CYLIN' | 'SPHERE'
+  home:    _home,
+  current: _home,            // directory variables read from / write to
+  // Last-error slot — written by IFERR when it catches an RPLError, read by
+  // ERRM / ERRN inside the trap's THEN clause.  `null` means "no error
+  // since last ERR0 (or since boot)".  { message: string, number: number }
+  // when populated.  Also see state.js:setLastError / clearLastError below.
+  lastError: null,
+  // Binary-integer wordsize, in bits.  HP50 range 1..64, default 64.
+  // All BinInt arithmetic masks results to this many low bits.  Set by
+  // the STWS op; read by RCWS, the formatter, and ops.js BinInt math.
+  wordsize: WORDSIZE_DEFAULT,
+  // Global display-base override for BinaryInteger values.  Defaults
+  // to 'd' so the status-line base annunciator always carries a live
+  // label on boot — no "none" placeholder state.  'h'/'d'/'o'/'b'
+  // make the formatter render every BinInt in that base AND pad to
+  // the current wordsize (HP50 convention — HEX pads to ceil(ws/4)
+  // hex digits, BIN to ws digits, etc.).  The `null` value — "each
+  // BinInt renders in its own stored base" — is still reachable via
+  // CLB for users who want session-014 per-value display.
+  binaryBase: 'd',
+  // Textbook (pretty-print) display mode for Symbolic values on the
+  // stack.  When true, display.renderStack swaps formatStackTop for
+  // astToSvg on any Symbolic row so the user sees textbook-style 2D
+  // math (fractions, exponents, scaled parens).  When false, stack
+  // rendering is the pre-session-019 flat text.  Other types (Real,
+  // Integer, BinInt, Complex, List, …) always render as flat text —
+  // textbookMode only affects Symbolic.  Added session 019; mirrors
+  // HP50 system flag -80 semantically.  Default is ON — 2D rendering
+  // is the friendlier first-boot experience; users who want flat text
+  // can press FLAT (or toggle the MODES menu FLT→TXT softkey).
+  textbookMode: true,
+  // APPROX vs EXACT numeric-eval mode.  Session 032: added as the
+  // scaffolding for the HP50 flag -105 ("_approx_" when SET,
+  // "_exact_" when CLEAR).  When `true` (APPROX), EVAL folds Fn(...)
+  // nodes aggressively to 12-digit decimals — `SQRT(2) → 1.41421356237`.
+  // When `false` (EXACT), EVAL only folds Fn(...) when the result is
+  // effectively an integer AND every input is an integer — so
+  // `SQRT(9) → 3` still folds but `SQRT(2)` stays symbolic.  The
+  // `→NUM` op (ENTER SHIFT-R) forces APPROX for the duration of one
+  // EVAL and restores whatever was previously set.
+  //
+  // Session 035: default flipped to EXACT (`false`) to match the real
+  // HP50 — flag -105 is CLEAR at boot on a factory-reset unit.  Tests
+  // that assume APPROX fold decimals must setApproxMode(true) up front.
+  // The MODES menu (session 020) now exposes an EXA↔APX toggle so
+  // users can flip from the keypad without alpha-typing the op name.
+  approxMode: false,
+  // User / system flag storage (session 040).  A single Set<number>
+  // keyed by the flag number; positive numbers address user flags
+  // (1..128), negatives address system flags (-1..-128) per HP50
+  // convention.  The ops SF/CF/FS?/FC?/FS?C/FC?C manipulate this set.
+  // Zero is not a legal flag number — ops reject it as Bad argument.
+  // No cross-cutting behavior is yet wired to any specific system
+  // flag number; the Set is the bookkeeping surface that future
+  // features (MODES-menu toggles, SYMB IMPL, etc.) can consult.
+  userFlags: new Set(),
+  // CMPLX mode (session 054).  Mirrors HP50 system flag -103
+  // ("_Complex_" when SET, "_Real_" when CLEAR).  When ON, ops whose
+  // real path would produce NaN or an out-of-domain error (LN/LOG on
+  // negative reals, ACOS/ASIN on |x|>1) return the principal-branch
+  // Complex result instead.  When OFF (the boot default), those same
+  // inputs throw "Bad argument value" — matching a factory-reset
+  // HP50.  SQRT and the inverse hyperbolics already lift to Complex
+  // unconditionally (session-045 decision); CMPLX doesn't affect
+  // them.  Toggled by the `CMPLX` op (session 054), observable via
+  // `CMPLX?`.
+  complexMode: false,
+  // Last-fit model (session 058).  One of `{ kind, a, b }` with
+  // `kind` in `'LIN' | 'LOG' | 'EXP' | 'PWR'` and `a`, `b` plain JS
+  // Numbers — or `null` if no regression has been run yet.  Written
+  // by LINFIT / LOGFIT / EXPFIT / PWRFIT (the five ops that publish
+  // a fitted model), consumed by PREDV / PREDX to evaluate the
+  // model at a scalar without the user having to re-type the
+  // closed-form Symbolic.  BESTFIT does NOT publish a model — it
+  // only reports the family name; matches the HP50 firmware rule
+  // that BESTFIT is diagnostic, not computational.
+  //
+  // Stored as plain Numbers, not Real/Integer wrappers — the model
+  // is an internal scratch slot, not a user-addressable variable.
+  // PREDV / PREDX coerce the result into a Real at push time.  The
+  // slot is NOT persisted across reloads; running any *FIT op
+  // after a reload re-establishes it.
+  lastFitModel: null,
+};
+
+function _emit() {
+  for (const fn of _listeners) {
+    try { fn(state); } catch (e) { console.error('state listener', e); }
+  }
+}
+
+/** Subscribe to all state changes.  Returns an unsubscribe fn. */
+export function subscribe(fn) {
+  _listeners.add(fn);
+  return () => _listeners.delete(fn);
+}
+
+/** Force a state-change notification without mutating anything.
+ *  Used by persist.rehydrate() after a bulk replace of HOME +
+ *  angle so subscribers redraw even when the new values happen to
+ *  equal the old ones. */
+export function notify() { _emit(); }
+
+/* ----------------------------- angle ----------------------------- */
+
+export function setAngle(mode) {
+  const m = String(mode).toUpperCase();
+  if (!ANGLE_MODES.includes(m)) {
+    throw new Error(`Unknown angle mode: ${mode}`);
+  }
+  if (state.angle === m) return;
+  state.angle = m;
+  _emit();
+}
+
+/** Cycle DEG -> RAD -> GRD -> DEG. */
+export function cycleAngle() {
+  const i = ANGLE_MODES.indexOf(state.angle);
+  setAngle(ANGLE_MODES[(i + 1) % ANGLE_MODES.length]);
+}
+
+/* --------------------------- coord mode --------------------------- */
+
+export function setCoordMode(mode) {
+  const m = String(mode).toUpperCase();
+  if (!COORD_MODES.includes(m)) {
+    throw new Error(`Unknown coordinate mode: ${mode}`);
+  }
+  if (state.coordMode === m) return;
+  state.coordMode = m;
+  _emit();
+}
+
+/** Cycle RECT -> CYLIN -> SPHERE -> RECT.  Used by the status-line
+ *  indicator's click handler so the user can flip modes without
+ *  hunting for the RECT/CYLIN/SPHERE ops. */
+export function cycleCoordMode() {
+  const i = COORD_MODES.indexOf(state.coordMode);
+  setCoordMode(COORD_MODES[(i + 1) % COORD_MODES.length]);
+}
+
+/** Convert a number from the user's current angle mode to radians. */
+export function toRadians(x) {
+  switch (state.angle) {
+    case 'DEG': return x * Math.PI / 180;
+    case 'GRD': return x * Math.PI / 200;   // 400 grad == 2π rad
+    case 'RAD':
+    default:    return x;
+  }
+}
+
+/** Convert a number from radians to the user's current angle mode. */
+export function fromRadians(x) {
+  switch (state.angle) {
+    case 'DEG': return x * 180 / Math.PI;
+    case 'GRD': return x * 200 / Math.PI;
+    case 'RAD':
+    default:    return x;
+  }
+}
+
+/* -------------------- wordsize / binary display base --------------------
+   STWS sets the binary-integer word width in bits; RCWS reads it.  The
+   formatter and BinInt arithmetic both consult `state.wordsize` — setting
+   it to 16, for example, makes `#FFFFh #1h +` wrap to `#0h`.  The HP50
+   range is 1..64; we clamp silently at the edges (matches the real unit).
+
+   `binaryBase` is the display-only override: once HEX/DEC/OCT/BIN has
+   been issued, every BinInt renders in that base, regardless of the
+   base the literal was entered in.  Clearing the override (rare) is
+   available from setBinaryBase(null) — we don't expose it as a keyboard
+   op yet.  Arithmetic results always use the LEFT operand's own .base
+   for storage; display is a separate concern. */
+
+export function setWordsize(n) {
+  let v = Number(n);
+  if (!Number.isFinite(v)) throw new Error(`STWS needs a number, got ${n}`);
+  v = Math.trunc(v);
+  if (v < WORDSIZE_MIN) v = WORDSIZE_MIN;
+  if (v > WORDSIZE_MAX) v = WORDSIZE_MAX;
+  if (state.wordsize === v) return;
+  state.wordsize = v;
+  _emit();
+}
+
+export function getWordsize() { return state.wordsize; }
+
+/** The BigInt mask `(1 << ws) - 1` — low-ws bits all set.  Used by
+ *  BinInt arithmetic to fold overflow back to the wordsize. */
+export function getWordsizeMask() {
+  return (1n << BigInt(state.wordsize)) - 1n;
+}
+
+export function setBinaryBase(b) {
+  if (b === null || b === undefined) {
+    if (state.binaryBase === null) return;
+    state.binaryBase = null;
+    _emit();
+    return;
+  }
+  const s = String(b).toLowerCase();
+  if (!BIN_BASES.includes(s)) {
+    throw new Error(`setBinaryBase: expected h/d/o/b or null, got ${b}`);
+  }
+  if (state.binaryBase === s) return;
+  state.binaryBase = s;
+  _emit();
+}
+
+export function getBinaryBase() { return state.binaryBase; }
+
+/* ------------------ textbook (pretty-print) display mode ------------------
+   TEXTBOOK switches Symbolic stack rows to 2D SVG rendering (see
+   src/rpl/pretty.js).  FLAT returns to flat-text rendering.  The flag
+   only affects Symbolic values — everything else still formats the
+   same way.  Other cells (cmdline, program bodies, list items, etc.)
+   are unaffected; only the top-of-stack Symbolic is swapped.
+
+   We fire a state-change event on toggle so the Display layer can
+   re-render immediately. */
+
+export function setTextbookMode(on) {
+  const v = !!on;
+  if (state.textbookMode === v) return;
+  state.textbookMode = v;
+  _emit();
+}
+
+export function getTextbookMode() { return state.textbookMode; }
+
+/* ------------------ APPROX / EXACT numeric-eval mode ------------------
+   setApproxMode(b) flips the flag.  getApproxMode() reports it.  The
+   EVAL / simplify path in ops.js consults getApproxMode() before
+   folding a `Fn(...)` node to a decimal: in APPROX it folds anything
+   that produces a finite Real; in EXACT it only folds when the inputs
+   were all integers AND the result is (numerically) an integer itself,
+   so `SQRT(9) → 3` still folds but `SQRT(2)` stays symbolic.
+
+   Fires a state-change event so the EXACT/APPROX annunciator (future)
+   redraws immediately.  The `→NUM` op (ENTER SHIFT-R) flips to APPROX
+   for the span of one EVAL and restores the previous setting on the
+   way out — so the user can force-fold without toggling the flag
+   globally. */
+
+export function setApproxMode(on) {
+  const v = !!on;
+  if (state.approxMode === v) return;
+  state.approxMode = v;
+  _emit();
+}
+
+export function getApproxMode() { return state.approxMode; }
+
+/** Flip the current APPROX/EXACT setting.  Used by the future
+ *  MODES-menu toggle and by tests. */
+export function toggleApproxMode() {
+  state.approxMode = !state.approxMode;
+  _emit();
+}
+
+/* ------------------ CMPLX complex-result mode (flag -103) ------------
+   When ON, real-domain ops like LN(-1) and ACOS(2) return the
+   principal-branch Complex result instead of throwing.  When OFF, they
+   throw "Bad argument value".  SQRT and the inverse hyperbolics are
+   unaffected — they already lift to Complex unconditionally.  Fires a
+   state-change event so a future MODES-menu toggle can redraw. */
+
+export function setComplexMode(on) {
+  const v = !!on;
+  if (state.complexMode === v) return;
+  state.complexMode = v;
+  _emit();
+}
+
+export function getComplexMode() { return state.complexMode; }
+
+export function toggleComplexMode() {
+  state.complexMode = !state.complexMode;
+  _emit();
+}
+
+/* ------------------ last-fit model (PREDV / PREDX) ------------------
+   The five regression ops (LINFIT / LOGFIT / EXPFIT / PWRFIT) call
+   setLastFitModel(kind, a, b) after computing their fit so the user
+   can evaluate the same model at a new scalar via PREDV / PREDX
+   without re-typing the closed-form expression.  Model kinds map to:
+
+     LIN : y = a + b·x
+     LOG : y = a + b·ln(x)
+     EXP : y = a · e^(b·x)
+     PWR : y = a · x^b
+
+   Invariants: kind is one of the four strings above; a and b are
+   plain JS Numbers.  Cleared to `null` by clearLastFitModel() (used
+   by tests to keep one test's fit from leaking into the next).
+   Emits a state-change event on every mutation. */
+
+export const FIT_KINDS = Object.freeze(['LIN', 'LOG', 'EXP', 'PWR']);
+
+export function setLastFitModel(kind, a, b) {
+  if (!FIT_KINDS.includes(kind)) {
+    throw new Error(`setLastFitModel: bad kind ${kind}`);
+  }
+  if (!Number.isFinite(a) || !Number.isFinite(b)) {
+    throw new Error(`setLastFitModel: non-finite coefficient`);
+  }
+  state.lastFitModel = { kind, a, b };
+  _emit();
+}
+
+export function getLastFitModel() { return state.lastFitModel; }
+
+export function clearLastFitModel() {
+  if (state.lastFitModel === null) return;
+  state.lastFitModel = null;
+  _emit();
+}
+
+/* ------------------------ user / system flags ------------------------
+   HP50 has 128 user flags (positive numbers 1..128) and 128 system
+   flags (negative numbers -1..-128).  Flags are a single bit — set or
+   clear — and are manipulated by the SF / CF / FS? / FC? / FS?C /
+   FC?C ops in ops.js.  We store them in a single Set<number>, keyed
+   by the signed flag number.  Zero is not a legal flag number: the
+   ops reject it as Bad argument value.
+
+   No specific system flag has cross-cutting side-effects yet; the set
+   is pure bookkeeping so user programs can set, test, and branch on
+   flags without erroring out.  Future sessions wire individual flag
+   numbers (e.g. flag -40 "clock display") to their features without
+   changing this API.
+
+   _validFlag() coerces the number and normalises it to an integer in
+   [-128, -1] ∪ [1, 128].  Invalid values throw so ops can surface a
+   consistent "Bad argument value" to the user. */
+
+function _validFlag(n) {
+  const k = Math.trunc(Number(n));
+  if (!Number.isFinite(k) || k === 0 || k < -128 || k > 128) {
+    throw new Error(`Invalid flag number: ${n}`);
+  }
+  return k;
+}
+
+export function setUserFlag(n) {
+  const k = _validFlag(n);
+  if (state.userFlags.has(k)) return;
+  state.userFlags.add(k);
+  _emit();
+}
+
+export function clearUserFlag(n) {
+  const k = _validFlag(n);
+  if (!state.userFlags.has(k)) return;
+  state.userFlags.delete(k);
+  _emit();
+}
+
+export function testUserFlag(n) {
+  const k = _validFlag(n);
+  return state.userFlags.has(k);
+}
+
+/** Reset all flags.  Primarily for tests so one test's flag changes
+ *  don't leak into the next. */
+export function clearAllUserFlags() {
+  if (state.userFlags.size === 0) return;
+  state.userFlags.clear();
+  _emit();
+}
+
+/** For tests: reset wordsize + binary-base override to defaults so a
+ *  test that twiddled either doesn't leak into the next one. */
+export function resetBinaryState() {
+  state.wordsize = WORDSIZE_DEFAULT;
+  state.binaryBase = null;
+  _emit();
+}
+
+/* ----------------------------- PRNG -----------------------------
+   Seeded Park-Miller minimal-standard LCG shared by RAND, RDZ, and
+   RANM.  Seed is any integer in [1, PRNG_MOD-1]; modulus is 2^31 - 1
+   and multiplier is 48271.  The HP50's internal RNG is also a seeded
+   LCG (different constants, but the API contract is identical: RDZ 0
+   re-seeds from a clock source, RDZ n with non-zero n picks a
+   deterministic seed).  One PRNG state is shared by all three ops so
+   `RDZ 12345 RAND RAND` is reproducible across sessions, and
+   `RDZ 12345 { 2 3 } RANM` produces the same matrix every time.
+
+   Default boot seed: PRNG_DEFAULT (a fixed value) — matches the
+   HP50 behavior where a factory-reset unit has a deterministic
+   starting RAND sequence.  Tests call `resetPrng()` up front to pin
+   the seed to this same default so one test's random draw doesn't
+   leak a changed seed into the next. */
+
+const PRNG_MOD = 2147483647n;       // 2^31 - 1 (Mersenne prime)
+const PRNG_MULT = 48271n;
+const PRNG_DEFAULT = 741n;          // arbitrary non-zero boot seed
+
+// state.prngSeed is a BigInt in [1, PRNG_MOD-1].  Kept in BigInt form
+// because the multiplication 48271 * seed overflows 32-bit signed
+// before the mod.  Conversion to Number happens only when producing a
+// [0, 1) draw for RAND or an indexed draw for RANM.
+state.prngSeed = PRNG_DEFAULT;
+
+/** Seed the PRNG.  Non-zero integer seeds deterministically; seed 0
+ *  re-seeds from Date.now() (HP50 convention: RDZ 0 is "randomize from
+ *  clock").  Values are reduced modulo (PRNG_MOD-1) and shifted into
+ *  [1, PRNG_MOD-1] so the zero fixed-point of the LCG is avoided.
+ *  Accepts Number or BigInt input.  Emits a state-change event. */
+export function seedPrng(n) {
+  let b;
+  if (typeof n === 'bigint') b = n;
+  else {
+    const k = Number(n);
+    if (!Number.isFinite(k)) throw new Error(`seedPrng: not a number: ${n}`);
+    b = BigInt(Math.trunc(k));
+  }
+  if (b === 0n) {
+    // HP50: "RDZ 0" uses the clock as a seed source.  Date.now() is
+    // a JS ms timestamp — reduce into the LCG range.
+    b = BigInt(Date.now());
+  }
+  // Keep the seed strictly in [1, PRNG_MOD-1].  The LCG has a zero
+  // fixed-point, so a literal 0 after the modulo must be bumped.
+  let s = ((b % (PRNG_MOD - 1n)) + (PRNG_MOD - 1n)) % (PRNG_MOD - 1n);
+  if (s === 0n) s = 1n;
+  state.prngSeed = s;
+  _emit();
+}
+
+/** Advance the PRNG one step and return the new seed (BigInt). */
+function _prngAdvance() {
+  state.prngSeed = (state.prngSeed * PRNG_MULT) % PRNG_MOD;
+  return state.prngSeed;
+}
+
+/** Draw a uniform Real in [0, 1).  Used by RAND and by RANM's
+ *  mapping to integers in [-9, 9]. */
+export function nextPrngUnit() {
+  const s = _prngAdvance();
+  // s ∈ [1, PRNG_MOD-1] → divide by PRNG_MOD to land in (0, 1).
+  // Convert through Number late so the BigInt/int range is preserved.
+  return Number(s) / Number(PRNG_MOD);
+}
+
+/** Draw a uniform integer in [-9, 9].  Used by RANM.  19-value
+ *  distribution via floor(u * 19) - 9. */
+export function nextPrngInt9() {
+  return Math.floor(nextPrngUnit() * 19) - 9;
+}
+
+/** For tests: pin the PRNG back to its boot default so one test's
+ *  draws don't leak into the next. */
+export function resetPrng() {
+  state.prngSeed = PRNG_DEFAULT;
+  _emit();
+}
+
+/** Exposed for RCL-style introspection and tests. */
+export function getPrngSeed() { return state.prngSeed; }
+
+/* --------------------------- variables --------------------------- */
+
+/** Write `value` into the current directory under name `id`.  Fires
+ *  a state-change event so the UI can refresh any VARS menu.
+ *
+ *  HP50 protects subdirectories from being overwritten by STO: if the
+ *  name in the current directory already refers to a Directory, the
+ *  store fails.  We throw a plain Error('Directory not allowed: <id>');
+ *  ops.js STO wraps it into RPLError so IFERR can catch and ERRN can
+ *  classify.  (Writing a Directory value into a name is also refused
+ *  — entries.set for directory creation goes through makeSubdir.) */
+export function varStore(id, value) {
+  const key = String(id);
+  const existing = state.current.entries.get(key);
+  if (existing && existing.type === TYPES.DIRECTORY) {
+    throw new Error(`Directory not allowed: ${key}`);
+  }
+  state.current.entries.set(key, value);
+  _emit();
+}
+
+/** Read `id` from the current directory.  Returns undefined if absent.
+ *  (HP50 RCL walks up to the parent chain; we follow suit.) */
+export function varRecall(id) {
+  const key = String(id);
+  for (let d = state.current; d; d = d.parent) {
+    if (d.entries.has(key)) return d.entries.get(key);
+  }
+  return undefined;
+}
+
+/** Remove `id` from the current directory.  Returns true if it
+ *  existed.  Only touches the current dir (HP50 PURGE semantics).
+ *
+ *  HP50 refuses to PURGE a non-empty subdirectory.  Empty subdirs are
+ *  purgeable.  We throw a plain Error('Directory not empty: <id>')
+ *  for non-empty ones; ops.js PURGE wraps it into RPLError. */
+export function varPurge(id) {
+  const key = String(id);
+  const existing = state.current.entries.get(key);
+  if (existing && existing.type === TYPES.DIRECTORY && existing.entries.size > 0) {
+    throw new Error(`Directory not empty: ${key}`);
+  }
+  const gone = state.current.entries.delete(key);
+  if (gone) _emit();
+  return gone;
+}
+
+/** A sorted list of variable name-ids in the current directory.
+ *  The sort is a stable alphabetical ordering of the ids as they
+ *  appear in the current directory.  The HP50 hardware returns names
+ *  in the directory's internal (insertion / ORDER-arranged) order; our
+ *  `varList` is used both by VARS (which wants the internal order) and
+ *  by UI callers that already sort locally — session 047 keeps the
+ *  sorted view here and adds `varOrder()` below for the raw internal
+ *  order so ORDER can reshape it. */
+export function varList() {
+  return [...state.current.entries.keys()].sort();
+}
+
+/** The internal (insertion / ORDER-set) order of variable name-ids in
+ *  the current directory — no sort.  ORDER mutates this sequence.
+ *  VARS now pushes in this order (session 047) so ORDER's reshuffle is
+ *  visible on the stack. */
+export function varOrder() {
+  return [...state.current.entries.keys()];
+}
+
+/** Reorder the current directory's entries so that `names` appears
+ *  first in that exact order, followed by any remaining entries in
+ *  their previous relative order.  Unknown names in `names` are
+ *  silently ignored (matches HP50 ORDER semantics).  A duplicate
+ *  within `names` is taken once at first position (later duplicates
+ *  are discarded — the "dedupe keeping earliest" behavior that ORDER
+ *  effectively has on a real unit too). */
+export function reorderCurrentEntries(names) {
+  const dir = state.current;
+  const existing = dir.entries;
+  if (existing.size === 0) return;
+  const seen = new Set();
+  const newOrder = [];
+  for (const n of names) {
+    const key = String(n);
+    if (seen.has(key)) continue;
+    if (!existing.has(key)) continue;
+    seen.add(key);
+    newOrder.push(key);
+  }
+  // Append the rest in their existing relative order.
+  for (const key of existing.keys()) {
+    if (seen.has(key)) continue;
+    newOrder.push(key);
+  }
+  const rebuilt = new Map();
+  for (const key of newOrder) rebuilt.set(key, existing.get(key));
+  dir.entries = rebuilt;
+  _emit();
+}
+
+/** The slash-path string from HOME to the current directory, rendered
+ *  HP50-style: `{ HOME A }` etc.  Returned as an array of segment
+ *  names with HOME first. */
+export function currentPath() {
+  const out = [];
+  for (let d = state.current; d; d = d.parent) out.unshift(d.name);
+  return out;
+}
+
+/** Reset home to an empty directory.  Primarily for tests.
+ *  Clears both HOME's entries AND drops any lingering subdirectories by
+ *  snapping `current` back to HOME.  A resetHome() in one test must not
+ *  leak subdirectory state into the next. */
+export function resetHome() {
+  _home.entries.clear();
+  state.current = _home;
+  _emit();
+}
+
+/* ---------------------------- navigation ----------------------------
+
+   The HP 50g calculator organises variables in a tree of directories
+   rooted at HOME.  The user moves between them with UPDIR / HOME and
+   creates new ones with CRDIR.  PATH reports the full path from HOME
+   to the current directory.
+
+   Our data model already has `current` + parent pointers; the helpers
+   below mutate `state.current` and emit exactly one state event per
+   change, so the UI's path annunciator refreshes automatically. */
+
+/** Set the current directory to HOME.  No-op if already there. */
+export function goHome() {
+  if (state.current === _home) return;
+  state.current = _home;
+  _emit();
+}
+
+/** Move the current directory to its parent.  At HOME this is a silent
+ *  no-op — matches the HP50, where UPDIR from HOME does nothing rather
+ *  than erroring. */
+export function goUp() {
+  const p = state.current.parent;
+  if (!p) return;
+  state.current = p;
+  _emit();
+}
+
+/** Descend into the named subdirectory of the current directory.
+ *  Returns true on success, false if no such subdirectory exists
+ *  (the caller — typically a VARS soft-key press — can surface that
+ *  as an error).  A value at that name that isn't a Directory is also
+ *  a false, so we never try to "cd" into a Real. */
+export function goInto(id) {
+  const key = String(id);
+  const next = state.current.entries.get(key);
+  if (!next || next.type !== TYPES.DIRECTORY) return false;
+  state.current = next;
+  _emit();
+  return true;
+}
+
+/** Set the current directory to an arbitrary Directory value.  Used by
+ *  EVAL so that evaluating a name bound to a directory — or a bare
+ *  directory value — navigates into it regardless of where the dir
+ *  sits in the HOME tree (varRecall walks ancestors, so the target
+ *  isn't always a direct child of state.current). */
+export function enterDirectory(dir) {
+  if (!dir || dir.type !== TYPES.DIRECTORY) return false;
+  if (state.current === dir) return true;
+  state.current = dir;
+  _emit();
+  return true;
+}
+
+/** Create a new empty subdirectory named `id` in the current directory.
+ *  HP50 CRDIR leaves the user in the OLD directory (it does NOT descend
+ *  into the new one).  Returns the freshly-created Directory.  Throws
+ *  if the name is already used by any variable — HP50 errors with
+ *  "Name already used in this directory". */
+export function makeSubdir(id) {
+  const key = String(id);
+  if (state.current.entries.has(key)) {
+    throw new Error(`Name conflict: ${key}`);
+  }
+  const sub = Directory({ name: key, parent: state.current });
+  state.current.entries.set(key, sub);
+  _emit();
+  return sub;
+}
+
+/* ---------------------------- last error ----------------------------
+
+   HP50 keeps a single "last error" slot the user can inspect after an
+   IFERR trap fires.  ERRM returns the message string, ERRN returns the
+   error number.  On a real unit the number is a 5-digit hex Binary
+   Integer; we return a plain Integer for now — the shape can narrow
+   later without touching user-facing call sites.
+
+   Not emitted through _emit(): these are queried synchronously by
+   programs, and no UI annunciator today reflects them.  If one ever
+   does (e.g. an on-screen "E" flag), switch this to _emit() then. */
+
+/** A best-effort mapping of canonical RPLError messages to HP50-ish
+ *  error numbers.  Unknown messages map to 0 — treat ERRN's return as
+ *  stable for ops we've catalogued and a sentinel otherwise.  The
+ *  precise HP50 codes are in the Advanced User's Reference Manual
+ *  (§D) and can be refined once we spot-check them against the PDF. */
+const _ERROR_NUMBERS = Object.freeze({
+  'Too few arguments':    0x201,
+  'Bad argument type':    0x202,
+  'Bad argument value':   0x204,
+  // 0x303 (Division by zero) vs 0x305 (Infinite result) — the HP50
+  // splits these along integer-vs-float lines.  BinInt / 0 raises
+  // 0x303 since the result can't be represented in the integer type;
+  // Real / 0 raises 0x305 since IEEE-754 would otherwise yield
+  // ±Infinity which RPL doesn't carry as a number.
+  'Division by zero':     0x303,
+  'Infinite result':      0x305,
+  // Directory-protection errors (session 013) — codes chosen to fit
+  // the HP50 "variable / directory" error family without claiming
+  // specific manual entries; swap in canonical codes once the
+  // Advanced User's Reference §D is spot-checked.
+  'Name conflict':        0x501,
+  'Directory not allowed':0x502,
+  'Directory not empty':  0x503,
+});
+
+export function setLastError(err) {
+  const raw = (err && err.message) ? String(err.message) : String(err);
+  // The dispatcher prefixes op errors with `COMMAND: ` (e.g.
+  // `+: Too few arguments`) so the user can see which command failed.
+  // Strip that prefix before classifying so both `Too few arguments`
+  // and `+: Too few arguments` map to the same error number.
+  //
+  // We also store the stripped body as the canonical `message` field
+  // so ERRM returns the bare HP50 error text ("Infinite result", not
+  // "/: Infinite result"); the HP50 AUR shows ERRM as yielding the
+  // "error message" only, without the dispatcher's command-name
+  // wrapper.  The raw form is still available on `rawMessage` for
+  // anyone who wants it (debugger UI, trace logs).
+  const m = raw.match(/^[^\s:]+:\s(.+)$/);
+  const body = m ? m[1] : raw;
+  // Pick a code from the prefix of the message — "Undefined name: X" should
+  // share a code with plain "Undefined name".
+  let number = 0;
+  for (const [key, code] of Object.entries(_ERROR_NUMBERS)) {
+    if (body === key || body.startsWith(key + ':') ||
+        raw === key || raw.startsWith(key + ':')) {
+      number = code; break;
+    }
+  }
+  // Special-cased prefixes that are generated dynamically.
+  if (number === 0 &&
+      (body.startsWith('Undefined name') || raw.startsWith('Undefined name'))) {
+    number = 0x204;
+  }
+  state.lastError = { message: body, rawMessage: raw, number };
+}
+
+export function clearLastError() {
+  state.lastError = null;
+}
+
+export function getLastError() {
+  return state.lastError;
+}
+
+/** Write a verbatim {message, number} record (or null) back into the
+ *  last-error slot without going through setLastError's message
+ *  classifier.  Used by nested IFERR to restore the outer trap's view
+ *  after an inner IFERR has temporarily owned the slot. */
+export function restoreLastError(rec) {
+  state.lastError = rec;
+}
+
+/* ================================================================
+   Multi-level UNDO for VARIABLE + DIRECTORY state
+   (session 032 introduced, session 037 upgraded).
+
+   Companion to Stack's saveForUndo/undo/redo/hasUndo/hasRedo/
+   clearUndo.  Snapshots the HOME tree (deep clone: directories cloned,
+   leaf RPL values shared by reference since RPL values are
+   immutable-by-convention) and the path from HOME to the current
+   directory.  Restoring rebuilds HOME's entries in place (so consumers
+   holding `state.home` stay valid) and re-navigates to the same path.
+
+   saveVarStateForUndo() pushes a fresh snapshot onto the undo history
+   and clears the redo history (per standard "new action invalidates
+   redo" semantics).  undoVarState() pops the most recent snapshot,
+   stashes the CURRENT live state onto the redo history, and restores
+   the popped snapshot.  redoVarState() is the inverse.  hasVarUndo()
+   / hasVarRedo() report availability; clearVarUndo() drops both
+   history lists (called on error paths alongside Stack.clearUndo so
+   the two halves stay in lock-step).
+   ================================================================ */
+
+/** Deep-clone a Directory sub-tree.  Directories are recreated;
+ *  leaf values are shared by reference (RPL values are immutable). */
+function _cloneDir(dir, newParent = null) {
+  const clone = Directory({ name: dir.name, parent: newParent });
+  for (const [key, value] of dir.entries) {
+    if (value && value.type === TYPES.DIRECTORY) {
+      clone.entries.set(key, _cloneDir(value, clone));
+    } else {
+      clone.entries.set(key, value);
+    }
+  }
+  return clone;
+}
+
+/** Walk the path `names` from `root` through `.entries.get(name)`,
+ *  expecting each step to resolve to a sub-Directory.  Returns the
+ *  landed directory, or null if any step misses. */
+function _walkPath(root, names) {
+  let cur = root;
+  for (const n of names) {
+    const next = cur.entries.get(n);
+    if (!next || next.type !== TYPES.DIRECTORY) return null;
+    cur = next;
+  }
+  return cur;
+}
+
+/** Path of names from `state.home` to `state.current`, excluding
+ *  HOME itself.  Empty array when current IS home. */
+function _pathNamesToCurrent() {
+  const names = [];
+  for (let d = state.current; d && d !== _home; d = d.parent) {
+    names.unshift(d.name);
+  }
+  return names;
+}
+
+/** Rebuild state.home's entries from a snapshot Directory.  Keeps
+ *  state.home's identity stable (many callers close over it).
+ *  Re-parents freshly-cloned sub-directories to state.home. */
+function _repopulateHome(snapHome) {
+  // Make a FRESH clone of the snapshot so the slot stays a
+  // time-capsule that's safe to restore again (undoVarState is a swap
+  // so we mustn't alias live and saved trees).
+  const fresh = _cloneDir(snapHome);
+  state.home.entries.clear();
+  for (const [k, v] of fresh.entries) {
+    if (v && v.type === TYPES.DIRECTORY) v.parent = state.home;
+    state.home.entries.set(k, v);
+  }
+}
+
+/** History stacks.  Each entry is { home: clonedDir, path: [names] }.
+ *  _undo is oldest-first, newest last; saveVarStateForUndo pushes to
+ *  it and clears _redo.  undoVarState pops _undo and pushes onto _redo;
+ *  redoVarState is the inverse. */
+let _varUndoStack = [];
+let _varRedoStack = [];
+
+/** Cap on the history depth.  Matches Stack.UNDO_MAX. */
+const VAR_UNDO_MAX = 100;
+
+function _snapshotVarState() {
+  return { home: _cloneDir(state.home), path: _pathNamesToCurrent() };
+}
+
+function _restoreVarSnapshot(snap) {
+  _repopulateHome(snap.home);
+  const landed = _walkPath(state.home, snap.path);
+  state.current = landed ?? state.home;
+}
+
+export function saveVarStateForUndo() {
+  _varUndoStack.push(_snapshotVarState());
+  if (_varUndoStack.length > VAR_UNDO_MAX) {
+    _varUndoStack.splice(0, _varUndoStack.length - VAR_UNDO_MAX);
+  }
+  _varRedoStack = [];
+}
+
+export function hasVarUndo() {
+  return _varUndoStack.length > 0;
+}
+
+export function hasVarRedo() {
+  return _varRedoStack.length > 0;
+}
+
+export function clearVarUndo() {
+  _varUndoStack = [];
+  _varRedoStack = [];
+}
+
+export function undoVarState() {
+  if (_varUndoStack.length === 0) throw new Error('No undo available');
+  const prior = _varUndoStack.pop();
+  _varRedoStack.push(_snapshotVarState());
+  _restoreVarSnapshot(prior);
+  _emit();
+}
+
+export function redoVarState() {
+  if (_varRedoStack.length === 0) throw new Error('No redo available');
+  const future = _varRedoStack.pop();
+  _varUndoStack.push(_snapshotVarState());
+  _restoreVarSnapshot(future);
+  _emit();
+}

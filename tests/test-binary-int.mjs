@@ -1,0 +1,852 @@
+import { Stack } from '../src/rpl/stack.js';
+import { lookup } from '../src/rpl/ops.js';
+import {
+  Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
+  RList, Vector, Matrix,
+  isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
+  isString,
+} from '../src/rpl/types.js';
+import { parseEntry } from '../src/rpl/parser.js';
+import { format, formatStackTop } from '../src/rpl/formatter.js';
+import {
+  state as calcState, setAngle, cycleAngle, toRadians, fromRadians,
+  varStore, varRecall, varList, varPurge, resetHome, currentPath,
+  setLastError, clearLastError, getLastError,
+  goHome, goUp, goInto, makeSubdir,
+  setWordsize, getWordsize, getWordsizeMask,
+  setBinaryBase, getBinaryBase, resetBinaryState,
+  setApproxMode,
+} from '../src/rpl/state.js';
+import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
+import { assert } from './helpers.mjs';
+
+/* BinaryInteger type, STWS wordsize, HEX/DEC/OCT/BIN display, bitwise ops,
+   B→R / R→B converters, parse-time literal truncation. */
+
+// These tests exercise the formatter in "per-value stored base" mode —
+// a BinInt entered as `#FFh` should render back as `#FFh`.  The live
+// app now boots with binaryBase='d' (so the status-line HEX/DEC/OCT/BIN
+// annunciator always carries a label) which would force every BinInt
+// through decimal here; clear the override up front so the tests keep
+// checking what they were written to check.
+setBinaryBase(null);
+
+// Session 014: BinaryInteger type + parser + formatter
+// ------------------------------------------------------------------
+
+// Constructor clamps negatives and rejects bad base letters
+{
+  const a = BinaryInteger(255, 'h');
+  assert(a.type === 'binaryInteger' && a.value === 255n && a.base === 'h',
+         'BinaryInteger(255,h) has type/value/base set');
+  const b = BinaryInteger(-3, 'h');
+  assert(b.value === 0n, 'BinaryInteger clamps negative to 0');
+  let threw = false;
+  try { BinaryInteger(1, 'z'); } catch (_) { threw = true; }
+  assert(threw, 'BinaryInteger rejects invalid base letter');
+  const c = BinaryInteger(10n, 'D');  // uppercase input, lowercased
+  assert(c.base === 'd', 'BinaryInteger lowercases the base letter');
+}
+
+// Formatter renders #NNNNh / d / o / b with correct digits
+{
+  assert(format(BinaryInteger(255, 'h')) === '#FFh', 'format #FFh (hex uppercase)');
+  assert(format(BinaryInteger(255, 'd')) === '#255d', 'format #255d');
+  assert(format(BinaryInteger(255, 'o')) === '#377o', 'format #377o');
+  assert(format(BinaryInteger(255, 'b')) === '#11111111b', 'format #11111111b');
+  assert(format(BinaryInteger(0, 'h')) === '#0h', 'format zero as #0h');
+  assert(format(BinaryInteger(0x502, 'h')) === '#502h',
+         'format Directory-not-allowed code → #502h');
+}
+
+// Parser accepts hex / dec / oct / bin literals and round-trips through format
+{
+  const hex = parseEntry('#FFh');
+  assert(hex.length === 1 && hex[0].type === 'binaryInteger' &&
+         hex[0].value === 255n && hex[0].base === 'h',
+         'parseEntry("#FFh") → BinaryInteger(255,h)');
+  const dec = parseEntry('#255d');
+  assert(dec[0].value === 255n && dec[0].base === 'd',
+         'parseEntry("#255d") → BinaryInteger(255,d)');
+  const oct = parseEntry('#377o');
+  assert(oct[0].value === 255n && oct[0].base === 'o',
+         'parseEntry("#377o") → BinaryInteger(255,o)');
+  const bin = parseEntry('#11111111b');
+  assert(bin[0].value === 255n && bin[0].base === 'b',
+         'parseEntry("#11111111b") → BinaryInteger(255,b)');
+  // Lowercase hex digits also accepted, formatter normalizes to uppercase
+  const lc = parseEntry('#abch');
+  assert(lc[0].value === 0xabcn && format(lc[0]) === '#ABCh',
+         'parseEntry("#abch") normalizes to #ABCh on display');
+  // Big value that would overflow a regular JS number — BigInt payload
+  // keeps full precision.
+  const big = parseEntry('#FFFFFFFFFFFFFFFFh');
+  assert(big[0].value === 0xFFFFFFFFFFFFFFFFn,
+         'parseEntry("#FFFFFFFFFFFFFFFFh") preserves 64-bit value');
+}
+
+// Parser rejects malformed literals
+{
+  let threw1 = false;
+  try { parseEntry('#'); } catch (_) { threw1 = true; }
+  assert(threw1, 'parseEntry("#") throws (no digits, no base)');
+  // parseEntry('#123') no longer throws — a missing base letter falls
+  // back to the currently-selected display base (state.binaryBase,
+  // default 'h').  Explicit-suffix literals still drive the base; this
+  // only catches bare-# input which HP50 also interprets via the active
+  // base mode.  See parser.js around the '#' tokenizer case.
+  const noSuffix = parseEntry('#123');
+  assert(noSuffix.length === 1 && noSuffix[0].type === 'binaryInteger' &&
+         noSuffix[0].value === 0x123n && noSuffix[0].base === 'h',
+         'parseEntry("#123") defaults to active base (hex)');
+  let threw3 = false;
+  try { parseEntry('#8o'); } catch (_) { threw3 = true; }
+  assert(threw3, 'parseEntry("#8o") throws (8 not a valid octal digit)');
+  let threw4 = false;
+  try { parseEntry('#2b'); } catch (_) { threw4 = true; }
+  assert(threw4, 'parseEntry("#2b") throws (2 not a valid binary digit)');
+  let threw5 = false;
+  try { parseEntry('#Gh'); } catch (_) { threw5 = true; }
+  assert(threw5, 'parseEntry("#Gh") throws (G not a valid hex digit)');
+}
+
+// Binary integers inside programs and lists survive parse + format unchanged
+{
+  const parsed = parseEntry('{ #FFh #10d }');
+  assert(parsed.length === 1 && parsed[0].type === 'list' &&
+         parsed[0].items.length === 2 &&
+         parsed[0].items[0].base === 'h' && parsed[0].items[0].value === 255n &&
+         parsed[0].items[1].base === 'd' && parsed[0].items[1].value === 10n,
+         'list of BinInts parses correctly (#FFh=255, #10d=10)');
+  assert(format(parsed[0]) === '{ #FFh #10d }',
+         'list of BinInts formats as "{ #FFh #10d }"');
+}
+
+// EVAL of a BinaryInteger is a no-op (push-back), matching numbers + strings.
+// Covers the general numeric dispatch path.
+{
+  const s = new Stack();
+  s.push(BinaryInteger(0x502n, 'h'));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'binaryInteger' &&
+         s.peek().value === 0x502n,
+         'EVAL(#502h) pushes it back unchanged');
+}
+
+// ------------------------------------------------------------------
+
+// Session 015: STWS wordsize + HEX/DEC/OCT/BIN display mode
+// ------------------------------------------------------------------
+
+// Default wordsize is 64 bits with no display override.
+{
+  resetBinaryState();
+  assert(getWordsize() === 64, 'default wordsize = 64');
+  assert(getBinaryBase() === null, 'default binary display base = null (no override)');
+  assert(getWordsizeMask() === (1n << 64n) - 1n, 'default mask = 2^64 - 1');
+}
+
+// STWS sets wordsize, RCWS recalls it as a BinInt in the current display base.
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.push(Real(16));
+  lookup('STWS').fn(s);
+  assert(getWordsize() === 16, 'STWS 16 sets wordsize to 16');
+  assert(getWordsizeMask() === 0xFFFFn, 'mask at ws=16 is 0xFFFF');
+  lookup('RCWS').fn(s);
+  const top = s.peek();
+  assert(isBinaryInteger(top) && top.value === 16n && top.base === 'h',
+         'RCWS returns BinaryInteger(16, h) at ws=16');
+  resetBinaryState();
+}
+
+// STWS clamps out-of-range inputs to [1, 64]; decimals truncate.
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.push(Real(100));    // above max
+  lookup('STWS').fn(s);
+  assert(getWordsize() === 64, 'STWS 100 clamps to 64 (max)');
+  s.push(Real(0));      // below min
+  lookup('STWS').fn(s);
+  assert(getWordsize() === 1, 'STWS 0 clamps to 1 (min)');
+  s.push(Real(8.9));    // truncate
+  lookup('STWS').fn(s);
+  assert(getWordsize() === 8, 'STWS 8.9 truncates to 8');
+  resetBinaryState();
+}
+
+// HEX / DEC / OCT / BIN set the display-base override.
+{
+  resetBinaryState();
+  lookup('HEX').fn(new Stack());
+  assert(getBinaryBase() === 'h', 'HEX sets display base to h');
+  lookup('DEC').fn(new Stack());
+  assert(getBinaryBase() === 'd', 'DEC sets display base to d');
+  lookup('OCT').fn(new Stack());
+  assert(getBinaryBase() === 'o', 'OCT sets display base to o');
+  lookup('BIN').fn(new Stack());
+  assert(getBinaryBase() === 'b', 'BIN sets display base to b');
+  resetBinaryState();
+}
+
+// Formatter respects the display override; output is always minimum-width.
+{
+  resetBinaryState();
+  assert(format(BinaryInteger(0xFF, 'h')) === '#FFh',
+         'default: no override, minimum-width render');
+  setBinaryBase('h');
+  assert(format(BinaryInteger(0xFF, 'd')) === '#FFh',
+         'HEX override: #FFh (no leading-zero padding to wordsize)');
+  setWordsize(16);
+  assert(format(BinaryInteger(0xFF, 'd')) === '#FFh',
+         'HEX override + ws=16: still #FFh (no padding)');
+  setBinaryBase('b');
+  assert(format(BinaryInteger(5, 'h')) === '#101b',
+         'BIN override: #101b (no padding)');
+  setBinaryBase('d');
+  assert(format(BinaryInteger(5, 'h')) === '#5d',
+         'DEC override: #5d');
+  setBinaryBase('o');
+  setWordsize(9);
+  assert(format(BinaryInteger(7, 'h')) === '#7o',
+         'OCT override: #7o (no padding)');
+  resetBinaryState();
+}
+
+// Wordsize mask wraps BinInt arithmetic.
+{
+  resetBinaryState();
+  setWordsize(16);
+  const s = new Stack();
+  // #FFFFh + #1h wraps at ws=16 to #0h
+  s.push(BinaryInteger(0xFFFFn, 'h'));
+  s.push(BinaryInteger(1n, 'h'));
+  lookup('+').fn(s);
+  const sum = s.peek();
+  assert(isBinaryInteger(sum) && sum.value === 0n && sum.base === 'h',
+         '#FFFFh + #1h (ws=16) wraps to #0h');
+  resetBinaryState();
+}
+
+// ------------------------------------------------------------------
+// Session 015: BinaryInteger arithmetic + bitwise ops
+// ------------------------------------------------------------------
+
+// + - * / on BinInts: wordsize masked, left-operand base wins.
+{
+  resetBinaryState();
+  const s = new Stack();
+  // #FFh + #1h = #100h at ws=64 (no wrap)
+  s.pushMany([BinaryInteger(0xFFn, 'h'), BinaryInteger(1n, 'h')]);
+  lookup('+').fn(s);
+  assert(isBinaryInteger(s.peek()) && s.peek().value === 0x100n && s.peek().base === 'h',
+         '#FFh + #1h = #100h');
+  s.clear();
+
+  // #FFh #FFh * = #FE01h at ws=64
+  s.pushMany([BinaryInteger(0xFFn, 'h'), BinaryInteger(0xFFn, 'h')]);
+  lookup('*').fn(s);
+  assert(s.peek().value === 0xFE01n, '#FFh * #FFh = #FE01h');
+  s.clear();
+
+  // #7h #2h / = #3h (truncated)
+  s.pushMany([BinaryInteger(7n, 'h'), BinaryInteger(2n, 'h')]);
+  lookup('/').fn(s);
+  assert(s.peek().value === 3n, '#7h / #2h = #3h (truncated)');
+  s.clear();
+
+  // Left-operand base wins: #FFh + #1d → base 'h'
+  s.pushMany([BinaryInteger(0xFFn, 'h'), BinaryInteger(1n, 'd')]);
+  lookup('+').fn(s);
+  assert(s.peek().value === 0x100n && s.peek().base === 'h',
+         'left-operand base wins: #FFh + #1d → result base h');
+  s.clear();
+
+  // And the other way: #1d + #FFh → base 'd'
+  s.pushMany([BinaryInteger(1n, 'd'), BinaryInteger(0xFFn, 'h')]);
+  lookup('+').fn(s);
+  assert(s.peek().value === 0x100n && s.peek().base === 'd',
+         'left-operand base wins: #1d + #FFh → result base d');
+  s.clear();
+
+  // Division by zero throws 'Division by zero' (0x303), NOT the
+  // 'Infinite result' (0x305) that fires for Real /0 — session 018
+  // split these along the integer/float family line to match HP50.
+  s.pushMany([BinaryInteger(1n, 'h'), BinaryInteger(0n, 'h')]);
+  let msg = null;
+  try { lookup('/').fn(s); } catch (e) { msg = e.message; }
+  assert(msg === 'Division by zero',
+         `BinInt / #0h error message: '${msg}' (want 'Division by zero')`);
+  resetBinaryState();
+}
+// ERRN after BinInt / 0 returns 0x303 (not 0x305).
+{
+  resetBinaryState();
+  resetHome();
+  clearLastError();
+  const s = new Stack();
+  s.push(Program([
+    Name('IFERR'), BinaryInteger(1n, 'h'), BinaryInteger(0n, 'h'), Name('/'),
+    Name('THEN'), Name('ERRN'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isBinaryInteger(s.peek()) &&
+         s.peek().value === 0x303n && s.peek().base === 'h',
+         `BinInt / 0 → ERRN = #303h (got ${s.peek().value.toString(16)}h)`);
+  resetBinaryState();
+}
+
+// BinInt subtraction wraps via two's-complement at the wordsize.
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.pushMany([BinaryInteger(0n, 'h'), BinaryInteger(1n, 'h')]);
+  lookup('-').fn(s);
+  assert(s.peek().value === 0xFFn,
+         '#0h - #1h at ws=8 wraps to #FFh (low 8 bits of -1)');
+  resetBinaryState();
+}
+
+// Session 045: mixed BinInt + Real/Integer now coerces (HP50 AUR §10.1).
+// The Real is truncated toward zero, masked to STWS, and promoted to
+// BinaryInteger with the BinInt's base.
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(1n, 'h'), Real(1)]);
+  lookup('+').fn(s);
+  assert(isBinaryInteger(s.peek()) && s.peek().value === 2n && s.peek().base === 'h',
+         'session045: #1h 1 + → #2h (Real coerced, base preserved)');
+  resetBinaryState();
+}
+
+// AND / OR / XOR on BinInts are bitwise; on Reals still boolean.
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(0xF0n, 'h'), BinaryInteger(0x0Fn, 'h')]);
+  lookup('AND').fn(s);
+  assert(isBinaryInteger(s.peek()) && s.peek().value === 0n,
+         '#F0h AND #0Fh = #0h (bitwise)');
+  s.clear();
+
+  s.pushMany([BinaryInteger(0xF0n, 'h'), BinaryInteger(0x0Fn, 'h')]);
+  lookup('OR').fn(s);
+  assert(s.peek().value === 0xFFn, '#F0h OR #0Fh = #FFh');
+  s.clear();
+
+  s.pushMany([BinaryInteger(0xFFn, 'h'), BinaryInteger(0x0Fn, 'h')]);
+  lookup('XOR').fn(s);
+  assert(s.peek().value === 0xF0n, '#FFh XOR #0Fh = #F0h');
+  s.clear();
+
+  // NOT on BinInt at ws=8 complements within low 8 bits.
+  setWordsize(8);
+  s.push(BinaryInteger(0x0Fn, 'h'));
+  lookup('NOT').fn(s);
+  assert(isBinaryInteger(s.peek()) && s.peek().value === 0xF0n,
+         '#0Fh NOT at ws=8 = #F0h (bitwise complement within wordsize)');
+  resetBinaryState();
+
+  // Real boolean logic still works.
+  s.clear();
+  s.pushMany([Real(1), Real(0)]);
+  lookup('AND').fn(s);
+  assert(isReal(s.peek()) && s.peek().value === 0,
+         'Real 1 AND Real 0 still boolean = 0');
+}
+
+// Mixed BinInt + Real errors on logic ops too.
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(1n, 'h'), Real(0)]);
+  let threw = false;
+  try { lookup('AND').fn(s); } catch (_) { threw = true; }
+  assert(threw, 'BinInt AND Real errors "Bad argument type"');
+  resetBinaryState();
+}
+
+// ------------------------------------------------------------------
+// Session 015: B→R / R→B converters
+// ------------------------------------------------------------------
+{
+  resetBinaryState();
+  const s = new Stack();
+
+  // B→R: BinInt → Real.
+  s.push(BinaryInteger(0xFFn, 'h'));
+  lookup('B→R').fn(s);
+  assert(isReal(s.peek()) && s.peek().value === 255,
+         '#FFh B→R = 255.');
+
+  // R→B: Real → BinInt at current wordsize; base from display override.
+  s.clear();
+  s.push(Real(256));
+  lookup('R→B').fn(s);
+  const r = s.peek();
+  assert(isBinaryInteger(r) && r.value === 256n && r.base === 'h',
+         '256 R→B = #100h (default base h, ws=64)');
+
+  // R→B respects wordsize truncation.
+  s.clear();
+  setWordsize(8);
+  s.push(Real(256));
+  lookup('R→B').fn(s);
+  assert(s.peek().value === 0n && s.peek().base === 'h',
+         '256 R→B at ws=8 = #0h (256 mod 256)');
+
+  // R→B on negative Real wraps two's-complement style.
+  s.clear();
+  s.push(Real(-1));
+  lookup('R→B').fn(s);
+  assert(s.peek().value === 0xFFn,
+         '-1 R→B at ws=8 = #FFh (low 8 bits of -1)');
+
+  // R→B picks up the current display base override.
+  setBinaryBase('b');
+  s.clear();
+  s.push(Real(5));
+  lookup('R→B').fn(s);
+  assert(s.peek().base === 'b',
+         'R→B with BIN display override yields base b');
+
+  // ASCII aliases work the same.
+  s.clear();
+  s.push(BinaryInteger(0xAn, 'h'));
+  lookup('B->R').fn(s);
+  assert(isReal(s.peek()) && s.peek().value === 10, 'B->R ASCII alias = B→R');
+
+  s.clear();
+  s.push(Real(42));
+  lookup('R->B').fn(s);
+  assert(isBinaryInteger(s.peek()) && s.peek().value === 42n,
+         'R->B ASCII alias = R→B');
+
+  // Wrong-type inputs rejected.
+  s.clear();
+  s.push(Real(1));
+  let threw = false;
+  try { lookup('B→R').fn(s); } catch (_) { threw = true; }
+  assert(threw, 'B→R on Real errors "Bad argument type"');
+
+  s.clear();
+  s.push(BinaryInteger(1n, 'h'));
+  threw = false;
+  try { lookup('R→B').fn(s); } catch (_) { threw = true; }
+  assert(threw, 'R→B on BinInt errors "Bad argument type"');
+
+  resetBinaryState();
+}
+
+// Round-trip: HEX/BIN mode re-renders an ERRN result in the chosen base.
+{
+  resetBinaryState();
+  // No override — the ERRN BinInt (base h) renders minimum-width.
+  assert(format(BinaryInteger(0x502n, 'h')) === '#502h',
+         'ERRN #502h default render');
+  setBinaryBase('b');
+  // With BIN override, same value renders in binary (no leading zeros).
+  const expected = '#' + (0x502n).toString(2) + 'b';
+  assert(format(BinaryInteger(0x502n, 'h')) === expected,
+         'ERRN #502h under BIN mode renders as minimum-width binary');
+  resetBinaryState();
+}
+
+// ------------------------------------------------------------------
+// End session 015 additions
+// ------------------------------------------------------------------
+
+// ------------------------------------------------------------------
+// Session 016 — STWS-aware BinInt literal truncation at parse time
+// ------------------------------------------------------------------
+
+// Wide literal masked to the current wordsize at parse time.
+{
+  resetBinaryState();
+  setWordsize(8);
+  const [v] = parseEntry('#FFFFh');
+  assert(isBinaryInteger(v) && v.value === 0xFFn,
+         '#FFFFh at ws=8 parses as #FFh (low 8 bits)');
+  assert(v.base === 'h', 'parse-time truncation preserves the literal base');
+  resetBinaryState();
+}
+
+// Binary literal wider than wordsize is masked.
+{
+  resetBinaryState();
+  setWordsize(4);
+  const [v] = parseEntry('#11110000b');
+  assert(isBinaryInteger(v) && v.value === 0x0n,
+         '#11110000b at ws=4 parses as #0b (low 4 bits, low nibble is 0000)');
+  resetBinaryState();
+}
+
+// Decimal literal wider than wordsize is masked.
+{
+  resetBinaryState();
+  setWordsize(8);
+  const [v] = parseEntry('#300d');
+  // 300 = 0x12C → low 8 bits = 0x2C = 44
+  assert(isBinaryInteger(v) && v.value === 44n,
+         '#300d at ws=8 parses as 44 (300 mod 256)');
+  resetBinaryState();
+}
+
+// Exactly-wordsize-wide literal keeps its full value.
+{
+  resetBinaryState();
+  setWordsize(16);
+  const [v] = parseEntry('#FFFFh');
+  assert(isBinaryInteger(v) && v.value === 0xFFFFn,
+         '#FFFFh at ws=16 preserves the full value');
+  resetBinaryState();
+}
+
+// Fresh-boot default (ws=64) accepts full 64-bit literal unchanged.
+{
+  resetBinaryState();
+  const [v] = parseEntry('#FFFFFFFFFFFFFFFFh');
+  assert(isBinaryInteger(v) && v.value === 0xFFFFFFFFFFFFFFFFn,
+         '#FFFFFFFFFFFFFFFFh at default ws=64 preserves full 64-bit');
+  resetBinaryState();
+}
+
+// ------------------------------------------------------------------
+// Session 044: shift / rotate ops on BinaryInteger
+// ------------------------------------------------------------------
+
+// SL: shift left 1 bit at wordsize 8
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x55n, 'h'));   // 0101 0101
+  lookup('SL').fn(s);
+  const r = s.peek();
+  assert(isBinaryInteger(r) && r.value === 0xAAn && r.base === 'h',
+         'session044: SL #55h (ws=8) → #AAh');
+  resetBinaryState();
+}
+
+// SL: high bit shifted out
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x80n, 'h'));
+  lookup('SL').fn(s);
+  assert(s.peek().value === 0n, 'session044: SL #80h (ws=8) → #0h (bit lost)');
+  resetBinaryState();
+}
+
+// SR: logical shift right; high bit zero fill
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x80n, 'h'));
+  lookup('SR').fn(s);
+  assert(s.peek().value === 0x40n, 'session044: SR #80h (ws=8) → #40h');
+  resetBinaryState();
+}
+
+// ASR: arithmetic shift right preserves MSB
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x80n, 'h'));
+  lookup('ASR').fn(s);
+  // 1000 0000 → 1100 0000  (sign bit preserved and shifted in)
+  assert(s.peek().value === 0xC0n,
+         'session044: ASR #80h (ws=8) → #C0h (sign bit replicated)');
+  resetBinaryState();
+}
+
+// ASR on low value: zero fill (sign bit was 0)
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x40n, 'h'));
+  lookup('ASR').fn(s);
+  assert(s.peek().value === 0x20n,
+         'session044: ASR #40h (ws=8) → #20h (sign bit 0, zero fill)');
+  resetBinaryState();
+}
+
+// SLB: shift left 8 bits
+{
+  resetBinaryState();
+  setWordsize(16);
+  const s = new Stack();
+  s.push(BinaryInteger(0x00FFn, 'h'));
+  lookup('SLB').fn(s);
+  assert(s.peek().value === 0xFF00n,
+         'session044: SLB #00FFh (ws=16) → #FF00h');
+  resetBinaryState();
+}
+
+// SRB: shift right 8 bits
+{
+  resetBinaryState();
+  setWordsize(16);
+  const s = new Stack();
+  s.push(BinaryInteger(0xFF00n, 'h'));
+  lookup('SRB').fn(s);
+  assert(s.peek().value === 0x00FFn,
+         'session044: SRB #FF00h (ws=16) → #00FFh');
+  resetBinaryState();
+}
+
+// RL: rotate left 1 bit
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x80n, 'h'));   // top bit set
+  lookup('RL').fn(s);
+  assert(s.peek().value === 0x01n,
+         'session044: RL #80h (ws=8) → #1h (top bit rotates to bottom)');
+  resetBinaryState();
+}
+
+// RR: rotate right 1 bit
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x01n, 'h'));
+  lookup('RR').fn(s);
+  assert(s.peek().value === 0x80n,
+         'session044: RR #1h (ws=8) → #80h (bottom bit rotates to top)');
+  resetBinaryState();
+}
+
+// RLB: rotate left 8 bits on a 16-bit word
+{
+  resetBinaryState();
+  setWordsize(16);
+  const s = new Stack();
+  s.push(BinaryInteger(0x00FFn, 'h'));
+  lookup('RLB').fn(s);
+  assert(s.peek().value === 0xFF00n,
+         'session044: RLB #00FFh (ws=16) → #FF00h');
+  resetBinaryState();
+}
+
+// RRB: rotate right 8 bits on a 16-bit word
+{
+  resetBinaryState();
+  setWordsize(16);
+  const s = new Stack();
+  s.push(BinaryInteger(0xFF00n, 'h'));
+  lookup('RRB').fn(s);
+  assert(s.peek().value === 0x00FFn,
+         'session044: RRB #FF00h (ws=16) → #00FFh');
+  resetBinaryState();
+}
+
+// Round-trip: RL and RR are inverses at any wordsize
+{
+  resetBinaryState();
+  setWordsize(16);
+  const s = new Stack();
+  s.push(BinaryInteger(0xDEADn, 'h'));
+  lookup('RL').fn(s);
+  lookup('RR').fn(s);
+  assert(s.peek().value === 0xDEADn,
+         'session044: RL RR round-trips at ws=16');
+  resetBinaryState();
+}
+
+// Base inheritance: SL keeps the display base of the input
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x01n, 'b'));
+  lookup('SL').fn(s);
+  assert(s.peek().base === 'b',
+         'session044: SL inherits input display base');
+  resetBinaryState();
+}
+
+// Bad argument type — SL on a Real
+{
+  const s = new Stack();
+  s.push(Real(5));
+  let threw = false;
+  try { lookup('SL').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session044: SL on Real throws Bad argument type');
+}
+
+// Bad argument type — RR on a Real
+{
+  const s = new Stack();
+  s.push(Real(5));
+  let threw = false;
+  try { lookup('RR').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session044: RR on Real throws Bad argument type');
+}
+
+// Full wordsize RL wraps completely (value unchanged after wsSize rotates)
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.push(BinaryInteger(0x53n, 'h'));
+  for (let i = 0; i < 8; i++) lookup('RL').fn(s);
+  assert(s.peek().value === 0x53n,
+         'session044: RL 8 times (ws=8) returns to original');
+  resetBinaryState();
+}
+
+// ASR on wordsize 1 is effectively a no-op (corner case)
+{
+  resetBinaryState();
+  setWordsize(1);
+  const s = new Stack();
+  s.push(BinaryInteger(1n, 'h'));
+  lookup('ASR').fn(s);
+  assert(s.peek().value === 1n,
+         'session044: ASR at ws=1 preserves the only bit');
+  resetBinaryState();
+}
+
+// ------------------------------------------------------------------
+// Session 045: mixed BinInt ↔ Real/Integer arithmetic (HP50 AUR §10.1)
+// ------------------------------------------------------------------
+//
+// When +, -, *, /, ^ receives a BinaryInteger on one side and a
+// Real/Integer on the other, the Real/Integer is coerced to a BinInt
+// (truncate toward zero, mask to STWS) and the op runs as a BinInt
+// op.  The BinInt operand's base is preserved in the result.
+//
+// AND / OR / XOR are NOT modified — they still treat mixed input as
+// 'Bad argument type' (the boolean vs. bitwise distinction lives on
+// a per-op basis, see session 014 registration).
+
+/* ---- BinInt +/-/*// with Real on the right, base 'h' preserved ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(0xFFn, 'h'), Real(3)]);
+  lookup('+').fn(s);
+  assert(isBinaryInteger(s.peek()) && s.peek().value === 0x102n && s.peek().base === 'h',
+         'session045: #FFh 3 + → #102h');
+  resetBinaryState();
+}
+
+/* ---- BinInt on the right with Real on the left ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([Real(3), BinaryInteger(0xFFn, 'h')]);
+  lookup('+').fn(s);
+  assert(isBinaryInteger(s.peek()) && s.peek().value === 0x102n && s.peek().base === 'h',
+         'session045: 3 #FFh + → #102h (base from BinInt)');
+  resetBinaryState();
+}
+
+/* ---- Real with fractional part truncates toward zero ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(0x10n, 'h'), Real(2.7)]);
+  lookup('*').fn(s);
+  // 2.7 → 2; #10h * #2h = #20h
+  assert(s.peek().value === 0x20n && s.peek().base === 'h',
+         'session045: #10h 2.7 * → #20h (Real truncates)');
+  resetBinaryState();
+}
+
+/* ---- Base preservation: base 'd' (decimal display) ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(10n, 'd'), Integer(5n)]);
+  lookup('*').fn(s);
+  assert(s.peek().value === 50n && s.peek().base === 'd',
+         'session045: #10d 5 * → #50d (decimal base preserved)');
+  resetBinaryState();
+}
+
+/* ---- Subtract: #10h 1 - → #Fh ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(0x10n, 'h'), Real(1)]);
+  lookup('-').fn(s);
+  assert(s.peek().value === 0xFn && s.peek().base === 'h',
+         'session045: #10h 1 - → #Fh');
+  resetBinaryState();
+}
+
+/* ---- Divide by coerced-zero throws Division by zero ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(0xFFn, 'h'), Real(0.5)]);  // 0.5 → 0
+  let threw = false;
+  try { lookup('/').fn(s); } catch (e) { threw = /Division by zero/.test(e.message); }
+  assert(threw, 'session045: #FFh 0.5 / → Division by zero (0.5 truncates to 0)');
+  resetBinaryState();
+}
+
+/* ---- Complex on one side still throws Bad argument type ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(1n, 'h'), Complex(1, 2)]);
+  let threw = false;
+  try { lookup('+').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session045: #1h (1,2) + → Bad argument type (no BinInt/Complex promotion)');
+  resetBinaryState();
+}
+
+/* ---- AND / OR / XOR of mixed BinInt + Real is still unchanged ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(1n, 'h'), Real(0)]);
+  let threw = false;
+  try { lookup('AND').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
+  assert(threw, 'session045: AND of mixed BinInt + Real still errors (unchanged from 044)');
+  resetBinaryState();
+}
+
+/* ---- Negative Integer wraps via two's-complement at ws=8 ---- */
+{
+  resetBinaryState();
+  setWordsize(8);
+  const s = new Stack();
+  s.pushMany([BinaryInteger(0x01n, 'h'), Integer(-1n)]);
+  lookup('+').fn(s);
+  // -1 at ws=8 → 0xFF; #1 + #FF at ws=8 → 0 (mask)
+  assert(s.peek().value === 0n && s.peek().base === 'h',
+         'session045: #1h + Integer(-1) at ws=8 → #0h (wrap to 0)');
+  resetBinaryState();
+}
+
+/* ---- Power: #2h 8 ^ → #100h (modular exp via binIntBinary) ---- */
+{
+  resetBinaryState();
+  const s = new Stack();
+  s.pushMany([BinaryInteger(2n, 'h'), Real(8)]);
+  lookup('^').fn(s);
+  assert(s.peek().value === 0x100n && s.peek().base === 'h',
+         'session045: #2h 8 ^ → #100h');
+  resetBinaryState();
+}
+
+// ------------------------------------------------------------------
+// End session 045 additions (mixed BinInt arithmetic)
+// ------------------------------------------------------------------
+
+// ------------------------------------------------------------------

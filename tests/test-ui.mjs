@@ -1,0 +1,512 @@
+import { Stack } from '../src/rpl/stack.js';
+import { lookup } from '../src/rpl/ops.js';
+import {
+  Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
+  RList, Vector, Matrix,
+  isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
+  isString,
+} from '../src/rpl/types.js';
+import { parseEntry } from '../src/rpl/parser.js';
+import { format, formatStackTop } from '../src/rpl/formatter.js';
+import {
+  state as calcState, setAngle, cycleAngle, toRadians, fromRadians,
+  varStore, varRecall, varList, varPurge, resetHome, currentPath,
+  setLastError, clearLastError, getLastError,
+  goHome, goUp, goInto, makeSubdir,
+  setWordsize, getWordsize, getWordsizeMask,
+  setBinaryBase, getBinaryBase, resetBinaryState,
+  setApproxMode, setCoordMode,
+} from '../src/rpl/state.js';
+import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
+import { assert } from './helpers.mjs';
+
+/* UI helpers — paging, physical-keyboard modifier shortcuts,
+   interactive-stack pure helpers, Display click/tooltip rendering. */
+
+/* ================================================================
+   UI paging helpers — clampStackScroll and computeMenuPage.
+   Pure functions, no DOM required.  These drive the session-008
+   arrow-key + menu-paging wiring.
+   ================================================================ */
+
+// clampStackScroll: basic clamping
+{
+  assert(clampStackScroll(0, 5) === 0,   'clampStackScroll: 0 stays 0');
+  assert(clampStackScroll(2, 5) === 2,   'clampStackScroll: in range unchanged');
+  assert(clampStackScroll(4, 5) === 4,   'clampStackScroll: depth-1 is the cap');
+  assert(clampStackScroll(99, 5) === 4,  'clampStackScroll: over cap clamps to depth-1');
+  assert(clampStackScroll(-3, 5) === 0,  'clampStackScroll: negatives clamp to 0');
+  assert(clampStackScroll(3, 1) === 0,   'clampStackScroll: depth 1 pins to 0');
+  assert(clampStackScroll(3, 0) === 0,   'clampStackScroll: depth 0 pins to 0');
+  assert(clampStackScroll(NaN, 10) === 0,'clampStackScroll: NaN → 0');
+  // Floor behavior — fractional offsets are accepted by callers that
+  // do arithmetic (e.g. a touch-scroll gesture in the future).
+  assert(clampStackScroll(2.9, 10) === 2,'clampStackScroll: fractional floors down');
+}
+
+// computeMenuPage: pagination view
+{
+  const short = [{label:'A'},{label:'B'},{label:'C'}];
+  const r1 = computeMenuPage(short, 0);
+  assert(r1.totalPages === 1,                'computeMenuPage: short list = 1 page');
+  assert(r1.view.length === 6,               'computeMenuPage: view always 6 long');
+  assert(r1.view[0].label === 'A',           'computeMenuPage: first slot present');
+  assert(r1.view[3] === null && r1.view[5] === null,
+                                             'computeMenuPage: empty slots padded with null');
+  assert(r1.hasMore === false,               'computeMenuPage: short list has no more pages');
+
+  const full = Array.from({length: 14}, (_, i) => ({label: `S${i+1}`}));
+  const p0 = computeMenuPage(full, 0);
+  assert(p0.totalPages === 3,                'computeMenuPage: 14 slots → 3 pages');
+  assert(p0.page === 0 && p0.hasMore === true,
+                                             'computeMenuPage: page 0 on 14 items');
+  assert(p0.view[0].label === 'S1' && p0.view[5].label === 'S6',
+                                             'computeMenuPage: page 0 shows S1..S6');
+
+  const p1 = computeMenuPage(full, 1);
+  assert(p1.view[0].label === 'S7' && p1.view[5].label === 'S12',
+                                             'computeMenuPage: page 1 shows S7..S12');
+
+  const p2 = computeMenuPage(full, 2);
+  assert(p2.view[0].label === 'S13' && p2.view[1].label === 'S14'
+         && p2.view[2] === null,
+                                             'computeMenuPage: last page pads tail with null');
+
+  // Wrap: page 3 wraps back to page 0
+  const p3 = computeMenuPage(full, 3);
+  assert(p3.page === 0 && p3.view[0].label === 'S1',
+                                             'computeMenuPage: page past end wraps to 0');
+
+  // Negative page wraps to the last page
+  const pm1 = computeMenuPage(full, -1);
+  assert(pm1.page === 2 && pm1.view[0].label === 'S13',
+                                             'computeMenuPage: page -1 wraps to last page');
+
+  // Empty list still returns a 6-wide null view with totalPages=1
+  const empty = computeMenuPage([], 0);
+  assert(empty.totalPages === 1 && empty.view.every(v => v === null)
+         && empty.hasMore === false,
+                                             'computeMenuPage: empty list = one null page');
+}
+
+
+// ================================================================
+// Session 037 — physical-keyboard modifier shortcuts
+// ================================================================
+// The handler lives in src/ui/shortcuts.js as a pure function so it
+// can be exercised without a DOM.  It receives an event-shaped object
+// plus the Entry and (optionally) a clipboard facade.
+{
+  const { handleModifierShortcut } = await import('../src/ui/shortcuts.js');
+  const { Entry } = await import('../src/ui/entry.js');
+
+  const evt = (patch) => Object.assign({
+    key: '', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false,
+  }, patch);
+
+  // ---- Ctrl-Z → UNDO ----
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    const e = new Entry(s);
+    e._snapForUndo();
+    s.push(Real(2));
+    const handled = handleModifierShortcut(evt({ key: 'z', ctrlKey: true }), e);
+    assert(handled === true, 'Ctrl-Z is handled');
+    assert(s.depth === 1 && s.peek(1).value === 1,
+      'Ctrl-Z routes to performUndo — stack restored');
+  }
+
+  // ---- Cmd-Z also works ----
+  {
+    const s = new Stack();
+    s.push(Real(5));
+    const e = new Entry(s);
+    e._snapForUndo();
+    s.push(Real(6));
+    handleModifierShortcut(evt({ key: 'z', metaKey: true }), e);
+    assert(s.depth === 1 && s.peek(1).value === 5,
+      'Cmd-Z routes to performUndo (Mac convention)');
+  }
+
+  // ---- Ctrl-Y → REDO ----
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    const e = new Entry(s);
+    e._snapForUndo();
+    s.push(Real(2));
+    e.performUndo();                  // back to { 1 }
+    assert(s.depth === 1, 'pre-redo sanity: back at { 1 }');
+    const handled = handleModifierShortcut(evt({ key: 'y', ctrlKey: true }), e);
+    assert(handled === true, 'Ctrl-Y is handled');
+    assert(s.depth === 2 && s.peek(1).value === 2,
+      'Ctrl-Y routes to performRedo — push re-applied');
+  }
+
+  // ---- Shift-Ctrl-Z also triggers REDO (standard macOS editor alt) ----
+  {
+    const s = new Stack();
+    s.push(Real(10));
+    const e = new Entry(s);
+    e._snapForUndo();
+    s.push(Real(20));
+    e.performUndo();
+    handleModifierShortcut(evt({ key: 'z', ctrlKey: true, shiftKey: true }), e);
+    assert(s.depth === 2 && s.peek(1).value === 20,
+      'Shift-Ctrl-Z routes to performRedo');
+  }
+
+  // ---- Ctrl-Z with no undo history: handled, but flashes error, no crash ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    let flashed = null;
+    e.flashError = (err) => { flashed = err; };
+    const handled = handleModifierShortcut(evt({ key: 'z', ctrlKey: true }), e);
+    assert(handled === true, 'Ctrl-Z is still "handled" when no history');
+    assert(flashed && /no undo/i.test(flashed.message),
+      'Ctrl-Z with empty history shows No undo error via flashError');
+  }
+
+  // ---- Ctrl-Y with no redo: flashes No-redo error ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    let flashed = null;
+    e.flashError = (err) => { flashed = err; };
+    handleModifierShortcut(evt({ key: 'y', ctrlKey: true }), e);
+    assert(flashed && /no redo/i.test(flashed.message),
+      'Ctrl-Y with empty redo shows No redo error');
+  }
+
+  // ---- Ctrl-V → paste clipboard contents ----
+  // Inject a fake clipboard facade whose readText resolves synchronously
+  // via a Promise; await resolution to assert buffer was populated.
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    const fakeClipboard = { readText: () => Promise.resolve('HELLO 42 +') };
+    const handled = handleModifierShortcut(
+      evt({ key: 'v', ctrlKey: true }), e, { clipboard: fakeClipboard },
+    );
+    assert(handled === true, 'Ctrl-V is handled');
+    // Promise chains inside the helper are fired-and-forgotten; flush
+    // microtasks so the .then() runs.
+    await Promise.resolve();
+    await Promise.resolve();
+    assert(e.buffer === 'HELLO 42 +',
+      `Ctrl-V typed the clipboard payload into the entry buffer, got ${JSON.stringify(e.buffer)}`);
+  }
+
+  // ---- Cmd-V paste also works (Mac) ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    const fakeClipboard = { readText: () => Promise.resolve('XYZ') };
+    handleModifierShortcut(evt({ key: 'v', metaKey: true }), e, { clipboard: fakeClipboard });
+    await Promise.resolve(); await Promise.resolve();
+    assert(e.buffer === 'XYZ', 'Cmd-V also pastes');
+  }
+
+  // ---- Empty clipboard: handled, buffer unchanged ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    e.type('prior');
+    const fakeClipboard = { readText: () => Promise.resolve('') };
+    handleModifierShortcut(evt({ key: 'v', ctrlKey: true }), e, { clipboard: fakeClipboard });
+    await Promise.resolve(); await Promise.resolve();
+    assert(e.buffer === 'prior',
+      'empty clipboard leaves the entry buffer alone');
+  }
+
+  // ---- Clipboard read rejection surfaces as flashError ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    let flashed = null;
+    e.flashError = (err) => { flashed = err; };
+    const fakeClipboard = { readText: () => Promise.reject(new Error('denied')) };
+    handleModifierShortcut(evt({ key: 'v', ctrlKey: true }), e, { clipboard: fakeClipboard });
+    await Promise.resolve(); await Promise.resolve();
+    assert(flashed && /denied/.test(flashed.message),
+      'clipboard read rejection routes to flashError');
+  }
+
+  // ---- Missing clipboard API: flashes "Clipboard unavailable" ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    let flashed = null;
+    e.flashError = (err) => { flashed = err; };
+    handleModifierShortcut(evt({ key: 'v', ctrlKey: true }), e, { clipboard: null });
+    assert(flashed && /clipboard unavailable/i.test(flashed.message),
+      'no clipboard facade → "Clipboard unavailable" via flashError');
+  }
+
+  // ---- Ctrl-C is NOT hijacked (standard copy passes through) ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    const handled = handleModifierShortcut(evt({ key: 'c', ctrlKey: true }), e);
+    assert(handled === false,
+      'Ctrl-C is declined so the browser handles copy normally');
+  }
+
+  // ---- Non-modifier key: handler declines and returns false ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    const handled = handleModifierShortcut(evt({ key: 'z' }), e);
+    assert(handled === false,
+      'bare Z (no modifier) is not handled — passes through to typing path');
+  }
+
+  // ---- Alt-combo: handler declines so OS shortcut is not hijacked ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    const handled = handleModifierShortcut(evt({ key: 'z', ctrlKey: true, altKey: true }), e);
+    assert(handled === false,
+      'Ctrl-Alt-Z is not hijacked — treated as an OS shortcut');
+  }
+
+  // ---- Unrelated modifier combo: Ctrl-Q declines ----
+  {
+    const s = new Stack();
+    const e = new Entry(s);
+    const handled = handleModifierShortcut(evt({ key: 'q', ctrlKey: true }), e);
+    assert(handled === false,
+      'Ctrl-Q is declined — passes through to browser');
+  }
+}
+
+
+/* =================================================================
+   Session 037 — Interactive-stack pure helpers.
+
+   These exercise the DOM-free transition / manipulation functions in
+   src/ui/interactive-stack.js so the controller math stays correct as
+   the App wiring evolves.  The App integration itself (arrow-key
+   dispatch, menu install/restore) is covered lightly via Stack-level
+   assertions — a full DOM test would need jsdom which we deliberately
+   avoid in this suite.
+   ================================================================= */
+{
+  const {
+    clampLevel, levelUp, levelDown,
+    interactiveStackMenu,
+    rollLevel, rollDownToLevel, dropLevel,
+  } = await import('../src/ui/interactive-stack.js');
+
+  // clampLevel bounds
+  assert(clampLevel(0, 5)  === 1, 'clampLevel: below-range snaps to 1');
+  assert(clampLevel(3, 5)  === 3, 'clampLevel: in-range pass-through');
+  assert(clampLevel(99, 5) === 5, 'clampLevel: above-range snaps to depth');
+  assert(clampLevel(2, 0)  === 0, 'clampLevel: depth 0 returns 0');
+  assert(clampLevel(2.7, 5) === 2, 'clampLevel: trunc fractional input');
+
+  // levelUp / levelDown
+  assert(levelUp(1, 5)   === 2, 'levelUp: 1 → 2 (moves to older)');
+  assert(levelUp(5, 5)   === 5, 'levelUp: clamps at depth');
+  assert(levelDown(3, 5) === 2, 'levelDown: 3 → 2');
+  assert(levelDown(1, 5) === 1, 'levelDown: clamps at 1');
+
+  // interactiveStackMenu returns 6 slots with the HP50 labels.
+  const menu = interactiveStackMenu({});
+  assert(menu.length === 6, 'interactiveStackMenu: 6 slots');
+  assert(menu[0].label === 'ECHO'  && menu[1].label === 'PICK',
+         'interactiveStackMenu: ECHO / PICK on F1 / F2');
+  assert(menu[5].label === 'CANCL',
+         'interactiveStackMenu: CANCL on F6');
+  // Untouched handlers default to a no-op so firing them is safe.
+  menu[0].onPress(); menu[5].onPress();
+  assert(true, 'interactiveStackMenu: default handlers are safe no-ops');
+
+  // Handler wiring — onEcho etc. plumb through to the named slot.
+  let echoed = 0, picked = 0, cancelled = 0;
+  const hmenu = interactiveStackMenu({
+    onEcho:   () => echoed++,
+    onPick:   () => picked++,
+    onCancel: () => cancelled++,
+  });
+  hmenu[0].onPress();
+  hmenu[1].onPress();
+  hmenu[5].onPress();
+  assert(echoed === 1 && picked === 1 && cancelled === 1,
+         'interactiveStackMenu: each handler routes to its slot');
+
+  // rollLevel: move level N to the top
+  {
+    const s = new Stack();
+    s.push(Real(1)); s.push(Real(2)); s.push(Real(3)); s.push(Real(4));
+    // Stack is [1, 2, 3, 4] with 4 on top (level 1).  Level 3 → 2.
+    rollLevel(s, 3);
+    const top = s.snapshot();  // [level1, level2, …]
+    assert(s.depth === 4 && top[0].value === 2,
+           'rollLevel: level 3 moves to level 1 (top)');
+    // and the previous levels below it shift down by one.
+    assert(top[1].value === 4 && top[2].value === 3 && top[3].value === 1,
+           'rollLevel: lower levels close the gap');
+  }
+  // rollLevel(1) is a no-op
+  {
+    const s = new Stack();
+    s.push(Real(10)); s.push(Real(20));
+    rollLevel(s, 1);
+    const top = s.snapshot();
+    assert(top[0].value === 20 && top[1].value === 10,
+           'rollLevel(1): no-op');
+  }
+  // rollLevel: out-of-range throws
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    let threw = false;
+    try { rollLevel(s, 5); } catch (e) { threw = true; }
+    assert(threw, 'rollLevel: out-of-range throws');
+  }
+
+  // rollDownToLevel is the inverse of rollLevel.
+  {
+    const s = new Stack();
+    s.push(Real(1)); s.push(Real(2)); s.push(Real(3)); s.push(Real(4));
+    rollLevel(s, 3);                  // now top = 2
+    rollDownToLevel(s, 3);            // should restore original
+    const top = s.snapshot();
+    assert(top[0].value === 4 && top[1].value === 3 && top[2].value === 2 && top[3].value === 1,
+           'rollLevel then rollDownToLevel round-trips');
+  }
+
+  // dropLevel removes the selected level, not the top.
+  {
+    const s = new Stack();
+    s.push(Real(10)); s.push(Real(20)); s.push(Real(30)); s.push(Real(40));
+    // [10, 20, 30, 40] top=40 — drop level 3 (value=20)
+    dropLevel(s, 3);
+    const top = s.snapshot();
+    assert(s.depth === 3 && top[0].value === 40 && top[1].value === 30 && top[2].value === 10,
+           'dropLevel: removes level 3 without touching level 1');
+  }
+
+  // dropLevel out-of-range throws
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    let threw = false;
+    try { dropLevel(s, 2); } catch (e) { threw = true; }
+    assert(threw, 'dropLevel: out-of-range throws');
+  }
+}
+
+/* =================================================================
+   Session 037 — Display click/tooltip rendering.
+
+   The Display module emits HTML; we can probe the strings produced by
+   setPath without a real DOM by giving it a minimal fake statusLine.
+   The goal is to verify that path segments pick up `data-index` and
+   tooltip attributes, and that a setPath replacement doesn't break
+   earlier segments (prefix / brace escaping).
+   ================================================================= */
+{
+  // Smallest useful fake: a #ann-mode node whose innerHTML / textContent
+  // round-trips, plus querySelector('#ann-mode') returning that node.
+  function makeStatusLine() {
+    const node = {
+      id: 'ann-mode', innerHTML: '', textContent: '',
+      title: '',
+      classList: { toggle() {}, add() {}, remove() {} },
+    };
+    return {
+      querySelector(sel) { return sel === '#ann-mode' ? node : null; },
+      addEventListener() {},
+      _node: node,
+    };
+  }
+  // Shim stackView — setPath is all we're testing so the ctor is fine
+  // with these minimal stubs.
+  const { Display } = await import('../src/ui/display.js');
+  const statusLine = makeStatusLine();
+  const d = new Display({
+    stackView: { addEventListener() {} },
+    cmdline:   { addEventListener() {} },
+    statusLine,
+    menuBar:   null,
+  });
+  d.setPath(['HOME', 'WORK', 'A']);
+  const html = statusLine._node.innerHTML;
+  assert(html.includes('data-index="0"') &&
+         html.includes('data-index="1"') &&
+         html.includes('data-index="2"'),
+         'setPath: every segment carries data-index');
+  assert(html.includes('>HOME<') && html.includes('>WORK<') && html.includes('>A<'),
+         'setPath: segment text survives the wrap');
+  assert(html.includes('title="Navigate up to HOME"') &&
+         html.includes('title="Current directory: A"'),
+         'setPath: ancestor vs current tooltip differ');
+  // Session 039 regression: the outer #ann-mode container must NOT carry
+  // a title attribute.  The CSS rule `.annunciator[title]:hover` would
+  // otherwise highlight the braces / whitespace around the segments,
+  // turning the whole path into an apparent hit target even though only
+  // the individual segments are clickable.
+  assert(statusLine._node.title === '',
+         'setPath: the #ann-mode container has no aggregate tooltip');
+}
+
+/* ================================================================
+   Vector formatting respects coord mode for 2-D and 3-D (HP50 §9).
+   4-D and higher stay rectangular regardless of mode.
+   ================================================================ */
+{
+  // Baseline: RECT mode renders [ x y ] element-wise.
+  setCoordMode('RECT');
+  setAngle('RAD');
+  const s = format(Vector([Real(3), Real(4)]));
+  assert(s === '[ 3. 4. ]',
+    `RECT 2-D vector: [ 3 4 ] → element-wise, got '${s}'`);
+}
+{
+  // 2-D CYLIN: [ r ∠θ ].  Sample [3 4] → r=5, θ=atan2(4,3) ≈ 0.9272.
+  setCoordMode('CYLIN');
+  setAngle('RAD');
+  const s = format(Vector([Real(3), Real(4)]));
+  assert(/^\[ 5 ∠0\.9272/.test(s),
+    `CYLIN 2-D: [3 4] → [ 5 ∠0.927… ], got '${s}'`);
+}
+{
+  // 3-D CYLIN: [ r ∠θ z ].  [3 4 7] → r=5, θ=atan2(4,3), z=7 kept.
+  setCoordMode('CYLIN');
+  setAngle('RAD');
+  const s = format(Vector([Real(3), Real(4), Real(7)]));
+  assert(/^\[ 5 ∠0\.9272.* 7 \]$/.test(s),
+    `CYLIN 3-D: [3 4 7] keeps z untransformed, got '${s}'`);
+}
+{
+  // 3-D SPHERE: [ ρ ∠θ ∠φ ].  [0 0 5] → ρ=5, θ=0, φ=0 (along +z).
+  setCoordMode('SPHERE');
+  setAngle('RAD');
+  const s = format(Vector([Real(0), Real(0), Real(5)]));
+  assert(s.startsWith('[ 5') && (s.match(/∠/g) || []).length === 2,
+    `SPHERE 3-D: [0 0 5] uses two angle markers, got '${s}'`);
+}
+{
+  // 4-D falls back to rect even under SPHERE.
+  setCoordMode('SPHERE');
+  const s = format(Vector([Real(1), Real(2), Real(3), Real(4)]));
+  assert(s === '[ 1. 2. 3. 4. ]',
+    `4-D vector stays rect under any mode, got '${s}'`);
+}
+{
+  // Non-numeric (Symbolic) entry forces rect fallback — we won't
+  // fabricate an angle we can't compute.
+  setCoordMode('CYLIN');
+  const sym = { type: 'symbolic', expr: { type: 'var', name: 'X' } };
+  const s = format(Vector([sym, Real(1)]));
+  assert(s.includes('[ ') && !s.includes('∠'),
+    `non-numeric component forces rect fallback, got '${s}'`);
+}
+// Reset
+setCoordMode('RECT');
+setAngle('RAD');
+

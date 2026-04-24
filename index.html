@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>hr5050sx</title>
+<link rel="stylesheet" href="css/calc.css" />
+</head>
+<body>
+  <!-- Side-panel mount point.  SidePanel (src/ui/side-panel.js) attaches
+       its own <aside> here at construction.  Kept as a sibling of the
+       calculator so the slide-in overlay can be positioned relative to
+       the viewport without being clipped by the bezel's overflow. -->
+  <div id="sidePanelRoot"></div>
+
+  <div id="calculator" class="calculator">
+    <div class="bezel">
+      <div class="brand-row">
+        <span class="brand">hr5050<span class="model-sub">sx</span></span>
+        <span class="model">RPL Scientific Calculator</span>
+      </div>
+
+      <div class="screen" id="screen" aria-label="LCD display">
+        <div class="screen-inner">
+          <div class="status-line" id="statusLine">
+            <span class="annunciator on" id="ann-angle">RAD</span>
+            <!-- Coordinate display mode: XYZ (rect) / R∠Z (cylin) /
+                 R∠∠ (sphere).  Click to cycle. -->
+            <span class="annunciator on" id="ann-coord">XYZ</span>
+            <!-- BinaryInteger display base: HEX / DEC / OCT / BIN.
+                 Hidden (empty) when no base override is active. -->
+            <span class="annunciator" id="ann-hex"></span>
+            <span class="annunciator" id="ann-r"></span>
+            <span class="annunciator on" id="ann-approx">=</span>
+            <span class="annunciator" id="ann-halt"></span>
+            <span class="annunciator" id="ann-alpha">α</span>
+            <span class="annunciator" id="ann-mode">{ HOME }</span>
+          </div>
+          <div class="stack-view" id="stackView"></div>
+          <div class="cmdline" id="cmdline"></div>
+        </div>
+      </div>
+
+      <div class="soft-row" id="softRow">
+        <!-- F1..F6 (soft-menu) rendered by js/keyboard.js -->
+      </div>
+
+      <div class="nav-row" id="navRow">
+        <!-- APPS MODE TOOL / VAR STO▶ NXT + 4-way arrow diamond (right)
+             rendered by js/keyboard.js -->
+      </div>
+
+      <div class="keypad" id="keypad">
+        <!-- Main 5-col keypad (rows 4-10) rendered by js/keyboard.js -->
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

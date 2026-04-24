@@ -1,0 +1,12327 @@
+/* =================================================================
+   Operation registry.
+
+   Every RPL command (ADD, SIN, DUP, ...) lives here as a function
+   `fn(stack, state)`.  The app looks up ops by their canonical name
+   and calls them.  Keep this registry open-ended — new ops just
+   register themselves.
+   ================================================================= */
+
+import {
+  Real, Integer, BinaryInteger, Complex, Name, RList, Str, Symbolic,
+  Vector, Matrix, Tagged, Unit,
+  isReal, isInteger, isBinaryInteger, isComplex, isNumber, isName, isString,
+  isProgram, isTagged, isList, isSymbolic, isVector, isMatrix, isDirectory,
+  isUnit,
+  toRealOrThrow, toComplex, promoteNumericPair,
+} from './types.js';
+import {
+  multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
+  sameDims, scaleOf, toBaseUexpr, uexprEqual,
+} from './units.js';
+import { RPLError } from './stack.js';
+import {
+  deriv as algebraDeriv, integ as algebraInteg,
+  Var as AstVar, Num as AstNum,
+  Bin as AstBin, Fn as AstFn, Neg as AstNeg,
+  evalAst as algebraEvalAst, defaultFnEval as algebraDefaultFnEval,
+  expand as algebraExpand,
+  simplify as algebraSimplify,
+  factor as algebraFactor,
+  subst as algebraSubst,
+  collectByVar as algebraCollectByVar,
+  solve as algebraSolve,
+  isNum as astIsNum, KNOWN_FUNCTIONS,
+  formatAlgebra,
+  freeVars as algebraFreeVars,
+} from './algebra.js';
+import {
+  format as formatValue,
+  formatReal, formatBinaryInteger, DEFAULT_DISPLAY,
+} from './formatter.js';
+import {
+  state as _calcState,
+  setAngle, toRadians, fromRadians,
+  varStore, varRecall, varPurge, varList, varOrder, reorderCurrentEntries,
+  setLastError, clearLastError, getLastError, restoreLastError,
+  goHome, goUp, goInto, enterDirectory, makeSubdir, currentPath,
+  setWordsize, getWordsize, getWordsizeMask,
+  setBinaryBase, getBinaryBase,
+  setCoordMode,
+  setTextbookMode, getTextbookMode,
+  setApproxMode, getApproxMode,
+  setComplexMode, getComplexMode, toggleComplexMode,
+  setUserFlag, clearUserFlag, testUserFlag, clearAllUserFlags,
+  seedPrng, nextPrngUnit, nextPrngInt9, getPrngSeed,
+  setLastFitModel, getLastFitModel,
+} from './state.js';
+// Used by OBJ→ on String: re-parse the string as RPL source.  parser.js
+// deliberately does not import ops.js, so this top-level import is safe.
+import { parseEntry as _parseEntryForObjTo } from './parser.js';
+
+/* ------------------------------------------------------------------
+   Truthiness for conditionals.
+
+   HP50 booleans are Reals: 0. is false, anything else is true.  We
+   accept Integer and Complex as well (non-zero / non-origin is true).
+   Any other type passed as a test is a user bug — throw.
+   ------------------------------------------------------------------ */
+function isTruthy(v) {
+  if (isReal(v))    return v.value !== 0;
+  if (isInteger(v)) return v.value !== 0n;
+  if (isComplex(v)) return v.re !== 0 || v.im !== 0;
+  throw new RPLError('Bad argument type');
+}
+
+/** HP50 boolean literal: TRUE is Real(1), FALSE is Real(0). */
+const TRUE  = Real(1);
+const FALSE = Real(0);
+
+const OPS = new Map();
+
+export function register(name, fn, opts = {}) {
+  OPS.set(name.toUpperCase(), { fn, ...opts });
+}
+
+export function lookup(name) {
+  return OPS.get(String(name).toUpperCase());
+}
+
+export function hasOp(name) {
+  return OPS.has(String(name).toUpperCase());
+}
+
+export function allOps() {
+  return [...OPS.keys()].sort();
+}
+
+/* ------------------------------------------------------------------
+   Stack ops
+   ------------------------------------------------------------------ */
+register('DUP',   (s) => s.dup());
+register('DROP',  (s) => s.drop());
+register('SWAP',  (s) => s.swap());
+register('OVER',  (s) => s.over());
+register('ROT',   (s) => s.rot());
+register('DUP2',  (s) => s.dup2());
+register('DROP2', (s) => s.drop2());
+register('CLEAR', (s) => s.clear());
+register('DEPTH', (s) => s.push(Integer(s.depth)));
+
+/* ------------------- multi-level UNDO / REDO -----------------------
+   Session 031 introduced one-slot UNDO.  Session 037 upgraded it to
+   a full history stack with a companion REDO stack (user ask:
+   "UNDO should be multi-level").
+
+   Commands:
+     `UNDO` / `LASTSTACK` — pop the most recent snapshot and restore.
+     `REDO`               — re-apply the most recently undone step.
+
+   `LASTSTACK` is kept as an alias so HP50 user programs that use the
+   canonical name still work; its behavior is indistinguishable from
+   single-level LASTSTACK until you press UNDO more than once.
+
+   Note: because `saveForUndo()` fires BEFORE the op runs inside
+   `execOp`, invoking UNDO from the catalog first pushes the current
+   stack onto the history — meaning the *named* invocation peels off
+   that self-push and returns to the original state.  The HIST
+   SHIFT-R key binding bypasses execOp and calls `e.performUndo()`
+   directly so one keystroke genuinely steps back one user action.
+   -------------------------------------------------------------------- */
+register('UNDO',      (s) => s.undo());
+register('LASTSTACK', (s) => s.undo());
+register('REDO',      (s) => s.redo());
+
+register('PICK', (s) => {
+  const n = s.pop();
+  const k = Number(isInteger(n) ? n.value : toRealOrThrow(n));
+  if (!Number.isInteger(k) || k < 1) throw new RPLError('Bad argument value');
+  s.pick(k);
+});
+
+register('DROPN', (s) => {
+  const n = s.pop();
+  const k = Number(isInteger(n) ? n.value : toRealOrThrow(n));
+  if (!Number.isInteger(k) || k < 0) throw new RPLError('Bad argument value');
+  s.dropN(k);
+});
+
+/* ------------------------------------------------------------------
+   Arithmetic — real + complex + integer promotion
+
+   Session 032 extends every binary / unary numeric op so that a
+   Symbolic or Name operand lifts the whole expression into the
+   symbolic domain, producing a Symbolic result with an AST assembled
+   from the operator plus coerced operands.  HP50 behavior: any op on
+   at least one symbolic/name operand returns the symbolic form, e.g.
+   `'X' 'Y' +` → `'X+Y'` and `'X' SIN` → `'SIN(X)'`.  Constants on the
+   other side coerce to Num:  `5 'X' +` → `'5+X'`.  This is what makes
+   the keypad usable for algebra entry at all — before this change
+   every operator key threw "Bad argument type" the instant a Name
+   landed on the stack.
+   ------------------------------------------------------------------ */
+
+/** Return true if `v` is a value that forces the symbolic code path.
+ *  Names (quoted or bare — a bare name only reaches an op when
+ *  recalled without evaluation) and Symbolics count.  Numbers do NOT
+ *  — they'd rather take the fast Real/Integer/Complex path, and are
+ *  coerced to AST only when they land on the OTHER side of a symbolic
+ *  operand. */
+function _isSymOperand(v) {
+  return isSymbolic(v) || isName(v);
+}
+
+/** Coerce an RPL value to an algebra-AST node.  Used to build the
+ *  symbolic result when at least one operand forces the symbolic path
+ *  (see _isSymOperand).  Complex is rejected — the algebra AST has
+ *  no Complex kind yet, so `'X' (2,3) +` would need extension of the
+ *  AST before it can work.  Returns null on unsupported types and the
+ *  caller translates to "Bad argument type". */
+function _toAst(v) {
+  if (isSymbolic(v))   return v.expr;
+  if (isName(v))       return AstVar(v.id);
+  if (isInteger(v))    return AstNum(Number(v.value));
+  if (isReal(v))       return AstNum(v.value);
+  return null;
+}
+
+/** Scalar ∘ Scalar: returns the result value directly.  Extracted
+ *  from binaryMath so Vector/Matrix branches can apply the op
+ *  element-wise without going through a temp stack. */
+/** Coerce a numeric (Real or Integer) to a plain JS number.
+ *  Throws if `v` isn't a plain numeric — the unit paths never mix Complex
+ *  operands (HP50 doesn't allow complex-valued units either). */
+function _numVal(v) {
+  if (isReal(v))    return v.value;
+  if (isInteger(v)) return Number(v.value);
+  throw new RPLError('Bad argument type');
+}
+
+/** Wrap a Unit result: if the accumulated uexpr is empty (dimensionless),
+ *  unwrap to a plain Real — matches how `_m / _m` simplifies to a number. */
+function _makeUnit(value, uexpr) {
+  return uexpr.length === 0 ? Real(value) : Unit(value, uexpr);
+}
+
+/** Binary arithmetic when at least one side is a Unit.
+ *  +/-: dims must match; result inherits the left operand's uexpr
+ *       (its scale too, so `1_km + 500_m` stays in km).
+ *  *, /: combine uexprs; a plain number broadcasts as dimensionless.
+ *  ^:   exponent must be a plain integer; scales each factor's exponent. */
+function _unitBinary(op, a, b) {
+  if (op === '+' || op === '-') {
+    if (!isUnit(a) || !isUnit(b)) throw new RPLError('Bad argument type');
+    if (!sameDims(a.uexpr, b.uexpr)) throw new RPLError('Inconsistent units');
+    const inA = b.value * scaleOf(b.uexpr) / scaleOf(a.uexpr);
+    const val = op === '+' ? a.value + inA : a.value - inA;
+    return _makeUnit(val, a.uexpr);
+  }
+  if (op === '*') {
+    if (isUnit(a) && isUnit(b)) return _makeUnit(a.value * b.value, multiplyUexpr(a.uexpr, b.uexpr));
+    if (isUnit(a)) return _makeUnit(a.value * _numVal(b), a.uexpr);
+    return _makeUnit(_numVal(a) * b.value, b.uexpr);
+  }
+  if (op === '/') {
+    if (isUnit(a) && isUnit(b)) {
+      if (b.value === 0) throw new RPLError('Infinite result');
+      return _makeUnit(a.value / b.value, divideUexpr(a.uexpr, b.uexpr));
+    }
+    if (isUnit(a)) {
+      const bv = _numVal(b);
+      if (bv === 0) throw new RPLError('Infinite result');
+      return _makeUnit(a.value / bv, a.uexpr);
+    }
+    if (b.value === 0) throw new RPLError('Infinite result');
+    return _makeUnit(_numVal(a) / b.value, inverseUexpr(b.uexpr));
+  }
+  if (op === '^') {
+    if (!isUnit(a)) throw new RPLError('Bad argument type');
+    // Exponent must be an integer — fractional powers would introduce
+    // non-integer exponents in the uexpr, which the catalog-backed
+    // dimensional algebra doesn't model.
+    const n = isInteger(b) ? Number(b.value)
+            : isReal(b)    ? b.value
+            : NaN;
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      throw new RPLError('Bad argument value');
+    }
+    return _makeUnit(Math.pow(a.value, n), powerUexpr(a.uexpr, n));
+  }
+  throw new RPLError('Bad argument type');
+}
+
+function _scalarBinary(op, a, b) {
+  if (isBinaryInteger(a) && isBinaryInteger(b)) return binIntBinary(op, a, b);
+  if (isBinaryInteger(a) || isBinaryInteger(b)) {
+    throw new RPLError('Bad argument type');
+  }
+  if (isUnit(a) || isUnit(b)) return _unitBinary(op, a, b);
+  if (_isSymOperand(a) || _isSymOperand(b)) {
+    const l = _toAst(a);
+    const r = _toAst(b);
+    if (l && r) return Symbolic(AstBin(op, l, r));
+    throw new RPLError('Bad argument type');
+  }
+  if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
+  const p = promoteNumericPair(a, b);
+  if (p.kind === 'complex') {
+    const r = complexBinary(op, p.a, p.b);
+    return Complex(r.re, r.im);
+  }
+  if (p.kind === 'integer') {
+    if (op === '/' && !getApproxMode() && p.b !== 0n && p.a % p.b !== 0n) {
+      return Symbolic(AstBin('/', AstNum(Number(p.a)), AstNum(Number(p.b))));
+    }
+    const r = integerBinary(op, p.a, p.b);
+    return (typeof r === 'bigint') ? Integer(r) : Real(r);
+  }
+  return Real(realBinary(op, p.a, p.b));
+}
+
+/** Types that broadcast as a scalar across a Vector/Matrix. */
+function _isScalarOperand(v) {
+  return isNumber(v) || isBinaryInteger(v) || _isSymOperand(v);
+}
+
+/* ---- List distribution (HP50 AUR §12.3) ----
+   Most scalar-domain commands distribute element-wise when given a
+   List.  Rules:
+     Unary:          {1 4 9} SQRT            → {1 2 3}
+     List ∘ scalar:  {1 2 3} 2 +             → {3 4 5}
+     Scalar ∘ list:  2 {1 2 3} *             → {2 4 6}
+     List ∘ list:    {1 2 3} {10 20 30} +    → {11 22 33}  (same len)
+     Nested:         {1 {2 3}} SIN           → {SIN(1) {SIN(2) SIN(3)}}
+
+   Wrapping a handler with `_withListUnary` / `_withListBinary` is the
+   one integration point — at the leaves, the original handler sees a
+   non-list operand and does its full scalar/vector/matrix dispatch.
+   List-aware commands that treat the list as a whole (SIZE, HEAD,
+   STO, PURGE, aggregate reducers) are wired directly and NOT wrapped.
+   -------------------------------------------------------------------- */
+function _withListUnary(handler) {
+  const apply = (s, item) => {
+    if (isList(item)) return RList(item.items.map(e => apply(s, e)));
+    s.push(item);
+    handler(s);
+    return s.pop();
+  };
+  return (s) => {
+    if (s.depth >= 1 && isList(s.peek())) {
+      const v = s.pop();
+      s.push(apply(s, v));
+      return;
+    }
+    handler(s);
+  };
+}
+
+function _withListBinary(handler) {
+  const apply = (s, a, b) => {
+    if (isList(a) && isList(b)) {
+      if (a.items.length !== b.items.length) throw new RPLError('Invalid dimension');
+      return RList(a.items.map((x, i) => apply(s, x, b.items[i])));
+    }
+    if (isList(a)) return RList(a.items.map(x => apply(s, x, b)));
+    if (isList(b)) return RList(b.items.map(x => apply(s, a, x)));
+    s.push(a); s.push(b);
+    handler(s);
+    return s.pop();
+  };
+  return (s) => {
+    if (s.depth >= 2 && (isList(s.peek(1)) || isList(s.peek(2)))) {
+      const [a, b] = s.popN(2);
+      s.push(apply(s, a, b));
+      return;
+    }
+    handler(s);
+  };
+}
+
+/* ---- Tagged transparency (HP50 AUR §3.4) ----
+   A Tagged object (e.g. `Price:42.50`) is a label + value pair.  For
+   numeric / symbolic operations HP50 unwraps the tag, applies the op
+   to the underlying value, and in the unary case re-tags the result
+   with the same label.  For binary ops the tag is dropped — when both
+   sides carry tags there isn't a single obvious label to keep.
+
+   Wrapping a handler with `_withTaggedUnary` / `_withTaggedBinary` is
+   the one integration point — the inner handler sees a plain value on
+   the stack and does its normal scalar/vector/matrix dispatch. */
+function _withTaggedUnary(handler) {
+  return (s) => {
+    if (s.depth >= 1 && isTagged(s.peek())) {
+      const t = s.pop();
+      s.push(t.value);
+      handler(s);
+      const r = s.pop();
+      s.push(Tagged(t.tag, r));
+      return;
+    }
+    handler(s);
+  };
+}
+
+function _withTaggedBinary(handler) {
+  return (s) => {
+    if (s.depth >= 2 && (isTagged(s.peek(1)) || isTagged(s.peek(2)))) {
+      const [a, b] = s.popN(2);
+      s.push(isTagged(a) ? a.value : a);
+      s.push(isTagged(b) ? b.value : b);
+      handler(s);
+      return;  // binary drops the tag
+    }
+    handler(s);
+  };
+}
+
+/* ---- Vector / Matrix element-wise unary dispatch (session 063) ----
+   For unary numeric ops whose Vector/Matrix semantics are simply
+   "apply f to every element", wrapping with `_withVMUnary` adds that
+   coverage with no per-op duplication.  At a leaf scalar the inner
+   handler runs unchanged (it does its own R/Z/C/Sy dispatch).
+
+   Ops with bespoke V/M semantics (ABS = Frobenius, SIGN/V = unit
+   direction, INV/M = matrix inverse, SQ/M = M·M, …) bypass this
+   wrapper and keep their hand-written branch — the wrapper only
+   activates when the top is a Vector or Matrix value.
+
+   Implementation note: we re-use the temp-stack pattern from
+   `_withListUnary`, so the inner handler can throw and the wrapper
+   propagates the error untouched (matches list / tagged behavior).
+   */
+function _withVMUnary(handler) {
+  const apply = (s, item) => {
+    s.push(item);
+    handler(s);
+    return s.pop();
+  };
+  return (s) => {
+    if (s.depth >= 1) {
+      const top = s.peek();
+      if (isVector(top)) {
+        const v = s.pop();
+        s.push(Vector(v.items.map(x => apply(s, x))));
+        return;
+      }
+      if (isMatrix(top)) {
+        const m = s.pop();
+        s.push(Matrix(m.rows.map(row => row.map(x => apply(s, x)))));
+        return;
+      }
+    }
+    handler(s);
+  };
+}
+
+/** Sum scalars with `+`.  Empty → Real(0). */
+function _scalarSum(parts) {
+  if (parts.length === 0) return Real(0);
+  let acc = parts[0];
+  for (let i = 1; i < parts.length; i++) acc = _scalarBinary('+', acc, parts[i]);
+  return acc;
+}
+
+function binaryMath(op) {
+  return _withListBinary((s) => {
+    const [a, b] = s.popN(2);                   // level2, level1
+
+    // Vector ∘ Vector: element-wise for +/- (same length), dot
+    // product for * (matches HP50 `V V *`).
+    if (isVector(a) && isVector(b)) {
+      if (op === '+' || op === '-') {
+        if (a.items.length !== b.items.length) throw new RPLError('Invalid dimension');
+        s.push(Vector(a.items.map((x, i) => _scalarBinary(op, x, b.items[i]))));
+        return;
+      }
+      if (op === '*') {
+        if (a.items.length !== b.items.length) throw new RPLError('Invalid dimension');
+        const parts = a.items.map((x, i) => _scalarBinary('*', x, b.items[i]));
+        s.push(_scalarSum(parts));
+        return;
+      }
+      throw new RPLError('Bad argument type');
+    }
+
+    // Matrix ∘ Matrix: element-wise +/-, standard * (m×n · n×p).
+    if (isMatrix(a) && isMatrix(b)) {
+      const ar = a.rows.length, ac = a.rows[0]?.length ?? 0;
+      const br = b.rows.length, bc = b.rows[0]?.length ?? 0;
+      if (op === '+' || op === '-') {
+        if (ar !== br || ac !== bc) throw new RPLError('Invalid dimension');
+        s.push(Matrix(a.rows.map((row, i) =>
+          row.map((x, j) => _scalarBinary(op, x, b.rows[i][j])))));
+        return;
+      }
+      if (op === '*') {
+        if (ac !== br) throw new RPLError('Invalid dimension');
+        const out = [];
+        for (let i = 0; i < ar; i++) {
+          const row = new Array(bc);
+          for (let j = 0; j < bc; j++) {
+            const parts = new Array(ac);
+            for (let k = 0; k < ac; k++) {
+              parts[k] = _scalarBinary('*', a.rows[i][k], b.rows[k][j]);
+            }
+            row[j] = _scalarSum(parts);
+          }
+          out.push(row);
+        }
+        s.push(Matrix(out));
+        return;
+      }
+      throw new RPLError('Bad argument type');
+    }
+
+    // Matrix * Vector (column) and Vector * Matrix (row).
+    if (isMatrix(a) && isVector(b) && op === '*') {
+      const cols = a.rows[0]?.length ?? 0;
+      if (cols !== b.items.length) throw new RPLError('Invalid dimension');
+      s.push(Vector(a.rows.map(row => {
+        const parts = row.map((x, k) => _scalarBinary('*', x, b.items[k]));
+        return _scalarSum(parts);
+      })));
+      return;
+    }
+    if (isVector(a) && isMatrix(b) && op === '*') {
+      const rows = b.rows.length, cols = b.rows[0]?.length ?? 0;
+      if (a.items.length !== rows) throw new RPLError('Invalid dimension');
+      const out = new Array(cols);
+      for (let j = 0; j < cols; j++) {
+        const parts = new Array(rows);
+        for (let i = 0; i < rows; i++) {
+          parts[i] = _scalarBinary('*', a.items[i], b.rows[i][j]);
+        }
+        out[j] = _scalarSum(parts);
+      }
+      s.push(Vector(out));
+      return;
+    }
+
+    // Scalar ∘ Vector / Matrix: broadcast the op across every element.
+    if (isVector(a) && _isScalarOperand(b)) {
+      s.push(Vector(a.items.map(x => _scalarBinary(op, x, b))));
+      return;
+    }
+    if (_isScalarOperand(a) && isVector(b)) {
+      s.push(Vector(b.items.map(x => _scalarBinary(op, a, x))));
+      return;
+    }
+    if (isMatrix(a) && _isScalarOperand(b)) {
+      s.push(Matrix(a.rows.map(row => row.map(x => _scalarBinary(op, x, b)))));
+      return;
+    }
+    if (_isScalarOperand(a) && isMatrix(b)) {
+      s.push(Matrix(b.rows.map(row => row.map(x => _scalarBinary(op, a, x)))));
+      return;
+    }
+
+    // Any remaining Vector/Matrix mix (e.g. Vector / Matrix) is an
+    // unsupported shape pair — report clearly rather than falling
+    // into the scalar path with the same generic error.
+    if (isVector(a) || isVector(b) || isMatrix(a) || isMatrix(b)) {
+      throw new RPLError('Bad argument type');
+    }
+
+    s.push(_scalarBinary(op, a, b));
+  });
+}
+
+/* ------------------------------------------------------------------
+   Binary integer arithmetic.
+
+   HP50 rules:
+     * Both operands must be BinaryIntegers (no implicit coercion from
+       Real/Integer) — mixed arguments give "Bad argument type".
+     * The LEFT operand's base wins.  `#FFh #1d +` → `#100h`, not `#256d`.
+     * Every result is masked to the current wordsize (STWS).  With
+       ws=16, `#FFFFh #1h +` → `#0h` (wrap), and `#10000h` can't even
+       exist as a literal — it truncates.
+     * Division is BigInt truncated division.  `#7h #2h /` → `#3h`.
+     * Division by zero throws 'Division by zero' — the integer-family
+       error (HP50 0x303), distinct from 'Infinite result' (0x305) that
+       fires for Real /0 (where IEEE-754 would yield ±Infinity).  Kept
+       separate since session 018: BinInts follow the integer/BinInt
+       error family, Reals follow the floating-point family.
+     * Pow (^) is wordsize-masked modular exponentiation.
+
+   Also used by the AND/OR/XOR bitwise path; those have their own
+   register-site below but share this module's helpers.
+   ------------------------------------------------------------------ */
+
+/** Mask a BigInt to the current wordsize's low bits. */
+function _mask() { return getWordsizeMask(); }
+function _maskVal(v) { return v & _mask(); }
+
+function binIntBinary(op, a, b) {
+  const m = _mask();
+  const av = a.value & m;
+  const bv = b.value & m;
+  let r;
+  switch (op) {
+    case '+': r = av + bv; break;
+    case '-': r = av - bv; break;
+    case '*': r = av * bv; break;
+    case '/':
+      if (bv === 0n) throw new RPLError('Division by zero');
+      r = av / bv;
+      break;
+    case '^':
+      // Modular exponentiation, ws-wide.  Negative exponents aren't a
+      // thing for BinInts (unsigned) — treat as 0 to match HP50.
+      r = _modPow(av, bv, m + 1n);
+      break;
+    default:
+      throw new RPLError('Unknown op ' + op);
+  }
+  return BinaryInteger(r & m, a.base);
+}
+
+/** x^e mod n via square-and-multiply (BigInt).  n must be > 0.  Used
+ *  only by binIntBinary('^') — keeps exponentiation O(log e) bits and
+ *  never builds an intermediate 2^64-bit number. */
+function _modPow(x, e, n) {
+  if (n === 1n) return 0n;
+  let result = 1n;
+  let base = x % n;
+  let exp = e;
+  while (exp > 0n) {
+    if (exp & 1n) result = (result * base) % n;
+    exp >>= 1n;
+    base = (base * base) % n;
+  }
+  return result;
+}
+
+function realBinary(op, a, b) {
+  switch (op) {
+    case '+': return a + b;
+    case '-': return a - b;
+    case '*': return a * b;
+    case '/':
+      if (b === 0) throw new RPLError('Infinite result');
+      return a / b;
+    case '^': return Math.pow(a, b);
+  }
+  throw new RPLError('Unknown op ' + op);
+}
+
+function integerBinary(op, a, b) {
+  switch (op) {
+    case '+': return a + b;
+    case '-': return a - b;
+    case '*': return a * b;
+    case '/':
+      if (b === 0n) throw new RPLError('Infinite result');
+      // If it divides evenly, keep Integer; else return a float.
+      if (a % b === 0n) return a / b;
+      return Number(a) / Number(b);
+    case '^':
+      if (b < 0n) return Math.pow(Number(a), Number(b));
+      return a ** b;
+  }
+  throw new RPLError('Unknown op ' + op);
+}
+
+function complexBinary(op, a, b) {
+  switch (op) {
+    case '+': return { re: a.re + b.re, im: a.im + b.im };
+    case '-': return { re: a.re - b.re, im: a.im - b.im };
+    case '*': return {
+      re: a.re * b.re - a.im * b.im,
+      im: a.re * b.im + a.im * b.re,
+    };
+    case '/': {
+      const d = b.re * b.re + b.im * b.im;
+      if (d === 0) throw new RPLError('Infinite result');
+      return {
+        re: (a.re * b.re + a.im * b.im) / d,
+        im: (a.im * b.re - a.re * b.im) / d,
+      };
+    }
+    case '^': {
+      // (a)^(b) via exp(b*ln(a)) — basic; revisit for accuracy.
+      const r   = Math.hypot(a.re, a.im);
+      const th  = Math.atan2(a.im, a.re);
+      const lnr = Math.log(r);
+      const er  = Math.exp(b.re * lnr - b.im * th);
+      const an  = b.re * th + b.im * lnr;
+      return { re: er * Math.cos(an), im: er * Math.sin(an) };
+    }
+  }
+  throw new RPLError('Unknown op ' + op);
+}
+
+/** When either operand of `+` is a String, the result is a concatenation
+ *  of the two operands' display forms.  Matches HP50 behaviour:
+ *    "ABC" "DEF" +  →  "ABCDEF"
+ *    "ABC" 123   +  →  "ABC123"
+ *    123   "ABC" +  →  "123ABC"
+ *    "ABC" 'X'   +  →  "ABCX"        (Name renders without ticks here —
+ *                                      in-string context)
+ *  Non-string `+` keeps the numeric/symbolic dispatch in binaryMath.
+ *  Session 034. */
+function _stringCoerce(v) {
+  if (isString(v))  return v.value;
+  if (isInteger(v)) return v.value.toString();
+  if (isReal(v)) {
+    // Use STD formatting so the representation matches what the user sees
+    // on the stack — avoids surprise from JS default toString on floats.
+    return formatReal(v.value, DEFAULT_DISPLAY);
+  }
+  if (isBinaryInteger(v)) return formatBinaryInteger(v);
+  if (isComplex(v)) return `(${formatReal(v.re, DEFAULT_DISPLAY)}, ${formatReal(v.im, DEFAULT_DISPLAY)})`;
+  if (isName(v))    return v.id;
+  if (isSymbolic(v)) return formatAlgebra(v.expr);
+  return null;
+}
+const _addNumeric = binaryMath('+');
+register('+', (s) => {
+  const b = s.peek(1);
+  const a = s.peek(2);
+  if (isString(a) || isString(b)) {
+    s.popN(2);
+    const l = _stringCoerce(a);
+    const r = _stringCoerce(b);
+    if (l == null || r == null) throw new RPLError('Bad argument type');
+    s.push(Str(l + r));
+    return;
+  }
+  _addNumeric(s);
+});
+register('-', binaryMath('-'));
+register('*', binaryMath('*'));
+register('/', binaryMath('/'));
+register('^', binaryMath('^'));
+
+/* -------------------- unary ops --------------------
+   Each numeric unary op checks for a symbolic operand (Symbolic or
+   Name) first and emits a Symbolic(AST) wrapping the operator; other-
+   wise it dispatches on Real/Integer/Complex as before.  ABS is
+   intentionally LEFT numeric-only for now (HP50's symbolic ABS is a
+   stub that shows 'ABS(X)' but we don't represent an ABS AST node;
+   adding one is straightforward once users ask for it).
+   ---------------------------------------------------------------- */
+register('NEG', _withListUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v))  { s.push(Symbolic(AstNeg(_toAst(v)))); return; }
+  if (isReal(v))     s.push(Real(-v.value));
+  else if (isInteger(v)) s.push(Integer(-v.value));
+  else if (isComplex(v)) s.push(Complex(-v.re, -v.im));
+  else if (isUnit(v))    s.push(Unit(-v.value, v.uexpr));
+  else if (isVector(v))  s.push(Vector(v.items.map(x => _scalarBinary('-', Real(0), x))));
+  else if (isMatrix(v))  s.push(Matrix(v.rows.map(row => row.map(x => _scalarBinary('-', Real(0), x)))));
+  else throw new RPLError('Bad argument type');
+}));
+
+register('INV', _withListUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v))  {
+    s.push(Symbolic(AstBin('/', AstNum(1), _toAst(v))));
+    return;
+  }
+  if (isReal(v)) {
+    if (v.value === 0) throw new RPLError('Infinite result');
+    s.push(Real(1 / v.value));
+  } else if (isInteger(v)) {
+    if (v.value === 0n) throw new RPLError('Infinite result');
+    s.push(Real(1 / Number(v.value)));
+  } else if (isComplex(v)) {
+    const d = v.re * v.re + v.im * v.im;
+    if (d === 0) throw new RPLError('Infinite result');
+    s.push(Complex(v.re / d, -v.im / d));
+  } else if (isUnit(v)) {
+    if (v.value === 0) throw new RPLError('Infinite result');
+    s.push(_makeUnit(1 / v.value, inverseUexpr(v.uexpr)));
+  } else if (isMatrix(v)) {
+    // Matrix inverse (session 036).  Requires square + numeric entries.
+    // Non-square throws 'Invalid dimension'; singular throws 'Infinite
+    // result' (matches scalar INV's division-by-zero error).  See
+    // _invMatrixNumeric below.
+    const n = v.rows.length;
+    const cols = n > 0 ? v.rows[0].length : 0;
+    if (n !== cols) throw new RPLError('Invalid dimension');
+    if (n === 0) { s.push(v); return; }
+    s.push(Matrix(_invMatrixNumeric(v.rows)));
+  } else throw new RPLError('Bad argument type');
+}));
+
+register('ABS', _withListUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v))  { s.push(Symbolic(AstFn('ABS', [_toAst(v)]))); return; }
+  if (isReal(v))    s.push(Real(Math.abs(v.value)));
+  else if (isInteger(v)) s.push(Integer(v.value < 0n ? -v.value : v.value));
+  else if (isComplex(v)) s.push(Real(Math.hypot(v.re, v.im)));
+  else if (isUnit(v))    s.push(Unit(Math.abs(v.value), v.uexpr));
+  else if (isVector(v)) {
+    // HP50 Advanced Guide: ABS on an array returns the Frobenius
+    // (Euclidean) norm — identical behavior to NORM.  Session 037
+    // closes this data-type gap so users can reach for ABS without
+    // remembering the array-specific alias.
+    let sum = 0;
+    for (const x of v.items) { const r = toRealOrThrow(x); sum += r * r; }
+    s.push(Real(Math.sqrt(sum)));
+  } else if (isMatrix(v)) {
+    let sum = 0;
+    for (const row of v.rows) {
+      for (const x of row) { const r = toRealOrThrow(x); sum += r * r; }
+    }
+    s.push(Real(Math.sqrt(sum)));
+  } else throw new RPLError('Bad argument type');
+}));
+
+register('SQ', _withListUnary((s) => {             // ^2
+  const v = s.pop();
+  if (_isSymOperand(v))  { s.push(Symbolic(AstBin('^', _toAst(v), AstNum(2)))); return; }
+  if (isReal(v))    s.push(Real(v.value * v.value));
+  else if (isInteger(v)) s.push(Integer(v.value * v.value));
+  else if (isComplex(v)) s.push(Complex(
+    v.re * v.re - v.im * v.im,
+    2 * v.re * v.im,
+  ));
+  else if (isUnit(v)) s.push(Unit(v.value * v.value, powerUexpr(v.uexpr, 2)));
+  else throw new RPLError('Bad argument type');
+}));
+
+// Session 063: SQRT picks up Tagged transparency and Vector/Matrix
+// element-wise dispatch.  Element-wise on Vector/Matrix is the HP50
+// behavior — there's no whole-array SQRT (matrix square root is a
+// SCHUR-style decomposition the calculator doesn't expose).
+register('SQRT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v))  { s.push(Symbolic(AstFn('SQRT', [_toAst(v)]))); return; }
+  if (isComplex(v) || (isReal(v) && v.value < 0) ||
+      (isInteger(v) && v.value < 0n)) {
+    const c = toComplex(v);
+    const r = Math.hypot(c.re, c.im);
+    const re = Math.sqrt((r + c.re) / 2);
+    const im = Math.sign(c.im || 1) * Math.sqrt((r - c.re) / 2);
+    s.push(Complex(re, im));
+  } else {
+    s.push(Real(Math.sqrt(toRealOrThrow(v))));
+  }
+}))));
+
+/* -------------------- unary real helpers --------------------
+   `unaryReal(name, fn)` builds an op that evaluates fn(x) on a
+   Real/Integer operand.  With a Symbolic/Name operand it emits
+   `Symbolic(Fn(NAME, [ast]))` instead — this is what keeps LN/EXP/
+   LOG/ALOG/SINH/… usable inside symbolic workflows.  The first
+   argument is the canonical op NAME used in the AST (and thus shown
+   on the LCD); old call sites that passed a bare fn still work —
+   they get UPPER-cased `fn.name` or a fallback of 'FN'.
+   ---------------------------------------------------------------- */
+function unaryReal(name, fn) {
+  if (typeof name === 'function') { fn = name; name = null; }
+  const fnName = (name || (fn && fn.name) || 'FN').toUpperCase();
+  return _withListUnary((s) => {
+    const v = s.pop();
+    if (_isSymOperand(v)) {
+      s.push(Symbolic(AstFn(fnName, [_toAst(v)])));
+      return;
+    }
+    s.push(Real(fn(toRealOrThrow(v))));
+  });
+}
+
+/* -------------------- trig (angle-mode aware) --------------------
+   SIN/COS/TAN take an angle in the active mode (DEG/RAD/GRD) and
+   convert to radians before calling the Math.* primitive.  Inverse
+   trig returns an angle in the active mode.  Symbolic/Name operands
+   are lifted to `SIN(X)` / `ACOS(X)` etc. with no angle-mode
+   conversion — the AST carries intent, not units.
+   ----------------------------------------------------------------- */
+const trigFwd = (name, fn) => _withListUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) {
+    s.push(Symbolic(AstFn(name, [_toAst(v)])));
+    return;
+  }
+  s.push(Real(fn(toRadians(toRealOrThrow(v)))));
+});
+const trigInv = (name, fn) => _withListUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) {
+    s.push(Symbolic(AstFn(name, [_toAst(v)])));
+    return;
+  }
+  s.push(Real(fromRadians(fn(toRealOrThrow(v)))));
+});
+
+register('SIN',   trigFwd('SIN',  Math.sin));
+register('COS',   trigFwd('COS',  Math.cos));
+register('TAN',   trigFwd('TAN',  Math.tan));
+register('ASIN',  trigInv('ASIN', Math.asin));
+register('ACOS',  trigInv('ACOS', Math.acos));
+register('ATAN',  trigInv('ATAN', Math.atan));
+
+register('LN',    unaryReal('LN',   Math.log));
+register('LOG',   unaryReal('LOG',  Math.log10));
+register('EXP',   unaryReal('EXP',  Math.exp));
+register('ALOG',  unaryReal('ALOG', x => Math.pow(10, x)));
+
+/* --------------------- hyperbolic (session 030) ---------------------
+   Session 029 added SINH/COSH/TANH/ASINH/ACOSH/ATANH to KNOWN_FUNCTIONS
+   for parseAlgebra so they could participate in symbolic odd/even
+   identities.  Session 030 registers them as stack ops so the MTH→HYP
+   soft-menu can dispatch to them directly.  ACOSH requires x ≥ 1 and
+   ATANH requires |x| < 1 — we defer to Math.acosh / Math.atanh which
+   already return NaN for out-of-domain inputs, and throw RPLError
+   to match how other domain-violation ops report.
+   -------------------------------------------------------------------- */
+register('SINH',  unaryReal('SINH',  Math.sinh));
+register('COSH',  unaryReal('COSH',  Math.cosh));
+register('TANH',  unaryReal('TANH',  Math.tanh));
+register('ASINH', unaryReal('ASINH', Math.asinh));
+register('ACOSH', (s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ACOSH', [_toAst(v)]))); return; }
+  const x = toRealOrThrow(v);
+  if (!(x >= 1)) throw new RPLError('Bad argument value');
+  s.push(Real(Math.acosh(x)));
+});
+register('ATANH', (s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ATANH', [_toAst(v)]))); return; }
+  const x = toRealOrThrow(v);
+  if (!(x > -1 && x < 1)) throw new RPLError('Bad argument value');
+  s.push(Real(Math.atanh(x)));
+});
+
+/* -------- XROOT (session 030) — n-th root, `y x XROOT` = y^(1/x) ----
+   HP50 behavior: xth root of y (two-arg op).  Delegates to the binary
+   `^` machinery so it picks up the Real/Integer/Complex coercion
+   already implemented there.  We push `1/x` and then `^`.  Pure
+   plumbing — no new numeric code.
+   -------------------------------------------------------------------- */
+register('XROOT', _withListBinary((s) => {
+  if (s.depth < 2) throw new RPLError('Too few arguments');
+  const x = s.pop();
+  const y = s.pop();
+  // Symbolic/Name on either arg emits 'XROOT(y,x)' — the parser and
+  // simplifier already treat XROOT as a two-arg function, so this
+  // round-trips cleanly through print/parse.
+  if (_isSymOperand(y) || _isSymOperand(x)) {
+    const yAst = _toAst(y);
+    const xAst = _toAst(x);
+    if (yAst && xAst) { s.push(Symbolic(AstFn('XROOT', [yAst, xAst]))); return; }
+    throw new RPLError('Bad argument type');
+  }
+  const xv = toRealOrThrow(x);
+  if (xv === 0) throw new RPLError('Infinite result');
+  s.push(y);
+  s.push(Real(1 / xv));
+  lookup('^').fn(s);
+}));
+
+/* ------------------------------------------------------------------
+   More HP50 real-unary commands.
+
+     FLOOR   greatest integer ≤ x          -1.2 FLOOR → -2
+     CEIL    least integer ≥ x             -1.2 CEIL  → -1
+     IP      integer part (truncate to 0)  -1.8 IP    → -1
+     FP      fractional part, same sign     1.8 FP    →  0.8
+     SIGN    -1 / 0 / 1 for real input; for Complex, the unit
+             vector e^(iθ) — pushes a Complex of magnitude 1.
+             HP50 returns 0 for exactly 0 (any type).
+
+   FLOOR/CEIL/IP/FP preserve Integer type when the input is an
+   Integer (no-op for IP/FLOOR/CEIL, 0n for FP) — matches HP50's
+   tidy type behavior.  On a Real, they yield a Real (matching
+   `toFixed(0)`-adjacent semantics).
+   ------------------------------------------------------------------ */
+
+/* Session 062: FLOOR/CEIL/IP/FP widened beyond the original R/Z path.
+   Added element-wise on Vector / Matrix, Symbolic lift via KNOWN_FUNCTIONS,
+   and Tagged transparency (tag is preserved across the unary op).  Complex
+   remains rejected — HP50 raises "Bad Argument Type" on these for Complex
+   since there is no well-defined ordering on ℂ.  The symbolic form round-
+   trips through the entry parser because FLOOR/CEIL/IP/FP are now
+   registered in KNOWN_FUNCTIONS (algebra.js). */
+function _rounderScalar(name, realFn, intFn) {
+  return (v) => {
+    if (isInteger(v))    return intFn(v);
+    if (isReal(v))       return Real(realFn(v.value));
+    if (_isSymOperand(v))return Symbolic(AstFn(name, [_toAst(v)]));
+    throw new RPLError('Bad argument type');
+  };
+}
+const _floorScalar = _rounderScalar('FLOOR', Math.floor, v => v);
+const _ceilScalar  = _rounderScalar('CEIL',  Math.ceil,  v => v);
+const _ipScalar    = _rounderScalar('IP',    Math.trunc, v => v);
+const _fpScalar    = _rounderScalar('FP',    (x) => x - Math.trunc(x), () => Integer(0n));
+
+function _registerRounder(name, scalarFn) {
+  register(name, _withTaggedUnary(_withListUnary((s) => {
+    const v = s.pop();
+    if (isVector(v))      s.push(Vector(v.items.map(scalarFn)));
+    else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(scalarFn))));
+    else                  s.push(scalarFn(v));
+  })));
+}
+_registerRounder('FLOOR', _floorScalar);
+_registerRounder('CEIL',  _ceilScalar);
+_registerRounder('IP',    _ipScalar);
+_registerRounder('FP',    _fpScalar);
+
+/* Session 062: SIGN widened.  Already had R/Z/C plus Vector (unit
+   direction).  Added Matrix element-wise (HP50's Matrix-SIGN is
+   scalar-element-wise — a matrix has no single direction), Symbolic
+   lift, and Tagged transparency. */
+register('SIGN', _withTaggedUnary(_withListUnary((s) => {
+  const v = s.pop();
+  if (isReal(v)) {
+    s.push(Real(Math.sign(v.value)));
+  } else if (isInteger(v)) {
+    if (v.value === 0n) s.push(Integer(0n));
+    else s.push(Integer(v.value > 0n ? 1n : -1n));
+  } else if (isComplex(v)) {
+    // Unit vector e^(iθ) — zero input yields 0+0i.
+    const mag = Math.hypot(v.re, v.im);
+    if (mag === 0) s.push(Complex(0, 0));
+    else s.push(Complex(v.re / mag, v.im / mag));
+  } else if (isVector(v)) {
+    // Session 037: HP50 Advanced Guide defines SIGN on a vector as
+    // v / ‖v‖ (unit vector in the direction of v).  Zero vector
+    // stays zero — matches the scalar-SIGN convention on 0.
+    let sum = 0;
+    for (const x of v.items) { const r = toRealOrThrow(x); sum += r * r; }
+    const mag = Math.sqrt(sum);
+    if (mag === 0) { s.push(v); return; }
+    s.push(Vector(v.items.map(x => Real(toRealOrThrow(x) / mag))));
+  } else if (isMatrix(v)) {
+    // Matrix: apply SIGN to each scalar entry.  Real/Integer/Complex
+    // entries go through the scalar cases above via recursion.
+    s.push(Matrix(v.rows.map(r => r.map(x => {
+      if (isReal(x))    return Real(Math.sign(x.value));
+      if (isInteger(x)) return x.value === 0n ? Integer(0n) : Integer(x.value > 0n ? 1n : -1n);
+      if (isComplex(x)) {
+        const m = Math.hypot(x.re, x.im);
+        return m === 0 ? Complex(0, 0) : Complex(x.re / m, x.im / m);
+      }
+      if (_isSymOperand(x)) return Symbolic(AstFn('SIGN', [_toAst(x)]));
+      throw new RPLError('Bad argument type');
+    }))));
+  } else if (_isSymOperand(v)) {
+    s.push(Symbolic(AstFn('SIGN', [_toAst(v)])));
+  } else {
+    throw new RPLError('Bad argument type');
+  }
+})));
+
+/* ------------------- complex-number ops (session 030) ---------------
+   ARG    argument θ of a complex number, in the active angle mode.
+          On real inputs:  ≥0 → 0,  <0 → π (180° / 200 grad).
+   CONJ   complex conjugate a+bi → a−bi; identity on Real/Integer.
+   RE     real part: Real(a) from a+bi, identity on Real/Integer.
+   IM     imaginary part:  b from a+bi,  0 from Real/Integer.
+
+   Backs the session-030 CMPLX soft-menu (SHIFT-R + 1 → ABS / ARG /
+   CONJ / RE / IM / i) and the shifted ÷ key (ARG) that's been
+   label-wired since session 018.
+   -------------------------------------------------------------------- */
+/* Session 062: ARG widened with Vector / Matrix element-wise, Symbolic
+   lift, and Tagged transparency.  Scalar cases unchanged.  Result on
+   a Real/Integer is angle-mode-sensitive (negative → π, non-negative
+   → 0) — element-wise just broadcasts that. */
+function _argScalar(v) {
+  if (isReal(v))    return Real(fromRadians(v.value < 0 ? Math.PI : 0));
+  if (isInteger(v)) return Real(fromRadians(v.value < 0n ? Math.PI : 0));
+  if (isComplex(v)) return Real(fromRadians(Math.atan2(v.im, v.re)));
+  if (_isSymOperand(v)) return Symbolic(AstFn('ARG', [_toAst(v)]));
+  throw new RPLError('Bad argument type');
+}
+register('ARG', _withTaggedUnary(_withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_argScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_argScalar))));
+  else                  s.push(_argScalar(v));
+})));
+
+/* Session 037: CONJ / RE / IM extended to element-wise on Vector &
+   Matrix.  Today every entry is Real/Integer/Symbolic so CONJ is
+   identity, RE is identity, and IM is a zero-valued array — but the
+   element-wise dispatch is already in place for a future session that
+   puts Complex entries into arrays. */
+function _conjScalar(v) {
+  if (isReal(v) || isInteger(v)) return v;
+  if (isComplex(v)) return Complex(v.re, -v.im);
+  if (_isSymOperand(v)) return Symbolic(AstFn('CONJ', [_toAst(v)]));
+  throw new RPLError('Bad argument type');
+}
+function _reScalar(v) {
+  if (isReal(v) || isInteger(v)) return v;
+  if (isComplex(v)) return Real(v.re);
+  if (_isSymOperand(v)) return Symbolic(AstFn('RE', [_toAst(v)]));
+  throw new RPLError('Bad argument type');
+}
+function _imScalar(v) {
+  if (isReal(v))    return Real(0);
+  if (isInteger(v)) return Integer(0n);
+  if (isComplex(v)) return Real(v.im);
+  if (_isSymOperand(v)) return Symbolic(AstFn('IM', [_toAst(v)]));
+  throw new RPLError('Bad argument type');
+}
+register('CONJ', _withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_conjScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_conjScalar))));
+  else s.push(_conjScalar(v));
+}));
+register('RE', _withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_reScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_reScalar))));
+  else s.push(_reScalar(v));
+}));
+register('IM', _withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_imScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_imScalar))));
+  else s.push(_imScalar(v));
+}));
+
+/* ------------------- integer GCD / LCM (session 030) ----------------
+   `a b GCD` → greatest common divisor of two Integers.  For Reals
+   we coerce to BigInt via trunc; non-integer Reals throw since HP50
+   rejects non-integer inputs to GCD/LCM.
+   -------------------------------------------------------------------- */
+function _toBigIntOrThrow(v) {
+  if (isInteger(v)) return v.value;
+  if (isReal(v)) {
+    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
+    return BigInt(v.value);
+  }
+  throw new RPLError('Bad argument type');
+}
+function _bigAbs(x) { return x < 0n ? -x : x; }
+function _bigGcd(a, b) {
+  a = _bigAbs(a); b = _bigAbs(b);
+  while (b !== 0n) { [a, b] = [b, a % b]; }
+  return a;
+}
+register('GCD', (s) => {
+  const [a, b] = s.popN(2);
+  const ai = _toBigIntOrThrow(a);
+  const bi = _toBigIntOrThrow(b);
+  s.push(Integer(_bigGcd(ai, bi)));
+});
+register('LCM', (s) => {
+  const [a, b] = s.popN(2);
+  const ai = _toBigIntOrThrow(a);
+  const bi = _toBigIntOrThrow(b);
+  if (ai === 0n || bi === 0n) { s.push(Integer(0n)); return; }
+  const g = _bigGcd(ai, bi);
+  s.push(Integer(_bigAbs(ai / g * bi)));
+});
+
+/* ------------------- factorial (session 031) ------------------------
+   `n FACT` → n!.  Non-negative Integer input stays exact (BigInt).
+   Non-negative Real input uses a Lanczos gamma approximation and
+   returns `Γ(n+1)` as a Real — HP50 FACT accepts non-integer real
+   arguments and returns the gamma-based factorial.
+   Negative integers and negative integer-valued Reals throw since
+   Γ has poles at the non-positive integers.
+   -------------------------------------------------------------------- */
+function _bigFactorial(n) {
+  if (n < 0n) throw new RPLError('Bad argument value');
+  let acc = 1n;
+  for (let i = 2n; i <= n; i++) acc *= i;
+  return acc;
+}
+/* Lanczos g=7, n=9 coefficients — standard public-domain set.
+   Good to ~15 significant digits, which matches our Real precision. */
+const _LANCZOS_G = 7;
+const _LANCZOS_P = [
+  0.99999999999980993,
+  676.5203681218851,
+  -1259.1392167224028,
+  771.32342877765313,
+  -176.61502916214059,
+  12.507343278686905,
+  -0.13857109526572012,
+  9.9843695780195716e-6,
+  1.5056327351493116e-7,
+];
+function _gamma(x) {
+  // Reflection: Γ(x) = π / (sin(πx) · Γ(1 − x))  for x < 0.5
+  if (x < 0.5) {
+    const s = Math.sin(Math.PI * x);
+    if (s === 0) throw new RPLError('Infinite result'); // pole
+    return Math.PI / (s * _gamma(1 - x));
+  }
+  x -= 1;
+  let a = _LANCZOS_P[0];
+  for (let i = 1; i < _LANCZOS_P.length; i++) a += _LANCZOS_P[i] / (x + i);
+  const t = x + _LANCZOS_G + 0.5;
+  return Math.sqrt(2 * Math.PI) * Math.pow(t, x + 0.5) * Math.exp(-t) * a;
+}
+/* Session 063: FACT widens from R/Z-only to also accept
+   Symbolic/Name (lifts to FACT(X) — KNOWN_FUNCTIONS already had a
+   non-negative-integer evaluator so constant-fold still works), List
+   (element-wise — `{3 4 5} FACT` → `{6 24 120}`), Vector/Matrix
+   (element-wise — `[2 3 4] FACT` → `[2 6 24]`), and Tagged
+   (transparent — `n=5` `FACT` → `n=120`).
+
+   Complex remains rejected: HP50's gamma is real-valued and the
+   calculator's FACT throws "Bad argument type" on Complex (the AUR
+   describes Γ via the Lanczos series only). */
+register('FACT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) {
+    s.push(Symbolic(AstFn('FACT', [_toAst(v)])));
+    return;
+  }
+  if (isInteger(v)) {
+    if (v.value < 0n) throw new RPLError('Bad argument value');
+    s.push(Integer(_bigFactorial(v.value)));
+    return;
+  }
+  if (isReal(v)) {
+    const x = v.value;
+    // Non-positive integer-valued Real is a gamma pole.
+    if (Number.isInteger(x) && x < 0) throw new RPLError('Infinite result');
+    // Exact Integer when input is a non-negative integer-valued Real.
+    if (Number.isInteger(x) && x >= 0) {
+      s.push(Integer(_bigFactorial(BigInt(x))));
+      return;
+    }
+    // Non-integer Real → Γ(x+1)
+    s.push(Real(_gamma(x + 1)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+}))));
+
+/* ------------------------------------------------------------------
+   Binary real ops — MOD, MIN, MAX.
+
+     MOD     a MOD b : remainder of a/b, HP50 convention (result has
+             the sign of the divisor b).  Note this differs from JS `%`
+             (which takes the sign of the dividend).
+     MIN/MAX straightforward min / max of two numeric values.
+
+   Type handling: Integer/Integer stays Integer, anything with a Real
+   becomes Real.  Complex arguments are rejected (HP50 likewise).
+   ------------------------------------------------------------------ */
+
+/** HP50 MOD: result has the sign of the divisor.  (a - b * floor(a/b)) */
+function _hp50ModReal(a, b) {
+  if (b === 0) throw new RPLError('Infinite result');
+  return a - b * Math.floor(a / b);
+}
+
+/** HP50 MOD on BigInts — floor-div convention matches _hp50ModReal. */
+function _hp50ModBigInt(a, b) {
+  if (b === 0n) throw new RPLError('Infinite result');
+  let r = a % b;
+  // JS % on BigInt takes sign of dividend; flip to divisor's sign when
+  // they disagree.
+  if (r !== 0n && ((r < 0n) !== (b < 0n))) r += b;
+  return r;
+}
+
+/* Session 062: MOD now lifts to Symbolic when either operand is a
+   Name / Symbolic (matches how +, -, * already lift), and is
+   transparent across Tagged wrappers.  Complex remains rejected —
+   HP50 has no complex-MOD definition (ordering & sign of divisor make
+   no sense in ℂ). */
+register('MOD', _withTaggedBinary(_withListBinary((s) => {
+  const [a, b] = s.popN(2);
+  if (_isSymOperand(a) || _isSymOperand(b)) {
+    const l = _toAst(a), r = _toAst(b);
+    if (!l || !r) throw new RPLError('Bad argument type');
+    s.push(Symbolic(AstFn('MOD', [l, r])));
+    return;
+  }
+  if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
+  if (isComplex(a) || isComplex(b)) throw new RPLError('Bad argument type');
+  if (isInteger(a) && isInteger(b)) {
+    s.push(Integer(_hp50ModBigInt(a.value, b.value)));
+  } else {
+    s.push(Real(_hp50ModReal(toRealOrThrow(a), toRealOrThrow(b))));
+  }
+})));
+
+/* Session 062: MIN/MAX widened with Symbolic lift (leaves MIN(X,3)
+   un-evaluated when X is unbound) and Tagged transparency.  Complex
+   still rejected — ℂ has no total ordering. */
+function _minMax(s, pick, name) {
+  const [a, b] = s.popN(2);
+  if (_isSymOperand(a) || _isSymOperand(b)) {
+    const l = _toAst(a), r = _toAst(b);
+    if (!l || !r) throw new RPLError('Bad argument type');
+    s.push(Symbolic(AstFn(name, [l, r])));
+    return;
+  }
+  if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
+  if (isComplex(a) || isComplex(b)) throw new RPLError('Bad argument type');
+  if (isInteger(a) && isInteger(b)) {
+    s.push(Integer(pick(a.value, b.value) ? a.value : b.value));
+  } else {
+    const na = toRealOrThrow(a), nb = toRealOrThrow(b);
+    s.push(Real(pick(na, nb) ? na : nb));
+  }
+}
+register('MIN', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x <= y, 'MIN'))));
+register('MAX', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x >= y, 'MAX'))));
+
+/* ------------------- angle-mode commands ------------------- */
+register('DEG', () => setAngle('DEG'));
+register('RAD', () => setAngle('RAD'));
+register('GRD', () => setAngle('GRD'));
+// HP50 also accepts GRAD as an alias in some firmware versions.
+register('GRAD', () => setAngle('GRD'));
+
+/* -------------------- angle conversion helpers --------------------
+   R→D (radians to degrees) and D→R (degrees to radians) operate on
+   level 1 regardless of the active mode — they're explicit converters.
+   ----------------------------------------------------------------- */
+register('R→D', unaryReal(r => r * 180 / Math.PI));
+register('D→R', unaryReal(d => d * Math.PI / 180));
+// ASCII-friendly aliases matching what a user can type from a keyboard.
+register('R->D', unaryReal(r => r * 180 / Math.PI));
+register('D->R', unaryReal(d => d * Math.PI / 180));
+
+/* ------------------------------------------------------------------
+   Variables — STO / RCL / PURGE / VARS
+
+   HP50 stack order for STO:
+     level 2: value
+     level 1: name (a Name object — typed as 'X' on the command line)
+   STO consumes both and writes the value to the current directory.
+
+   RCL, PURGE each take a name on level 1.  VARS takes no input and
+   pushes a list of the current directory's variable names.
+
+   We accept either a Name or a String for the name argument — the HP50
+   accepts both, and entering plain text like "X" at the cmdline
+   already parses to a Name.
+   ------------------------------------------------------------------ */
+
+function popNameId(s) {
+  const v = s.pop();
+  if (isName(v))   return v.id;
+  if (isString(v)) return v.value;
+  throw new RPLError('Bad argument type');
+}
+
+function _storeOneOrRPL(id, value) {
+  try { varStore(id, value); }
+  catch (e) {
+    // varStore throws a plain Error('Directory not allowed: <id>') if
+    // the name already refers to a subdirectory.  Convert so IFERR
+    // catches and ERRN classifies.
+    throw new RPLError(e.message || 'Bad argument value');
+  }
+}
+
+register('STO', (s) => {
+  // level 2 = value, level 1 = name (or list of names — HP50 AUR
+  // stores the same value into each listed name, left-to-right).
+  const [value, nameVal] = s.popN(2);
+  if (isList(nameVal)) {
+    for (const item of nameVal.items) {
+      _storeOneOrRPL(_coerceDirName(item), value);
+    }
+    return;
+  }
+  _storeOneOrRPL(_coerceDirName(nameVal), value);
+});
+
+function _recallOneOrRPL(id) {
+  const v = varRecall(id);
+  if (v === undefined) throw new RPLError(`Undefined name: ${id}`);
+  return v;
+}
+
+register('RCL', (s) => {
+  // A list of names recalls each in order, pushing their values onto
+  // the stack — matches HP50 AUR and the PURGE / STO list-shaped
+  // conventions.  Single Name / String path unchanged.
+  const v = s.pop();
+  if (isList(v)) {
+    for (const item of v.items) {
+      s.push(_recallOneOrRPL(_coerceDirName(item)));
+    }
+    return;
+  }
+  s.push(_recallOneOrRPL(_coerceDirName(v)));
+});
+
+function _purgeOneOrRPL(id) {
+  let gone;
+  try { gone = varPurge(id); }
+  catch (e) {
+    // varPurge throws a plain Error('Directory not empty: <id>') for
+    // non-empty subdirectories.  Wrap so IFERR can trap it.
+    throw new RPLError(e.message || 'Bad argument value');
+  }
+  // HP50 PURGE on a missing variable errors quietly; mimic that with a
+  // descriptive RPLError (the UI will flash it on the cmdline).
+  if (!gone) throw new RPLError(`Undefined name: ${id}`);
+}
+
+register('PURGE', (s) => {
+  const v = s.pop();
+  if (isList(v)) {
+    // HP50 convention (AUR §2.8): iterate left-to-right.  If any one
+    // fails, earlier ones stay purged — no transactional rollback,
+    // matching CRDIR's partial-commit behavior on the same shape.
+    for (const item of v.items) {
+      _purgeOneOrRPL(_coerceDirName(item));
+    }
+    return;
+  }
+  _purgeOneOrRPL(_coerceDirName(v));
+});
+
+register('VARS', (s) => {
+  // Reverse-insertion order: the most-recently-stored / most-recently-
+  // ORDERed name ends up at list[0], matching the left-to-right order
+  // of names on a physical HP50 VAR menu (AUR §2.8).  Session 047
+  // initially pushed raw insertion order (oldest first) and reported
+  // that as backwards versus how the bank reads.  ORDER still has a
+  // visible effect on this list, just in reversed orientation.
+  s.push(RList(varOrder().slice().reverse().map(id => Name(id))));
+});
+
+/* ------------------------------------------------------------------
+   Directory navigation — CRDIR / UPDIR / HOME / PATH.
+
+   CRDIR  ( name  --  )    create an empty subdirectory of the current
+                           dir, name supplied as a Name or String.
+                           A List of names creates each in order.
+                           HP50 does NOT descend into the new dir.
+
+   UPDIR  ( -- )           cd to the current directory's parent.
+                           No-op at HOME (matches HP50 silent behavior).
+
+   HOME   ( -- )           cd to the root HOME directory.  Distinct
+                           from the variable name 'HOME' — when typed
+                           as a bare identifier at the cmdline, it
+                           resolves to this op (ops beat variables in
+                           the evalToken lookup order).
+
+   PATH   ( -- list )      push a List of Names from HOME down to the
+                           current directory.  Always starts with
+                           Name('HOME').  `{ HOME }` at the root;
+                           `{ HOME A B }` three levels deep.
+
+   Name-argument handling matches STO/RCL/PURGE: either a Name or a
+   String is accepted on level 1.  A List of Names (or Strings) is
+   accepted by CRDIR for the "make several at once" shorthand that the
+   HP50 UI exposes.
+   ------------------------------------------------------------------ */
+
+function _coerceDirName(v) {
+  if (isName(v))   return v.id;
+  if (isString(v)) return v.value;
+  throw new RPLError('Bad argument type');
+}
+
+function _mkSubdirOrRPL(id) {
+  try { makeSubdir(id); }
+  catch (e) {
+    // makeSubdir throws a plain Error on a name collision; convert to
+    // RPLError so IFERR can trap it and ERRN can classify it.
+    throw new RPLError(e.message || 'Bad argument value');
+  }
+}
+
+register('CRDIR', (s) => {
+  const v = s.pop();
+  if (isList(v)) {
+    // HP50 convention: iterate left-to-right, creating each.  If any
+    // one of them conflicts, the remainder are not created — but the
+    // ones already created stand (we don't attempt a transactional
+    // rollback, same as the real unit).
+    for (const item of v.items) {
+      _mkSubdirOrRPL(_coerceDirName(item));
+    }
+    return;
+  }
+  _mkSubdirOrRPL(_coerceDirName(v));
+});
+
+register('UPDIR', () => { goUp(); });
+
+register('HOME',  () => { goHome(); });
+
+register('PATH',  (s) => {
+  s.push(RList(currentPath().map(seg => Name(seg))));
+});
+
+/* ------------------------------------------------------------------
+   EVAL — the central evaluation primitive.
+
+   Pops level 1 and dispatches by type:
+
+     Program  → walk `.tokens` with a pointer (index-based).  At each
+                token:
+                  - If it's a bare Name whose uppercased id is a
+                    control-flow opener (IF, WHILE, DO, START, FOR),
+                    the control-flow handler takes over: it scans
+                    forward through the token stream to find the
+                    matching inner keywords (THEN/ELSE/REPEAT/UNTIL)
+                    and closer (END/NEXT/STEP), honoring nested blocks,
+                    and executes the appropriate sub-ranges.
+                  - Bare closer/inner keywords found at the top of a
+                    Program (no matching opener) are simply skipped —
+                    HP50 ignores them in this context too.
+                  - Otherwise the token is evaluated normally: op
+                    lookup for bare Names, RCL-and-EVAL for bound
+                    names, push-back for everything else.
+
+     Name     → if bound, push the binding and EVAL it; else push.
+     Tagged   → strip the tag and EVAL the inner value.
+     Numeric / String / List / Vector / Matrix / Symbolic / Directory
+              → push back unchanged (EVAL is idempotent for these).
+
+   Atomicity: the full stack array is snapshotted at entry; if any
+   inner op or sub-EVAL throws an RPLError, the stack is rolled back
+   to its pre-EVAL state and the error is re-thrown.  This matches
+   what users expect from `<< ... >>` EVAL — the program either
+   completes cleanly or the stack is unchanged.
+
+   Recursion depth is bounded so a runaway recursive program can't
+   blow the JS call stack and brick the page.
+   ------------------------------------------------------------------ */
+
+const MAX_EVAL_DEPTH = 256;
+
+/* Control-flow keyword sets.  Openers begin a block that must be
+   matched by a closer at the same nesting level.  Inner keywords
+   (THEN/ELSE/REPEAT/UNTIL) are block-internal separators.  These
+   are NOT registered as ops — they're only meaningful while walking
+   a Program's token stream, and are recognized here by name. */
+const CF_OPENERS = new Set(['IF', 'IFERR', 'WHILE', 'DO', 'START', 'FOR']);
+const CF_CLOSERS = new Set(['END', 'NEXT', 'STEP']);
+const CF_INNERS  = new Set(['THEN', 'ELSE', 'REPEAT', 'UNTIL']);
+
+/** If tok is a bare (unquoted) Name, return its uppercased id; else null. */
+function bareNameId(tok) {
+  if (!isName(tok) || tok.quoted) return null;
+  return tok.id.toUpperCase();
+}
+
+/** Scan `toks` starting at `from`, at the current block's depth 0,
+ *  returning the first index whose bare-name id appears in `wanted`
+ *  OR is a block closer.  Nested opener/closer pairs are skipped.
+ *
+ *  Returns { idx, kind } or null if we fall off the end. */
+function scanAtDepth0(toks, from, wanted) {
+  let depth = 0;
+  for (let i = from; i < toks.length; i++) {
+    const id = bareNameId(toks[i]);
+    if (!id) continue;
+    if (CF_OPENERS.has(id)) { depth++; continue; }
+    if (CF_CLOSERS.has(id)) {
+      if (depth === 0) return { idx: i, kind: id };
+      depth--;
+      continue;
+    }
+    if (depth === 0 && wanted && wanted.has(id)) {
+      return { idx: i, kind: id };
+    }
+  }
+  return null;
+}
+
+/** Evaluate tokens in [from, to) as a flat sequence, respecting any
+ *  nested control-flow structures.  `s` is the stack, `depth` tracks
+ *  recursion.  Mutates the stack; returns nothing. */
+function evalRange(s, toks, from, to, depth) {
+  if (depth > MAX_EVAL_DEPTH) {
+    throw new RPLError('EVAL recursion too deep');
+  }
+  let i = from;
+  while (i < to) {
+    const tok = toks[i];
+    const id = bareNameId(tok);
+    if (id && CF_OPENERS.has(id)) {
+      i = runControl(s, toks, i, to, depth);
+      continue;
+    }
+    if (id && (CF_CLOSERS.has(id) || CF_INNERS.has(id))) {
+      // Orphan control keyword at depth 0 — skip silently (matches HP50
+      // behavior where a stray END in a program body is a no-op; it
+      // wouldn't have parsed successfully anyway on a real unit).
+      i++;
+      continue;
+    }
+    evalToken(s, tok, depth);
+    i++;
+  }
+}
+
+/** Evaluate a single non-control token.  Semantics mirror the pre-
+ *  control-flow Program loop. */
+function evalToken(s, tok, depth) {
+  if (isName(tok)) {
+    if (tok.quoted) { s.push(tok); return; }
+    const op = lookup(tok.id);
+    if (op) { _dispatchOp(op, s, tok.id); return; }
+    const bound = varRecall(tok.id);
+    if (bound !== undefined) {
+      _evalValue(s, bound, depth + 1);
+    } else {
+      s.push(tok);
+    }
+    return;
+  }
+  s.push(tok);
+}
+
+// Invoke an op and, if it throws an RPLError, rewrap the message with
+// the command name so the user sees `+: Too few arguments` instead of
+// bare `Too few arguments`.  Messages that already carry a `WORD: `
+// prefix are left alone (some helpers self-prefix — see _popOneReturn).
+function _dispatchOp(op, s, name) {
+  try {
+    op.fn(s);
+  } catch (e) {
+    if (e instanceof RPLError && !/^[^\s:]+:\s/.test(e.message)) {
+      throw new RPLError(`${name}: ${e.message}`);
+    }
+    throw e;
+  }
+}
+
+/** Dispatch a control-flow structure starting at `toks[i]` (an opener).
+ *  Returns the index immediately past the matching closer. */
+function runControl(s, toks, i, bound, depth) {
+  const opener = bareNameId(toks[i]);
+
+  switch (opener) {
+    case 'IF':
+      return runIf(s, toks, i, depth);
+    case 'IFERR':
+      return runIfErr(s, toks, i, depth);
+    case 'WHILE':
+      return runWhile(s, toks, i, depth);
+    case 'DO':
+      return runDo(s, toks, i, depth);
+    case 'START':
+      return runStart(s, toks, i, depth);
+    case 'FOR':
+      return runFor(s, toks, i, depth);
+  }
+  throw new RPLError(`Bad opener: ${opener}`);
+}
+
+function runIf(s, toks, openIdx, depth) {
+  // IF <test> THEN <true-branch> [ELSE <false-branch>] END
+  const thenScan = scanAtDepth0(toks, openIdx + 1, new Set(['THEN']));
+  if (!thenScan || thenScan.kind !== 'THEN') {
+    throw new RPLError("IF without THEN");
+  }
+  const thenIdx = thenScan.idx;
+  evalRange(s, toks, openIdx + 1, thenIdx, depth + 1);
+  const test = s.pop();
+  const branchScan = scanAtDepth0(toks, thenIdx + 1, new Set(['ELSE']));
+  if (!branchScan) throw new RPLError("IF without END");
+
+  let endIdx;
+  if (branchScan.kind === 'ELSE') {
+    const endScan = scanAtDepth0(toks, branchScan.idx + 1, null);
+    if (!endScan || endScan.kind !== 'END') {
+      throw new RPLError("IF/ELSE without END");
+    }
+    endIdx = endScan.idx;
+    if (isTruthy(test)) {
+      evalRange(s, toks, thenIdx + 1, branchScan.idx, depth + 1);
+    } else {
+      evalRange(s, toks, branchScan.idx + 1, endIdx, depth + 1);
+    }
+  } else if (branchScan.kind === 'END') {
+    endIdx = branchScan.idx;
+    if (isTruthy(test)) {
+      evalRange(s, toks, thenIdx + 1, endIdx, depth + 1);
+    }
+  } else {
+    throw new RPLError(`IF/THEN: unexpected ${branchScan.kind}`);
+  }
+  return endIdx + 1;
+}
+
+/** IFERR <trap> THEN <error clause> [ELSE <normal clause>] END
+ *
+ *  HP50 semantics:
+ *    1. Snapshot the full stack.
+ *    2. Evaluate the trap range.
+ *    3. If the trap throws an RPLError:
+ *         - Restore the stack to the snapshot (matching the HP50
+ *           rule that the error clause starts with whatever was on
+ *           the stack before IFERR).
+ *         - Write the caught error to the last-error slot in state,
+ *           so ERRM / ERRN / ERR0 inside the error clause can read
+ *           or clear it.
+ *         - Evaluate the error clause.
+ *    4. If the trap completes normally and an ELSE branch is
+ *       present, evaluate the ELSE branch.  (The stack is NOT
+ *       rolled back in the success path — whatever the trap
+ *       produced is what the ELSE branch sees.)
+ *
+ *  Non-RPLError exceptions (programmer bugs, TypeError, etc.) are
+ *  intentionally NOT caught — those indicate a broken op or test,
+ *  not a user-visible HP50 error, and shouldn't silently disappear.
+ *
+ *  Nesting: the last-error slot is saved on entry and restored on
+ *  exit so an outer IFERR still sees its own caught error if an
+ *  inner IFERR runs between catch and outer reference.  (A rare
+ *  case, but the alternative is subtle action-at-a-distance.) */
+function runIfErr(s, toks, openIdx, depth) {
+  const thenScan = scanAtDepth0(toks, openIdx + 1, new Set(['THEN']));
+  if (!thenScan || thenScan.kind !== 'THEN') {
+    throw new RPLError('IFERR without THEN');
+  }
+  const thenIdx = thenScan.idx;
+  const branchScan = scanAtDepth0(toks, thenIdx + 1, new Set(['ELSE']));
+  if (!branchScan) throw new RPLError('IFERR without END');
+
+  let elseIdx = -1;
+  let endIdx;
+  if (branchScan.kind === 'ELSE') {
+    elseIdx = branchScan.idx;
+    const endScan = scanAtDepth0(toks, elseIdx + 1, null);
+    if (!endScan || endScan.kind !== 'END') {
+      throw new RPLError('IFERR/ELSE without END');
+    }
+    endIdx = endScan.idx;
+  } else if (branchScan.kind === 'END') {
+    endIdx = branchScan.idx;
+  } else {
+    throw new RPLError(`IFERR/THEN: unexpected ${branchScan.kind}`);
+  }
+
+  const snap = s.save();
+  const savedOuterError = getLastError();
+  let caught = null;
+  try {
+    evalRange(s, toks, openIdx + 1, thenIdx, depth + 1);
+  } catch (e) {
+    if (!(e instanceof RPLError)) throw e;    // let non-HP50 bugs bubble
+    caught = e;
+  }
+
+  if (caught) {
+    s.restore(snap);
+    setLastError(caught);
+    try {
+      evalRange(s, toks, thenIdx + 1, (elseIdx >= 0 ? elseIdx : endIdx), depth + 1);
+    } finally {
+      // Restore whatever last-error was visible to the outer scope once
+      // the trap's THEN clause has had a chance to read it.  This keeps
+      // nested IFERRs from clobbering an outer ERRM/ERRN reference.
+      restoreLastError(savedOuterError);
+    }
+  } else if (elseIdx >= 0) {
+    evalRange(s, toks, elseIdx + 1, endIdx, depth + 1);
+  }
+  return endIdx + 1;
+}
+
+function runWhile(s, toks, openIdx, depth) {
+  // WHILE <test> REPEAT <body> END
+  const repeatScan = scanAtDepth0(toks, openIdx + 1, new Set(['REPEAT']));
+  if (!repeatScan || repeatScan.kind !== 'REPEAT') {
+    throw new RPLError("WHILE without REPEAT");
+  }
+  const endScan = scanAtDepth0(toks, repeatScan.idx + 1, null);
+  if (!endScan || endScan.kind !== 'END') {
+    throw new RPLError("WHILE/REPEAT without END");
+  }
+  let iterations = 0;
+  while (true) {
+    if (++iterations > MAX_LOOP_ITERATIONS) {
+      throw new RPLError('WHILE loop iteration limit');
+    }
+    evalRange(s, toks, openIdx + 1, repeatScan.idx, depth + 1);
+    const test = s.pop();
+    if (!isTruthy(test)) break;
+    evalRange(s, toks, repeatScan.idx + 1, endScan.idx, depth + 1);
+  }
+  return endScan.idx + 1;
+}
+
+function runDo(s, toks, openIdx, depth) {
+  // DO <body> UNTIL <test> END
+  const untilScan = scanAtDepth0(toks, openIdx + 1, new Set(['UNTIL']));
+  if (!untilScan || untilScan.kind !== 'UNTIL') {
+    throw new RPLError("DO without UNTIL");
+  }
+  const endScan = scanAtDepth0(toks, untilScan.idx + 1, null);
+  if (!endScan || endScan.kind !== 'END') {
+    throw new RPLError("DO/UNTIL without END");
+  }
+  let iterations = 0;
+  while (true) {
+    if (++iterations > MAX_LOOP_ITERATIONS) {
+      throw new RPLError('DO loop iteration limit');
+    }
+    evalRange(s, toks, openIdx + 1, untilScan.idx, depth + 1);
+    evalRange(s, toks, untilScan.idx + 1, endScan.idx, depth + 1);
+    const test = s.pop();
+    if (isTruthy(test)) break;
+  }
+  return endScan.idx + 1;
+}
+
+function runStart(s, toks, openIdx, depth) {
+  // <start> <end> START <body> NEXT | STEP
+  const [startVal, endVal] = s.popN(2);
+  // Integer-preserving: if both bounds are Integers, keep the counter
+  // as BigInt for the duration of the loop.  Otherwise coerce to Real.
+  const intMode = isInteger(startVal) && isInteger(endVal);
+  const a = intMode ? startVal.value : Number(isInteger(startVal) ? startVal.value : toRealOrThrow(startVal));
+  const b = intMode ? endVal.value   : Number(isInteger(endVal)   ? endVal.value   : toRealOrThrow(endVal));
+  const closeScan = scanAtDepth0(toks, openIdx + 1, null);
+  if (!closeScan || (closeScan.kind !== 'NEXT' && closeScan.kind !== 'STEP')) {
+    throw new RPLError("START without NEXT/STEP");
+  }
+  runLoopBody(s, toks, openIdx + 1, closeScan.idx, closeScan.kind, a, b, null, intMode, depth);
+  return closeScan.idx + 1;
+}
+
+function runFor(s, toks, openIdx, depth) {
+  // <start> <end> FOR <var> <body> NEXT | STEP
+  const [startVal, endVal] = s.popN(2);
+  const intMode = isInteger(startVal) && isInteger(endVal);
+  const a = intMode ? startVal.value : Number(isInteger(startVal) ? startVal.value : toRealOrThrow(startVal));
+  const b = intMode ? endVal.value   : Number(isInteger(endVal)   ? endVal.value   : toRealOrThrow(endVal));
+  const varTok = toks[openIdx + 1];
+  if (!isName(varTok)) throw new RPLError('FOR needs a name');
+  const varName = varTok.id;
+  const closeScan = scanAtDepth0(toks, openIdx + 2, null);
+  if (!closeScan || (closeScan.kind !== 'NEXT' && closeScan.kind !== 'STEP')) {
+    throw new RPLError("FOR without NEXT/STEP");
+  }
+  // Save any prior binding for this name so we can restore it after the loop.
+  const saved = varRecall(varName);
+  try {
+    runLoopBody(s, toks, openIdx + 2, closeScan.idx, closeScan.kind, a, b, varName, intMode, depth);
+  } finally {
+    if (saved === undefined) varPurge(varName);
+    else varStore(varName, saved);
+  }
+  return closeScan.idx + 1;
+}
+
+/* Safety net: HP50 has no hard iteration cap, but we do — a runaway
+   loop inside a scheduled run would hang the shell.  1_000_000 is
+   far higher than any sane user program and low enough to recover. */
+const MAX_LOOP_ITERATIONS = 1_000_000;
+
+/** Run the body of a counter-based loop (START or FOR).
+ *
+ *    bodyFrom, bodyTo: token range [from, to) to re-run each iteration.
+ *    closer:           'NEXT' (step == 1) or 'STEP' (pop step each iter).
+ *    startVal, endVal: numeric start and inclusive end of the counter.
+ *                      In `intMode`, both are BigInts; otherwise Numbers.
+ *    varName:          loop variable name, or null for START (no var).
+ *    intMode:          true when both bounds came in as Integers and the
+ *                      counter should stay a BigInt for the loop body.
+ *                      A Real step at that point demotes the loop to
+ *                      real-mode on the fly (matches how HP50 promotes
+ *                      the counter when a Real STEP is popped).
+ *
+ *  HP50 STEP loops terminate when the counter has moved past endVal in
+ *  the step's direction; a positive step stops at counter > endVal,
+ *  a negative step stops at counter < endVal.  A zero step, as on the
+ *  real machine, is an infinite loop — we throw instead. */
+function runLoopBody(s, toks, bodyFrom, bodyTo, closer, startVal, endVal, varName, intMode, depth) {
+  let counter = startVal;
+  let bound   = endVal;
+  let mode    = intMode;            // may flip to false if a Real STEP arrives
+  const ZERO  = 0n;
+  let iterations = 0;
+  while (true) {
+    if (++iterations > MAX_LOOP_ITERATIONS) {
+      throw new RPLError('Loop iteration limit');
+    }
+    if (varName !== null) {
+      varStore(varName, mode ? Integer(counter) : Real(counter));
+    }
+    evalRange(s, toks, bodyFrom, bodyTo, depth + 1);
+    let step;
+    if (closer === 'STEP') {
+      const stepVal = s.pop();
+      if (mode && isInteger(stepVal)) {
+        step = stepVal.value;                 // BigInt step, stay in int-mode
+      } else {
+        // Any non-Integer step demotes the whole loop to real-mode for the
+        // rest of its life, matching HP50's Real/Integer blending.
+        if (mode) {
+          counter = Number(counter);
+          bound   = Number(bound);
+          mode    = false;
+        }
+        step = Number(isInteger(stepVal) ? stepVal.value : toRealOrThrow(stepVal));
+      }
+      if (mode ? step === ZERO : step === 0) throw new RPLError('STEP of 0');
+    } else {
+      step = mode ? 1n : 1;
+    }
+    counter = mode ? (counter + step) : (counter + step);
+    const over = mode
+      ? (step > ZERO ? counter > bound : counter < bound)
+      : (step > 0     ? counter > bound : counter < bound);
+    if (over) break;
+  }
+}
+
+/** Built-in numeric constants — only folded in APPROX mode.  PI and E
+ *  live here rather than as ordinary variable bindings because they are
+ *  not user-owned and should stay symbolic under EXACT.  Session 041. */
+/** Built-in symbolic constants.  The keys are spellings the user may
+ *  type (parser and keypad both emit Name tokens with these ids) and
+ *  the values are the RPL objects they fold to under APPROX / →NUM.
+ *
+ *  Case handling: we try the literal key first so we can distinguish
+ *  Greek `π` from Latin `PI`, then fall back to the uppercased key so
+ *  'pi', 'Pi', 'PI' all resolve.
+ *
+ *  The AST-level partial evaluator (algebraEvalAst) can only inline
+ *  Real numbers, so `I`/`i` won't fold inside a larger symbolic
+ *  expression — they stay as Names there.  The top-level EVAL path
+ *  pushes the Complex directly, which is what the user sees when they
+ *  type `'i' →NUM`. */
+const SYM_CONSTANTS = Object.freeze({
+  // --- Math constants --------------------------------------------
+  PI:   Real(Math.PI),
+  'π':  Real(Math.PI),
+  'Π':  Real(Math.PI),
+  E:    Real(Math.E),
+  I:    Complex(0, 1),
+  i:    Complex(0, 1),
+  MAXR: Real(Number.MAX_VALUE),
+  MINR: Real(Number.MIN_VALUE),
+  // --- HP50 CONSTANTS-library physical constants -----------------
+  // CODATA-2018 / SI-redefinition-2019 values; no units attached —
+  // the fold produces a plain Real, matching how `e` behaves.  If
+  // you need dimensional arithmetic, reach for the →UNIT/CONVERT
+  // family after folding.  A user who wants one of these names as
+  // a free symbolic variable can flip to EXACT mode (flag -105
+  // CLEAR) and constants stop folding.
+  c:    Real(299792458),              // speed of light, m/s (exact)
+  h:    Real(6.62607015e-34),         // Planck constant, J·s (exact)
+  'ħ':  Real(1.054571817e-34),        // reduced Planck (h / 2π)
+  G:    Real(6.67430e-11),            // gravitational constant, m³/(kg·s²)
+  g:    Real(9.80665),                // standard gravity, m/s² (exact)
+  NA:   Real(6.02214076e23),          // Avogadro, /mol (exact)
+  k:    Real(1.380649e-23),           // Boltzmann, J/K (exact)
+  R:    Real(8.314462618),            // universal gas constant, J/(mol·K)
+  Vm:   Real(0.02271095464),          // molar volume (STP), m³/mol
+  'σ':  Real(5.670374419e-8),         // Stefan-Boltzmann, W/(m²·K⁴)
+  'ε0': Real(8.8541878128e-12),       // vacuum permittivity, F/m
+  'μ0': Real(1.25663706212e-6),       // vacuum permeability, N/A²
+  q:    Real(1.602176634e-19),        // elementary charge, C (exact)
+  me:   Real(9.1093837015e-31),       // electron rest mass, kg
+  mp:   Real(1.67262192369e-27),      // proton rest mass, kg
+  mn:   Real(1.67492749804e-27),      // neutron rest mass, kg
+  F:    Real(96485.33212),            // Faraday, C/mol (= NA·q)
+  'α':  Real(7.2973525693e-3),        // fine-structure, dimensionless
+  // `re` (classical electron radius) deliberately omitted: name
+  // uppercases to RE, which is the registered complex-real-part op.
+  // Entry's bare-name dispatch runs the op before EVAL / →NUM ever
+  // gets to fold the constant, so keeping both meanings would just
+  // silently shadow RE.  Users who want the value can type it.
+  a0:   Real(5.29177210903e-11),      // Bohr radius, m
+  'μB': Real(9.2740100783e-24),       // Bohr magneton, J/T
+  'μN': Real(5.0507837461e-27),       // nuclear magneton, J/T
+  Rinf: Real(10973731.568160),        // Rydberg, /m (exact)
+  'λc': Real(2.42631023867e-12),      // Compton wavelength, m
+  'γe': Real(1.76085963023e11),       // electron gyromagnetic ratio, /(s·T)
+  Z0:   Real(376.730313668),          // impedance of free space, Ω
+  atm:  Real(101325),                 // standard atmosphere, Pa (exact)
+  T0:   Real(273.15),                 // standard temperature, K (exact)
+});
+function _symConstantRpl(name) {
+  if (!name) return undefined;
+  if (Object.prototype.hasOwnProperty.call(SYM_CONSTANTS, name)) {
+    return SYM_CONSTANTS[name];
+  }
+  const key = String(name).toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(SYM_CONSTANTS, key)) {
+    return SYM_CONSTANTS[key];
+  }
+  return undefined;
+}
+/** Narrow helper for the AST evaluator — only returns a finite Number
+ *  (i.e. a Real constant).  Complex constants can't be represented in
+ *  an AstNum, so they stay symbolic during partial evaluation. */
+function _symConstantValue(name) {
+  const v = _symConstantRpl(name);
+  if (v && v.type === 'real' && Number.isFinite(v.value)) return v.value;
+  return undefined;
+}
+
+/** Evaluate an arbitrary value (entry point for EVAL and the top level
+ *  of the entry loop).  Delegates Program evaluation to evalRange. */
+function _evalValue(s, v, depth) {
+  if (depth > MAX_EVAL_DEPTH) {
+    throw new RPLError('EVAL recursion too deep');
+  }
+
+  if (isProgram(v)) {
+    evalRange(s, v.tokens, 0, v.tokens.length, depth);
+    return;
+  }
+
+  if (isName(v)) {
+    // In APPROX mode (incl. the →NUM span), built-in constants like PI
+    // and E resolve to their numeric value even when tick-quoted —
+    // `'PI' →NUM` should give 3.14159….  EXACT keeps them symbolic so
+    // `'PI' EVAL` round-trips.  Session 041.
+    if (getApproxMode()) {
+      const crpl = _symConstantRpl(v.id);
+      if (crpl !== undefined) { s.push(crpl); return; }
+    }
+    // A quoted Name stays a Name — EVAL on `'X'` is a no-op, same as on
+    // a number or string.  This is what lets `'X' EVAL` round-trip.
+    if (v.quoted) { s.push(v); return; }
+    const bound = varRecall(v.id);
+    if (bound !== undefined) {
+      _evalValue(s, bound, depth + 1);
+    } else {
+      s.push(v);
+    }
+    return;
+  }
+
+  if (isTagged(v)) {
+    _evalValue(s, v.value, depth + 1);
+    return;
+  }
+
+  // Symbolic: since session 017, EVAL attempts to numerically reduce
+  // the AST by substituting any bound variables in the active
+  // directory and evaluating function calls in the active angle mode.
+  //
+  //   1. Walk the AST with algebraEvalAst:
+  //      - Var(X) → Num(lookup(X)) when X resolves to a real-valued
+  //                 binding (Real or Integer); else left symbolic.
+  //      - Fn(SIN, [u]) → SIN evaluated in the current angle mode,
+  //        provided u evaluates to a Num.  LN/EXP/LOG/SQRT/ABS go
+  //        through the mode-independent eval in KNOWN_FUNCTIONS.
+  //      - Bin nodes fold when both children are Num.
+  //   2. If the result is a lone Num AST, push a Real.
+  //   3. Otherwise wrap the (possibly partially-reduced) AST back in
+  //      a Symbolic and push that — EVAL is best-effort, not all-or-
+  //      nothing.
+  //
+  // This matches HP50 behavior: `'X^2+1' EVAL` with X stored leaves a
+  // number; `'X+Y' EVAL` with only X stored leaves `'5 + Y'` (or the
+  // like) on the stack.
+  if (isSymbolic(v)) {
+    const approx = getApproxMode();
+    const lookup = (name) => {
+      const bound = varRecall(name);
+      if (bound !== undefined) {
+        if (isReal(bound)) return bound.value;
+        if (isInteger(bound)) return Number(bound.value);
+        return null;
+      }
+      // Built-in constants resolve only in APPROX mode — EXACT keeps
+      // them symbolic so `'SIN(PI/4)' EVAL` stays as a Symbolic. Session 041.
+      if (approx) {
+        const cval = _symConstantValue(name);
+        if (cval !== undefined) return cval;
+      }
+      return null;
+    };
+    // In EXACT mode, thread the approx gate through so pure-numeric
+    // Bin folds that produce a non-integer result are left symbolic
+    // (`'1/3'` stays as '1/3', not 0.333…).  In APPROX, no gate → fold
+    // everything.  Session 041.
+    const binGate = approx
+      ? null
+      : (_op, args, result) => _approxGate(result, args);
+    const reduced = algebraEvalAst(v.expr, lookup, _angleAwareFnEval, binGate);
+    if (reduced && reduced.kind === 'num') {
+      s.push(Real(reduced.value));
+    } else {
+      s.push(Symbolic(reduced));
+    }
+    return;
+  }
+
+  // EVAL on a Directory navigates into it (same semantics as pressing
+  // the VARS soft-key for that directory).  Applies both when the user
+  // evaluates a Name bound to a directory (varRecall resolves, then
+  // this recurses with the Directory value) and when a raw directory
+  // value is already on the stack.
+  if (isDirectory(v)) {
+    enterDirectory(v);
+    return;
+  }
+
+  // Numeric / String / List / Vector / Matrix — EVAL is idempotent.
+  s.push(v);
+}
+
+/** Angle-mode-aware numeric evaluator for Fn nodes used by Symbolic
+ *  EVAL.  Applies SIN/COS/TAN in the active angle mode via toRadians;
+ *  ASIN/ACOS/ATAN return their answers in the active mode via
+ *  fromRadians.  Everything else falls back to the mode-independent
+ *  table in algebra.js.
+ *
+ *  Session 032: honors the EXACT/APPROX flag.  APPROX returns whatever
+ *  JS Math produces; EXACT returns null (→ leave symbolic) unless the
+ *  computation stays entirely in integer-land — every arg is integer,
+ *  and the result is integer within 1e-12.  So `SQRT(9) → 3` folds
+ *  under EXACT but `SQRT(2)` stays as `'SQRT(2)'`.  Rationale: HP50
+ *  EXACT mode avoids lossy decimal folding; we approximate that by
+ *  only allowing folds whose result is exact in `double`. */
+function _approxGate(result, args) {
+  if (getApproxMode()) return result;                 // APPROX — fold freely
+  if (result === null || result === undefined) return result;
+  if (!Number.isFinite(result)) return result;
+  // EXACT: fold only if every input is integer AND the result is
+  // (numerically) integer — captures SQRT(9)=3, LN(1)=0, EXP(0)=1,
+  // SIN(0)=0, etc. while keeping SQRT(2), LN(2), PI(), SIN(30)-in-DEG
+  // symbolic.
+  const allIntArgs = args.every(a => Number.isFinite(a) && Math.abs(a - Math.round(a)) < 1e-12);
+  if (!allIntArgs) return null;
+  const rounded = Math.round(result);
+  if (Math.abs(result - rounded) < 1e-12) return rounded;
+  return null;
+}
+function _angleAwareFnEval(name, args) {
+  if (args.length === 1) {
+    const x = args[0];
+    let result;
+    switch (String(name).toUpperCase()) {
+      case 'SIN':  result = Math.sin(toRadians(x)); return _approxGate(result, args);
+      case 'COS':  result = Math.cos(toRadians(x)); return _approxGate(result, args);
+      case 'TAN':  result = Math.tan(toRadians(x)); return _approxGate(result, args);
+      case 'ASIN': result = fromRadians(Math.asin(x)); return _approxGate(result, args);
+      case 'ACOS': result = fromRadians(Math.acos(x)); return _approxGate(result, args);
+      case 'ATAN': result = fromRadians(Math.atan(x)); return _approxGate(result, args);
+    }
+  }
+  const raw = algebraDefaultFnEval(name, args);
+  return _approxGate(raw, args);
+}
+
+register('EVAL', (s) => {
+  // Snapshot BEFORE the pop so that on error we restore the EVAL'd
+  // value too — the user can re-attempt from the same stack state.
+  const snap = s.save();
+  try {
+    const v = s.pop();
+    _evalValue(s, v, 0);
+  } catch (e) {
+    s.restore(snap);
+    throw e;
+  }
+});
+
+/* ------------------------------------------------------------------
+   APPROX / EXACT mode toggles + →NUM forced-approximation.
+
+   HP50 flag -105 controls whether numeric ops fold transcendentals.
+   `APPROX` (flag SET) folds `SQRT(2)` to 1.41421356237; `EXACT` (flag
+   CLEAR) leaves it symbolic.  Since the web calculator boots in APPROX
+   (backwards-compat with every pre-session-032 test), `EXACT` is the
+   "call me when you actually need a number" mode.
+
+   `→NUM` (SHIFT-R ENTER on the physical unit) forces APPROX for a
+   single EVAL and restores the previous setting.  Users in EXACT mode
+   reach for →NUM when they want a decimal without changing the global
+   flag.
+   ------------------------------------------------------------------ */
+register('APPROX', () => { setApproxMode(true); });
+register('EXACT',  () => { setApproxMode(false); });
+
+register('→NUM', (s, entry) => {
+  // Force APPROX mode for the span of one EVAL, then restore whatever
+  // the user had set.  Use try/finally so a domain error inside EVAL
+  // still leaves the mode flag the way we found it.
+  const prev = getApproxMode();
+  setApproxMode(true);
+  try {
+    OPS.get('EVAL').fn(s, entry);
+  } finally {
+    setApproxMode(prev);
+  }
+});
+// Ascii alias — so users on keyboards without `→` can type `->NUM` or
+// `NUM` and still reach the op via the entry line.  Mirrors the style
+// used for `→LIST`, `→STR` elsewhere in the registry.
+register('->NUM', (s, entry) => { OPS.get('→NUM').fn(s, entry); });
+
+/* ------------------------------------------------------------------
+   Stack-based conditionals: IFT, IFTE.
+
+   IFT   ( test action -- )       test true  → EVAL action
+                                  test false → drop both
+   IFTE  ( test t-act f-act -- )  test true  → EVAL t-act
+                                  test false → EVAL f-act
+
+   "EVAL" here means the full evaluator: a Program runs, a Name
+   auto-recalls, a number pushes itself.  This is what HP50 users
+   expect — IFTE on a pair of Reals is effectively a value-select.
+   ------------------------------------------------------------------ */
+
+register('IFT', (s) => {
+  const snap = s.save();
+  try {
+    const [test, action] = s.popN(2);
+    if (isTruthy(test)) _evalValue(s, action, 0);
+  } catch (e) {
+    s.restore(snap);
+    throw e;
+  }
+});
+
+register('IFTE', (s) => {
+  const snap = s.save();
+  try {
+    const [test, tAction, fAction] = s.popN(3);
+    _evalValue(s, isTruthy(test) ? tAction : fAction, 0);
+  } catch (e) {
+    s.restore(snap);
+    throw e;
+  }
+});
+
+/* ------------------------------------------------------------------
+   Comparison + logic ops.
+
+   Booleans are HP50-style Reals: 0. / 1.  Comparison ops accept any
+   two numeric operands (Real, Integer, Complex with both imaginary
+   parts zero).  AND/OR/XOR/NOT treat any non-zero as true; NOT of 0
+   is 1, NOT of anything else is 0.
+
+   Registered canonical names + ASCII aliases so a user typing on a
+   physical keyboard (no ≠ / ≤ / ≥ glyphs) can still reach them.
+   ------------------------------------------------------------------ */
+
+function popNumericPair(s) {
+  const [a, b] = s.popN(2);
+  if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
+  return promoteNumericPair(a, b);
+}
+
+function eqValues(a, b) {
+  // Equality across numeric types.  Uses JS == on promoted scalars.
+  if (isNumber(a) && isNumber(b)) {
+    const p = promoteNumericPair(a, b);
+    if (p.kind === 'complex')  return p.a.re === p.b.re && p.a.im === p.b.im;
+    if (p.kind === 'integer')  return p.a === p.b;
+    return p.a === p.b;
+  }
+  // Name / String / everything else: structural comparison by id/value.
+  if (isName(a) && isName(b)) return a.id === b.id;
+  if (isString(a) && isString(b)) return a.value === b.value;
+  return false;
+}
+
+/** If either operand is a Symbolic/Name, push Symbolic(Bin(op, …)) and
+ *  return true.  Otherwise return false so the caller proceeds with a
+ *  numeric comparison.  Used by every comparison op (=, ==, ≠, <, >, ≤,
+ *  ≥, and their ASCII aliases) — matches HP50 behaviour where comparing
+ *  symbolic operands defers evaluation by building an equation.
+ *  Session 034. */
+function _trySymCompare(s, a, b, op) {
+  if (!_isSymOperand(a) && !_isSymOperand(b)) return false;
+  const l = _toAst(a);
+  const r = _toAst(b);
+  if (!l || !r) throw new RPLError('Bad argument type');
+  s.push(Symbolic(AstBin(op, l, r)));
+  return true;
+}
+
+// `=` is the equation-builder: always produces a symbolic result, even
+// when both operands are numeric.  `2 3 =` → `'2=3'`.  This matches how
+// HP50's EquationWriter treats the `=` key.  Registered as a stack op in
+// session 034; previously `=` was only an infix operator inside '…'.
+register('=', (s) => {
+  const [a, b] = s.popN(2);
+  const l = _toAst(a);
+  const r = _toAst(b);
+  if (!l || !r) throw new RPLError('Bad argument type');
+  s.push(Symbolic(AstBin('=', l, r)));
+});
+
+register('==', (s) => {
+  // `==` is a strict structural equality test — it always returns a
+  // boolean (1./0.), even on symbolic operands.  Use `=` instead to
+  // build an equation: `'X' 'X' =` → `'X=X'`.  Session 034.
+  const [a, b] = s.popN(2);
+  s.push(eqValues(a, b) ? TRUE : FALSE);
+});
+register('SAME', (s) => {
+  // HP50: SAME is structural equality including types; for primitive
+  // values it coincides with ==.  We use the same comparator.  SAME
+  // stays strictly boolean — it does NOT lift to symbolic, since SAME's
+  // contract is "are these the same object?", not "are they equal?".
+  const [a, b] = s.popN(2);
+  s.push(eqValues(a, b) ? TRUE : FALSE);
+});
+
+register('≠', (s) => {
+  const [a, b] = s.popN(2);
+  if (_trySymCompare(s, a, b, '≠')) return;
+  s.push(eqValues(a, b) ? FALSE : TRUE);
+});
+register('<>', (s) => {
+  // ASCII alias for ≠.
+  const [a, b] = s.popN(2);
+  if (_trySymCompare(s, a, b, '≠')) return;
+  s.push(eqValues(a, b) ? FALSE : TRUE);
+});
+
+function comparePair(s, cmp, op) {
+  const [a, b] = s.popN(2);                 // a = level 2, b = level 1
+  // Symbolic lift first — `x y >` with Name/Symbolic operands yields
+  // `'x>y'` instead of an error.  Session 034.
+  if (_isSymOperand(a) || _isSymOperand(b)) {
+    const l = _toAst(a);
+    const r = _toAst(b);
+    if (!l || !r) throw new RPLError('Bad argument type');
+    s.push(Symbolic(AstBin(op, l, r)));
+    return;
+  }
+  if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
+  const p = promoteNumericPair(a, b);
+  // Complex < / > / ≤ / ≥ isn't well-defined on HP50 either — only compare real parts
+  // when imaginary parts are zero; otherwise error.
+  let av, bv;
+  if (p.kind === 'complex') {
+    if (p.a.im !== 0 || p.b.im !== 0) throw new RPLError('Bad argument type');
+    av = p.a.re; bv = p.b.re;
+  } else if (p.kind === 'integer') {
+    av = Number(p.a); bv = Number(p.b);
+  } else {
+    av = p.a; bv = p.b;
+  }
+  s.push(cmp(av, bv) ? TRUE : FALSE);
+}
+
+register('<',  (s) => comparePair(s, (a, b) => a <  b, '<'));
+register('>',  (s) => comparePair(s, (a, b) => a >  b, '>'));
+register('≤',  (s) => comparePair(s, (a, b) => a <= b, '≤'));
+register('<=', (s) => comparePair(s, (a, b) => a <= b, '≤'));
+register('≥',  (s) => comparePair(s, (a, b) => a >= b, '≥'));
+register('>=', (s) => comparePair(s, (a, b) => a >= b, '≥'));
+
+/* ---- logical ops: treat any non-zero as true; return 1./0. ----
+   On two BinaryIntegers, AND/OR/XOR are BITWISE (HP50 overloads these
+   exact names — same on a real unit).  The result is wordsize-masked
+   and inherits the LEFT operand's display base.  Mixed BinInt+other
+   is rejected with "Bad argument type", same as the arithmetic path.
+   Everything else goes through the boolean-logic path: treat any non-
+   zero as true, return Real(1) / Real(0).
+   NOT on a BinaryInteger is bitwise complement within the wordsize;
+   on anything else it's boolean (HP50 also overloads NOT). */
+function binaryLogic(op) {
+  return (s) => {
+    const [a, b] = s.popN(2);
+    if (isBinaryInteger(a) && isBinaryInteger(b)) {
+      const m = _mask();
+      const av = a.value & m;
+      const bv = b.value & m;
+      let r;
+      switch (op) {
+        case 'AND': r = av & bv; break;
+        case 'OR':  r = av | bv; break;
+        case 'XOR': r = av ^ bv; break;
+      }
+      s.push(BinaryInteger(r & m, a.base));
+      return;
+    }
+    if (isBinaryInteger(a) || isBinaryInteger(b)) {
+      throw new RPLError('Bad argument type');
+    }
+    const x = isTruthy(a), y = isTruthy(b);
+    let r;
+    switch (op) {
+      case 'AND': r = x && y; break;
+      case 'OR':  r = x || y; break;
+      case 'XOR': r = x !== y; break;
+    }
+    s.push(r ? TRUE : FALSE);
+  };
+}
+register('AND', binaryLogic('AND'));
+register('OR',  binaryLogic('OR'));
+register('XOR', binaryLogic('XOR'));
+
+register('NOT', (s) => {
+  const v = s.pop();
+  if (isBinaryInteger(v)) {
+    // Bitwise complement within the current wordsize (XOR with the mask).
+    const m = _mask();
+    s.push(BinaryInteger((v.value & m) ^ m, v.base));
+    return;
+  }
+  s.push(isTruthy(v) ? FALSE : TRUE);
+});
+
+register('TRUE',  (s) => { s.push(TRUE); });
+register('FALSE', (s) => { s.push(FALSE); });
+
+/* ------------------------------------------------------------------
+   Error-introspection ops: ERRM / ERRN / ERR0.
+
+   IFERR's THEN clause is the natural home for these — they read the
+   last-error slot written when the trap caught.  On an HP50 the slot
+   persists until the next ERR0 (or the next caught error), which is
+   what we do here; calling ERRM / ERRN outside an IFERR trap is legal
+   and yields the most recent caught error (empty string / 0 if none).
+
+     ERRM   ( -- string )   the last error's message text
+     ERRN   ( -- integer )  the last error's number (see state.js
+                            _ERROR_NUMBERS for the current map — 0
+                            for unknown / none)
+     ERR0   ( -- )          clear the last-error slot
+   ------------------------------------------------------------------ */
+
+register('ERRM', (s) => {
+  const le = getLastError();
+  s.push(Str(le ? le.message : ''));
+});
+
+register('ERRN', (s) => {
+  // HP50: ERRN returns a Binary Integer in hex (e.g. #502h for
+  // "Directory not allowed").  Before session 014 we returned a plain
+  // Integer which displayed as decimal (1282); users had to mentally
+  // convert.  Now the stack shows `#502h` directly, matching what the
+  // Advanced User's Reference uses as the canonical error form.
+  //
+  // `le.number === 0` when no classification matched (unknown error,
+  // or no error since the last ERR0) — still emit it as `#0h` so the
+  // stack shape is stable; a caller who wants the numeric value can
+  // `B→R` (future) or compare against `#0h` directly.
+  const le = getLastError();
+  s.push(BinaryInteger(le ? le.number : 0, 'h'));
+});
+
+register('ERR0', () => {
+  clearLastError();
+});
+
+/* ------------------------------------------------------------------
+   STWS / RCWS — Binary integer wordsize control.
+
+     STWS  ( n -- )       set wordsize to n bits (1..64, clamped).  HP50
+                          accepts a Real, Integer, or BinaryInteger here;
+                          we convert via the usual numeric coercion.
+     RCWS  ( -- bin )     recall wordsize as a BinaryInteger in the
+                          current display base (or hex when the display
+                          override is null).  HP50 behavior matches.
+
+   HEX / DEC / OCT / BIN — display-base modes.  Each sets the global
+   `state.binaryBase` override so every BinInt renders in that base AND
+   pads to the current wordsize.  There's no "un-set" op today — the
+   user issues a different base or keeps the current one.
+   ------------------------------------------------------------------ */
+
+register('STWS', (s) => {
+  const v = s.pop();
+  let n;
+  if (isInteger(v))           n = Number(v.value);
+  else if (isBinaryInteger(v)) n = Number(v.value);
+  else if (isReal(v))         n = v.value;
+  else throw new RPLError('Bad argument type');
+  if (!Number.isFinite(n)) throw new RPLError('Bad argument value');
+  setWordsize(Math.trunc(n));
+});
+
+register('RCWS', (s) => {
+  // HP50 returns the wordsize as a Binary Integer; base follows the
+  // display override when set, else hex.  (A user in HEX mode wants
+  // `#40h` back from RCWS, not `#64d`.)
+  s.push(BinaryInteger(BigInt(getWordsize()), getBinaryBase() || 'h'));
+});
+
+register('HEX', () => { setBinaryBase('h'); });
+register('DEC', () => { setBinaryBase('d'); });
+register('OCT', () => { setBinaryBase('o'); });
+register('BIN', () => { setBinaryBase('b'); });
+/** CLB — clear display-base override.  After CLB, each BinInt
+ *  renders in its stored base (HP50 default behavior before any
+ *  HEX/DEC/OCT/BIN has been issued).  Padding to STWS is also
+ *  dropped — the address hasn't been mode-locked, so minimum-
+ *  width rendering is used.  Added session 017 to close a known-
+ *  issue gap from session 014.  (HP50 firmware doesn't ship this
+ *  exact name; the closest built-in is clearing flag -67.  We use
+ *  CLB for brevity — `CLear Binary mode`.) */
+register('CLB', () => { setBinaryBase(null); });
+
+/* ------------------------------------------------------------------
+   RECT / CYLIN / SPHERE — coordinate-display mode.
+
+   HP50 flags -15 / -16 control rendering of Complex and Vector values:
+     -15 CLR -16 CLR → Rectangular    `(1, 1)`      — "XYZ"
+     -15 SET -16 CLR → Cylindrical    `(SQRT(2), ∠π/4)` — "R∠Z"
+     -15 CLR -16 SET → Spherical      — for 3-vectors, "R∠∠"
+   This build keeps them as three named modes rather than shipping
+   the flag interface; the formatter reads state.coordMode.  No
+   arithmetic behavior changes — only display.  The ops stay 0-arg
+   so they can be dropped into any program or the side-panel
+   Commands tab.
+   ------------------------------------------------------------------ */
+register('RECT',   () => { setCoordMode('RECT'); });
+register('CYLIN',  () => { setCoordMode('CYLIN'); });
+register('SPHERE', () => { setCoordMode('SPHERE'); });
+
+/* ------------------------------------------------------------------
+   TEXTBOOK / FLAT — toggle 2D pretty-print of Symbolic stack rows.
+
+   TEXTBOOK  ( --- )   Enable pretty-print for Symbolic values.  After
+                       TEXTBOOK, each stack row holding a Symbolic
+                       renders via src/rpl/pretty.js's astToSvg (SVG)
+                       instead of the flat-text formatter.  Other
+                       value types are unaffected.
+   FLAT      ( --- )   Return to flat-text rendering for everything.
+
+   HP50 expresses the same thing via system flag -80 — we provide
+   named ops for discoverability / keypad-reachability without taking
+   a position on flag numbers yet.  The flag-bit wiring can land
+   alongside once flags land as a feature.  Added session 019. */
+register('TEXTBOOK', () => { setTextbookMode(true); });
+register('FLAT',     () => { setTextbookMode(false); });
+
+/* ------------------------------------------------------------------
+   B→R and R→B — BinaryInteger ↔ Real conversion.
+
+     B→R  ( bin -- real )   push the BinInt's value as a Real.  For
+                            wide BinInts the Number coercion loses
+                            precision above 2^53, matching the HP50's
+                            12-digit decimal limit behavior.
+     R→B  ( x   -- bin )    push x as a BinInt at the current wordsize.
+                            x may be Real or Integer.  The low ws bits
+                            become the payload; negatives wrap (two's-
+                            complement style) which matches HP50's
+                            truncation behavior.  Base follows the
+                            display override (or 'h' if none).
+   ------------------------------------------------------------------ */
+
+register('B→R', (s) => {
+  const v = s.pop();
+  if (!isBinaryInteger(v)) throw new RPLError('Bad argument type');
+  s.push(Real(Number(v.value & _mask())));
+});
+register('B->R', (s) => {          // ASCII alias
+  const v = s.pop();
+  if (!isBinaryInteger(v)) throw new RPLError('Bad argument type');
+  s.push(Real(Number(v.value & _mask())));
+});
+
+register('R→B', (s) => {
+  const v = s.pop();
+  let n;
+  if (isInteger(v))       n = v.value;
+  else if (isReal(v))     n = BigInt(Math.trunc(v.value));
+  else throw new RPLError('Bad argument type');
+  const m = _mask();
+  // Mask: for negatives, JS BigInt AND with a positive mask gives the
+  // two's-complement low bits already (because BigInt is arbitrary-
+  // precision signed), so `n & m` is what we want.
+  const payload = n & m;
+  const base = getBinaryBase() || 'h';
+  s.push(BinaryInteger(payload, base));
+});
+register('R->B', (s) => {          // ASCII alias
+  const v = s.pop();
+  let n;
+  if (isInteger(v))       n = v.value;
+  else if (isReal(v))     n = BigInt(Math.trunc(v.value));
+  else throw new RPLError('Bad argument type');
+  const m = _mask();
+  const payload = n & m;
+  const base = getBinaryBase() || 'h';
+  s.push(BinaryInteger(payload, base));
+});
+
+/* ------------------------------------------------------------------
+   Unit ops.
+
+     UVAL     ( u        -- x )           numeric value, unit stripped
+     UBASE    ( u        -- u' )          reduce to SI-base units
+     →UNIT    ( x u      -- u' )          attach u's unit to x
+     CONVERT  ( u1 u2    -- u3 )          express u1 in u2's units
+                                          (u2's value is ignored — only
+                                          its uexpr matters, matching
+                                          the HP50's unit-shape role)
+
+   `CONVERT` requires u1 and u2 to share a dimension vector; otherwise
+   throws 'Inconsistent units'.  The result value is
+       u1.value * scale(u1) / scale(u2)
+   so `1_km 1_ft CONVERT` → `3280.839…_ft`.
+   ------------------------------------------------------------------ */
+register('UVAL', (s) => {
+  const [u] = s.popN(1);
+  if (!isUnit(u)) throw new RPLError('Bad argument type');
+  s.push(Real(u.value));
+});
+
+register('UBASE', (s) => {
+  const [u] = s.popN(1);
+  if (!isUnit(u)) throw new RPLError('Bad argument type');
+  const { scale, uexpr } = toBaseUexpr(u.uexpr);
+  s.push(_makeUnit(u.value * scale, uexpr));
+});
+
+register('→UNIT', (s) => {
+  const [x, u] = s.popN(2);
+  if (!isUnit(u)) throw new RPLError('Bad argument type');
+  const xv = _numVal(x);
+  s.push(Unit(xv, u.uexpr));
+});
+register('->UNIT', (s) => OPS.get('→UNIT').fn(s));  // ASCII alias
+
+register('CONVERT', (s) => {
+  const [u1, u2] = s.popN(2);
+  if (!isUnit(u1) || !isUnit(u2)) throw new RPLError('Bad argument type');
+  if (!sameDims(u1.uexpr, u2.uexpr)) throw new RPLError('Inconsistent units');
+  // If u1 and u2 already share the same canonical uexpr, skip the
+  // scale arithmetic — avoids floating-point drift for identity
+  // conversions (`1_m 1_m CONVERT` stays exactly 1_m).
+  if (uexprEqual(u1.uexpr, u2.uexpr)) { s.push(u1); return; }
+  const val = u1.value * scaleOf(u1.uexpr) / scaleOf(u2.uexpr);
+  s.push(Unit(val, u2.uexpr));
+});
+
+/* ------------------------------------------------------------------
+   CAS — symbolic differentiation.
+
+   DERIV  ( expr 'var' -- d-expr )
+
+   Pops a Symbolic and a variable Name; pushes a Symbolic that is the
+   derivative of `expr` with respect to `var`.  Fully simplified.
+
+     '2*X + 3' 'X' DERIV   →   '2'
+     'X^3 + 2*X' 'X' DERIV →   '3*X^2 + 2'
+     'X^2 + Y^2' 'X' DERIV →   '2*X'       (Y treated as constant)
+
+   For numeric-only inputs we accept a Real/Integer as shorthand: the
+   derivative of a number w.r.t. anything is 0, so pushing Real(0) is
+   harmless and lets users evaluate DERIV without first constructing
+   a Symbolic.  Anything else is "Bad argument type".
+
+   Shape of `var` argument: a Name (quoted or not).  We read .id.  If
+   the user accidentally typed a plain string we ALSO accept it, to
+   be forgiving — HP50 canonical form is a Name.
+
+   This is the first slice of the longstanding CAS wishlist.  Followups
+   will add INTVX, EXPAND, COLLECT, FACTOR on top of the same AST.
+   ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------
+   EXPAND  ( expr -- expanded )
+
+   Distribute products and small integer powers of sums, then pass the
+   result through the simplifier so the like-terms combiner sums
+   coefficients.  Classic CAS expansion:
+
+     '(X+1)^2' EXPAND      →  'X^2 + 2*X + 1'
+     '(X+1)*(X-1)' EXPAND  →  'X^2 - 1'
+     '(2*X+1)^3' EXPAND    →  '8*X^3 + 12*X^2 + 6*X + 1'
+
+   Unsupported operand shapes (rational / negative / non-numeric
+   exponents, fractional bases, etc.) pass through unchanged — EXPAND
+   is partial by design and composes with DERIV / EVAL.  Constants
+   and lone variables are idempotent.  Added session 019 as the first
+   slice of the CAS simplification wishlist.
+   ------------------------------------------------------------------ */
+
+register('EXPAND', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    s.push(Symbolic(algebraExpand(v.expr)));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isName(v)) {
+    // Numbers and bare Names are idempotent under EXPAND.  Pushing the
+    // value back keeps EXPAND a no-op in those cases — matches the HP50
+    // convention that EXPAND on a non-algebraic is a pass-through.
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* ------------------------------------------------------------------
+   COLLECT  ( expr -- collected )                      (1-arg form)
+   COLLECT  ( expr 'var' -- collected )                (2-arg form)
+
+   Session 020 introduced the 1-arg form as a simplify alias so the
+   CAS menu's COLLECT slot had a sensible target.  Session 021
+   promotes it to a real polynomial collector: when the top of stack
+   is a quoted Name (or a String), the op pops it as the collection
+   variable and groups the expression below by powers of that
+   variable:
+
+     'X + A*X + B*X + C' 'X' COLLECT   →  '(A + B + 1)*X + C'
+     'X^2 + 2*X^2 + X'  'X' COLLECT   →  '3*X^2 + X'
+
+   The 1-arg form (expr alone) is unchanged — it still runs the
+   simplifier's like-terms combiner.  Dispatch rule: look at the
+   top of stack; if it's a Name / String AND the level-2 value is a
+   Symbolic, treat it as the 2-arg form.  Otherwise fall back to
+   1-arg (preserves the session-020 pass-through for Real / bare
+   Name stacks of depth 1).  Added session 021.
+
+   Idempotent on numbers and bare names with stack depth 1, matching
+   EXPAND's behavior so users can blindly compose either against any
+   algebraic.
+   ------------------------------------------------------------------ */
+register('COLLECT', (s) => {
+  // 2-arg form — top is a variable specifier and level-2 is a Symbolic.
+  // We test level-2 first so a lone Name at depth 1 still hits the
+  // session-020 pass-through path below.
+  if (s.depth >= 2) {
+    const top = s.peek(1);
+    const below = s.peek(2);
+    if ((isName(top) || isString(top)) && isSymbolic(below)) {
+      const varName = isName(top) ? top.id : top.value;
+      s.pop();                             // discard the variable spec
+      const expr = s.pop();
+      s.push(Symbolic(algebraCollectByVar(expr.expr, varName)));
+      return;
+    }
+  }
+  // 1-arg form — simplify alias.
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    s.push(Symbolic(algebraSimplify(v.expr)));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isName(v)) {
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* ------------------------------------------------------------------
+   FACTOR  ( expr -- factored )
+
+   Session 021.  Attempts to factor a polynomial.  Current coverage:
+
+     monic quadratic with integer roots
+       'X^2 + 2*X + 1'  FACTOR  →  '(X + 1)^2'
+       'X^2 - 1'        FACTOR  →  '(X - 1)*(X + 1)'
+       'X^2 + 5*X + 6'  FACTOR  →  '(X + 2)*(X + 3)'
+
+   Unsupported shapes (non-monic, irrational roots, degree > 2,
+   multi-variable) pass through unchanged — matches EXPAND's partial
+   convention so composition stays safe.
+
+   Accepts Symbolic directly.  Integer (and integer-valued Real)
+   operands prime-factorise:
+       12 FACTOR  →  '2^2*3'
+        7 FACTOR  →  '7'            (already prime)
+      -12 FACTOR  →  '-(2^2*3)'
+   0 / ±1 / non-integer Real / Name pass through unchanged — no
+   meaningful factorisation, and the user's input shape is preserved
+   so FACTOR remains composition-safe.
+   ------------------------------------------------------------------ */
+register('FACTOR', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    s.push(Symbolic(algebraFactor(v.expr)));
+    return;
+  }
+  if (isInteger(v) || (isReal(v) && Number.isInteger(v.value))) {
+    const bv = isInteger(v) ? v.value : BigInt(v.value);
+    const abs = bv < 0n ? -bv : bv;
+    // 0 and ±1 have no meaningful prime factorisation; primes above
+    // 2^53 exceed what an AstNum can hold without precision loss, so
+    // in both cases pass the value through.  Users rarely run FACTOR
+    // on 20-digit primes and the trial-division loop wouldn't finish
+    // on them anyway.
+    if (abs < 2n || abs > BigInt(Number.MAX_SAFE_INTEGER)) {
+      s.push(v);
+      return;
+    }
+    const factors = _primeFactor(abs);
+    let ast = _factorsToAst(factors);
+    if (bv < 0n) ast = AstNeg(ast);
+    s.push(Symbolic(ast));
+    return;
+  }
+  if (isReal(v) || isName(v)) {
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/** Prime factorise a positive BigInt ≥ 2.  Returns an array of
+ *  `{ p: BigInt, e: number }` ascending by prime.  Trial division
+ *  with a 2-then-odds wheel; fine for values up to ~2^53 (FACTOR
+ *  bails out past that).  Not a cryptographic primitive — just a
+ *  classroom-calculator factoriser. */
+function _primeFactor(n) {
+  const factors = [];
+  let rem = n;
+  if (rem % 2n === 0n) {
+    let e = 0;
+    while (rem % 2n === 0n) { rem /= 2n; e++; }
+    factors.push({ p: 2n, e });
+  }
+  for (let p = 3n; p * p <= rem; p += 2n) {
+    if (rem % p !== 0n) continue;
+    let e = 0;
+    while (rem % p === 0n) { rem /= p; e++; }
+    factors.push({ p, e });
+  }
+  if (rem > 1n) factors.push({ p: rem, e: 1 });
+  return factors;
+}
+
+/** Build a Symbolic AST for the product `p1^e1 * p2^e2 * …`.  Single
+ *  factor with exponent 1 (i.e. the input was prime) gives a lone
+ *  Num; longer lists left-fold into a `*` chain. */
+function _factorsToAst(factors) {
+  const terms = factors.map(({ p, e }) => {
+    const pAst = AstNum(Number(p));
+    return e === 1 ? pAst : AstBin('^', pAst, AstNum(e));
+  });
+  return terms.reduce((acc, t) => AstBin('*', acc, t));
+}
+
+/* ------------------------------------------------------------------
+   SOLVE  ( eqn 'var' -- { eqn1 eqn2 ... } )
+   SOLVE  ( expr 'var' -- { eqn1 eqn2 ... } )     (expr = 0 implied)
+
+   Session 025.  Solve a single-variable linear or quadratic
+   equation.  Returns a list of Symbolic equations — one per root,
+   in the order the closed-form formula produces them (larger root
+   first for quadratics; rational-root order for cubic / quartic
+   via FACTOR).
+
+       'X^2 - 4'   'X' SOLVE    →  { 'X = 2' 'X = -2' }
+       'X^2 = X'   'X' SOLVE    →  { 'X = 1' 'X = 0' }
+       '2*X - 4'   'X' SOLVE    →  { 'X = 2' }
+       'X^2 + X - 1' 'X' SOLVE  →  { 'X = (-1 + √5)/2' 'X = (-1 - √5)/2' }
+       'X^2 + 1'   'X' SOLVE    →  { }   (no real roots; complex TBD)
+       'X^3 - 6X^2 + 11X - 6' 'X' SOLVE  →  { 'X = 1' 'X = 3' 'X = 2' }
+
+   The variable can be a Name (HP50 canonical) or a String for typed
+   convenience; either way we pull out the identifier and pass it
+   into algebraSolve.  Expressions whose shape isn't recognised
+   (non-polynomial, symbolic coefficients, degree > 4) fall through
+   as an empty list.
+   ------------------------------------------------------------------ */
+register('SOLVE', (s) => {
+  const varArg  = s.pop();
+  const exprArg = s.pop();
+
+  // Pull variable identifier.
+  let varName;
+  if (isName(varArg))      varName = varArg.id;
+  else if (isString(varArg)) varName = varArg.value;
+  else throw new RPLError('Bad argument type');
+
+  // Pull expression AST.  Real/Integer/Name get treated as bare
+  // expressions (constants / single variables) — a constant has
+  // no root unless it's zero; a Name matches only when it equals
+  // varName and gives X = 0.
+  let ast;
+  if (isSymbolic(exprArg))        ast = exprArg.expr;
+  else if (isName(exprArg))       ast = AstVar(exprArg.id);
+  else if (isReal(exprArg))       ast = AstNum(exprArg.value);
+  else if (isInteger(exprArg))    ast = AstNum(Number(exprArg.value));
+  else throw new RPLError('Bad argument type');
+
+  const roots = algebraSolve(ast, varName);
+  if (roots === null) {
+    // Didn't recognise the shape — return an empty list rather than
+    // throwing so SOLVE is composable with user programs.
+    s.push(RList([]));
+    return;
+  }
+  const items = roots.map(r => Symbolic(r));
+  s.push(RList(items));
+});
+
+/* ------------------------------------------------------------------
+   SUBST  ( expr 'var' value -- result )                (3-arg form)
+   SUBST  ( expr { 'var' value ... } -- result )        (2-arg list)
+
+   Session 021.  Substitute a value into an expression.  The
+   3-argument form takes a Name / String as the target variable and
+   any AST-representable value (Real, Integer, Symbolic, Name).  The
+   list form accepts a List of alternating (name, value) pairs for
+   convenient multi-substitution:
+
+     'X^2 + 1' 'X' 3 SUBST              →  10
+     'A*X + B' 'X' 'Y+1' SUBST          →  'A*(Y + 1) + B'
+     'X + Y' { 'X' 2 'Y' 3 } SUBST      →  5
+
+   After every substitution the expression is simplified, so numeric
+   substitutions collapse to a Real when all free variables bind to
+   concrete numbers.  Anything more exotic stays symbolic.
+
+   Unwrap rule: if the post-simplify AST is a pure Num, we push a
+   Real; otherwise we push a Symbolic.  Matches DERIV's unwrap
+   convention ('0' comes back as Real(0)).
+   ------------------------------------------------------------------ */
+register('SUBST', (s) => {
+  const top = s.peek();
+
+  // Form A: list form.  Walks items looking for either a
+  //   Symbolic equation (one item, Bin('=', Var, rhs)), or
+  //   a (name, value) pair (two consecutive items).
+  // Session 022 added equation-entry support; session 021's
+  // strict-pair semantics are preserved when no equations appear.
+  if (isList(top)) {
+    const items = top.items;
+    s.pop();
+    const exprVal = s.pop();
+    if (!isSymbolic(exprVal) && !isName(exprVal)) {
+      throw new RPLError('Bad argument type');
+    }
+    let ast = isSymbolic(exprVal) ? exprVal.expr
+            : AstVar(exprVal.id);
+    let i = 0;
+    while (i < items.length) {
+      const item = items[i];
+      if (_isEquationSymbolic(item)) {
+        ast = algebraSubst(ast, item.expr.l.name, item.expr.r);
+        i += 1;
+      } else {
+        if (i + 1 >= items.length) {
+          throw new RPLError('SUBST: list needs pairs or equations');
+        }
+        const nameVal  = item;
+        const valueVal = items[i + 1];
+        const vname = isName(nameVal)    ? nameVal.id
+                    : isString(nameVal)  ? nameVal.value
+                    : null;
+        if (vname === null) throw new RPLError('SUBST: bad variable name in list');
+        ast = algebraSubst(ast, vname, coerceToAst(valueVal));
+        i += 2;
+      }
+    }
+    _pushSubstResult(s, ast);
+    return;
+  }
+
+  // Form B: equation on top.  `expr 'X = 3' SUBST` — the HP50-canonical
+  // 2-arg form.  Session 022.
+  if (s.depth >= 2 && _isEquationSymbolic(top)) {
+    const eqn = s.pop();
+    const exprVal = s.pop();
+    let ast;
+    if (isSymbolic(exprVal))     ast = exprVal.expr;
+    else if (isName(exprVal))    ast = AstVar(exprVal.id);
+    else if (isReal(exprVal))    ast = AstNum(exprVal.value);
+    else if (isInteger(exprVal)) ast = AstNum(Number(exprVal.value));
+    else throw new RPLError('Bad argument type');
+    const result = algebraSubst(ast, eqn.expr.l.name, eqn.expr.r);
+    _pushSubstResult(s, result);
+    return;
+  }
+
+  // Form C: 3-arg form: expr 'var' value.
+  if (s.depth < 3) throw new RPLError('Too few arguments');
+  const [exprVal, varVal, valueVal] = s.popN(3);
+  let ast;
+  if (isSymbolic(exprVal))    ast = exprVal.expr;
+  else if (isName(exprVal))   ast = AstVar(exprVal.id);
+  else if (isReal(exprVal))   ast = AstNum(exprVal.value);
+  else if (isInteger(exprVal)) ast = AstNum(Number(exprVal.value));
+  else throw new RPLError('Bad argument type');
+  const vname = isName(varVal)   ? varVal.id
+              : isString(varVal) ? varVal.value
+              : null;
+  if (vname === null) throw new RPLError('SUBST: bad variable');
+  const result = algebraSubst(ast, vname, coerceToAst(valueVal));
+  _pushSubstResult(s, result);
+});
+
+/** True when v is a Symbolic whose AST is `Bin('=', Var(name), rhs)` —
+ *  the shape SUBST consumes as a one-shot variable binding. */
+function _isEquationSymbolic(v) {
+  return isSymbolic(v) && v.expr && v.expr.kind === 'bin' &&
+         v.expr.op === '=' && v.expr.l && v.expr.l.kind === 'var';
+}
+
+/** Coerce a stack value to an algebra AST node for substitution. */
+function coerceToAst(v) {
+  if (isSymbolic(v)) return v.expr;
+  if (isReal(v))     return AstNum(v.value);
+  if (isInteger(v))  return AstNum(Number(v.value));
+  if (isName(v))     return AstVar(v.id);
+  throw new RPLError('SUBST: unsupported value type');
+}
+
+/** Push the simplified result of a SUBST — unwrap Num to Real for
+ *  users who substitute numeric values into every free variable. */
+function _pushSubstResult(s, ast) {
+  if (ast && ast.kind === 'num') { s.push(Real(ast.value)); return; }
+  if (ast && ast.kind === 'var') { s.push(Name(ast.name)); return; }
+  s.push(Symbolic(ast));
+}
+
+register('DERIV', (s) => {
+  const [expr, varArg] = s.popN(2);     // level2=expr, level1=var
+  // Variable: accept Name (preferred) or String.
+  let varName;
+  if (isName(varArg))      varName = varArg.id;
+  else if (isString(varArg)) varName = varArg.value;
+  else throw new RPLError('Bad argument type');
+
+  // Expression: Symbolic → run the algebra derivative.
+  if (isSymbolic(expr)) {
+    const dAst = algebraDeriv(expr.expr, varName);
+    s.push(Symbolic(dAst));
+    return;
+  }
+  // Constant shortcut — number → 0.
+  if (isReal(expr) || isInteger(expr)) {
+    s.push(Real(0));
+    return;
+  }
+  // Bare Name: treat as the variable itself.  `'X' 'X' DERIV` should
+  // yield `1`; `'Y' 'X' DERIV` yields `0`.  Pushing an Integer is fine,
+  // and keeps the result usable from numeric code without unwrapping a
+  // Symbolic just to read the 1 back out.
+  if (isName(expr)) {
+    s.push(Integer(expr.id === varName ? 1n : 0n));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/** INTEG — indefinite integral of a symbolic expression w.r.t. a variable.
+ *
+ *  Stack:  level2=expr, level1=var  →  antiderivative
+ *
+ *  Expression types accepted:
+ *    Symbolic       — routed through algebra.integ (polynomial + linearity
+ *                     + a handful of direct-arg trig/exp/log cases)
+ *    Real/Integer   — constants integrate to c*var
+ *    Name           — bare name behaves like a Symbolic Var
+ *  Anything that doesn't simplify to a closed form comes back as
+ *  a Symbolic `INTEG(expr, var)` so the result round-trips. */
+register('INTEG', (s) => {
+  const [expr, varArg] = s.popN(2);
+  let varName;
+  if (isName(varArg))        varName = varArg.id;
+  else if (isString(varArg)) varName = varArg.value;
+  else throw new RPLError('Bad argument type');
+
+  if (isSymbolic(expr)) {
+    s.push(Symbolic(algebraInteg(expr.expr, varName)));
+    return;
+  }
+  if (isReal(expr) || isInteger(expr)) {
+    const c = isInteger(expr) ? Number(expr.value) : expr.value;
+    if (c === 0) { s.push(Integer(0n)); return; }
+    s.push(Symbolic(algebraInteg(AstNum(c), varName)));
+    return;
+  }
+  if (isName(expr)) {
+    s.push(Symbolic(algebraInteg(AstVar(expr.id), varName)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/** SUM — sum the elements of a list or vector, or wrap a symbolic
+ *  operand as an unevaluated Σ(expr).
+ *
+ *  Stack:  level1=list|vector|number|symbolic  →  scalar | symbolic
+ *
+ *  Numeric rule: List / Vector elements must all be numeric (Real,
+ *  Integer, or Complex — same promotion rules as the `+` op).  A
+ *  single-level list of scalars is enough; nested lists are not
+ *  flattened.  Empty list/vector sums to Integer(0). */
+register('SUM', (s) => {
+  const v = s.pop();
+  if (isList(v) || isVector(v)) {
+    const items = v.items;
+    if (items.length === 0) { s.push(Integer(0n)); return; }
+    let acc = items[0];
+    for (let i = 1; i < items.length; i++) {
+      const { a, b, kind } = promoteNumericPair(acc, items[i]);
+      if (kind === 'integer')     acc = Integer(a + b);
+      else if (kind === 'real')   acc = Real(a + b);
+      else if (kind === 'complex') acc = Complex(a.re + b.re, a.im + b.im);
+      else throw new RPLError('Bad argument type');
+    }
+    s.push(acc);
+    return;
+  }
+  if (isSymbolic(v)) {
+    s.push(Symbolic(AstFn('SUM', [v.expr])));
+    return;
+  }
+  if (isName(v)) {
+    s.push(Symbolic(AstFn('SUM', [AstVar(v.id)])));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isComplex(v)) {
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* ================================================================
+   Matrix / Vector ops (session 035 — starter set)
+
+   The first slice of the Vector/Matrix story that session 034's log
+   flagged as the single biggest remaining feature gap.  We start with
+   the ops that don't require rewriting the main + - * / dispatch —
+   SIZE and TRN both take one argument and neither commits us to a
+   promotion rule for mixed scalar/matrix inputs.  Element-wise +/-
+   on two Vectors of equal length is also in this session, bolted onto
+   the existing `+` handler and `binaryMath('-')` dispatch at the
+   head of this file — see the handling just above the `_addNumeric`
+   wrapper for the entry point.
+
+   Not yet covered (carry forward to future sessions):
+     * Matrix * Matrix and Matrix * Vector multiplication
+     * Scalar * Vector, Scalar * Matrix
+     * DET, INV, RREF, EGVL, DOT, CROSS, IDN, RANM, NORM
+     * V→ (decompose vector onto stack)
+     * →V2, →V3 (compose 2-/3-vector from stack)
+
+   HP50 SIZE/TRN semantics that we match:
+     SIZE  Vector([a b c])      → { 3 }            list of one integer
+     SIZE  Matrix([[...][...]]) → { rows cols }    list of two integers
+     TRN   Matrix m×n           → Matrix n×m       (pure transpose —
+                                                    no complex conjugate
+                                                    since we don't have
+                                                    complex entries in
+                                                    matrices yet)
+   ================================================================ */
+
+register('SIZE', (s) => {
+  const [v] = s.popN(1);
+  // HP50 Advanced Guide spec: SIZE on array-shaped values returns a
+  // list of REAL numbers (not Integers).  Session 036 aligns us to
+  // that spec so downstream ops reading the list don't have to worry
+  // about Integer → Real promotion at the boundary.
+  if (isVector(v)) {
+    s.push(RList([Real(v.items.length)]));
+    return;
+  }
+  if (isMatrix(v)) {
+    const rows = v.rows.length;
+    const cols = rows > 0 ? v.rows[0].length : 0;
+    s.push(RList([Real(rows), Real(cols)]));
+    return;
+  }
+  // HP50 also defines SIZE on strings (returns count) and lists (same).
+  // Provide those while we're here — they're trivial and the HP50
+  // User Guide documents a single SIZE op that overloads across
+  // sequence-like types.  String/List SIZE returns a scalar Integer,
+  // not a list, on the real HP50 — we keep that shape.
+  if (isString(v)) { s.push(Integer(BigInt(v.value.length))); return; }
+  if (isList(v))   { s.push(Integer(BigInt(v.items.length))); return; }
+  throw new RPLError('Bad argument type');
+});
+
+register('TRN', (s) => {
+  const [m] = s.popN(1);
+  if (!isMatrix(m)) throw new RPLError('Bad argument type');
+  const rows = m.rows.length;
+  const cols = rows > 0 ? m.rows[0].length : 0;
+  if (rows === 0 || cols === 0) { s.push(m); return; }
+  // Build the transpose: new[j][i] = m.rows[i][j].
+  const out = [];
+  for (let j = 0; j < cols; j++) {
+    const row = new Array(rows);
+    for (let i = 0; i < rows; i++) {
+      row[i] = m.rows[i][j];
+    }
+    out.push(row);
+  }
+  s.push(Matrix(out));
+});
+
+/* ================================================================
+   Matrix / Vector ops (session 036)
+
+   Builds on session 035's starter set (SIZE, TRN, element-wise +/-,
+   dot-on-`*`, matmul) to cover the remaining MATRICES soft-menu slots
+   that were stubs:
+
+     DOT    V V →  scalar       — explicit dot product (alias of `V V *`)
+     CROSS  V V →  V            — 3-vector cross product
+     IDN    n   →  Matrix(n×n)  — identity (n an Integer or square Matrix)
+     NORM   V   →  Real         — Euclidean norm  (√(Σ xᵢ²))
+     NORM   M   →  Real         — Frobenius norm  (√(Σ mᵢⱼ²))
+     DET    M   →  scalar       — determinant (Laplace expansion; 1×1/2×2
+                                  closed-form fast paths)
+     INV    M   →  Matrix       — inverse (Gauss-Jordan with partial
+                                  pivoting; only added to the existing
+                                  scalar-INV registration, see the branch
+                                  we add in-place below)
+
+   Error surface:
+     - Non-square input to DET/INV/IDN(Matrix) → 'Invalid dimension'
+     - Length mismatch on DOT → 'Invalid dimension'
+     - CROSS requires both operands length 3 → 'Invalid dimension'
+     - Singular matrix to INV → 'Infinite result' (matches scalar INV)
+     - Non-numeric entry reaching INV → 'Bad argument type' (symbolic
+       matrix inverse is not yet supported; DET does tolerate symbolic
+       entries because cofactor expansion routes through _scalarBinary
+       which lifts Name/Symbolic to AST form).
+   ================================================================ */
+
+/** Cofactor-expansion determinant.  Works on any square row matrix
+ *  whose entries are values `_scalarBinary` can add/subtract/multiply
+ *  (so Real/Integer/Complex/Symbolic all compose — no Float coercion
+ *  so Integer-only matrices stay Integer throughout). */
+function _det(rows) {
+  const n = rows.length;
+  if (n === 1) return rows[0][0];
+  if (n === 2) {
+    const ad = _scalarBinary('*', rows[0][0], rows[1][1]);
+    const bc = _scalarBinary('*', rows[0][1], rows[1][0]);
+    return _scalarBinary('-', ad, bc);
+  }
+  // Laplace expansion along row 0.  O(n!), fine for HP50-sized inputs.
+  let det = null;
+  for (let j = 0; j < n; j++) {
+    const minor = rows.slice(1).map(row => row.filter((_, k) => k !== j));
+    const cof = _det(minor);
+    let term = _scalarBinary('*', rows[0][j], cof);
+    if ((j & 1) === 1) term = _scalarBinary('-', Real(0), term);
+    det = (det === null) ? term : _scalarBinary('+', det, term);
+  }
+  return det;
+}
+
+register('DET', (s) => {
+  const [m] = s.popN(1);
+  if (!isMatrix(m)) throw new RPLError('Bad argument type');
+  const n = m.rows.length;
+  const cols = n > 0 ? m.rows[0].length : 0;
+  if (n !== cols) throw new RPLError('Invalid dimension');
+  if (n === 0) { s.push(Real(1)); return; }
+  s.push(_det(m.rows));
+});
+
+register('DOT', (s) => {
+  const [a, b] = s.popN(2);
+  if (!isVector(a) || !isVector(b)) throw new RPLError('Bad argument type');
+  if (a.items.length !== b.items.length) throw new RPLError('Invalid dimension');
+  const parts = a.items.map((x, i) => _scalarBinary('*', x, b.items[i]));
+  s.push(_scalarSum(parts));
+});
+
+register('CROSS', (s) => {
+  const [a, b] = s.popN(2);
+  if (!isVector(a) || !isVector(b)) throw new RPLError('Bad argument type');
+  if (a.items.length !== 3 || b.items.length !== 3) {
+    throw new RPLError('Invalid dimension');
+  }
+  const [a0, a1, a2] = a.items;
+  const [b0, b1, b2] = b.items;
+  const c0 = _scalarBinary('-',
+    _scalarBinary('*', a1, b2),
+    _scalarBinary('*', a2, b1));
+  const c1 = _scalarBinary('-',
+    _scalarBinary('*', a2, b0),
+    _scalarBinary('*', a0, b2));
+  const c2 = _scalarBinary('-',
+    _scalarBinary('*', a0, b1),
+    _scalarBinary('*', a1, b0));
+  s.push(Vector([c0, c1, c2]));
+});
+
+register('IDN', (s) => {
+  const [v] = s.popN(1);
+  let n;
+  if (isInteger(v)) n = Number(v.value);
+  else if (isReal(v)) {
+    if (!Number.isFinite(v.value) || Math.floor(v.value) !== v.value) {
+      throw new RPLError('Bad argument value');
+    }
+    n = v.value;
+  } else if (isMatrix(v)) {
+    // HP50: IDN on a matrix uses its row count (must be square).
+    n = v.rows.length;
+    if (n > 0 && v.rows[0].length !== n) throw new RPLError('Invalid dimension');
+  } else {
+    throw new RPLError('Bad argument type');
+  }
+  if (n <= 0) throw new RPLError('Bad argument value');
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const row = new Array(n).fill(Real(0));
+    row[i] = Real(1);
+    rows.push(row);
+  }
+  s.push(Matrix(rows));
+});
+
+register('NORM', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) {
+    let sum = 0;
+    for (const x of v.items) {
+      const r = toRealOrThrow(x);
+      sum += r * r;
+    }
+    s.push(Real(Math.sqrt(sum)));
+    return;
+  }
+  if (isMatrix(v)) {
+    // Frobenius norm = √(Σᵢⱼ mᵢⱼ²).
+    let sum = 0;
+    for (const row of v.rows) {
+      for (const x of row) {
+        const r = toRealOrThrow(x);
+        sum += r * r;
+      }
+    }
+    s.push(Real(Math.sqrt(sum)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/** Numeric-only matrix inverse via Gauss-Jordan with partial pivoting.
+ *  Returns a new array-of-arrays of Real values.  Throws on singular
+ *  and on non-numeric entries (symbolic matrix inverse is beyond the
+ *  scope of this pass — we document the limitation in the ops.js
+ *  block comment above). */
+function _invMatrixNumeric(rows) {
+  const n = rows.length;
+  for (const row of rows) {
+    if (row.length !== n) throw new RPLError('Invalid dimension');
+    for (const x of row) {
+      if (!isReal(x) && !isInteger(x)) throw new RPLError('Bad argument type');
+    }
+  }
+  // Convert to plain JS numbers and build augmented [A | I].
+  const a = rows.map(row => row.map(x => isInteger(x) ? Number(x.value) : x.value));
+  const I = [];
+  for (let i = 0; i < n; i++) {
+    const row = new Array(n).fill(0);
+    row[i] = 1;
+    I.push(row);
+  }
+  for (let k = 0; k < n; k++) {
+    // Partial pivot: find max |a[i][k]| for i >= k.
+    let best = k, bestAbs = Math.abs(a[k][k]);
+    for (let i = k + 1; i < n; i++) {
+      const v = Math.abs(a[i][k]);
+      if (v > bestAbs) { best = i; bestAbs = v; }
+    }
+    if (bestAbs === 0) throw new RPLError('Infinite result');
+    if (best !== k) {
+      [a[k], a[best]] = [a[best], a[k]];
+      [I[k], I[best]] = [I[best], I[k]];
+    }
+    const piv = a[k][k];
+    for (let j = 0; j < n; j++) { a[k][j] /= piv; I[k][j] /= piv; }
+    // Eliminate all other rows.
+    for (let i = 0; i < n; i++) {
+      if (i === k) continue;
+      const f = a[i][k];
+      if (f === 0) continue;
+      for (let j = 0; j < n; j++) {
+        a[i][j] -= f * a[k][j];
+        I[i][j] -= f * I[k][j];
+      }
+    }
+  }
+  return I.map(row => row.map(x => Real(x)));
+}
+
+/* ================================================================
+   Session 038 — List ops: GET / PUT / HEAD / TAIL / SUB
+                           →LIST / LIST→ / POS
+                 Stored-var arithmetic: STO+ / STO- / STO* / STO/
+                 Reflection: TYPE / OBJ→
+
+   User Guide refs: §3 (Lists) and §2 (Types / OBJ→).
+
+   List-ops design notes
+   ---------------------
+   All indices are 1-based to match HP50 convention.  Invalid indices
+   throw `Bad argument value` (matches HP50 "Invalid Dimension").
+
+   GET / PUT overload:
+     list      n          →  element              (GET)
+     vector    n          →  element
+     matrix    {row col}  →  element              (row col = 2-element list)
+     string    n          →  1-char string
+
+     list      n val      →  list'                (PUT)
+     vector    n val      →  vector'
+     matrix    {r c} val  →  matrix'
+
+   HEAD / TAIL take a list or string.  TAIL of a length-1 list is
+   the empty list (HP50 behavior).
+
+   SUB is inclusive; m > len and n > len clamp to len.  m > n yields
+   an empty slice.
+
+   →LIST / LIST→ accept / produce a Real or Integer count marker.
+   Both ASCII (`->LIST` / `LIST->`) and Unicode aliases register.
+
+   POS returns an Integer index, 0 when not found.  String-in-string
+   POS uses JS `indexOf` for substring match; list POS compares items
+   structurally via a recursive `_rplEqual` that matches HP50's SAME.
+   ================================================================ */
+
+// Coerce a Real/Integer to a 1-based integer index.  Rejects non-ints,
+// negatives, and zero — matches HP50 "Bad Argument Type" for anything
+// that isn't a plain non-negative whole number.
+function _toIntIdx(v) {
+  if (isInteger(v)) {
+    const n = Number(v.value);
+    if (n < 1 || !Number.isFinite(n)) throw new RPLError('Bad argument value');
+    return n;
+  }
+  if (isReal(v)) {
+    const n = v.value;
+    if (!Number.isInteger(n) || n < 1) throw new RPLError('Bad argument value');
+    return n;
+  }
+  throw new RPLError('Bad argument type');
+}
+
+// Same as _toIntIdx but permits 0 (used by counts like →LIST N).
+function _toCountN(v) {
+  if (isInteger(v)) {
+    const n = Number(v.value);
+    if (n < 0 || !Number.isFinite(n)) throw new RPLError('Bad argument value');
+    return n;
+  }
+  if (isReal(v)) {
+    const n = v.value;
+    if (!Number.isInteger(n) || n < 0) throw new RPLError('Bad argument value');
+    return n;
+  }
+  throw new RPLError('Bad argument type');
+}
+
+// Structural equality for RPL values.  Used by POS.  Mirrors the
+// semantics of SAME: numerically equal reals/integers compare equal,
+// lists compare element-wise, strings/names compare by content.
+function _rplEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  // Numeric cross-type equality (Integer vs Real).
+  if (isNumber(a) && isNumber(b)) {
+    if (isComplex(a) || isComplex(b)) {
+      const ca = toComplex(a), cb = toComplex(b);
+      return ca.re === cb.re && ca.im === cb.im;
+    }
+    return toRealOrThrow(a) === toRealOrThrow(b);
+  }
+  if (a.type !== b.type) return false;
+  if (isString(a))  return a.value === b.value;
+  if (isName(a))    return a.id === b.id && a.quoted === b.quoted;
+  if (isList(a)) {
+    if (a.items.length !== b.items.length) return false;
+    for (let i = 0; i < a.items.length; i++) {
+      if (!_rplEqual(a.items[i], b.items[i])) return false;
+    }
+    return true;
+  }
+  if (isVector(a)) {
+    if (a.items.length !== b.items.length) return false;
+    for (let i = 0; i < a.items.length; i++) {
+      if (!_rplEqual(a.items[i], b.items[i])) return false;
+    }
+    return true;
+  }
+  if (isBinaryInteger(a)) return a.value === b.value;
+  if (isTagged(a))        return a.tag === b.tag && _rplEqual(a.value, b.value);
+  return false;
+}
+
+register('GET', (s) => {
+  const [coll, idx] = s.popN(2);
+  if (isList(coll)) {
+    const n = _toIntIdx(idx);
+    if (n > coll.items.length) throw new RPLError('Bad argument value');
+    s.push(coll.items[n - 1]);
+    return;
+  }
+  if (isVector(coll)) {
+    const n = _toIntIdx(idx);
+    if (n > coll.items.length) throw new RPLError('Bad argument value');
+    s.push(coll.items[n - 1]);
+    return;
+  }
+  if (isMatrix(coll)) {
+    // Index is { row col } — a 2-element list of indices.
+    if (!isList(idx) || idx.items.length !== 2) {
+      throw new RPLError('Bad argument type');
+    }
+    const r = _toIntIdx(idx.items[0]);
+    const c = _toIntIdx(idx.items[1]);
+    if (r > coll.rows.length) throw new RPLError('Bad argument value');
+    const row = coll.rows[r - 1];
+    if (c > row.length) throw new RPLError('Bad argument value');
+    s.push(row[c - 1]);
+    return;
+  }
+  if (isString(coll)) {
+    const n = _toIntIdx(idx);
+    if (n > coll.value.length) throw new RPLError('Bad argument value');
+    s.push(Str(coll.value[n - 1]));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('PUT', (s) => {
+  const [coll, idx, val] = s.popN(3);
+  if (isList(coll)) {
+    const n = _toIntIdx(idx);
+    if (n > coll.items.length) throw new RPLError('Bad argument value');
+    const items = [...coll.items];
+    items[n - 1] = val;
+    s.push(RList(items));
+    return;
+  }
+  if (isVector(coll)) {
+    const n = _toIntIdx(idx);
+    if (n > coll.items.length) throw new RPLError('Bad argument value');
+    const items = [...coll.items];
+    items[n - 1] = val;
+    s.push(Vector(items));
+    return;
+  }
+  if (isMatrix(coll)) {
+    if (!isList(idx) || idx.items.length !== 2) {
+      throw new RPLError('Bad argument type');
+    }
+    const r = _toIntIdx(idx.items[0]);
+    const c = _toIntIdx(idx.items[1]);
+    if (r > coll.rows.length) throw new RPLError('Bad argument value');
+    const row = coll.rows[r - 1];
+    if (c > row.length) throw new RPLError('Bad argument value');
+    const newRows = coll.rows.map((ri, i) => {
+      if (i !== r - 1) return ri;
+      const copy = [...ri];
+      copy[c - 1] = val;
+      return copy;
+    });
+    s.push(Matrix(newRows));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('HEAD', (s) => {
+  const [v] = s.popN(1);
+  if (isList(v)) {
+    if (v.items.length === 0) throw new RPLError('Bad argument value');
+    s.push(v.items[0]);
+    return;
+  }
+  if (isString(v)) {
+    if (v.value.length === 0) throw new RPLError('Bad argument value');
+    s.push(Str(v.value[0]));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('TAIL', (s) => {
+  const [v] = s.popN(1);
+  if (isList(v)) {
+    if (v.items.length === 0) throw new RPLError('Bad argument value');
+    s.push(RList(v.items.slice(1)));
+    return;
+  }
+  if (isString(v)) {
+    if (v.value.length === 0) throw new RPLError('Bad argument value');
+    s.push(Str(v.value.slice(1)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('SUB', (s) => {
+  const [v, mVal, nVal] = s.popN(3);
+  // Clamp indices HP50-style: 0/negative → 1; > len → len; m > n → empty.
+  function _clampLo(x) { return x < 1 ? 1 : x; }
+  if (isList(v)) {
+    const m = _clampLo(_toCountN(mVal));
+    const n = _toCountN(nVal);
+    const len = v.items.length;
+    if (m > len || n < m) { s.push(RList([])); return; }
+    const hi = Math.min(n, len);
+    s.push(RList(v.items.slice(m - 1, hi)));
+    return;
+  }
+  if (isString(v)) {
+    const m = _clampLo(_toCountN(mVal));
+    const n = _toCountN(nVal);
+    const len = v.value.length;
+    if (m > len || n < m) { s.push(Str('')); return; }
+    const hi = Math.min(n, len);
+    s.push(Str(v.value.slice(m - 1, hi)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+// →LIST (and ASCII ->LIST alias): `x1 x2 … xn n → { x1 x2 … xn }`.
+const _toListOp = (s) => {
+  const nVal = s.pop();
+  const n = _toCountN(nVal);
+  if (n === 0) { s.push(RList([])); return; }
+  const items = s.popN(n);
+  s.push(RList(items));
+};
+register('→LIST',  _toListOp);
+register('->LIST', _toListOp);
+
+// LIST→ (and ASCII LIST-> alias): `{ x1 … xn } → x1 … xn n`.
+const _fromListOp = (s) => {
+  const [l] = s.popN(1);
+  if (!isList(l)) throw new RPLError('Bad argument type');
+  for (const item of l.items) s.push(item);
+  s.push(Integer(BigInt(l.items.length)));
+};
+register('LIST→',  _fromListOp);
+register('LIST->', _fromListOp);
+
+register('POS', (s) => {
+  const [coll, needle] = s.popN(2);
+  if (isList(coll)) {
+    for (let i = 0; i < coll.items.length; i++) {
+      if (_rplEqual(coll.items[i], needle)) {
+        s.push(Integer(BigInt(i + 1)));
+        return;
+      }
+    }
+    s.push(Integer(0n));
+    return;
+  }
+  if (isString(coll)) {
+    if (!isString(needle)) throw new RPLError('Bad argument type');
+    const idx = coll.value.indexOf(needle.value);
+    s.push(Integer(BigInt(idx + 1)));   // 0 if not found (indexOf=-1+1)
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* ----------------------------------------------------------------
+   Stored-variable arithmetic — STO+, STO-, STO*, STO/.
+
+   HP50 accepts EITHER stack order:
+     value  'name'  STO+          ('name'  value  STO+  too)
+   We detect which operand is the Name/String and which is the value.
+
+   If NEITHER operand is a name, HP50 treats STO+/STO- etc. as a form
+   of object arithmetic (store add-into-level-2-object) but that path
+   is rare; we throw "Bad argument type" rather than guess.
+   ---------------------------------------------------------------- */
+function _stoArith(opSymbol) {
+  const binop = lookup(opSymbol);
+  return (s) => {
+    const [a, b] = s.popN(2);
+    let nameVal, value;
+    if (isName(a) || isString(a))      { nameVal = a; value = b; }
+    else if (isName(b) || isString(b)) { nameVal = b; value = a; }
+    else { throw new RPLError('Bad argument type'); }
+    const id = isName(nameVal) ? nameVal.id : nameVal.value;
+    const stored = varRecall(id);
+    if (stored === undefined) throw new RPLError(`Undefined name: ${id}`);
+    // Build a tiny stack, apply binop.  HP50 semantics: STO+ computes
+    // stored + value (commutative for +/*; for -  and / the STORED
+    // value is the LEFT operand, per HP50 Advanced Guide §3).
+    s.push(stored);
+    s.push(value);
+    binop.fn(s);
+    const [result] = s.popN(1);
+    varStore(id, result);
+  };
+}
+
+register('STO+', _stoArith('+'));
+register('STO-', _stoArith('-'));
+register('STO*', _stoArith('*'));
+register('STO/', _stoArith('/'));
+
+/* ----------------------------------------------------------------
+   TYPE — returns the HP50 type code of the object on level 1.
+
+   Our internal type set doesn't line up perfectly with the HP50's
+   numeric catalogue (we don't distinguish real arrays from complex
+   arrays, we merge Vector/Matrix into "array" = 3, and our arbitrary-
+   precision Integer maps to HP50's ZINT = 28).  The mapping below
+   favors the most commonly-used User-RPL numbers and matches what
+   programs typically branch on.
+
+   Codes follow HP50 User Guide §2 (Object types):
+      0  Real
+      1  Complex
+      2  String
+      3  Real array
+      4  Complex array
+      5  List
+      6  Global name
+      7  Local name
+      8  Program
+      9  Algebraic
+     10  Binary integer
+     11  Graphics object (grob)
+     12  Tagged object
+     13  Unit
+     15  Directory
+     28  Integer (ZINT)
+   ---------------------------------------------------------------- */
+function _hp50TypeCode(v) {
+  if (isReal(v))          return 0;
+  if (isComplex(v))       return 1;
+  if (isString(v))        return 2;
+  if (isVector(v)) {
+    // complex array = 4, real array = 3
+    return v.items.some(isComplex) ? 4 : 3;
+  }
+  if (isMatrix(v)) {
+    for (const row of v.rows) {
+      for (const x of row) if (isComplex(x)) return 4;
+    }
+    return 3;
+  }
+  if (isList(v))          return 5;
+  if (isName(v))          return v.local ? 7 : 6;
+  if (isProgram(v))       return 8;
+  if (isSymbolic(v))      return 9;
+  if (isBinaryInteger(v)) return 10;
+  if (isTagged(v))        return 12;
+  if (isUnit(v))          return 13;
+  if (isDirectory(v))     return 15;
+  if (isInteger(v))       return 28;
+  // Grob (not fully wired yet) falls through; return -1 so programs can
+  // still test.  HP50 never returns a negative code, but we've got no
+  // better answer and this is a cleaner signal than throwing.
+  return -1;
+}
+
+register('TYPE', (s) => {
+  const [v] = s.popN(1);
+  const code = _hp50TypeCode(v);
+  s.push(Real(code));
+});
+
+/* ----------------------------------------------------------------
+   OBJ→ — decompose level-1 object into its parts.
+
+   Dispatch:
+     Complex(re,im)      → re im
+     Tagged(tag, value)  → value "tag"
+     List { x1 … xn }    → x1 … xn n
+     Vector [ x1 … xn ]  → x1 … xn { n }
+     Matrix [[...][...]] → x11 x12 … xmn { m n }
+     String  "src"       → evaluate src (parse + push each result)
+
+   Skipped for this session (callers can ask later):
+     Program   (would flatten tokens)
+     Symbolic  (would traverse AST)
+     Unit      (needs full Unit support)
+   ---------------------------------------------------------------- */
+register('OBJ→', (s) => {
+  const [v] = s.popN(1);
+  if (isComplex(v)) {
+    s.push(Real(v.re));
+    s.push(Real(v.im));
+    return;
+  }
+  if (isTagged(v)) {
+    s.push(v.value);
+    s.push(Str(v.tag));
+    return;
+  }
+  if (isList(v)) {
+    for (const item of v.items) s.push(item);
+    s.push(Integer(BigInt(v.items.length)));
+    return;
+  }
+  if (isVector(v)) {
+    for (const item of v.items) s.push(item);
+    s.push(RList([Real(v.items.length)]));
+    return;
+  }
+  if (isMatrix(v)) {
+    const rows = v.rows.length;
+    const cols = rows > 0 ? v.rows[0].length : 0;
+    for (const row of v.rows) for (const x of row) s.push(x);
+    s.push(RList([Real(rows), Real(cols)]));
+    return;
+  }
+  if (isString(v)) {
+    // OBJ→ on a string parses the string as RPL source, evaluates each
+    // top-level token, and leaves the results on the stack.  We reuse
+    // parseEntry so this stays consistent with typed entry.
+    const parsed = _parseStringForObjTo(v.value);
+    for (const item of parsed) s.push(item);
+    return;
+  }
+  if (isReal(v) || isInteger(v)) {
+    // HP50 OBJ→ on a Real pushes the mantissa and the exponent.  For
+    // Integer it pushes the same Integer (no decomposition).  We
+    // implement the Real split; Integer is a no-op except it re-pushes.
+    if (isInteger(v)) { s.push(v); return; }
+    // Real → mantissa (in [1,10)) and exponent (integer).
+    if (v.value === 0) { s.push(Real(0)); s.push(Integer(0n)); return; }
+    const sign = v.value < 0 ? -1 : 1;
+    const abs = Math.abs(v.value);
+    const e = Math.floor(Math.log10(abs));
+    const m = sign * abs / Math.pow(10, e);
+    s.push(Real(m));
+    s.push(Integer(BigInt(e)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+register('OBJ->', (s) => OPS.get('OBJ→').fn(s));
+
+function _parseStringForObjTo(src) {
+  // parseEntry may return a single value, an array, or something
+  // falsy for an empty string.  Normalize to a plain array of pushable
+  // values.  Throws propagate as RPL parse errors, matching HP50
+  // "OBJ→ Syntax Error" behavior on bad inputs.
+  const r = _parseEntryForObjTo(src);
+  if (r == null) return [];
+  return Array.isArray(r) ? r : [r];
+}
+
+/* ================================================================
+   Session 040 — INCR / DECR
+                  →ARRY / ARRY→ (array compose / decompose)
+                  SORT / REVLIST (list combinators)
+                  SF / CF / FS? / FC? / FS?C / FC?C (user flags)
+                  CHR / NUM (string codepoint ops)
+
+   Advanced Guide refs: §3 (INCR / DECR), §13 (→ARRY / ARRY→),
+   §5 (SORT / REVLIST), §2 (flag ops), §14 (CHR / NUM).
+
+   All 14 ops are user-reachable from the typed catalog today; none
+   require a new keyboard or UI capability.  Tests for each live in
+   the split files (tests/test-variables.mjs for INCR/DECR and flags,
+   tests/test-reflection.mjs for →ARRY/ARRY→, tests/test-lists.mjs
+   for SORT/REVLIST, tests/test-types.mjs for CHR/NUM).
+   ================================================================ */
+
+/* ----------------------------------------------------------------
+   INCR / DECR — increment / decrement a stored variable by 1 and
+   leave the NEW value on the stack.
+
+   HP50 behavior (Advanced Guide §3):
+     'X' INCR  →  X := X + 1 ;  pushes new X
+     'X' DECR  →  X := X - 1 ;  pushes new X
+
+   Accepts either a Name or a String as the level-1 argument (mirrors
+   STO+ / STO-).  The stored value is the LEFT operand of the bin-op
+   (so DECR on X=10 gives 9, not -9).  Missing variable → "Undefined
+   name".  Stored value must be arithmetic-compatible with Real(1) —
+   numeric types and Symbolic all pass through the same `+` / `-`
+   dispatch that STO+ / STO- use, so this works for `Symbolic('X')`
+   too.
+   ---------------------------------------------------------------- */
+function _incrDecrOp(opSymbol) {
+  const binop = lookup(opSymbol);
+  return (s) => {
+    const [nameVal] = s.popN(1);
+    if (!isName(nameVal) && !isString(nameVal)) {
+      throw new RPLError('Bad argument type');
+    }
+    const id = isName(nameVal) ? nameVal.id : nameVal.value;
+    const stored = varRecall(id);
+    if (stored === undefined) throw new RPLError(`Undefined name: ${id}`);
+    s.push(stored);
+    s.push(Real(1));
+    binop.fn(s);
+    const [result] = s.popN(1);
+    varStore(id, result);
+    s.push(result);
+  };
+}
+
+register('INCR', _incrDecrOp('+'));
+register('DECR', _incrDecrOp('-'));
+
+/* ----------------------------------------------------------------
+   →ARRY / ARRY→ — compose and decompose Vector / Matrix on the stack.
+
+   →ARRY (Advanced Guide §13):
+     x1 … xn  n        → [ x1 … xn ]            (Integer / Real count → Vector)
+     x1 … xn  { n }    → [ x1 … xn ]            (size-list → Vector)
+     x1 … xmn {m n}    → [[ x1 … xn ] … ]       (2-elem size-list → Matrix,
+                                                 elements row-major)
+
+   The HP50 accepts a bare count on level 1 for vectors; the more
+   common form (matching OBJ→'s output) is a 1- or 2-element list.
+   Both are accepted here.
+
+   ARRY→ is the inverse.  Identical in behavior to OBJ→ on a Vector /
+   Matrix, but registered under its canonical name for programs that
+   call it explicitly.  Both Unicode (→ARRY / ARRY→) and ASCII
+   (->ARRY / ARRY->) aliases register.
+   ---------------------------------------------------------------- */
+
+// Convert a level-1 "dimension spec" to either a 1-elem [n] or
+// 2-elem [m,n] integer array.  A bare Real / Integer → [n].  A List
+// → each item is a positive integer index.
+function _toDimSpec(v) {
+  if (isInteger(v) || isReal(v)) {
+    return [_toIntIdx(v)];
+  }
+  if (isList(v)) {
+    if (v.items.length < 1 || v.items.length > 2) {
+      throw new RPLError('Bad argument value');
+    }
+    return v.items.map(_toIntIdx);
+  }
+  throw new RPLError('Bad argument type');
+}
+
+const _toArrayOp = (s) => {
+  const dimVal = s.pop();
+  const dims = _toDimSpec(dimVal);
+  if (dims.length === 1) {
+    const n = dims[0];
+    if (n === 0) { s.push(Vector([])); return; }
+    const items = s.popN(n);
+    s.push(Vector(items));
+    return;
+  }
+  // 2-D Matrix — m rows, n cols, elements row-major.
+  const [m, n] = dims;
+  const total = m * n;
+  const items = s.popN(total);
+  const rows = [];
+  for (let r = 0; r < m; r++) {
+    rows.push(items.slice(r * n, r * n + n));
+  }
+  s.push(Matrix(rows));
+};
+register('→ARRY',  _toArrayOp);
+register('->ARRY', _toArrayOp);
+
+const _fromArrayOp = (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) {
+    for (const item of v.items) s.push(item);
+    s.push(RList([Real(v.items.length)]));
+    return;
+  }
+  if (isMatrix(v)) {
+    const rows = v.rows.length;
+    const cols = rows > 0 ? v.rows[0].length : 0;
+    for (const row of v.rows) for (const x of row) s.push(x);
+    s.push(RList([Real(rows), Real(cols)]));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+};
+register('ARRY→',  _fromArrayOp);
+register('ARRY->', _fromArrayOp);
+
+/* ----------------------------------------------------------------
+   SORT / REVLIST — list combinators.
+
+   SORT ( { x1 … xn } → { y1 … yn } ):  ascending sort.  Item types
+   must be mutually comparable:
+     - Reals, Integers, and BinInts compare numerically.
+     - Strings compare lexicographically.
+     - Mixing numeric and string in the same list throws
+       "Bad argument type" (HP50 also refuses heterogeneous sorts).
+   The returned list is a NEW List; the input is not mutated (RPL
+   values are immutable-by-convention so our implementation naturally
+   preserves that).
+
+   REVLIST ( { x1 … xn } → { xn … x1 } ):  reverse, no comparator
+   needed, element types unchanged.
+   ---------------------------------------------------------------- */
+
+// Compare two RPL values for SORT.  Returns negative / 0 / positive.
+// Throws "Bad argument type" on unsupported or mismatched types.
+function _rplCompare(a, b) {
+  // Numeric family (Real / Integer / BinInt) — compare as floats.
+  const isAnyNum = v => isReal(v) || isInteger(v) || isBinaryInteger(v);
+  if (isAnyNum(a) && isAnyNum(b)) {
+    const an = isBinaryInteger(a) ? Number(a.value)
+             : isInteger(a)       ? Number(a.value)
+             :                      a.value;
+    const bn = isBinaryInteger(b) ? Number(b.value)
+             : isInteger(b)       ? Number(b.value)
+             :                      b.value;
+    return an < bn ? -1 : an > bn ? 1 : 0;
+  }
+  if (isString(a) && isString(b)) {
+    return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
+  }
+  throw new RPLError('Bad argument type');
+}
+
+register('SORT', (s) => {
+  const [l] = s.popN(1);
+  if (!isList(l)) throw new RPLError('Bad argument type');
+  const sorted = [...l.items].sort(_rplCompare);
+  s.push(RList(sorted));
+});
+
+register('REVLIST', (s) => {
+  const [l] = s.popN(1);
+  if (!isList(l)) throw new RPLError('Bad argument type');
+  const reversed = [...l.items].reverse();
+  s.push(RList(reversed));
+});
+
+/* ----------------------------------------------------------------
+   User / system flag ops — SF / CF / FS? / FC? / FS?C / FC?C.
+
+   Reference: HP50 Advanced Guide §2 (Flag commands).  Flag numbers
+   are integers in [-128, -1] ∪ [1, 128]; positive = user flags,
+   negative = system flags.  Zero is rejected.
+
+   Semantics:
+     SF   ( n      → )           set flag n
+     CF   ( n      → )           clear flag n
+     FS?  ( n  → 0/1 )           push 1 if set, 0 if clear
+     FC?  ( n  → 0/1 )           push 1 if clear, 0 if set  (= NOT FS?)
+     FS?C ( n  → 0/1 )           FS?, then clear as a side effect
+     FC?C ( n  → 0/1 )           FC?, then clear as a side effect
+
+   The side-effecting variants "test-and-clear" are the HP50's way of
+   handling "was an event flagged?" cheaply in one op.  Both return
+   the pre-clear test value.
+
+   No specific system flag yet has cross-cutting effects tied to it
+   in this codebase — SF/CF are pure bookkeeping that future features
+   can consult.
+   ---------------------------------------------------------------- */
+
+function _popFlagNumber(s) {
+  const [v] = s.popN(1);
+  let n;
+  if (isInteger(v))      n = Number(v.value);
+  else if (isReal(v))    n = v.value;
+  else                   throw new RPLError('Bad argument type');
+  if (!Number.isInteger(n) || n === 0 || n < -128 || n > 128) {
+    throw new RPLError('Bad argument value');
+  }
+  return n;
+}
+
+register('SF', (s) => {
+  const n = _popFlagNumber(s);
+  setUserFlag(n);
+});
+
+register('CF', (s) => {
+  const n = _popFlagNumber(s);
+  clearUserFlag(n);
+});
+
+register('FS?', (s) => {
+  const n = _popFlagNumber(s);
+  s.push(testUserFlag(n) ? TRUE : FALSE);
+});
+
+register('FC?', (s) => {
+  const n = _popFlagNumber(s);
+  s.push(testUserFlag(n) ? FALSE : TRUE);
+});
+
+register('FS?C', (s) => {
+  const n = _popFlagNumber(s);
+  const was = testUserFlag(n);
+  if (was) clearUserFlag(n);
+  s.push(was ? TRUE : FALSE);
+});
+
+register('FC?C', (s) => {
+  const n = _popFlagNumber(s);
+  const was = testUserFlag(n);
+  if (was) clearUserFlag(n);
+  // FC?C returns the test of "was the flag CLEAR" — i.e. the inverse
+  // of was — and then (side effect) clears the flag regardless.
+  s.push(was ? FALSE : TRUE);
+});
+
+/* ----------------------------------------------------------------
+   CHR / NUM — single-codepoint String ⇄ Integer.
+
+   HP50 Advanced Guide §14:
+     CHR ( n  → "c" )    n is an ASCII / Unicode codepoint; push the
+                         1-character string containing that codepoint.
+     NUM ( "s" → n  )    return the codepoint of the FIRST character
+                         of s as an Integer.  Empty string throws
+                         "Bad argument value".
+
+   We use JS's `String.fromCodePoint` / `String.prototype.codePointAt`
+   so the full Unicode range works; the real HP50 was ASCII-only but
+   our web version has no reason to limit itself.  NUM on a multi-
+   char string silently returns the first code point — matches HP50
+   behavior of "first character only".
+   ---------------------------------------------------------------- */
+
+register('CHR', (s) => {
+  const v = s.pop();
+  let n;
+  if (isInteger(v))      n = Number(v.value);
+  else if (isReal(v)) {
+    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
+    n = v.value;
+  } else                  throw new RPLError('Bad argument type');
+  if (n < 0 || n > 0x10FFFF) throw new RPLError('Bad argument value');
+  s.push(Str(String.fromCodePoint(n)));
+});
+
+register('NUM', (s) => {
+  const v = s.pop();
+  if (!isString(v)) throw new RPLError('Bad argument type');
+  if (v.value.length === 0) throw new RPLError('Bad argument value');
+  const code = v.value.codePointAt(0);
+  s.push(Integer(BigInt(code)));
+});
+
+/* ================================================================
+   Session 042 — STOF / RCLF (flag save/restore)
+                  →STR / STR→ (object ⇄ string)
+                  ΣLIST / ΠLIST / ΔLIST (list aggregations)
+                  V→ / →V2 / →V3 (vector compose/decompose)
+                  REPL / SREPL (string and list replacement)
+
+   Advanced Guide refs: §2 (STOF/RCLF), §4 (→STR/STR→), §5 (ΣLIST,
+   ΠLIST, ΔLIST), §13 (V→/→V2/→V3, REPL), §14 (SREPL).
+
+   All 13 ops register directly against the typed catalog — a user can
+   reach every one today without any new keypad or UI work.  Tests are
+   split across test-variables.mjs (STOF/RCLF), test-types.mjs
+   (→STR/STR→), test-lists.mjs (ΣLIST/ΠLIST/ΔLIST and REPL/SREPL), and
+   test-reflection.mjs (V→/→V2/→V3).
+   ================================================================ */
+
+/* ----------------------------------------------------------------
+   STOF / RCLF — save and restore the current flag-set.
+
+   HP50 Advanced Guide §2 documents STOF / RCLF in terms of a pair of
+   64-bit binary integers (user + system), one bit per flag.  Session
+   040 introduced a Set<number> representation for the same bookkeeping
+   surface; we carry that forward here instead of re-working the state
+   shape.  The practical surface:
+
+     RCLF (   → { n1 n2 … } )
+       Pushes a List of the currently-set flag numbers, sorted
+       ascending so user flags (1..128) come after system flags
+       (-128..-1).  An empty flag set pushes `{ }`.
+
+     STOF ( { n1 n2 … } →   )
+       Clears every flag, then sets exactly the numbers in the list.
+       Each element must be an Integer / Real that passes _validFlag
+       (non-zero, |n| ≤ 128).  A non-list argument, or any element
+       that isn't a valid flag number, throws — the flag set is NOT
+       partially-mutated on a bad element (we validate up front).
+
+   This is the "simpler" half of HP50's pair: programs can snapshot
+   and restore a flag set without juggling 64-bit words.  A future
+   session can layer the binary-integer variant on top.
+   ---------------------------------------------------------------- */
+
+register('RCLF', (s) => {
+  const flags = [..._calcState.userFlags].sort((a, b) => a - b);
+  s.push(RList(flags.map(n => Integer(BigInt(n)))));
+});
+
+register('STOF', (s) => {
+  const [l] = s.popN(1);
+  if (!isList(l)) throw new RPLError('Bad argument type');
+  // Validate every element before mutating — an error mid-list would
+  // leave the flag set in an inconsistent state otherwise.
+  const nums = [];
+  for (const item of l.items) {
+    let n;
+    if (isInteger(item))   n = Number(item.value);
+    else if (isReal(item)) n = item.value;
+    else throw new RPLError('Bad argument type');
+    if (!Number.isInteger(n) || n === 0 || n < -128 || n > 128) {
+      throw new RPLError('Bad argument value');
+    }
+    nums.push(n);
+  }
+  clearAllUserFlags();
+  for (const n of nums) setUserFlag(n);
+});
+
+/* ----------------------------------------------------------------
+   →STR / STR→ — object to/from string form.
+
+   HP50 Advanced Guide §4:
+     →STR  ( any  →  "text" )  serialise level-1 value to its display form
+     STR→  ( "src"  → any… )   parse the source and push each produced value
+
+   →STR uses the shared `format(v)` utility so the resulting string is
+   exactly what the formatter would render in STD mode on a non-stack
+   context (bare Name stays bare, Symbolic is ticked, etc.).  A Real
+   like `3.14` → `"3.14"`, a Name `X` → `"X"`, a Symbolic `'X+1'` →
+   `"'X+1'"`.  This matches the HP50 convention of "what you'd see if
+   you disassembled the object back to characters".
+
+   STR→ is the inverse: we reuse parseEntry (same path OBJ→ on a
+   String uses) and push each parsed value.  Empty string pushes
+   nothing (matches OBJ→ convention — and HP50 semantics).  Parse
+   errors bubble up as RPLError so IFERR traps work.
+
+   ASCII aliases `->STR` / `STR->` register alongside the Unicode glyphs.
+   ---------------------------------------------------------------- */
+
+const _toStrOp = (s) => {
+  const [v] = s.popN(1);
+  // Use STD display mode explicitly so the serialized form is stable
+  // (independent of any future FIX/SCI/ENG state).  context is left
+  // as non-'stack' so Names come out bare unless they were quoted,
+  // matching what an OBJ→-then-STR→ round-trip would expect.
+  s.push(Str(formatValue(v, DEFAULT_DISPLAY)));
+};
+register('→STR',  _toStrOp);
+register('->STR', _toStrOp);
+
+const _fromStrOp = (s) => {
+  const [v] = s.popN(1);
+  if (!isString(v)) throw new RPLError('Bad argument type');
+  const parsed = _parseStringForObjTo(v.value);
+  for (const item of parsed) s.push(item);
+};
+register('STR→',  _fromStrOp);
+register('STR->', _fromStrOp);
+
+/* ----------------------------------------------------------------
+   ΣLIST / ΠLIST / ΔLIST — list aggregations.
+
+   HP50 Advanced Guide §5:
+     ΣLIST  ( { x1 … xn }  →  Σxi )
+     ΠLIST  ( { x1 … xn }  →  Πxi )
+     ΔLIST  ( { x1 … xn }  →  { x2-x1, x3-x2, …, xn-xn-1 } )
+
+   All three delegate to the existing arithmetic dispatch via
+   `lookup('+').fn` / `lookup('*').fn` / `lookup('-').fn`, so the full
+   numeric-plus-symbolic matrix just works — a list of Symbolics sums
+   to a Symbolic, a list of Reals sums to a Real, and mixing Integer
+   and Real promotes to Real.
+
+   Empty-list conventions (HP50):
+     ΣLIST{}  → 0  (identity element for +)
+     ΠLIST{}  → 1  (identity element for *)
+     ΔLIST{}  → {} (empty difference series)
+   Single-element:
+     ΣLIST{x} → x
+     ΠLIST{x} → x
+     ΔLIST{x} → {} (no differences to take)
+
+   ASCII aliases SLIST / PLIST / DLIST register for ASCII-only input.
+   ---------------------------------------------------------------- */
+
+// Fold a list's items through a binary op registered in OPS.  Empty
+// list yields the supplied identity value.  The fold leaves the
+// accumulated value on the stack (via the underlying op's dispatch).
+function _foldListOp(opSymbol, identity) {
+  const binop = lookup(opSymbol);
+  return (s) => {
+    const [l] = s.popN(1);
+    if (!isList(l)) throw new RPLError('Bad argument type');
+    if (l.items.length === 0) { s.push(identity); return; }
+    if (l.items.length === 1) { s.push(l.items[0]); return; }
+    s.push(l.items[0]);
+    for (let i = 1; i < l.items.length; i++) {
+      s.push(l.items[i]);
+      binop.fn(s);
+    }
+  };
+}
+
+register('ΣLIST', _foldListOp('+', Real(0)));
+register('ΠLIST', _foldListOp('*', Real(1)));
+register('SLIST', _foldListOp('+', Real(0)));
+register('PLIST', _foldListOp('*', Real(1)));
+
+register('ΔLIST', (s) => {
+  const [l] = s.popN(1);
+  if (!isList(l)) throw new RPLError('Bad argument type');
+  if (l.items.length <= 1) { s.push(RList([])); return; }
+  const binop = lookup('-');
+  const diffs = [];
+  for (let i = 1; i < l.items.length; i++) {
+    // Compute xi - x(i-1) via the shared - op so Symbolic/Integer/Real
+    // mixes work the same way as ΣLIST / ΠLIST.
+    s.push(l.items[i]);
+    s.push(l.items[i - 1]);
+    binop.fn(s);
+    const [d] = s.popN(1);
+    diffs.push(d);
+  }
+  s.push(RList(diffs));
+});
+register('DLIST', (s) => OPS.get('ΔLIST').fn(s));
+
+/* ----------------------------------------------------------------
+   V→ / →V2 / →V3 — simple vector compose/decompose companions
+   to the session-040 →ARRY / ARRY→ family.
+
+   →V2 ( x y → [x y] )        — build 2-vector from two stack scalars
+   →V3 ( x y z → [x y z] )    — build 3-vector from three stack scalars
+   V→  ( [x1 … xn] → x1 … xn) — decompose vector WITHOUT pushing a
+                                size-list (the difference from ARRY→)
+
+   →V2 / →V3 do NOT accept a size-spec and are NOT variadic; they are
+   the specialized "two" and "three" forms HP50 exposes on the keypad.
+   V→ is the plain decompose — handy when the caller will push a new
+   size-list themselves or knows the arity ahead of time.
+
+   ASCII aliases `->V2` / `->V3` / `V->` also register.
+   ---------------------------------------------------------------- */
+
+const _toV2Op = (s) => {
+  const [x, y] = s.popN(2);
+  s.push(Vector([x, y]));
+};
+register('→V2',  _toV2Op);
+register('->V2', _toV2Op);
+
+const _toV3Op = (s) => {
+  const [x, y, z] = s.popN(3);
+  s.push(Vector([x, y, z]));
+};
+register('→V3',  _toV3Op);
+register('->V3', _toV3Op);
+
+const _fromVecOp = (s) => {
+  const [v] = s.popN(1);
+  if (!isVector(v)) throw new RPLError('Bad argument type');
+  for (const item of v.items) s.push(item);
+};
+register('V→',  _fromVecOp);
+register('V->', _fromVecOp);
+
+/* ----------------------------------------------------------------
+   REPL / SREPL — string and list replacement.
+
+   REPL — Advanced Guide §13.  Splices a second object into the first
+   starting at position n (1-indexed), replacing the overlapping range.
+
+     REPL ( L1 n L2 → L )     replace items n..n+|L2|-1 of L1 with L2
+     REPL ( S1 n S2 → S )     replace chars n..n+|S2|-1 of S1 with S2
+     REPL ( V1 n V2 → V )     vector form
+     REPL ( M1 {r c} M2 → M ) matrix form — M2 is a sub-matrix whose
+                              top-left corner lands at (r, c) of M1
+
+   HP50 throws "Bad argument value" when the splice would extend past
+   the end of the host; we mirror that.
+
+   SREPL — Advanced Guide §14.  String search/replace, replacing ALL
+   occurrences of the second string with the third inside the first.
+
+     SREPL ( "hay" "needle" "repl" → "result" n )
+       returns the post-replacement string AND the count of substitutions
+       (HP50 convention — the count is an Integer).  Zero matches leaves
+       the haystack unchanged and pushes 0.
+   ---------------------------------------------------------------- */
+
+register('REPL', (s) => {
+  const [host, pos, patch] = s.popN(3);
+
+  // Matrix: index is a {row col} list; patch must be a Matrix too.
+  if (isMatrix(host)) {
+    if (!isList(pos) || pos.items.length !== 2) {
+      throw new RPLError('Bad argument type');
+    }
+    if (!isMatrix(patch)) throw new RPLError('Bad argument type');
+    const r0 = _toIntIdx(pos.items[0]);
+    const c0 = _toIntIdx(pos.items[1]);
+    const hostRows = host.rows.length;
+    const hostCols = hostRows > 0 ? host.rows[0].length : 0;
+    const pRows = patch.rows.length;
+    const pCols = pRows > 0 ? patch.rows[0].length : 0;
+    if (r0 + pRows - 1 > hostRows || c0 + pCols - 1 > hostCols) {
+      throw new RPLError('Bad argument value');
+    }
+    const newRows = host.rows.map(r => [...r]);
+    for (let i = 0; i < pRows; i++) {
+      for (let j = 0; j < pCols; j++) {
+        newRows[r0 - 1 + i][c0 - 1 + j] = patch.rows[i][j];
+      }
+    }
+    s.push(Matrix(newRows));
+    return;
+  }
+
+  // Sequence types (String / List / Vector): pos is a single integer.
+  const n = _toIntIdx(pos);
+
+  if (isString(host)) {
+    if (!isString(patch)) throw new RPLError('Bad argument type');
+    const hostText = host.value;
+    const patchText = patch.value;
+    if (n + patchText.length - 1 > hostText.length) {
+      throw new RPLError('Bad argument value');
+    }
+    const out = hostText.slice(0, n - 1) + patchText
+              + hostText.slice(n - 1 + patchText.length);
+    s.push(Str(out));
+    return;
+  }
+
+  if (isList(host)) {
+    if (!isList(patch)) throw new RPLError('Bad argument type');
+    const items = host.items;
+    const rep   = patch.items;
+    if (n + rep.length - 1 > items.length) {
+      throw new RPLError('Bad argument value');
+    }
+    const out = [...items];
+    for (let i = 0; i < rep.length; i++) out[n - 1 + i] = rep[i];
+    s.push(RList(out));
+    return;
+  }
+
+  if (isVector(host)) {
+    if (!isVector(patch)) throw new RPLError('Bad argument type');
+    const items = host.items;
+    const rep   = patch.items;
+    if (n + rep.length - 1 > items.length) {
+      throw new RPLError('Bad argument value');
+    }
+    const out = [...items];
+    for (let i = 0; i < rep.length; i++) out[n - 1 + i] = rep[i];
+    s.push(Vector(out));
+    return;
+  }
+
+  throw new RPLError('Bad argument type');
+});
+
+register('SREPL', (s) => {
+  const [hay, needle, repl] = s.popN(3);
+  if (!isString(hay) || !isString(needle) || !isString(repl)) {
+    throw new RPLError('Bad argument type');
+  }
+  if (needle.value.length === 0) {
+    throw new RPLError('Bad argument value');
+  }
+  // Count occurrences manually so the push result matches the string
+  // produced by String.prototype.replaceAll (no overlap surprises).
+  let count = 0;
+  let out = '';
+  let i = 0;
+  const src = hay.value;
+  while (i < src.length) {
+    if (src.startsWith(needle.value, i)) {
+      out += repl.value;
+      i += needle.value.length;
+      count++;
+    } else {
+      out += src[i];
+      i++;
+    }
+  }
+  s.push(Str(out));
+  s.push(Integer(BigInt(count)));
+});
+
+/* =================================================================
+   Session 043 — more stack ops (DUPN/NIP/PICK3/ROLL/ROLLD/UNPICK/
+                                 DUPDUP/NDUPN)
+                 Complex decomposition (C→R / R→C)
+                 Real decomposition  (XPON / MANT)
+                 Numerically-stable log/exp (LNP1 / EXPM)
+                 Rounding (RND / TRNC)
+                 Percent family (%, %T, %CH)
+
+   Advanced Guide refs: §3 (stack), §6 (complex), §3.1 (XPON/MANT/
+   RND/TRNC/%), §3.1/13.6 (LNP1/EXPM).
+
+   Every item keyboard-reachable via the typed catalog today — no
+   new keypad wiring needed.
+   ================================================================= */
+
+// Helpers: pull an Integer count from a stack value.  Rejects non-real,
+// non-integer-valued Real, and negative values via out-of-range errors
+// that match existing ops in this file (PICK / DROPN).
+function _toNonNegIntCount(v) {
+  const n = Number(isInteger(v) ? v.value : toRealOrThrow(v));
+  if (!Number.isInteger(n) || n < 0) throw new RPLError('Bad argument value');
+  return n;
+}
+function _toPosIntIndex(v) {
+  const n = Number(isInteger(v) ? v.value : toRealOrThrow(v));
+  if (!Number.isInteger(n) || n < 1) throw new RPLError('Bad argument value');
+  return n;
+}
+
+/* --------------- additional stack manipulation ---------------
+   DUPN  ( x1 … xn n → x1 … xn x1 … xn )
+     Pops the top (must be a non-negative integer), then duplicates
+     the top `n` items.  `0 DUPN` is a no-op.
+   DUPDUP ( a → a a a )
+     Equivalent to DUP DUP.
+   NIP   ( a b → b )
+     Drops level 2.
+   PICK3 ( — → … )
+     Shortcut for `3 PICK` (no stack argument).
+   ROLL  ( xn … x1 n → xn-1 … x1 xn )
+     Pops n, takes level-(n+1), moves it to level 1.  `0 ROLL` is a
+     no-op; `1 ROLL` is a no-op (level 1 moves to level 1).
+   ROLLD ( xn … x1 n → x1 xn … x2 )  (HP50 docs: "Roll Down")
+     Pops n, takes level 1, inserts at level (n+1).  Inverse of ROLL.
+   UNPICK ( x_n … x_1 v n → x_n … v … x_1 )
+     Pops n (level 1) then v (level 2), writes v back at level n.
+     Inverse of PICK.
+   NDUPN  ( x n → x x … x n )   (HP49 synonym of DUPN-with-count-on-top)
+     Duplicates x  n times and pushes n back.  `x 0 NDUPN` leaves
+     `0` on the stack.  Per HP50 AUR p. 2-11 the `n` return is needed
+     by variadic programs that dispatched on count.
+   ---------------------------------------------------------- */
+register('DUPN', (s) => {
+  const n = _toNonNegIntCount(s.pop());
+  if (s.depth < n) throw new RPLError('Too few arguments');
+  if (n === 0) return;
+  // Copy the top-N references; stack values are immutable so sharing is safe.
+  const copies = [];
+  for (let i = n; i >= 1; i--) copies.push(s.peek(i));
+  for (const v of copies) s.push(v);
+});
+
+register('DUPDUP', (s) => {
+  const v = s.peek(1);
+  if (v === undefined) throw new RPLError('Too few arguments');
+  s.push(v);
+  s.push(v);
+});
+
+register('NIP', (s) => {
+  if (s.depth < 2) throw new RPLError('Too few arguments');
+  const top = s.pop();
+  s.pop();       // drop former level 2
+  s.push(top);
+});
+
+register('PICK3', (s) => {
+  s.pick(3);
+});
+
+register('ROLL', (s) => {
+  const n = _toNonNegIntCount(s.pop());
+  if (n <= 1) return;                 // 0 and 1 ROLL are no-ops
+  if (s.depth < n) throw new RPLError('Too few arguments');
+  // Take the level-n item out and push it on top.
+  const arr = s._items;               // intentional use of internal for splice
+  const idx = arr.length - n;
+  const [x] = arr.splice(idx, 1);
+  arr.push(x);
+  s._emit();
+});
+
+register('ROLLD', (s) => {
+  const n = _toNonNegIntCount(s.pop());
+  if (n <= 1) return;                 // 0 and 1 ROLLD are no-ops
+  if (s.depth < n) throw new RPLError('Too few arguments');
+  // Take level 1 and splice it into the level-n slot.
+  const arr = s._items;
+  const top = arr.pop();
+  arr.splice(arr.length - (n - 1), 0, top);
+  s._emit();
+});
+
+register('UNPICK', (s) => {
+  const n = _toPosIntIndex(s.pop());
+  if (s.depth < n) throw new RPLError('Too few arguments');
+  if (s.depth < 1) throw new RPLError('Too few arguments');
+  const v = s.pop();
+  // Write v at level n (1-indexed from top of remaining stack).
+  const arr = s._items;
+  if (arr.length < n) throw new RPLError('Too few arguments');
+  arr[arr.length - n] = v;
+  s._emit();
+});
+
+register('NDUPN', (s) => {
+  const nv = s.pop();
+  const n = _toNonNegIntCount(nv);
+  if (s.depth < 1) throw new RPLError('Too few arguments');
+  const x = s.pop();
+  for (let i = 0; i < n; i++) s.push(x);
+  s.push(Integer(BigInt(n)));
+});
+
+/* --------------- Complex decomposition / construction ---------------
+   R→C ( x y → (x, y) )
+     Build a Complex from two Reals.  Integer input coerces to Real.
+     HP50 AUR: "REAL, REAL → COMPLEX".
+   C→R ( (x, y) → x y )
+     Decompose a Complex into its two Real components (Re on L2, Im on L1).
+   Vector branch (HP50 docs §13.6 note): R→C on two real N-vectors
+     returns a single N-vector of Complex components; C→R on a complex
+     vector returns the two component real vectors.  Implemented so the
+     common "assemble a complex vector" workflow works end-to-end.
+   ASCII aliases: R->C, C->R  (HP50 user programs without Unicode in
+     source).  Real→Real on a real-valued Complex round-trip:
+     `(3,4) C→R R→C` gives `(3,4)` back.
+   -------------------------------------------------------------- */
+function _coerceRealComponent(v) {
+  if (isReal(v)) return v.value;
+  if (isInteger(v)) return Number(v.value);
+  throw new RPLError('Bad argument type');
+}
+
+function _rToCOp(s) {
+  const im = s.pop();
+  const re = s.pop();
+  // Vector branch: two real vectors → complex vector of same length.
+  if (isVector(re) && isVector(im)) {
+    const a = re.items, b = im.items;
+    if (a.length !== b.length) throw new RPLError('Invalid dimension');
+    const out = [];
+    for (let i = 0; i < a.length; i++) {
+      out.push(Complex(_coerceRealComponent(a[i]), _coerceRealComponent(b[i])));
+    }
+    s.push(Vector(out));
+    return;
+  }
+  s.push(Complex(_coerceRealComponent(re), _coerceRealComponent(im)));
+}
+register('R→C',  _rToCOp);
+register('R->C', _rToCOp);
+
+function _cToROp(s) {
+  const v = s.pop();
+  if (isComplex(v)) {
+    s.push(Real(v.re));
+    s.push(Real(v.im));
+    return;
+  }
+  if (isReal(v) || isInteger(v)) {
+    // HP50 permits real input — pushes the value and 0.
+    s.push(Real(_coerceRealComponent(v)));
+    s.push(Real(0));
+    return;
+  }
+  if (isVector(v)) {
+    // Vector of Complex → two vectors of the component reals.
+    const re = [], im = [];
+    for (const e of v.items) {
+      if (isComplex(e))       { re.push(Real(e.re));                    im.push(Real(e.im)); }
+      else if (isReal(e))     { re.push(e);                             im.push(Real(0));     }
+      else if (isInteger(e))  { re.push(Real(Number(e.value)));         im.push(Real(0));     }
+      else throw new RPLError('Bad argument type');
+    }
+    s.push(Vector(re));
+    s.push(Vector(im));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+}
+register('C→R',  _cToROp);
+register('C->R', _cToROp);
+
+/* --------------- XPON / MANT — Real decomposition ---------------
+   HP50 AUR p.3-6 / p.3-9.  Given a real `x`, the mantissa `m` and
+   exponent `e` are such that `m * 10^e = x` with `|m| < 10` and
+   `|m| >= 1` for x != 0.  XPON returns e (as a Real), MANT returns m
+   (as a Real).  XPON(0) = 0 by HP50 convention; MANT(0) = 0.
+   Integer inputs coerce to Real first.
+   ---------------------------------------------------------------- */
+function _xponOf(x) {
+  if (x === 0) return 0;
+  return Math.floor(Math.log10(Math.abs(x)));
+}
+register('XPON', (s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('XPON', [_toAst(v)]))); return; }
+  if (!isReal(v) && !isInteger(v)) throw new RPLError('Bad argument type');
+  const x = Number(isInteger(v) ? v.value : v.value);
+  s.push(Real(_xponOf(x)));
+});
+register('MANT', (s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('MANT', [_toAst(v)]))); return; }
+  if (!isReal(v) && !isInteger(v)) throw new RPLError('Bad argument type');
+  const x = Number(isInteger(v) ? v.value : v.value);
+  if (x === 0) { s.push(Real(0)); return; }
+  const e = _xponOf(x);
+  s.push(Real(x / Math.pow(10, e)));
+});
+
+/* --------------- LNP1 / EXPM — stable near zero ---------------
+   LNP1(x) = ln(1 + x), evaluated without catastrophic cancellation
+   when |x| << 1.  EXPM(x) = exp(x) - 1, same story.  Both delegate to
+   JS's Math.log1p / Math.expm1, which implement the standard IEEE
+   fused operations.  Symbolic inputs lift to LNP1(X) / EXPM(X) AST
+   nodes so they round-trip through the parser.
+   ---------------------------------------------------------------- */
+// Session 063: LNP1 / EXPM pick up Tagged + Vector / Matrix element-wise
+// dispatch, matching the broader log / exp family.  Complex is *not*
+// added here — the stable-near-zero formulations are real-only on the
+// HP50 (no Complex log1p / expm1 in the Advanced Reference).
+register('LNP1', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('LNP1', [_toAst(v)]))); return; }
+  const x = toRealOrThrow(v);
+  if (x <= -1) throw new RPLError('Infinite result');
+  s.push(Real(Math.log1p(x)));
+}))));
+register('EXPM', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('EXPM', [_toAst(v)]))); return; }
+  const x = toRealOrThrow(v);
+  s.push(Real(Math.expm1(x)));
+}))));
+
+/* --------------- RND / TRNC — rounding to n places ---------------
+   HP50 AUR p.3-9.  Two stack args: value (Real/Complex), count.
+   COUNT semantics:
+     n >= 0       → round to n decimal places
+     -1..-11      → round to (−n) significant figures  (rare; we accept
+                    the range but clamp to the precision JS can offer)
+   RND  ( x n → y )  nearest, half-away-from-zero (matches HP50 spec)
+   TRNC ( x n → y )  toward zero
+   Complex input rounds each component independently.  Integer input
+   with n >= 0 rounds back to Integer-typed output; with significant
+   figures it's returned as Real (consistent with HP50).
+   ---------------------------------------------------------------- */
+function _roundHalfAwayFromZero(x, n) {
+  const p = Math.pow(10, n);
+  return (x >= 0 ? Math.floor(x * p + 0.5) : -Math.floor(-x * p + 0.5)) / p;
+}
+function _truncTowardZero(x, n) {
+  const p = Math.pow(10, n);
+  return Math.trunc(x * p) / p;
+}
+function _applyRoundReal(x, n, fn) {
+  // n >= 0 → decimal places.  n < 0 → significant figures (|n| digits).
+  if (n >= 0) return fn(x, n);
+  if (x === 0) return 0;
+  const sig = -n;
+  const xpon = _xponOf(x);
+  // Round so the most significant digit is the `sig`-th digit.
+  const places = (sig - 1) - xpon;
+  return fn(x, places);
+}
+function _roundingOp(name, fn) {
+  return (s) => {
+    const nv = s.pop();
+    const xv = s.pop();
+    const n = Number(isInteger(nv) ? nv.value : toRealOrThrow(nv));
+    if (!Number.isInteger(n) || n < -11 || n > 11) {
+      throw new RPLError('Bad argument value');
+    }
+    if (isComplex(xv)) {
+      s.push(Complex(_applyRoundReal(xv.re, n, fn),
+                     _applyRoundReal(xv.im, n, fn)));
+      return;
+    }
+    if (isInteger(xv) && n >= 0) {
+      // Integer rounded to a non-negative decimal place is itself.
+      s.push(xv);
+      return;
+    }
+    if (!isReal(xv) && !isInteger(xv)) throw new RPLError('Bad argument type');
+    const x = isInteger(xv) ? Number(xv.value) : xv.value;
+    s.push(Real(_applyRoundReal(x, n, fn)));
+  };
+}
+register('RND',  _roundingOp('RND',  _roundHalfAwayFromZero));
+register('TRNC', _roundingOp('TRNC', _truncTowardZero));
+
+/* --------------- Percent family — %, %T, %CH ---------------
+   HP50 AUR p.3-1.
+     %   ( x y → x*y/100 )                 percent of a number
+     %T  ( x y → 100*y/x )                 y is what percent of x
+     %CH ( x y → 100*(y-x)/x )             percent change from x to y
+   All three are numeric (Real/Integer).  Symbolic/Name input on
+   either operand lifts to a Symbolic expression using the canonical
+   AST fold — matches how +, *, / behave for symbolic inputs.
+   ---------------------------------------------------------------- */
+function _percentAst(kind, l, r) {
+  // kind: 'PCT', 'PCTT', 'PCTCH'
+  if (kind === 'PCT')  return AstBin('/', AstBin('*', l, r), AstNum(100));
+  if (kind === 'PCTT') return AstBin('/', AstBin('*', AstNum(100), r), l);
+  /* PCTCH */         return AstBin('/', AstBin('*', AstNum(100),
+                          AstBin('-', r, l)), l);
+}
+function _percentOp(kind, computeNumeric, errorsOnZeroX) {
+  return (s) => {
+    const y = s.pop();
+    const x = s.pop();
+    if (_isSymOperand(x) || _isSymOperand(y)) {
+      s.push(Symbolic(_percentAst(kind, _toAst(x), _toAst(y))));
+      return;
+    }
+    const xn = toRealOrThrow(x);
+    const yn = toRealOrThrow(y);
+    if (errorsOnZeroX && xn === 0) throw new RPLError('Infinite result');
+    s.push(Real(computeNumeric(xn, yn)));
+  };
+}
+register('%',   _percentOp('PCT',   (x, y) => x * y / 100,          false));
+register('%T',  _percentOp('PCTT',  (x, y) => 100 * y / x,          true));
+register('%CH', _percentOp('PCTCH', (x, y) => 100 * (y - x) / x,    true));
+
+/* =================================================================
+   Session 044 — real constants (MAXR / MINR),
+                 HMS family (→HMS / HMS→ / HMS+ / HMS-),
+                 BinInt shift / rotate (SL, SR, SLB, SRB, ASR,
+                                        RL, RR, RLB, RRB),
+                 List/Vector/Matrix combinator (MAP).
+
+   Advanced Guide refs: §3.1 (MAXR/MINR), §3.3 (HMS family),
+   §10.1 (shift/rotate), §15 (MAP).
+
+   Every op below is user-reachable via the typed catalog today — no
+   keypad wiring changes are needed.  Matches the session-043 scope
+   rules: one substantive cluster each item, all reachable, all type-
+   branch + error-path tested.
+   ================================================================= */
+
+/* --------------- MAXR / MINR — real-literal constants ---------------
+   HP50 AUR p. 3-1.  MAXR is the largest representable finite real and
+   MINR is the smallest positive normal real.  On a real HP50 these map
+   to the BCD precision limits (9.99999999999E499 / 1E-499).  Our
+   underlying representation is JS number (IEEE-754 double), so we
+   expose the IEEE equivalents — `Number.MAX_VALUE` /
+   `Number.MIN_VALUE` — which are the "largest finite / smallest
+   positive" under the same spec.  This matches HP50 intent (and in
+   practice is where every HP50 user's math bottoms out against overflow
+   / underflow).  No arguments, no symbolic lift — they are literal
+   pushes.
+   ---------------------------------------------------------------- */
+register('MAXR', (s) => { s.push(Real(Number.MAX_VALUE)); });
+register('MINR', (s) => { s.push(Real(Number.MIN_VALUE)); });
+
+/* --------------- HMS family — hours/minutes/seconds ---------------
+   HP50 represents a time-of-day / duration value as a decimal number
+   formatted HH.MMSSsss — hours in the integer part, minutes (00..59)
+   in the first two digits after the decimal, seconds (00..59) in the
+   next two, and fractional seconds continuing after that.  So:
+
+       2.3000   → 2h 30m 00s      =  2.5     decimal hours
+       1.4530   → 1h 45m 30s      =  1.7583…
+       0.0059   → 0h 0m 59s       =  0.01638…
+
+   Sign applies to the whole value; `-1.3000` is "−1h 30m".
+
+     →HMS  ( h      → hms )    decimal hours → HH.MMSS form
+     HMS→  ( hms    → h   )    HH.MMSS form → decimal hours
+     HMS+  ( a  b   → hms )    add two HMS values (a + b, result HMS)
+     HMS-  ( a  b   → hms )    subtract two HMS values (a - b, HMS)
+
+   HP50 AUR p. 3-10.  We reject Complex inputs (Bad argument type) but
+   accept Integer (coerces via `toRealOrThrow`).  Fractional seconds
+   are preserved out to double precision on the HMS side and
+   round-tripped via the decimal-hours form in +/-.
+
+   ASCII aliases registered alongside the Unicode glyph (`->HMS`,
+   `HMS->`) to match ops like `→STR`/`->STR` for keyboards without
+   direct Unicode entry.
+   ----------------------------------------------------------------- */
+
+// Parse HH.MMSS decimal into decimal-hours.  `h` may be negative; we
+// work on the absolute value and re-apply the sign at the end.
+function _hmsToHours(h) {
+  if (!Number.isFinite(h)) throw new RPLError('Bad argument value');
+  const sign = h < 0 ? -1 : 1;
+  const x = Math.abs(h);
+  const hh = Math.floor(x);
+  // The next two digits (minutes) are the integer part of (x - hh) * 100.
+  // We intentionally scale with a small epsilon to avoid `1.45` being
+  // read as "1h 44m 59.9999…s" due to float noise; this matches HP50's
+  // 12-BCD behavior.
+  const afterPoint = (x - hh) * 100;
+  const mm = Math.floor(afterPoint + 1e-9);
+  const ss = (afterPoint - mm) * 100;
+  if (mm >= 60) throw new RPLError('Bad argument value');
+  if (ss >= 60) throw new RPLError('Bad argument value');
+  return sign * (hh + mm / 60 + ss / 3600);
+}
+
+// Format a decimal-hours value as HH.MMSSsss.  Keeps fractional seconds
+// beyond 4 decimal places by preserving the ss as a true JS number.
+function _hoursToHms(hours) {
+  if (!Number.isFinite(hours)) throw new RPLError('Bad argument value');
+  const sign = hours < 0 ? -1 : 1;
+  const x = Math.abs(hours);
+  const hh = Math.floor(x);
+  const minsPart = (x - hh) * 60;
+  const mm = Math.floor(minsPart + 1e-12);
+  const ss = (minsPart - mm) * 60;
+  // Assemble HH.MMSSsss.  Use string assembly for the integer minutes
+  // part so leading zeros stay in the right position (`2.0530` not
+  // `2.0053`).
+  const mmStr = String(mm).padStart(2, '0');
+  // Seconds: need two integer digits + fractional tail.  Compute
+  // numerically then format: HH + (mm*100 + ss) / 10000.
+  const combined = hh + (mm * 100 + ss) / 10000;
+  return sign * combined;
+}
+
+function _hmsUnary(name, fn) {
+  return (s) => {
+    const v = s.pop();
+    if (isComplex(v)) throw new RPLError('Bad argument type');
+    const x = toRealOrThrow(v);
+    s.push(Real(fn(x)));
+  };
+}
+
+function _hmsBinary(name, fn) {
+  return (s) => {
+    const b = s.pop();
+    const a = s.pop();
+    if (isComplex(a) || isComplex(b)) throw new RPLError('Bad argument type');
+    const ah = _hmsToHours(toRealOrThrow(a));
+    const bh = _hmsToHours(toRealOrThrow(b));
+    s.push(Real(_hoursToHms(fn(ah, bh))));
+  };
+}
+
+register('→HMS',  _hmsUnary('→HMS',  (h) => _hoursToHms(h)));
+register('->HMS', _hmsUnary('->HMS', (h) => _hoursToHms(h)));
+register('HMS→',  _hmsUnary('HMS→',  (h) => _hmsToHours(h)));
+register('HMS->', _hmsUnary('HMS->', (h) => _hmsToHours(h)));
+register('HMS+',  _hmsBinary('HMS+', (a, b) => a + b));
+register('HMS-',  _hmsBinary('HMS-', (a, b) => a - b));
+
+/* --------------- BinaryInteger shift / rotate ---------------
+   HP50 AUR §10.1.  All 9 ops take a BinInt and return a BinInt; the
+   display base is inherited from the input, and the value is masked
+   to the current wordsize (STWS, default 64).  Mixed operands /
+   wrong type throws 'Bad argument type'.
+
+     SL   ( bin → bin' )   shift left by 1 bit (bit lost off top)
+     SR   ( bin → bin' )   shift right by 1 bit (zero fill at top)
+     ASR  ( bin → bin' )   shift right preserving sign-bit (top bit)
+     RL   ( bin → bin' )   rotate left by 1 bit
+     RR   ( bin → bin' )   rotate right by 1 bit
+     SLB  ( bin → bin' )   shift left by 8 bits (1 byte)
+     SRB  ( bin → bin' )   shift right by 8 bits (1 byte)
+     RLB  ( bin → bin' )   rotate left by 8 bits
+     RRB  ( bin → bin' )   rotate right by 8 bits
+
+   Sign-bit handling in ASR: if the MSB of the wordsize is set, the
+   right-shifted result keeps that bit set (i.e. arithmetic shift of a
+   two's-complement value).  Wordsize 1 is a degenerate case — ASR is
+   effectively a no-op there; we treat it that way.
+   ---------------------------------------------------------------- */
+
+function _requireBinInt(v) {
+  if (!isBinaryInteger(v)) throw new RPLError('Bad argument type');
+}
+
+// Shift left by `k` bits.  Bits shifted off the high end are discarded
+// via the wordsize mask.
+function _shiftLeft(v, k) {
+  _requireBinInt(v);
+  const m = _mask();
+  const out = (v.value << BigInt(k)) & m;
+  return BinaryInteger(out, v.base);
+}
+
+// Logical shift right by `k` bits.  High bits become 0.
+function _shiftRight(v, k) {
+  _requireBinInt(v);
+  const m = _mask();
+  const out = (v.value & m) >> BigInt(k);
+  return BinaryInteger(out, v.base);
+}
+
+// Arithmetic shift right by 1 bit — preserves the sign bit (MSB).
+function _asr1(v) {
+  _requireBinInt(v);
+  const m = _mask();
+  const w = BigInt(getWordsize());
+  if (w <= 1n) return BinaryInteger(v.value & m, v.base);
+  const msb = (v.value & m) >> (w - 1n);                // 0n or 1n
+  let out = (v.value & m) >> 1n;
+  if (msb === 1n) out |= (1n << (w - 1n));
+  return BinaryInteger(out & m, v.base);
+}
+
+// Rotate left by `k` bits.
+function _rotateLeft(v, k) {
+  _requireBinInt(v);
+  const m = _mask();
+  const w = BigInt(getWordsize());
+  const shift = BigInt(k) % w;
+  if (shift === 0n) return BinaryInteger(v.value & m, v.base);
+  const val = v.value & m;
+  const left = (val << shift) & m;
+  const right = val >> (w - shift);
+  return BinaryInteger((left | right) & m, v.base);
+}
+
+// Rotate right by `k` bits.
+function _rotateRight(v, k) {
+  _requireBinInt(v);
+  const m = _mask();
+  const w = BigInt(getWordsize());
+  const shift = BigInt(k) % w;
+  if (shift === 0n) return BinaryInteger(v.value & m, v.base);
+  const val = v.value & m;
+  const right = val >> shift;
+  const left = (val << (w - shift)) & m;
+  return BinaryInteger((right | left) & m, v.base);
+}
+
+register('SL',  (s) => { const v = s.pop(); s.push(_shiftLeft(v, 1)); });
+register('SR',  (s) => { const v = s.pop(); s.push(_shiftRight(v, 1)); });
+register('ASR', (s) => { const v = s.pop(); s.push(_asr1(v)); });
+register('SLB', (s) => { const v = s.pop(); s.push(_shiftLeft(v, 8)); });
+register('SRB', (s) => { const v = s.pop(); s.push(_shiftRight(v, 8)); });
+register('RL',  (s) => { const v = s.pop(); s.push(_rotateLeft(v, 1)); });
+register('RR',  (s) => { const v = s.pop(); s.push(_rotateRight(v, 1)); });
+register('RLB', (s) => { const v = s.pop(); s.push(_rotateLeft(v, 8)); });
+register('RRB', (s) => { const v = s.pop(); s.push(_rotateRight(v, 8)); });
+
+/* --------------- MAP — list/vector/matrix combinator ---------------
+   HP50 AUR §15.  `MAP` applies a program (or quoted name) to each
+   element of a list, vector or matrix, returning a new container of
+   the same kind and shape with the result of each application.
+
+     MAP  ( { a1 a2 … } prog → { prog(a1) prog(a2) … } )
+     MAP  ( [ a1 a2 … ] prog → [ prog(a1) prog(a2) … ] )
+     MAP  ( [[ a b ] [ c d ]] prog → [[ prog(a) prog(b) ] …] )
+
+   `prog` may be a Program, a Symbolic expression, or a Name (whose
+   binding must itself be a Program).  Each invocation must leave
+   exactly one net result on top of the stack — a delta other than +1
+   throws 'MAP: bad program'.
+
+   Errors inside `prog` propagate unchanged (the stack is left with
+   whatever partial work had completed — matches HP50 behavior; MAP is
+   not transactional on real firmware either).  Non-container top-of-
+   stack throws 'Bad argument type'.
+   ---------------------------------------------------------------- */
+function _mapOneValue(s, prog, e) {
+  const before = s.depth;
+  s.push(e);
+  _evalValue(s, prog, 0);
+  const delta = s.depth - before;
+  if (delta !== 1) {
+    // Undo any partial effect so the error message is actionable.
+    // We can't really roll back the user's data, but we can pop any
+    // surplus so the stack is well-formed for the caller.
+    throw new RPLError('MAP: bad program');
+  }
+  return s.pop();
+}
+
+register('MAP', (s) => {
+  const prog = s.pop();
+  const obj  = s.pop();
+  if (!isProgram(prog) && !isName(prog) && !isSymbolic(prog)) {
+    throw new RPLError('Bad argument type');
+  }
+  if (isList(obj)) {
+    const out = obj.items.map((e) => _mapOneValue(s, prog, e));
+    s.push(RList(out));
+    return;
+  }
+  if (isVector(obj)) {
+    const out = obj.items.map((e) => _mapOneValue(s, prog, e));
+    s.push(Vector(out));
+    return;
+  }
+  if (isMatrix(obj)) {
+    const rows = obj.rows.map((row) => row.map((e) => _mapOneValue(s, prog, e)));
+    s.push(Matrix(rows));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* =================================================================
+   Session 045 — List combinators (SEQ, DOLIST, DOSUBS, STREAM),
+                 Complex-aware unary math (LN / LOG / EXP / ALOG /
+                   SIN / COS / TAN / ASIN / ACOS / ATAN /
+                   SINH / COSH / TANH / ASINH / ACOSH / ATANH),
+                 Mixed BinInt ↔ Real/Integer arithmetic promotion.
+
+   Advanced Guide refs: §15 (list combinators), §11 (complex
+     elementary functions), §10.1 (BinInt arithmetic w/ mixed types).
+
+   Every op below is user-reachable via the typed catalog today; no
+   keypad wiring changes are needed.  The Complex-aware unaries
+   *replace* the previous real-only registrations — call sites that
+   used to throw 'Bad argument type' on a Complex input now return
+   the principal-branch complex value.  Real inputs still go through
+   the existing real-only paths (no behavior change).
+   ================================================================= */
+
+/* ------------------- Complex arithmetic primitives ------------------- */
+function _cx(re, im) { return { re, im }; }
+function _cxAdd(a, b) { return { re: a.re + b.re, im: a.im + b.im }; }
+function _cxSub(a, b) { return { re: a.re - b.re, im: a.im - b.im }; }
+function _cxMul(a, b) {
+  return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re };
+}
+function _cxDiv(a, b) {
+  const d = b.re * b.re + b.im * b.im;
+  if (d === 0) throw new RPLError('Infinite result');
+  return {
+    re: (a.re * b.re + a.im * b.im) / d,
+    im: (a.im * b.re - a.re * b.im) / d,
+  };
+}
+function _cxExp(z) {
+  const e = Math.exp(z.re);
+  return { re: e * Math.cos(z.im), im: e * Math.sin(z.im) };
+}
+// Principal-branch natural log: ln r + i*θ, θ ∈ (-π, π].
+function _cxLn(z) {
+  const r = Math.hypot(z.re, z.im);
+  if (r === 0) throw new RPLError('Infinite result');
+  return { re: Math.log(r), im: Math.atan2(z.im, z.re) };
+}
+// Principal square root.
+function _cxSqrt(z) {
+  if (z.im === 0) {
+    if (z.re >= 0) return { re: Math.sqrt(z.re), im: 0 };
+    return { re: 0, im: Math.sqrt(-z.re) };
+  }
+  const r = Math.hypot(z.re, z.im);
+  const re = Math.sqrt((r + z.re) / 2);
+  const im = (z.im >= 0 ? 1 : -1) * Math.sqrt((r - z.re) / 2);
+  return { re, im };
+}
+// Hyperbolic via exp: sinh(z) = (e^z - e^-z)/2, cosh(z) = (e^z + e^-z)/2.
+function _cxSinh(z) {
+  const ea = Math.exp(z.re), eb = Math.exp(-z.re);
+  return {
+    re: 0.5 * (ea - eb) * Math.cos(z.im),
+    im: 0.5 * (ea + eb) * Math.sin(z.im),
+  };
+}
+function _cxCosh(z) {
+  const ea = Math.exp(z.re), eb = Math.exp(-z.re);
+  return {
+    re: 0.5 * (ea + eb) * Math.cos(z.im),
+    im: 0.5 * (ea - eb) * Math.sin(z.im),
+  };
+}
+function _cxTanh(z) {
+  // tanh(a + bi) = (sinh(2a) + i sin(2b)) / (cosh(2a) + cos(2b))
+  const a2 = 2 * z.re, b2 = 2 * z.im;
+  const d = Math.cosh(a2) + Math.cos(b2);
+  if (d === 0) throw new RPLError('Infinite result');
+  return { re: Math.sinh(a2) / d, im: Math.sin(b2) / d };
+}
+// Trig via Euler: sin(z) = (e^iz - e^-iz)/(2i), cos(z) = (e^iz + e^-iz)/2.
+function _cxSin(z) {
+  // sin(a+bi) = sin a cosh b + i cos a sinh b
+  return { re: Math.sin(z.re) * Math.cosh(z.im), im: Math.cos(z.re) * Math.sinh(z.im) };
+}
+function _cxCos(z) {
+  // cos(a+bi) = cos a cosh b - i sin a sinh b
+  return { re: Math.cos(z.re) * Math.cosh(z.im), im: -Math.sin(z.re) * Math.sinh(z.im) };
+}
+function _cxTan(z) {
+  return _cxDiv(_cxSin(z), _cxCos(z));
+}
+// Inverse hyperbolic.
+function _cxAsinh(z) {
+  // asinh(z) = ln(z + sqrt(z^2 + 1))
+  const zsq = _cxMul(z, z);
+  const s = _cxSqrt(_cxAdd(zsq, _cx(1, 0)));
+  return _cxLn(_cxAdd(z, s));
+}
+function _cxAcosh(z) {
+  // acosh(z) = ln(z + sqrt(z-1)*sqrt(z+1))  — keeps the right branch
+  // along the real-axis cut (principal: Re ≥ 0).
+  const a = _cxSqrt(_cxSub(z, _cx(1, 0)));
+  const b = _cxSqrt(_cxAdd(z, _cx(1, 0)));
+  return _cxLn(_cxAdd(z, _cxMul(a, b)));
+}
+function _cxAtanh(z) {
+  // atanh(z) = (ln(1+z) - ln(1-z)) / 2
+  const one = _cx(1, 0);
+  const num = _cxAdd(one, z);
+  const den = _cxSub(one, z);
+  return _cxMul(_cx(0.5, 0), _cxLn(_cxDiv(num, den)));
+}
+// Inverse trig.
+function _cxAsin(z) {
+  // asin(z) = -i * ln(iz + sqrt(1 - z^2))
+  const i = _cx(0, 1);
+  const minusI = _cx(0, -1);
+  const zsq = _cxMul(z, z);
+  const inside = _cxSqrt(_cxSub(_cx(1, 0), zsq));
+  return _cxMul(minusI, _cxLn(_cxAdd(_cxMul(i, z), inside)));
+}
+function _cxAcos(z) {
+  // acos(z) = π/2 - asin(z)
+  const as = _cxAsin(z);
+  return _cxSub(_cx(Math.PI / 2, 0), as);
+}
+function _cxAtan(z) {
+  // atan(z) = (i/2) * (ln(1-iz) - ln(1+iz))
+  const i = _cx(0, 1);
+  const iz = _cxMul(i, z);
+  const num = _cxLn(_cxSub(_cx(1, 0), iz));
+  const den = _cxLn(_cxAdd(_cx(1, 0), iz));
+  return _cxMul(_cx(0, 0.5), _cxSub(num, den));
+}
+
+/* ------------------- Complex-aware op builders ------------------- */
+
+// Build a unary op that accepts Real/Integer or Complex, falling through
+// to a Symbolic lift for Name/Symbolic operands.
+//
+// Session 063: every Cx-aware builder now also picks up Vector/Matrix
+// element-wise dispatch (`_withVMUnary`) and Tagged transparency
+// (`_withTaggedUnary`).  The wrapper order — Tagged → List → V/M →
+// scalar — matches the convention established in session 062 (FLOOR /
+// CEIL / IP / FP / SIGN / ARG): Tagged outermost so a tagged-of-list
+// or tagged-of-matrix unwraps before dispatch and re-tags the
+// container; List inside Tagged so list distribution re-enters the
+// scalar handler at each leaf; V/M innermost so a bare Vector/Matrix
+// distributes to per-element scalar handling.
+function _unaryCx(name, realFn, cxFn) {
+  return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+    const v = s.pop();
+    if (_isSymOperand(v)) {
+      s.push(Symbolic(AstFn(name, [_toAst(v)])));
+      return;
+    }
+    if (isComplex(v)) {
+      const r = cxFn({ re: v.re, im: v.im });
+      s.push(Complex(r.re, r.im));
+      return;
+    }
+    const x = toRealOrThrow(v);
+    const y = realFn(x);
+    if (!Number.isFinite(y)) {
+      // Out-of-domain real.  Under CMPLX mode (flag -103 SET) lift to
+      // the principal complex branch; otherwise raise a clean RPL
+      // error rather than letting the Real() constructor throw
+      // TypeError (session 054).
+      if (getComplexMode() && cxFn) {
+        const r = cxFn({ re: x, im: 0 });
+        s.push(Complex(r.re, r.im));
+        return;
+      }
+      throw new RPLError('Bad argument value');
+    }
+    s.push(Real(y));
+  })));
+}
+
+// Trig forward (SIN/COS/TAN): angle in active mode on reals; Complex
+// inputs are treated as radians (the only mathematically well-defined
+// convention) and return a Complex.
+//
+// Session 063: same Tagged / List / V/M wrapping as `_unaryCx`.
+function _trigFwdCx(name, realFn, cxFn) {
+  return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+    const v = s.pop();
+    if (_isSymOperand(v)) {
+      s.push(Symbolic(AstFn(name, [_toAst(v)])));
+      return;
+    }
+    if (isComplex(v)) {
+      const r = cxFn({ re: v.re, im: v.im });
+      s.push(Complex(r.re, r.im));
+      return;
+    }
+    s.push(Real(realFn(toRadians(toRealOrThrow(v)))));
+  })));
+}
+
+// Inverse trig (ASIN/ACOS/ATAN): result in active angle mode for reals;
+// for Complex inputs, the real and imaginary parts of the computed
+// radian value are both scaled through fromRadians (a no-op in RAD,
+// the standard HP50-style behavior in DEG/GRD — the real part becomes
+// degrees, the imaginary part is scaled the same so angle-mode
+// round-trips through SIN/COS/TAN).
+//
+// Session 063: same Tagged / List / V/M wrapping as `_unaryCx`.
+function _trigInvCx(name, realFn, cxFn) {
+  return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+    const v = s.pop();
+    if (_isSymOperand(v)) {
+      s.push(Symbolic(AstFn(name, [_toAst(v)])));
+      return;
+    }
+    if (isComplex(v)) {
+      const r = cxFn({ re: v.re, im: v.im });
+      s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+      return;
+    }
+    const x = toRealOrThrow(v);
+    const y = realFn(x);
+    if (!Number.isFinite(y)) {
+      // Session 054: |x| > 1 for ASIN/ACOS (or other out-of-domain
+      // input) lifts to Complex under CMPLX mode, throws
+      // "Bad argument value" otherwise.
+      if (getComplexMode() && cxFn) {
+        const r = cxFn({ re: x, im: 0 });
+        s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+        return;
+      }
+      throw new RPLError('Bad argument value');
+    }
+    s.push(Real(fromRadians(y)));
+  })));
+}
+
+/* ------------------ Re-register elementary functions ------------------
+   Replaces the earlier (real-only) registrations at the top of ops.js.
+   `register()` uses Map.set under the hood — last registration wins —
+   so every earlier call site (EVAL, parser, catalog lookup) now goes
+   through the Complex-aware path automatically.
+   ----------------------------------------------------------------- */
+register('LN',   _unaryCx('LN',   Math.log,   _cxLn));
+register('LOG',  _unaryCx('LOG',  Math.log10, (z) => _cxDiv(_cxLn(z), _cx(Math.LN10, 0))));
+register('EXP',  _unaryCx('EXP',  Math.exp,   _cxExp));
+register('ALOG', _unaryCx('ALOG', (x) => Math.pow(10, x),
+                                       (z) => _cxExp(_cxMul(z, _cx(Math.LN10, 0)))));
+
+register('SINH', _unaryCx('SINH',  Math.sinh,  _cxSinh));
+register('COSH', _unaryCx('COSH',  Math.cosh,  _cxCosh));
+register('TANH', _unaryCx('TANH',  Math.tanh,  _cxTanh));
+register('ASINH', _unaryCx('ASINH', Math.asinh, _cxAsinh));
+// ACOSH and ATANH preserve their domain checks on the real branch
+// (x ≥ 1 for ACOSH, |x| < 1 for ATANH); Complex input goes to the
+// principal-branch formula without a domain check.
+// Session 063: same Tagged / List / V/M wrapping as the rest of the
+// hyperbolic family.  ACOSH and ATANH have hand-written domain logic
+// (ACOSH lifts x<1 to Complex; ATANH throws on x=±1) so they can't be
+// expressed as plain `_unaryCx` calls — but the wrapper layers below
+// are identical.
+register('ACOSH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ACOSH', [_toAst(v)]))); return; }
+  if (isComplex(v)) {
+    const r = _cxAcosh({ re: v.re, im: v.im });
+    s.push(Complex(r.re, r.im));
+    return;
+  }
+  const x = toRealOrThrow(v);
+  if (x >= 1) { s.push(Real(Math.acosh(x))); return; }
+  // Real x < 1 now lifts to Complex (principal branch) rather than
+  // throwing — matches HP50's complex-mode behavior.
+  const r = _cxAcosh({ re: x, im: 0 });
+  s.push(Complex(r.re, r.im));
+}))));
+register('ATANH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ATANH', [_toAst(v)]))); return; }
+  if (isComplex(v)) {
+    const r = _cxAtanh({ re: v.re, im: v.im });
+    s.push(Complex(r.re, r.im));
+    return;
+  }
+  const x = toRealOrThrow(v);
+  if (x > -1 && x < 1) { s.push(Real(Math.atanh(x))); return; }
+  if (x === 1 || x === -1) throw new RPLError('Infinite result');
+  // |x| > 1 lifts to Complex.
+  const r = _cxAtanh({ re: x, im: 0 });
+  s.push(Complex(r.re, r.im));
+}))));
+
+// SIN/COS/TAN: preserve angle-mode handling on reals; Complex is RAD.
+register('SIN', _trigFwdCx('SIN', Math.sin, _cxSin));
+register('COS', _trigFwdCx('COS', Math.cos, _cxCos));
+register('TAN', _trigFwdCx('TAN', Math.tan, _cxTan));
+
+// ASIN/ACOS/ATAN: real branch keeps domain checks via Math.asin/Math.acos
+// (NaN becomes Complex); |x|>1 lifts to Complex instead of NaN.
+//
+// Session 063: ASIN/ACOS get the same Tagged + List + V/M wrapping as
+// `_trigInvCx` for ATAN (which has no bespoke domain logic and so just
+// uses the builder).
+register('ASIN', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ASIN', [_toAst(v)]))); return; }
+  if (isComplex(v)) {
+    const r = _cxAsin({ re: v.re, im: v.im });
+    s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+    return;
+  }
+  const x = toRealOrThrow(v);
+  if (x >= -1 && x <= 1) { s.push(Real(fromRadians(Math.asin(x)))); return; }
+  const r = _cxAsin({ re: x, im: 0 });
+  s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+}))));
+register('ACOS', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
+  const v = s.pop();
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ACOS', [_toAst(v)]))); return; }
+  if (isComplex(v)) {
+    const r = _cxAcos({ re: v.re, im: v.im });
+    s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+    return;
+  }
+  const x = toRealOrThrow(v);
+  if (x >= -1 && x <= 1) { s.push(Real(fromRadians(Math.acos(x)))); return; }
+  const r = _cxAcos({ re: x, im: 0 });
+  s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+}))));
+register('ATAN', _trigInvCx('ATAN', Math.atan, _cxAtan));
+
+/* --------------- List combinators — SEQ, DOLIST, DOSUBS, STREAM ---------------
+   HP50 AUR §15 "Lists and sequences".  MAP (session 044) covers the
+   1-in/1-out elementwise case; this batch adds the four remaining
+   combinators users actually reach for.
+
+     SEQ     ( expr name start end step → list )
+       Evaluate `expr` with `name` bound to start, start+step, … while
+       the counter hasn't passed `end` in step's direction.  Returns a
+       list of the results.  Zero step → Loop iteration limit (infinite
+       loop).  Sign of `step` decides direction.
+     DOLIST  ( list_1 … list_n n prog → list )
+       Apply `prog` to the i-th element of each of the n lists; collect
+       results.  Length of result = min(len(list_1), …, len(list_n)).
+       Two-arg form `list prog DOLIST` defaults n=1.
+     DOSUBS  ( list n prog → list )
+       Sliding window of size n.  For each window, push its n elements
+       and call `prog`; collect results.  Len(result) = len(list) - n + 1.
+       n = 0 or n > len(list) → empty list.
+     STREAM  ( list prog → value )
+       Binary reduction.  Push first element, then for each subsequent
+       element push it and call `prog`.  Single-element list → that
+       element; empty list throws 'Invalid dimension' (HP50 error).
+
+   All four combinators delegate per-call evaluation to `_evalValue`
+   (the same entry point MAP / EVAL / IFT use), so Program / Name /
+   Symbolic pass-through works for free and recursion depth is enforced.
+   The `prog` slot accepts Program, Name, or Symbolic — same as MAP.
+   ----------------------------------------------------------------- */
+
+function _combinatorProgCheck(prog) {
+  if (!isProgram(prog) && !isName(prog) && !isSymbolic(prog)) {
+    throw new RPLError('Bad argument type');
+  }
+}
+
+// Pop one return value after evaluating prog; guard against non-1 delta.
+function _popOneReturn(s, prog, baseDepth, errLabel) {
+  _evalValue(s, prog, 0);
+  const delta = s.depth - baseDepth;
+  if (delta !== 1) throw new RPLError(errLabel + ': bad program');
+  return s.pop();
+}
+
+// Coerce an Integer / Real value to a plain JS number, accepting
+// integer-valued Reals as integer counts.  Used by SEQ/DOLIST/DOSUBS.
+function _toIntCount(v, errLabel) {
+  if (isInteger(v)) return Number(v.value);
+  if (isReal(v) && Number.isFinite(v.value) && Math.trunc(v.value) === v.value) {
+    return v.value;
+  }
+  throw new RPLError(errLabel);
+}
+
+register('SEQ', (s) => {
+  if (s.depth < 5) throw new RPLError('Too few arguments');
+  const step  = s.pop();
+  const end   = s.pop();
+  const start = s.pop();
+  const name  = s.pop();
+  const expr  = s.pop();
+  if (!isName(name)) throw new RPLError('Bad argument type');
+  _combinatorProgCheck(expr);          // expr can be a Program/Name/Symbolic
+  const a = toRealOrThrow(start);
+  const b = toRealOrThrow(end);
+  const st = toRealOrThrow(step);
+  if (st === 0) throw new RPLError('Bad argument value');
+  const varName = name.id;
+  const saved = varRecall(varName);
+  const out = [];
+  let iterations = 0;
+  try {
+    let i = a;
+    while ((st > 0 && i <= b) || (st < 0 && i >= b)) {
+      if (++iterations > MAX_LOOP_ITERATIONS) throw new RPLError('Loop iteration limit');
+      varStore(varName, Real(i));
+      const baseDepth = s.depth;
+      _evalValue(s, expr, 0);
+      const delta = s.depth - baseDepth;
+      if (delta !== 1) throw new RPLError('SEQ: bad program');
+      out.push(s.pop());
+      i += st;
+    }
+  } finally {
+    if (saved === undefined) varPurge(varName);
+    else varStore(varName, saved);
+  }
+  s.push(RList(out));
+});
+
+register('DOLIST', (s) => {
+  if (s.depth < 2) throw new RPLError('Too few arguments');
+  const prog = s.pop();
+  _combinatorProgCheck(prog);
+  // Decide whether the next value is a count (Integer/integer-Real)
+  // or the single-list form (list).
+  const top = s.peek();
+  let n;
+  if (isList(top)) {
+    n = 1;                               // implicit-n form
+  } else {
+    const nVal = s.pop();
+    n = _toIntCount(nVal, 'Bad argument type');
+    if (n < 1) throw new RPLError('Bad argument value');
+  }
+  if (s.depth < n) throw new RPLError('Too few arguments');
+  const lists = [];
+  for (let i = 0; i < n; i++) lists.push(s.pop());   // in reverse order
+  lists.reverse();
+  for (const L of lists) if (!isList(L)) throw new RPLError('Bad argument type');
+  const minLen = lists.reduce((m, L) => Math.min(m, L.items.length), Infinity);
+  const len = Number.isFinite(minLen) ? minLen : 0;
+  const out = [];
+  for (let i = 0; i < len; i++) {
+    const baseDepth = s.depth;
+    for (const L of lists) s.push(L.items[i]);
+    out.push(_popOneReturn(s, prog, baseDepth, 'DOLIST'));
+  }
+  s.push(RList(out));
+});
+
+/* DOSUBS context stack (session 046): a per-call frame pushed while
+   DOSUBS iterates, so NSUB / ENDSUB called inside the window-program
+   can read the current window index and the total number of windows.
+   A JS array is used as a stack so nested DOSUBS calls nest the
+   context naturally — NSUB/ENDSUB always read the innermost frame. */
+const _DOSUBS_STACK = [];
+function _currentDosubsFrame() {
+  return _DOSUBS_STACK.length === 0
+    ? null
+    : _DOSUBS_STACK[_DOSUBS_STACK.length - 1];
+}
+
+register('DOSUBS', (s) => {
+  if (s.depth < 3) throw new RPLError('Too few arguments');
+  const prog = s.pop();
+  _combinatorProgCheck(prog);
+  const nVal = s.pop();
+  const n = _toIntCount(nVal, 'Bad argument type');
+  const list = s.pop();
+  if (!isList(list)) throw new RPLError('Bad argument type');
+  if (n < 0) throw new RPLError('Bad argument value');
+  const items = list.items;
+  if (n === 0 || n > items.length) { s.push(RList([])); return; }
+  const totalWindows = items.length - n + 1;
+  const frame = { index: 1, total: totalWindows };
+  _DOSUBS_STACK.push(frame);
+  const out = [];
+  try {
+    for (let i = 0; i + n <= items.length; i++) {
+      frame.index = i + 1;                       // 1-based per HP50
+      const baseDepth = s.depth;
+      for (let k = 0; k < n; k++) s.push(items[i + k]);
+      out.push(_popOneReturn(s, prog, baseDepth, 'DOSUBS'));
+    }
+  } finally {
+    _DOSUBS_STACK.pop();
+  }
+  s.push(RList(out));
+});
+
+/* NSUB / ENDSUB — only meaningful inside a DOSUBS window-program.
+   HP50 AUR §13.5: NSUB pushes the 1-based index of the current
+   window; ENDSUB pushes the total number of windows DOSUBS will
+   process.  Called outside DOSUBS, both throw 'Undefined local
+   name' — the HP50 error for these ops when there's no active
+   DOSUBS frame.  We use the same RPLError text so program-level
+   IFERR traps see a consistent message. */
+register('NSUB', (s) => {
+  const fr = _currentDosubsFrame();
+  if (!fr) throw new RPLError('Undefined local name: NSUB');
+  s.push(Integer(BigInt(fr.index)));
+});
+
+register('ENDSUB', (s) => {
+  const fr = _currentDosubsFrame();
+  if (!fr) throw new RPLError('Undefined local name: ENDSUB');
+  s.push(Integer(BigInt(fr.total)));
+});
+
+register('STREAM', (s) => {
+  if (s.depth < 2) throw new RPLError('Too few arguments');
+  const prog = s.pop();
+  _combinatorProgCheck(prog);
+  const list = s.pop();
+  if (!isList(list)) throw new RPLError('Bad argument type');
+  const items = list.items;
+  if (items.length === 0) throw new RPLError('Invalid dimension');
+  if (items.length === 1) { s.push(items[0]); return; }
+  s.push(items[0]);
+  for (let i = 1; i < items.length; i++) {
+    const baseDepth = s.depth - 1;       // the accumulator is already on top
+    s.push(items[i]);
+    _evalValue(s, prog, 0);
+    const delta = s.depth - baseDepth;
+    if (delta !== 1) throw new RPLError('STREAM: bad program');
+  }
+});
+
+/* --------------- Mixed BinInt ↔ Real/Integer arithmetic ---------------
+   HP50 AUR §10.1: when a BinaryInteger meets a Real or Integer in a
+   numeric op, the Real/Integer is coerced to a BinInt by truncating
+   toward zero and masking to the current wordsize.  The BinInt
+   operand's display base wins.
+
+       #FFh 3 +         → #102h          (3 is coerced to #3h)
+       3 #FFh +         → #102h          (base is still 'h' — BinInt's)
+       #20h 2.7 *       → #40h           (2.7 → #2h via trunc)
+       #5h 0 *          → #0h            (kept as BinInt zero)
+
+   Dividing by a coerced-zero throws the integer-family 'Division by
+   zero'.  A Complex operand on either side is still 'Bad argument
+   type' — BinInt promotion is integer-only.
+
+   Implementation: patch `_scalarBinary`'s early reject of mixed-type
+   BinInt operands into a coercion branch that routes through
+   `binIntBinary` with the BinInt side's base preserved.  This change
+   is deliberately minimal — no new pathway in `binaryMath`, since the
+   Vector/Matrix/Unit branches never see BinInt arguments.
+   ----------------------------------------------------------------- */
+
+/** Coerce a Real/Integer value to a BinaryInteger by truncating toward
+ *  zero.  Masking to wordsize happens inside binIntBinary already, so
+ *  we hand over the raw BigInt payload.  Base is provided by the
+ *  caller (the actual-BinInt operand's base). */
+function _coerceToBinInt(v, base) {
+  if (isBinaryInteger(v)) return v;
+  if (isInteger(v)) {
+    // Negative integers wrap via two's-complement at mask time; clamp
+    // to non-negative in the constructor by adding 2^w.  Since the
+    // mask happens inside binIntBinary, just hand over the raw BigInt.
+    const raw = v.value;
+    // BinaryInteger ctor clamps negative to 0, but we want wrap.  Do
+    // the wrap here: add 2^w if negative.
+    if (raw < 0n) {
+      const w = BigInt(getWordsize());
+      const mod = 1n << w;
+      return BinaryInteger(((raw % mod) + mod) % mod, base);
+    }
+    return BinaryInteger(raw, base);
+  }
+  if (isReal(v)) {
+    const f = v.value;
+    if (!Number.isFinite(f)) throw new RPLError('Bad argument value');
+    const t = Math.trunc(f);
+    const bi = BigInt(t);
+    if (bi < 0n) {
+      const w = BigInt(getWordsize());
+      const mod = 1n << w;
+      return BinaryInteger(((bi % mod) + mod) % mod, base);
+    }
+    return BinaryInteger(bi, base);
+  }
+  throw new RPLError('Bad argument type');
+}
+
+// Replace the original _scalarBinary entirely; last registration wins.
+// We export the mutation by re-defining the op functions that capture
+// _scalarBinary.  Since _scalarBinary is used internally (not exported)
+// and referenced by `binaryMath` through closure, we patch those
+// registrations rather than the helper.  Approach: add a new helper
+// `_scalarBinaryMixed` that tries BinInt-mixed coercion first, then
+// falls back to the original logic via a direct inline copy for the
+// non-BinInt branches.
+function _scalarBinaryMixed(op, a, b) {
+  const aBin = isBinaryInteger(a);
+  const bBin = isBinaryInteger(b);
+  if (aBin && bBin) return binIntBinary(op, a, b);
+  if (aBin && (isInteger(b) || isReal(b))) {
+    const bb = _coerceToBinInt(b, a.base);
+    return binIntBinary(op, a, bb);
+  }
+  if (bBin && (isInteger(a) || isReal(a))) {
+    const aa = _coerceToBinInt(a, b.base);
+    return binIntBinary(op, aa, b);
+  }
+  // Mixed BinInt with a non-numeric (Complex, Symbolic, Unit, String…)
+  // falls through to the original _scalarBinary for its existing
+  // error / symbolic / unit / string handling.  We can call it
+  // directly — it throws 'Bad argument type' for the mixed case
+  // because it is still gated on `aBin || bBin` at the top.  To avoid
+  // that early reject, route non-BinInt pairs only.
+  if (aBin || bBin) {
+    // e.g. BinInt + Complex  or  BinInt + Symbolic
+    if (_isSymOperand(a) || _isSymOperand(b)) {
+      // Same fallback path as _scalarBinary's symbolic branch — lift
+      // both to an AST.  BinInt doesn't have an AST representation,
+      // so this will throw 'Bad argument type' via _toAst's null
+      // return.  Keep as-is.
+      const l = _toAst(a);
+      const r = _toAst(b);
+      if (l && r) return Symbolic(AstBin(op, l, r));
+    }
+    throw new RPLError('Bad argument type');
+  }
+  return _scalarBinary(op, a, b);
+}
+
+// Rewire +, -, *, /, ^ through the mixed-aware scalar combiner.  We
+// don't touch binaryMath itself; instead we replace the registered
+// fns with wrappers that try the mixed-BinInt path first and hand
+// off to binaryMath when no BinInt is involved.
+function _binaryMathMixed(op) {
+  const orig = binaryMath(op);
+  return (s) => {
+    if (s.depth >= 2) {
+      const a = s.peek(2);               // level2
+      const b = s.peek(1);               // level1
+      const aBin = isBinaryInteger(a);
+      const bBin = isBinaryInteger(b);
+      if ((aBin && !bBin && (isInteger(b) || isReal(b))) ||
+          (bBin && !aBin && (isInteger(a) || isReal(a)))) {
+        s.popN(2);
+        s.push(_scalarBinaryMixed(op, a, b));
+        return;
+      }
+    }
+    orig(s);
+  };
+}
+
+register('+', (s) => {
+  // Preserve the String + anything concatenation behavior from
+  // session 034; then handle BinInt + Real/Integer promotion; then
+  // fall through to the generic numeric/vector/matrix/unit binaryMath.
+  if (s.depth >= 2) {
+    const a = s.peek(2), b = s.peek(1);
+    if (isString(a) || isString(b)) {
+      const [x, y] = s.popN(2);
+      const l = _stringCoerce(x), r = _stringCoerce(y);
+      if (l == null || r == null) throw new RPLError('Bad argument type');
+      s.push(Str(l + r));
+      return;
+    }
+    const aBin = isBinaryInteger(a);
+    const bBin = isBinaryInteger(b);
+    if ((aBin && !bBin && (isInteger(b) || isReal(b))) ||
+        (bBin && !aBin && (isInteger(a) || isReal(a)))) {
+      s.popN(2);
+      s.push(_scalarBinaryMixed('+', a, b));
+      return;
+    }
+  }
+  binaryMath('+')(s);
+});
+register('-',  _binaryMathMixed('-'));
+register('*',  _binaryMathMixed('*'));
+register('/',  _binaryMathMixed('/'));
+register('^',  _binaryMathMixed('^'));
+
+
+/* =================================================================
+   Session 046 — LAST / LASTARG, SNEG / SINV / SCONJ, PGDIR.
+
+   NSUB / ENDSUB are also session-046 additions but live next to
+   DOSUBS (see the `session 045 list combinators` block) because
+   they share the thread-local `_DOSUBS_STACK` context frame with
+   DOSUBS.  The engine-plumbing for LAST / LASTARG — Stack.runOp /
+   Stack._lastArgs — lives in `src/rpl/stack.js`; callers in
+   `src/ui/entry.js` wrap each user-facing op invocation in
+   runOp so LASTARG reflects the most-recent user command.
+
+   Advanced Guide refs:
+     §2.2   LASTARG, LAST CMD, LAST STACK (our LAST/LASTARG share
+            the LASTARG definition)
+     §3     SNEG, SINV, SCONJ — stored-variable in-place mutations
+     §7     PGDIR — purge a subdirectory, including non-empty ones
+     §15.8  NSUB, ENDSUB — see DOSUBS block above
+   ================================================================= */
+
+/* --------------- LAST / LASTARG ---------------
+   HP50 AUR §2.2.  Both names resolve to the same op — LAST is the
+   HP49g+ short form, LASTARG is spelled out in programs.  Push each
+   recorded argument back onto the stack in original level order.
+   Throws 'No last arguments' when no op with consumed args has run
+   (or after a LASTARG/LAST call itself, which is 0-arg).
+   ----------------------------------------------------------------- */
+function _pushLastArgs(s) {
+  if (!s.hasLastArgs()) throw new RPLError('No last arguments');
+  const args = s.getLastArgs();
+  for (const v of args) s.push(v);
+}
+register('LAST',    _pushLastArgs);
+register('LASTARG', _pushLastArgs);
+
+/* --------------- SNEG / SINV / SCONJ ---------------
+   Parallel to the STO+ / STO- / STO(mul) / STO(div) family from
+   session 038.  Read the stored value,
+   apply the single-operand op, write it back.  Accepts Name or
+   String identifier on level 1.  A name that doesn't exist throws
+   'Undefined name'.  The underlying NEG / INV / CONJ ops do the
+   type-dispatch and throw on operands they can't handle (e.g.
+   SCONJ on a String stored-value — 'Bad argument type').
+   ----------------------------------------------------------------- */
+function _storedUnary(opSymbol) {
+  const unaryOp = lookup(opSymbol);
+  if (!unaryOp) throw new Error('_storedUnary bootstrap: unknown op ' + opSymbol);
+  const apply = (s, id) => {
+    const stored = varRecall(id);
+    if (stored === undefined) throw new RPLError(`Undefined name: ${id}`);
+    s.push(stored);
+    unaryOp.fn(s);
+    const [result] = s.popN(1);
+    try { varStore(id, result); }
+    catch (e) { throw new RPLError(e.message || 'Bad argument value'); }
+  };
+  return (s) => {
+    const v = s.pop();
+    if (isList(v)) {
+      for (const item of v.items) apply(s, _coerceDirName(item));
+      return;
+    }
+    apply(s, _coerceDirName(v));
+  };
+}
+register('SNEG',  _storedUnary('NEG'));
+register('SINV',  _storedUnary('INV'));
+register('SCONJ', _storedUnary('CONJ'));
+
+/* --------------- PGDIR ---------------
+   HP50 AUR §7.  PGDIR is like PURGE but specifically for
+   subdirectories, and unlike PURGE it is allowed to purge a
+   non-empty subdirectory (recursive delete).  The HP50 silently
+   accepts PGDIR on a name that refers to a non-directory as well,
+   but we throw 'Bad argument type' — the user almost certainly
+   meant PURGE, and a quiet accept is harder to debug later.
+
+   Non-existent name: 'Undefined name: <id>' (matches PURGE).
+   Target is a Directory but non-empty: allowed (recursive-delete
+   via a `.entries.clear()` before the delete call, so varPurge's
+   "Directory not empty" guard doesn't trip).
+   ----------------------------------------------------------------- */
+function _pgdirOneOrRPL(id) {
+  const existing = _calcState.current.entries.get(id);
+  if (existing === undefined) throw new RPLError(`Undefined name: ${id}`);
+  if (!isDirectory(existing)) throw new RPLError('Bad argument type');
+  // Recursively clear all nested entries so the built-in "Directory not
+  // empty" guard in varPurge doesn't reject the delete.  Clearing in
+  // place is fine — nothing else holds references to these entries.
+  const _drop = (dir) => {
+    for (const [k, v] of dir.entries) {
+      if (v && v.type === 'directory') _drop(v);
+      dir.entries.delete(k);
+    }
+  };
+  _drop(existing);
+  // Now the dir is empty; delete it from the parent.
+  const gone = varPurge(id);
+  if (!gone) throw new RPLError(`Undefined name: ${id}`);
+}
+
+register('PGDIR', (s) => {
+  const v = s.pop();
+  if (isList(v)) {
+    for (const item of v.items) {
+      _pgdirOneOrRPL(_coerceDirName(item));
+    }
+    return;
+  }
+  _pgdirOneOrRPL(_coerceDirName(v));
+});
+
+
+/* =================================================================
+   Session 047 — factorial `!` bang, →Q rationalize, ORDER reorder
+                 variables, BYTES / NEWOB / MEM bookkeeping trio,
+                 TRACE matrix trace.
+
+   All items user-reachable from the typed catalog today.  No UI
+   wiring changes.  Advanced Guide refs:
+     §3.4   (FACT and its `!` bang form)
+     §3.5   (→Q continued-fraction rationalize)
+     §2.8   (ORDER reshapes VARS output)
+     §2.4   (BYTES), §2.6 (NEWOB, MEM)
+     §15.4  (TRACE)
+   ================================================================= */
+
+/* --------------- `!` — postfix factorial alias for FACT ---------------
+   HP50 keyboard's `!` key binds to FACT (same op).  Parser tokenises a
+   bare `!` as an `ident` of that text; registering `!` here as an op
+   delegating to FACT makes the user-level surface match the real unit.
+   Works for `5 !`, `5.5 !` (non-integer Real goes through gamma), and
+   `'X !'` symbolic inputs that FACT already accepts.  Negative-integer
+   arg throws 'Bad argument value' / 'Infinite result' through FACT.
+   ----------------------------------------------------------------- */
+register('!', (s) => { lookup('FACT').fn(s); });
+
+/* --------------- →Q — rationalize a Real to a fraction ---------------
+   HP50 AUR §3.5.  Given a Real x, finds the best Integer/Integer
+   fraction within a bounded denominator that equals x to double
+   precision.  Output is a Symbolic AST of `a/b` (or just `a` when
+   denom=1, or the value as a Num when x is already an exact integer).
+
+   Algorithm: Stern-Brocot continued-fraction convergents — standard
+   textbook approach.  Iterate until the convergent matches x to
+   double precision OR the denominator passes a cap (1e10, well above
+   any HP50-realistic "best rational").  The convergent's denominator
+   is a canonical expression of the precision limit: x = 0.1 → `1/10`,
+   x = 0.333333333333 → `1/3`, x = 3.14159265358979 → `245850922/78256779`.
+
+   Integer input or integer-valued Real: returns `Num(n)` (no /1 form).
+   Negative: wrap the numerator's sign so the `/` stays between
+   positive integers (e.g. -0.5 → Neg(1/2)).  Complex / String etc.
+   are rejected.
+   ----------------------------------------------------------------- */
+const _QMAX_DENOM = 1e10;
+const _QMAX_ITERS = 64;
+
+function _continuedFractionConvergent(x) {
+  // Stern-Brocot mediant: track two convergents (h0/k0, h1/k1) and
+  // advance via `a = floor(b)`; `h2 = a*h1 + h0`, `k2 = a*k1 + k0`.
+  const sign = x < 0 ? -1 : 1;
+  let b = Math.abs(x);
+  let h0 = 0, h1 = 1;
+  let k0 = 1, k1 = 0;
+  for (let i = 0; i < _QMAX_ITERS; i++) {
+    const a = Math.floor(b);
+    const h2 = a * h1 + h0;
+    const k2 = a * k1 + k0;
+    if (k2 > _QMAX_DENOM) break;
+    h0 = h1; h1 = h2;
+    k0 = k1; k1 = k2;
+    const frac = b - a;
+    if (frac < 1e-15) break;    // converged within Real precision
+    b = 1 / frac;
+    if (!Number.isFinite(b)) break;
+  }
+  return { n: sign * h1, d: k1 };
+}
+
+register('→Q', (s) => {
+  const [v] = s.popN(1);
+  // Integer stays integer: represent as Symbolic(Num(n)) per HP50 spec
+  // that →Q returns a Symbolic, but no /1 denominator.
+  if (isInteger(v)) {
+    s.push(Symbolic(AstNum(Number(v.value))));
+    return;
+  }
+  if (!isReal(v)) throw new RPLError('Bad argument type');
+  const x = v.value;
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  if (x === 0) { s.push(Symbolic(AstNum(0))); return; }
+  if (Number.isInteger(x)) { s.push(Symbolic(AstNum(x))); return; }
+  const { n, d } = _continuedFractionConvergent(x);
+  if (d === 1) { s.push(Symbolic(AstNum(n))); return; }
+  // Compose a/b with sign carried by the numerator's sign.  For a
+  // negative-numerator rational we wrap in Neg so the printed form
+  // reads `-(3/4)` rather than `(-3)/4` — matches HP50 display.
+  if (n < 0) {
+    s.push(Symbolic(AstNeg(AstBin('/', AstNum(-n), AstNum(d)))));
+  } else {
+    s.push(Symbolic(AstBin('/', AstNum(n), AstNum(d))));
+  }
+});
+register('->Q', (s) => { lookup('→Q').fn(s); });
+
+/* --------------- ORDER — reorder current-directory entries ---------------
+   HP50 AUR §2.8.  Pops a List of Names (or Strings) and rearranges the
+   current directory so those names appear first in the given order,
+   with remaining entries preserved in their existing relative order.
+   Unknown / missing names in the input list are silently ignored
+   (matches HP50 forgiving behavior).  Duplicates take effect at their
+   first occurrence only.  Non-List input throws Bad argument type.
+   ----------------------------------------------------------------- */
+register('ORDER', (s) => {
+  const [l] = s.popN(1);
+  if (!isList(l)) throw new RPLError('Bad argument type');
+  const names = [];
+  for (const item of l.items) {
+    if (isName(item))        names.push(item.id);
+    else if (isString(item)) names.push(item.value);
+    else throw new RPLError('Bad argument type');
+  }
+  reorderCurrentEntries(names);
+});
+
+/* --------------- BYTES / NEWOB / MEM — bookkeeping trio ---------------
+   HP50 AUR §2.4/§2.6.  In our web implementation we don't track real
+   memory pages or CRC checksums, so we provide plausible surrogates:
+
+     BYTES  ( obj  →  checksum size )
+            — `checksum` is Integer(0) on our implementation (HP50 uses a
+              CRC over the object's binary encoding; we don't have one).
+              `size` is an Integer estimate of the object's serialized
+              JSON length.  Level-2 checksum, level-1 size — matches HP50
+              stack layout.
+     NEWOB  ( obj  →  obj' )
+            — force a new copy of the object.  HP50 uses this when a
+              value was recalled by reference (shared underlying memory);
+              with our frozen immutable RPL values this is effectively
+              an identity, but we return a freshly-constructed clone so
+              reference-equality (`===`) with the pre-op value is false.
+              Composite containers (List / Vector / Matrix) are rebuilt
+              shallowly; scalar atoms are re-wrapped via their
+              constructor to produce a new object.
+     MEM    ( → mem-free )
+            — available memory.  HP50 reports the free Port 0 / Port 1
+              bytes.  Our sentinel: Real(Number.MAX_SAFE_INTEGER) — big
+              enough that user programs testing `MEM` against a
+              threshold always pass.
+   ----------------------------------------------------------------- */
+
+function _sizeEstimate(v) {
+  // A best-effort byte estimate via JSON round-tripping.  RPL values
+  // are frozen and structurally simple so JSON.stringify survives on
+  // everything except the Program type (which contains arbitrary
+  // tokens).  On the HP50 every object carries a 5-byte prologue
+  // overhead; we mimic with a +5 additive constant.
+  try {
+    // BigInt isn't JSON-serialisable; replace with decimal string.
+    const s = JSON.stringify(v, (_k, val) =>
+      typeof val === 'bigint' ? val.toString() + 'n' : val);
+    return (s ? s.length : 0) + 5;
+  } catch (_e) {
+    // Cyclic or non-serialisable — return a small nonzero sentinel.
+    return 5;
+  }
+}
+
+function _newObCopy(v) {
+  if (isReal(v))    return Real(v.value);
+  if (isInteger(v)) return Integer(v.value);
+  if (isBinaryInteger(v)) return BinaryInteger(v.value, v.base);
+  if (isComplex(v)) return Complex(v.re, v.im);
+  if (isString(v))  return Str(v.value);
+  if (isName(v))    return Name(v.id, { local: v.local, quoted: v.quoted });
+  if (isSymbolic(v)) return Symbolic(v.expr);
+  if (isList(v))    return RList(v.items.slice());
+  if (isVector(v))  return Vector(v.items.slice());
+  if (isMatrix(v))  return Matrix(v.rows.map(r => r.slice()));
+  if (isProgram(v)) return { type: 'program', tokens: Object.freeze([...v.tokens]) };
+  if (isTagged(v))  return Tagged(v.tag, v.value);
+  if (isUnit(v))    return Unit(v.value, v.uexpr);
+  // Directory or anything unknown: return as-is (NEWOB on a Directory is
+  // meaningless — it's already a live mutable container).
+  return v;
+}
+
+register('BYTES', (s) => {
+  const [v] = s.popN(1);
+  const size = _sizeEstimate(v);
+  // Push: level 2 = checksum (0), level 1 = size
+  s.push(Integer(0n));
+  s.push(Integer(BigInt(size)));
+});
+
+register('NEWOB', (s) => {
+  const [v] = s.popN(1);
+  s.push(_newObCopy(v));
+});
+
+register('MEM', (s) => {
+  s.push(Real(Number.MAX_SAFE_INTEGER));
+});
+
+/* --------------- TRACE — matrix trace ---------------
+   HP50 AUR §15.4.  Given a square Matrix, sum the main-diagonal
+   entries and push the result as a scalar.  Uses `_scalarBinary('+', …)`
+   (the same combiner DET uses) so mixed Integer / Real / Complex /
+   Symbolic entries all compose — an integer-only matrix stays exactly
+   integer.  Non-Matrix / non-square inputs throw.
+   ----------------------------------------------------------------- */
+register('TRACE', (s) => {
+  const [m] = s.popN(1);
+  if (!isMatrix(m)) throw new RPLError('Bad argument type');
+  const rows = m.rows.length;
+  const cols = rows > 0 ? m.rows[0].length : 0;
+  if (rows !== cols) throw new RPLError('Invalid dimension');
+  if (rows === 0) { s.push(Real(0)); return; }
+  let acc = m.rows[0][0];
+  for (let i = 1; i < rows; i++) {
+    acc = _scalarBinary('+', acc, m.rows[i][i]);
+  }
+  s.push(acc);
+});
+
+
+/* =================================================================
+   Session 048 — Q→ decompose, D→HMS / HMS→D bridges,
+                 RREF / RANK (Gauss-Jordan), CON constant matrix/vector.
+
+   All items user-reachable from the typed catalog today.  No UI
+   wiring changes.  Advanced Guide refs:
+     §3.5   (Q→ decompose the Symbolic n/d from →Q)
+     §3.3   (D→HMS / HMS→D — degree aliases for →HMS / HMS→)
+     §15.4  (RREF / RANK — Gauss-Jordan row reduction)
+     §15.2  (CON — constant-fill matrix/vector builder)
+   ================================================================= */
+
+/* --------------- Q→ — decompose Symbolic n/d back to integer pair ------
+   HP50 AUR §3.5.  Inverse of →Q.  Pops a Symbolic of the shape produced
+   by →Q (an integer, `n/d`, or `-(n/d)`) and pushes two Integers: the
+   (signed) numerator at level 2 and the denominator at level 1.  A bare
+   integer Symbolic decomposes as `( n 1 )` — `d = 1` — matching the HP50
+   convention that "every integer is an integer over one".
+
+   Accepted shapes (all produced by →Q or commonly parseable):
+     Symbolic(Num(n))                  →  ( n 1 )
+     Symbolic(Bin('/', Num(n), Num(d)))→  ( n d )
+     Symbolic(Neg(Bin('/', Num(n), Num(d))))  →  ( -n d )
+     Symbolic(Neg(Num(n)))             →  ( -n 1 )
+     Integer(n) / Real(n)              →  ( n 1 )  (convenience — HP50
+                                                    also accepts bare
+                                                    numerics on Q→)
+
+   Non-integer numerator/denominator (e.g. 1/3.14) throws Bad argument
+   value — Q→ is specifically about integer rationals.  Any other
+   Symbolic shape (a*b, a+b, SIN(x), etc.) throws Bad argument type.
+   ----------------------------------------------------------------- */
+
+function _astIntOrThrow(n, msg = 'Bad argument value') {
+  if (!n || n.kind !== 'num') throw new RPLError(msg);
+  if (!Number.isFinite(n.value) || !Number.isInteger(n.value)) {
+    throw new RPLError(msg);
+  }
+  return BigInt(n.value);
+}
+
+function _qDecompose(sym) {
+  // Returns [num, den] as BigInts.
+  if (sym.kind === 'num') {
+    return [_astIntOrThrow(sym), 1n];
+  }
+  if (sym.kind === 'neg') {
+    const [n, d] = _qDecompose(sym.arg);
+    return [-n, d];
+  }
+  if (sym.kind === 'bin' && sym.op === '/') {
+    const n = _astIntOrThrow(sym.l);
+    const d = _astIntOrThrow(sym.r);
+    if (d === 0n) throw new RPLError('Infinite result');
+    return [n, d];
+  }
+  throw new RPLError('Bad argument type');
+}
+
+register('Q→', (s) => {
+  const [v] = s.popN(1);
+  // Bare numerics: convenience pass-through.  HP50's Q→ accepts these
+  // too (the integer-over-one form) so programs that round-trip
+  // `3 →Q Q→` see `3 1` on the stack.
+  if (isInteger(v))  { s.push(Integer(v.value)); s.push(Integer(1n)); return; }
+  if (isReal(v)) {
+    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
+    s.push(Integer(BigInt(v.value))); s.push(Integer(1n)); return;
+  }
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const [n, d] = _qDecompose(v.expr);
+  s.push(Integer(n));
+  s.push(Integer(d));
+});
+register('Q->', (s) => { lookup('Q→').fn(s); });
+
+/* --------------- D→HMS / HMS→D — degree aliases for →HMS / HMS→ -------
+   HP50 AUR §3.3.  D→HMS converts a decimal-degree value into DD.MMSS
+   form; HMS→D goes the other way.  The numeric format is identical to
+   the H:M:S form used by →HMS / HMS→ (the leading integer is the whole
+   unit, next two digits are minutes/arcminutes, remaining are
+   seconds/arcseconds).  So these are registered as aliases of the
+   existing `_hmsUnary` helpers.  ASCII aliases `D->HMS` / `HMS->D`
+   register alongside the Unicode glyphs so users on keyboards without
+   `→` can type them.
+   ----------------------------------------------------------------- */
+register('D→HMS',  _hmsUnary('D→HMS',  (h) => _hoursToHms(h)));
+register('D->HMS', _hmsUnary('D->HMS', (h) => _hoursToHms(h)));
+register('HMS→D',  _hmsUnary('HMS→D',  (h) => _hmsToHours(h)));
+register('HMS->D', _hmsUnary('HMS->D', (h) => _hmsToHours(h)));
+
+/* --------------- RREF / RANK — row reduction and rank --------------
+   HP50 AUR §15.4.  RREF produces the reduced-row-echelon form of its
+   argument Matrix; RANK counts the non-zero rows of the RREF.
+
+   Reuses the Gauss-Jordan machinery from `_invMatrixNumeric` but
+   without the augmented-identity trick (since we only care about the
+   left-hand side).  Handles rectangular (m×n with m ≠ n) matrices:
+   the inversion path requires square but RREF does not.  Works on
+   Real / Integer entries; Complex / Symbolic entries throw
+   `Bad argument type` (same policy as INV).
+
+   RANK counts the rows whose max |entry| exceeds a small tolerance
+   (1e-10 times the row's 1-norm-scale).  This is the usual numerical
+   rank definition — bit-exact zero tests are fragile after floating-
+   point row ops.
+   ----------------------------------------------------------------- */
+function _rrefNumeric(rows) {
+  const m = rows.length;
+  if (m === 0) return [];
+  const n = rows[0].length;
+  for (const row of rows) {
+    if (row.length !== n) throw new RPLError('Invalid dimension');
+    for (const x of row) {
+      if (!isReal(x) && !isInteger(x)) {
+        throw new RPLError('Bad argument type');
+      }
+    }
+  }
+  // Convert to a mutable 2-D array of JS numbers.
+  const a = rows.map(row => row.map(x => isInteger(x) ? Number(x.value) : x.value));
+  // Standard Gauss-Jordan elimination with partial pivoting.
+  let r = 0; // current pivot row
+  for (let c = 0; c < n && r < m; c++) {
+    // Find pivot in column c, rows >= r.
+    let best = r, bestAbs = Math.abs(a[r][c]);
+    for (let i = r + 1; i < m; i++) {
+      const v = Math.abs(a[i][c]);
+      if (v > bestAbs) { best = i; bestAbs = v; }
+    }
+    if (bestAbs < 1e-12) continue;           // column is already clean
+    if (best !== r) {
+      [a[r], a[best]] = [a[best], a[r]];
+    }
+    const piv = a[r][c];
+    for (let j = 0; j < n; j++) a[r][j] /= piv;
+    a[r][c] = 1;                             // kill residual FP noise
+    for (let i = 0; i < m; i++) {
+      if (i === r) continue;
+      const f = a[i][c];
+      if (Math.abs(f) < 1e-15) continue;
+      for (let j = 0; j < n; j++) a[i][j] -= f * a[r][j];
+      a[i][c] = 0;                           // kill residual FP noise
+    }
+    r++;
+  }
+  return a;
+}
+
+function _numericRank(rrefArr) {
+  // Row is non-zero if any entry exceeds the tolerance.
+  let k = 0;
+  for (const row of rrefArr) {
+    let maxAbs = 0;
+    for (const x of row) {
+      const v = Math.abs(x);
+      if (v > maxAbs) maxAbs = v;
+    }
+    if (maxAbs > 1e-10) k++;
+  }
+  return k;
+}
+
+register('RREF', (s) => {
+  const [v] = s.popN(1);
+  if (!isMatrix(v)) throw new RPLError('Bad argument type');
+  const out = _rrefNumeric(v.rows);
+  s.push(Matrix(out.map(row => row.map(x => Real(x)))));
+});
+
+register('RANK', (s) => {
+  const [v] = s.popN(1);
+  if (!isMatrix(v)) throw new RPLError('Bad argument type');
+  const out = _rrefNumeric(v.rows);
+  s.push(Integer(BigInt(_numericRank(out))));
+});
+
+/* --------------- CON — constant-fill matrix / vector ------------------
+   HP50 AUR §15.2.  Two stack signatures:
+
+     n      value   →  Vector         (n-long vector filled with value)
+     {n}    value   →  Vector
+     {m n}  value   →  Matrix         (m×n matrix filled with value)
+     M      value   →  Matrix'        (M's shape, every entry replaced)
+     V      value   →  Vector'        (V's shape, every entry replaced)
+
+   `value` is a scalar (Real / Integer / Complex / Symbolic) — no nested
+   containers.  The count/shape element may be Integer or Real (any
+   non-negative integer-valued Real).  Integer shape stays Integer when
+   fed back via SIZE → CON round-trip; Real values stay Real.
+
+   Error surface:
+     - shape-list neither {n} nor {m n}  →  Invalid dimension
+     - count <= 0 for a dimension        →  Bad argument value
+     - scalar-wrapped non-scalar value   →  Bad argument type
+   ----------------------------------------------------------------- */
+
+function _conShapeFrom(v) {
+  // Returns {m,n} where n===null means "vector of length m".  Accepts
+  // Integer, Real (integer-valued), {n}, {m n}, Vector, Matrix.
+  if (isInteger(v))           return { m: Number(v.value), n: null };
+  if (isReal(v)) {
+    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
+    return { m: v.value, n: null };
+  }
+  if (isList(v)) {
+    if (v.items.length === 1) {
+      const k = v.items[0];
+      if (isInteger(k))       return { m: Number(k.value), n: null };
+      if (isReal(k) && Number.isInteger(k.value)) return { m: k.value, n: null };
+      throw new RPLError('Bad argument type');
+    }
+    if (v.items.length === 2) {
+      const [a, b] = v.items;
+      const mm = isInteger(a) ? Number(a.value)
+               : (isReal(a) && Number.isInteger(a.value)) ? a.value
+               : (() => { throw new RPLError('Bad argument type'); })();
+      const nn = isInteger(b) ? Number(b.value)
+               : (isReal(b) && Number.isInteger(b.value)) ? b.value
+               : (() => { throw new RPLError('Bad argument type'); })();
+      return { m: mm, n: nn };
+    }
+    throw new RPLError('Invalid dimension');
+  }
+  if (isVector(v))  return { m: v.items.length, n: null };
+  if (isMatrix(v))  {
+    return { m: v.rows.length, n: v.rows.length > 0 ? v.rows[0].length : 0 };
+  }
+  throw new RPLError('Bad argument type');
+}
+
+register('CON', (s) => {
+  const [shape, value] = s.popN(2);
+  // The value must be a scalar-ish thing: Real, Integer, Complex, or Symbolic.
+  // Reject nested containers / strings / etc. — HP50 CON is scalar-fill.
+  if (!(isReal(value) || isInteger(value) || isComplex(value) || isSymbolic(value))) {
+    throw new RPLError('Bad argument type');
+  }
+  const { m, n } = _conShapeFrom(shape);
+  if (m <= 0) throw new RPLError('Bad argument value');
+  if (n !== null && n <= 0) throw new RPLError('Bad argument value');
+  if (n === null) {
+    s.push(Vector(new Array(m).fill(value)));
+  } else {
+    const rows = [];
+    for (let i = 0; i < m; i++) rows.push(new Array(n).fill(value));
+    s.push(Matrix(rows));
+  }
+});
+
+
+/* =================================================================
+   Session 049 — REF, HADAMARD, RANM, LSQ.
+
+   All items user-reachable from the typed catalog today.  No UI
+   wiring changes.  Advanced Guide refs:
+     §15.4  (REF — row echelon form, Gaussian elimination)
+     §15.6  (HADAMARD — element-wise matrix product)
+     §15.2  (RANM — random-integer matrix/vector of given shape)
+     §15.4  (LSQ — minimum-norm least-squares solution of A x = b)
+   ================================================================= */
+
+/* --------------- REF — row echelon form (Gaussian elimination) -----
+   HP50 AUR §15.4.  REF produces an upper-triangular row echelon form
+   of its argument Matrix via Gaussian elimination with partial
+   pivoting.  Unlike RREF, REF does NOT back-substitute to clear the
+   entries above each pivot — so pivots stay 1 and entries above them
+   can be any real.  For a 2×2 with row2 = 2·row1, REF → [[1 2][0 0]]
+   is identical to RREF's output (same zero row); but for [[1 2][3 4]],
+   REF → [[1 2][0 1]] (upper triangular), while RREF → [[1 0][0 1]].
+
+   Shares the `_rrefNumeric` loop but with the above-pivot elimination
+   step disabled via a `fullReduction` flag.
+   ----------------------------------------------------------------- */
+function _refNumeric(rows) {
+  // Gaussian elimination WITHOUT back-substitution (REF, not RREF).
+  // Structurally identical to `_rrefNumeric` but `i < r` rows are
+  // left alone — only rows strictly below the pivot row get zeroed.
+  const m = rows.length;
+  if (m === 0) return [];
+  const n = rows[0].length;
+  for (const row of rows) {
+    if (row.length !== n) throw new RPLError('Invalid dimension');
+    for (const x of row) {
+      if (!isReal(x) && !isInteger(x)) {
+        throw new RPLError('Bad argument type');
+      }
+    }
+  }
+  const a = rows.map(row => row.map(x => isInteger(x) ? Number(x.value) : x.value));
+  let r = 0;
+  for (let c = 0; c < n && r < m; c++) {
+    let best = r, bestAbs = Math.abs(a[r][c]);
+    for (let i = r + 1; i < m; i++) {
+      const v = Math.abs(a[i][c]);
+      if (v > bestAbs) { best = i; bestAbs = v; }
+    }
+    if (bestAbs < 1e-12) continue;
+    if (best !== r) [a[r], a[best]] = [a[best], a[r]];
+    const piv = a[r][c];
+    for (let j = 0; j < n; j++) a[r][j] /= piv;
+    a[r][c] = 1;                           // kill residual FP noise on pivot
+    // Eliminate BELOW the pivot only — that's the REF vs RREF difference.
+    for (let i = r + 1; i < m; i++) {
+      const f = a[i][c];
+      if (Math.abs(f) < 1e-15) continue;
+      for (let j = 0; j < n; j++) a[i][j] -= f * a[r][j];
+      a[i][c] = 0;
+    }
+    r++;
+  }
+  return a;
+}
+
+register('REF', (s) => {
+  const [v] = s.popN(1);
+  if (!isMatrix(v)) throw new RPLError('Bad argument type');
+  const out = _refNumeric(v.rows);
+  s.push(Matrix(out.map(row => row.map(x => Real(x)))));
+});
+
+/* --------------- HADAMARD — element-wise matrix/vector product ------
+   HP50 AUR §15.6.  HADAMARD takes two matrices (or two vectors) of
+   the same shape and returns a result of the same shape whose (i,j)
+   entry is the product of the two inputs' (i,j) entries.  Distinct
+   from the default `*` which treats two matrices as matrix-multiply
+   and two vectors as dot product.
+
+   Dispatches through `_scalarBinary('*', a, b)` so Integer / Real /
+   Complex / Symbolic entries compose naturally.
+   ----------------------------------------------------------------- */
+register('HADAMARD', (s) => {
+  const [a, b] = s.popN(2);
+  if (isVector(a) && isVector(b)) {
+    if (a.items.length !== b.items.length) throw new RPLError('Invalid dimension');
+    const out = a.items.map((x, i) => _scalarBinary('*', x, b.items[i]));
+    s.push(Vector(out));
+    return;
+  }
+  if (isMatrix(a) && isMatrix(b)) {
+    const ma = a.rows.length, na = ma > 0 ? a.rows[0].length : 0;
+    const mb = b.rows.length, nb = mb > 0 ? b.rows[0].length : 0;
+    if (ma !== mb || na !== nb) throw new RPLError('Invalid dimension');
+    const rows = [];
+    for (let i = 0; i < ma; i++) {
+      const row = [];
+      for (let j = 0; j < na; j++) {
+        row.push(_scalarBinary('*', a.rows[i][j], b.rows[i][j]));
+      }
+      rows.push(row);
+    }
+    s.push(Matrix(rows));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* --------------- RANM — random-integer matrix/vector ----------------
+   HP50 AUR §15.2.  RANM takes a shape specifier (same forms as CON)
+   and returns a Matrix (or Vector) of random integers in the range
+   [-9, 9] — matching the HP50 documented behaviour.
+
+   Shape inputs accepted (mirrors `_conShapeFrom`):
+     n       →  Vector of length n
+     {n}     →  Vector of length n
+     {m n}   →  m×n Matrix
+     V       →  Vector of V's length
+     M       →  Matrix of M's shape
+
+   RNG: shared seeded LCG in state.js (`nextPrngInt9`).  Session 050
+   retrofit: RANM used to call Math.random() directly, but now shares
+   state with RAND and RDZ so `RDZ 12345 { 2 3 } RANM` produces a
+   deterministic matrix — exactly matching HP50 semantics where the
+   same seed always regenerates the same random matrix.  Tests pin the
+   seed at session boot via resetPrng() so draws are reproducible.
+   ----------------------------------------------------------------- */
+
+register('RANM', (s) => {
+  const [shape] = s.popN(1);
+  const { m, n } = _conShapeFrom(shape);
+  if (m <= 0) throw new RPLError('Bad argument value');
+  if (n !== null && n <= 0) throw new RPLError('Bad argument value');
+  if (n === null) {
+    const v = [];
+    for (let i = 0; i < m; i++) v.push(Real(nextPrngInt9()));
+    s.push(Vector(v));
+  } else {
+    const rows = [];
+    for (let i = 0; i < m; i++) {
+      const row = [];
+      for (let j = 0; j < n; j++) row.push(Real(nextPrngInt9()));
+      rows.push(row);
+    }
+    s.push(Matrix(rows));
+  }
+});
+
+/* --------------- LSQ — least-squares solver -------------------------
+   HP50 AUR §15.4.  LSQ solves A x = b in the least-squares sense.
+   Stack layout: level 2 = b, level 1 = A.  Returns x.
+
+   Three shape regimes (rows m, cols n of A):
+     m = n (square):           x = A^-1 b   — direct solve via
+                               Gauss-Jordan.  Singular → throws
+                               `Infinite result` (inherits the
+                               `_invMatrixNumeric` rejection).
+     m > n (overdetermined):   normal equations (A^T A) x = A^T b.
+                               Unique x whenever A has full column
+                               rank.
+     m < n (underdetermined):  minimum-norm solution via A^T (A A^T)^-1 b.
+                               Unique x whenever A has full row rank.
+
+   b may be a Vector of length m (single RHS → Vector x of length n)
+   or a Matrix with m rows (multiple RHS → Matrix x with n rows).  The
+   current implementation handles the Vector-b case directly; Matrix-b
+   loops over its columns.
+
+   Only numeric (Real / Integer) entries are accepted on both sides,
+   matching the `_invMatrixNumeric` rejection policy.
+   ----------------------------------------------------------------- */
+function _asNumArray2D(rows) {
+  // rows is Array<Array<RPLValue>>.  Returns Array<Array<number>>;
+  // throws Bad argument type on any non-Real/non-Integer entry.
+  return rows.map(row => row.map(x => {
+    if (isInteger(x)) return Number(x.value);
+    if (isReal(x)) return x.value;
+    throw new RPLError('Bad argument type');
+  }));
+}
+
+function _asNumArray1D(items) {
+  return items.map(x => {
+    if (isInteger(x)) return Number(x.value);
+    if (isReal(x)) return x.value;
+    throw new RPLError('Bad argument type');
+  });
+}
+
+function _matMulNum(a, b) {
+  // Plain 2-D number arrays; a is m×k, b is k×n → m×n.
+  const m = a.length;
+  const k = a[0].length;
+  const n = b[0].length;
+  const out = [];
+  for (let i = 0; i < m; i++) {
+    const row = new Array(n).fill(0);
+    for (let p = 0; p < k; p++) {
+      const aip = a[i][p];
+      if (aip === 0) continue;
+      for (let j = 0; j < n; j++) row[j] += aip * b[p][j];
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+function _matVecNum(a, v) {
+  // a is m×n, v is length n → length m.
+  const m = a.length;
+  const n = a[0].length;
+  const out = new Array(m).fill(0);
+  for (let i = 0; i < m; i++) {
+    let acc = 0;
+    for (let j = 0; j < n; j++) acc += a[i][j] * v[j];
+    out[i] = acc;
+  }
+  return out;
+}
+
+function _transposeNum(a) {
+  const m = a.length;
+  const n = a[0].length;
+  const out = [];
+  for (let j = 0; j < n; j++) {
+    const row = new Array(m);
+    for (let i = 0; i < m; i++) row[i] = a[i][j];
+    out.push(row);
+  }
+  return out;
+}
+
+function _invSquareNum(a) {
+  // Plain-number Gauss-Jordan invert.  Throws Infinite result if
+  // singular (mirrors `_invMatrixNumeric`).  Pure-number helper for
+  // LSQ internals — doesn't box/unbox Real wrappers.
+  const n = a.length;
+  const ext = a.map(r => r.slice());
+  const I = [];
+  for (let i = 0; i < n; i++) {
+    const row = new Array(n).fill(0);
+    row[i] = 1;
+    I.push(row);
+  }
+  for (let k = 0; k < n; k++) {
+    let best = k, bestAbs = Math.abs(ext[k][k]);
+    for (let i = k + 1; i < n; i++) {
+      const v = Math.abs(ext[i][k]);
+      if (v > bestAbs) { best = i; bestAbs = v; }
+    }
+    if (bestAbs < 1e-12) throw new RPLError('Infinite result');
+    if (best !== k) {
+      [ext[k], ext[best]] = [ext[best], ext[k]];
+      [I[k], I[best]] = [I[best], I[k]];
+    }
+    const piv = ext[k][k];
+    for (let j = 0; j < n; j++) { ext[k][j] /= piv; I[k][j] /= piv; }
+    for (let i = 0; i < n; i++) {
+      if (i === k) continue;
+      const f = ext[i][k];
+      if (f === 0) continue;
+      for (let j = 0; j < n; j++) {
+        ext[i][j] -= f * ext[k][j];
+        I[i][j] -= f * I[k][j];
+      }
+    }
+  }
+  return I;
+}
+
+function _lsqSolveVec(Anum, bnum) {
+  // Anum: m×n, bnum: length m.  Returns length-n solution vector.
+  const m = Anum.length;
+  const n = Anum[0].length;
+  if (m === n) {
+    const invA = _invSquareNum(Anum);
+    return _matVecNum(invA, bnum);
+  }
+  if (m > n) {
+    // Overdetermined: normal equations (A^T A) x = A^T b.
+    const At = _transposeNum(Anum);
+    const AtA = _matMulNum(At, Anum);           // n×n
+    const Atb = _matVecNum(At, bnum);           // length n
+    const invAtA = _invSquareNum(AtA);
+    return _matVecNum(invAtA, Atb);
+  }
+  // Underdetermined: minimum-norm x = A^T (A A^T)^-1 b.
+  const At = _transposeNum(Anum);
+  const AAt = _matMulNum(Anum, At);            // m×m
+  const invAAt = _invSquareNum(AAt);
+  const y = _matVecNum(invAAt, bnum);          // length m
+  return _matVecNum(At, y);                    // length n
+}
+
+register('LSQ', (s) => {
+  const [b, A] = s.popN(2);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+  const Anum = _asNumArray2D(A.rows);
+  const m = Anum.length;
+  if (m === 0) throw new RPLError('Invalid dimension');
+  const n = Anum[0].length;
+
+  if (isVector(b)) {
+    if (b.items.length !== m) throw new RPLError('Invalid dimension');
+    const bnum = _asNumArray1D(b.items);
+    const x = _lsqSolveVec(Anum, bnum);
+    s.push(Vector(x.map(v => Real(v))));
+    return;
+  }
+  if (isMatrix(b)) {
+    if (b.rows.length !== m) throw new RPLError('Invalid dimension');
+    const bnum = _asNumArray2D(b.rows);
+    const k = b.rows[0].length;
+    // Column-by-column: build X with n rows and k columns.
+    const cols = [];
+    for (let c = 0; c < k; c++) {
+      const bc = new Array(m);
+      for (let i = 0; i < m; i++) bc[i] = bnum[i][c];
+      cols.push(_lsqSolveVec(Anum, bc));
+    }
+    const rowsOut = [];
+    for (let i = 0; i < n; i++) {
+      const row = new Array(k);
+      for (let c = 0; c < k; c++) row[c] = Real(cols[c][i]);
+      rowsOut.push(row);
+    }
+    s.push(Matrix(rowsOut));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* =================================================================
+   Session 050 — ROW+ / ROW- / COL+ / COL- (matrix row/col edit),
+   CNRM / RNRM (column / row max-sum norms), AUGMENT (horizontal
+   concatenate), RAND / RDZ (seeded PRNG; RANM retrofit above).
+
+   All items user-reachable from the typed catalog today.  No UI
+   wiring changes.  Advanced Guide refs:
+     §15.3  (ROW+, ROW-, COL+, COL- — matrix row/column insert/delete)
+     §15.4  (CNRM — column norm, RNRM — row norm)
+     §15.3  (AUGMENT — horizontal concat of matrix/vector)
+     §17.5  (RAND — uniform Real in [0,1), RDZ — seed the PRNG)
+   ================================================================= */
+
+/* --------------- ROW+ / ROW- / COL+ / COL- --------------------------
+   HP50 AUR §15.3.  Matrix row/column insert/delete.
+
+   ROW+  ( M v n → M' )
+         Insert Vector v as new row n (1-based) of Matrix M.  After
+         the insert, the new matrix has m+1 rows; the former row-n
+         and everything below it shift down one.  v must be a Vector
+         of length = n-cols of M.  n must be in [1, m+1] (inserting
+         at m+1 appends at the bottom).
+
+   ROW-  ( M n → M' v )
+         Remove row n of M.  Pushes the reduced matrix on level 2
+         and the removed row (as a Vector) on level 1.  n must be in
+         [1, m].
+
+   COL+  ( M v n → M' )
+         Insert Vector v as new column n (1-based) of M.  v must be
+         a Vector of length = n-rows of M.  n must be in [1, p+1].
+
+   COL-  ( M n → M' v )
+         Remove column n.  Pushes reduced matrix on level 2 and the
+         removed column (as a Vector) on level 1.
+
+   Element polymorphism: since these are pure array manipulations
+   (no arithmetic on entries), the matrix/vector entries can be any
+   type the Matrix constructor already accepts — Real, Integer,
+   Complex, Symbolic.  No coercion; the inserted/extracted values
+   are pushed through unchanged.
+   ----------------------------------------------------------------- */
+
+function _indexAsInt(v, op) {
+  // Accepts Integer or integer-valued Real; returns a JS number index.
+  if (isInteger(v)) return Number(v.value);
+  if (isReal(v) && Number.isInteger(v.value)) return v.value;
+  throw new RPLError('Bad argument type');
+}
+
+register('ROW+', (s) => {
+  const [M, vec, idx] = s.popN(3);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  if (!isVector(vec)) throw new RPLError('Bad argument type');
+  const n = _indexAsInt(idx, 'ROW+');
+  const m = M.rows.length;
+  const cols = m > 0 ? M.rows[0].length : 0;
+  if (vec.items.length !== cols) throw new RPLError('Invalid dimension');
+  if (n < 1 || n > m + 1) throw new RPLError('Invalid dimension');
+  const newRow = vec.items.slice();
+  const out = M.rows.map(r => r.slice());
+  out.splice(n - 1, 0, newRow);
+  s.push(Matrix(out));
+});
+
+register('ROW-', (s) => {
+  const [M, idx] = s.popN(2);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  const n = _indexAsInt(idx, 'ROW-');
+  const m = M.rows.length;
+  if (n < 1 || n > m) throw new RPLError('Invalid dimension');
+  const rows = M.rows.map(r => r.slice());
+  const removed = rows.splice(n - 1, 1)[0];
+  s.push(Matrix(rows));
+  s.push(Vector(removed));
+});
+
+register('COL+', (s) => {
+  const [M, vec, idx] = s.popN(3);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  if (!isVector(vec)) throw new RPLError('Bad argument type');
+  const n = _indexAsInt(idx, 'COL+');
+  const m = M.rows.length;
+  const cols = m > 0 ? M.rows[0].length : 0;
+  if (vec.items.length !== m) throw new RPLError('Invalid dimension');
+  if (n < 1 || n > cols + 1) throw new RPLError('Invalid dimension');
+  const out = [];
+  for (let i = 0; i < m; i++) {
+    const row = M.rows[i].slice();
+    row.splice(n - 1, 0, vec.items[i]);
+    out.push(row);
+  }
+  s.push(Matrix(out));
+});
+
+register('COL-', (s) => {
+  const [M, idx] = s.popN(2);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  const n = _indexAsInt(idx, 'COL-');
+  const m = M.rows.length;
+  const cols = m > 0 ? M.rows[0].length : 0;
+  if (n < 1 || n > cols) throw new RPLError('Invalid dimension');
+  const rows = [];
+  const removedCol = [];
+  for (let i = 0; i < m; i++) {
+    const row = M.rows[i].slice();
+    removedCol.push(row[n - 1]);
+    row.splice(n - 1, 1);
+    rows.push(row);
+  }
+  s.push(Matrix(rows));
+  s.push(Vector(removedCol));
+});
+
+/* --------------- CNRM / RNRM — column / row max-sum norms -----------
+   HP50 AUR §15.4.
+
+   CNRM  (column norm): max over columns of the sum of absolute values
+         of the column's entries.  Matrix input: max_j Σ_i |A[i][j]|.
+         Vector input: sum of |entries| (equivalent to treating the
+         Vector as a column matrix).  Standard "1-norm" of a matrix.
+
+   RNRM  (row norm):   max over rows of the sum of absolute values of
+         the row's entries.  Matrix input: max_i Σ_j |A[i][j]|.
+         Vector input: max of |entries| (equivalent to treating the
+         Vector as a row matrix).  Standard "∞-norm" of a matrix.
+
+   Entry type policy: Real / Integer / Complex.  Symbolic entries
+   throw Bad argument type (no magnitude function for arbitrary
+   Symbolic expressions this cheap; lift is a CAS job).  Same policy
+   as NORM.
+   ----------------------------------------------------------------- */
+
+function _magEntry(x) {
+  // |x| for a numeric matrix/vector cell.  Throws Bad argument type
+  // on Symbolic / other non-numeric.
+  if (isReal(x)) return Math.abs(x.value);
+  if (isInteger(x)) { const n = x.value; return Number(n < 0n ? -n : n); }
+  if (isComplex(x)) return Math.hypot(x.re, x.im);
+  throw new RPLError('Bad argument type');
+}
+
+register('CNRM', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) {
+    // Sum of |entries| — treat vector as a column.
+    let sum = 0;
+    for (const x of v.items) sum += _magEntry(x);
+    s.push(Real(sum));
+    return;
+  }
+  if (isMatrix(v)) {
+    const m = v.rows.length;
+    if (m === 0) { s.push(Real(0)); return; }
+    const cols = v.rows[0].length;
+    let best = 0;
+    for (let j = 0; j < cols; j++) {
+      let sum = 0;
+      for (let i = 0; i < m; i++) sum += _magEntry(v.rows[i][j]);
+      if (sum > best) best = sum;
+    }
+    s.push(Real(best));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('RNRM', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) {
+    // Max of |entries| — treat vector as a row.
+    let best = 0;
+    for (const x of v.items) {
+      const mag = _magEntry(x);
+      if (mag > best) best = mag;
+    }
+    s.push(Real(best));
+    return;
+  }
+  if (isMatrix(v)) {
+    const m = v.rows.length;
+    if (m === 0) { s.push(Real(0)); return; }
+    let best = 0;
+    for (const row of v.rows) {
+      let sum = 0;
+      for (const x of row) sum += _magEntry(x);
+      if (sum > best) best = sum;
+    }
+    s.push(Real(best));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* --------------- AUGMENT — horizontal concat ------------------------
+   HP50 AUR §15.3.  Concatenate two matrices or a matrix + vector
+   horizontally (along the column axis).
+
+   Signatures:
+     ( M_a M_b       →  M  )   Matrix + Matrix (same row count)
+                                → m × (p_a + p_b) matrix
+     ( M v           →  M  )   Matrix + Vector  (len v = row count)
+                                → append v as a new column
+     ( v M           →  M  )   Vector + Matrix  (HP50 symmetry)
+                                → prepend v as a new column
+     ( v_a v_b       →  v  )   Vector + Vector  — HP50 AUR also
+                                documents this; concatenates entries.
+
+   Mismatched row count → Invalid dimension.  Other type combos →
+   Bad argument type.
+   ----------------------------------------------------------------- */
+
+register('AUGMENT', (s) => {
+  const [a, b] = s.popN(2);
+  // Matrix + Matrix: same row count → concat columns.
+  if (isMatrix(a) && isMatrix(b)) {
+    const ma = a.rows.length;
+    const mb = b.rows.length;
+    if (ma !== mb) throw new RPLError('Invalid dimension');
+    const rows = [];
+    for (let i = 0; i < ma; i++) {
+      rows.push([...a.rows[i], ...b.rows[i]]);
+    }
+    s.push(Matrix(rows));
+    return;
+  }
+  // Matrix + Vector: vector length = row count → append as column.
+  if (isMatrix(a) && isVector(b)) {
+    const ma = a.rows.length;
+    if (b.items.length !== ma) throw new RPLError('Invalid dimension');
+    const rows = [];
+    for (let i = 0; i < ma; i++) {
+      rows.push([...a.rows[i], b.items[i]]);
+    }
+    s.push(Matrix(rows));
+    return;
+  }
+  // Vector + Matrix: vector length = row count → prepend as column.
+  if (isVector(a) && isMatrix(b)) {
+    const mb = b.rows.length;
+    if (a.items.length !== mb) throw new RPLError('Invalid dimension');
+    const rows = [];
+    for (let i = 0; i < mb; i++) {
+      rows.push([a.items[i], ...b.rows[i]]);
+    }
+    s.push(Matrix(rows));
+    return;
+  }
+  // Vector + Vector: concat entries.
+  if (isVector(a) && isVector(b)) {
+    s.push(Vector([...a.items, ...b.items]));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* --------------- RAND / RDZ — seeded PRNG ---------------------------
+   HP50 AUR §17.5.
+
+   RAND  ( → r )   Push a uniform Real in [0, 1) drawn from the PRNG
+                   (Park-Miller minimal-standard LCG; see state.js).
+
+   RDZ   ( n → )   Re-seed the PRNG.  n = 0 → use the system clock
+                   (Date.now()), otherwise use n as the seed (reduced
+                   into the LCG's valid range).  Takes Integer or
+                   Real (integer-valued).  Complex / Symbolic throws.
+
+   The PRNG state is shared with RANM (session 050 retrofit) so
+   `RDZ 12345 { 2 3 } RANM` produces a deterministic matrix every
+   time the same seed is used — matching HP50 behaviour.
+   ----------------------------------------------------------------- */
+
+register('RAND', (s) => {
+  s.push(Real(nextPrngUnit()));
+});
+
+register('RDZ', (s) => {
+  const [v] = s.popN(1);
+  if (isInteger(v)) { seedPrng(v.value); return; }
+  if (isReal(v)) {
+    // HP50 accepts any Real; we require integer-valued to avoid
+    // silently losing the fractional part.
+    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
+    seedPrng(v.value);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* =================================================================
+   Session 051 — ROW→ / →ROW / COL→ / →COL (matrix decompose / compose
+   by row or by column), RSWP / CSWP (swap rows / columns), RCI / RCIJ
+   (elementary row ops — multiply a row by a constant; add c*row_i to
+   row_j).  All items user-reachable from the typed catalog today.  No
+   UI wiring changes.
+
+   Advanced Guide refs:
+     §15.3  (ROW→ / →ROW / COL→ / →COL — matrix explode / assemble by
+             row / column vectors)
+     §15.3  (RSWP / CSWP / RCI / RCIJ — elementary row/column ops —
+             complement to ROW+ / ROW- / COL+ / COL- landed in
+             session 050)
+
+   Shape and index conventions reuse the `_indexAsInt` helper from
+   session 050 (accepts Integer or integer-valued Real; throws Bad
+   argument type on anything else).  ROW+ / ROW- family always
+   represents matrix rows/cols as a Vector when pushed to the stack —
+   these new ops follow the same convention so `ROW+ ROW→` and
+   `ROW→ →ROW` round-trip exactly.
+   ================================================================= */
+
+/* --------------- ROW→ / →ROW / COL→ / →COL --------------------------
+   HP50 AUR §15.3.  Decompose / compose a Matrix into / from its rows
+   or columns as Vectors.
+
+   ROW→  ( M → v_1 v_2 ... v_m m )
+         Explodes M into m row Vectors pushed deepest-row-first,
+         followed by the row count m as a Real on top (matches the
+         trailing-count pattern ARRY→ uses).
+
+   →ROW  ( v_1 v_2 ... v_m m → M )
+         Inverse: pops m, then pops m Vectors (all same length),
+         assembles them as the rows of M.  ASCII alias `->ROW`.
+
+   COL→  ( M → v_1 v_2 ... v_n n )
+         Explodes M into n column Vectors, count on top.
+
+   →COL  ( v_1 v_2 ... v_n n → M )
+         Inverse: pops n, then pops n Vectors (all same length),
+         treats each Vector as a column of M.
+
+   Unicode + ASCII aliases register side-by-side (ROW→ / ROW->, etc.).
+   Element polymorphism: these are pure container manipulations — no
+   arithmetic on entries, so Real / Integer / Complex / Symbolic cell
+   values pass through unchanged.
+   ----------------------------------------------------------------- */
+
+const _rowDecompose = (s) => {
+  const [M] = s.popN(1);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  for (const row of M.rows) s.push(Vector(row.slice()));
+  s.push(Real(M.rows.length));
+};
+register('ROW→',  _rowDecompose);
+register('ROW->', _rowDecompose);
+
+const _rowCompose = (s) => {
+  const [countVal] = s.popN(1);
+  const m = _indexAsInt(countVal, '→ROW');
+  if (m < 1) throw new RPLError('Bad argument value');
+  const vecs = s.popN(m);
+  for (const v of vecs) {
+    if (!isVector(v)) throw new RPLError('Bad argument type');
+  }
+  const cols = vecs[0].items.length;
+  for (const v of vecs) {
+    if (v.items.length !== cols) throw new RPLError('Invalid dimension');
+  }
+  const rows = vecs.map(v => v.items.slice());
+  s.push(Matrix(rows));
+};
+register('→ROW',  _rowCompose);
+register('->ROW', _rowCompose);
+
+const _colDecompose = (s) => {
+  const [M] = s.popN(1);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  const m = M.rows.length;
+  const cols = m > 0 ? M.rows[0].length : 0;
+  for (let j = 0; j < cols; j++) {
+    const col = new Array(m);
+    for (let i = 0; i < m; i++) col[i] = M.rows[i][j];
+    s.push(Vector(col));
+  }
+  s.push(Real(cols));
+};
+register('COL→',  _colDecompose);
+register('COL->', _colDecompose);
+
+const _colCompose = (s) => {
+  const [countVal] = s.popN(1);
+  const n = _indexAsInt(countVal, '→COL');
+  if (n < 1) throw new RPLError('Bad argument value');
+  const vecs = s.popN(n);
+  for (const v of vecs) {
+    if (!isVector(v)) throw new RPLError('Bad argument type');
+  }
+  const rows = vecs[0].items.length;
+  for (const v of vecs) {
+    if (v.items.length !== rows) throw new RPLError('Invalid dimension');
+  }
+  // Build m×n matrix whose column j is vecs[j].
+  const out = [];
+  for (let i = 0; i < rows; i++) {
+    const row = new Array(n);
+    for (let j = 0; j < n; j++) row[j] = vecs[j].items[i];
+    out.push(row);
+  }
+  s.push(Matrix(out));
+};
+register('→COL',  _colCompose);
+register('->COL', _colCompose);
+
+/* --------------- RSWP / CSWP / RCI / RCIJ --------------------------
+   HP50 AUR §15.3.  Elementary row / column operations.  These are the
+   "Gauss-Jordan by hand" primitives: swap two rows, swap two columns,
+   scale a row by a constant, or add a scalar multiple of one row to
+   another.
+
+   RSWP  ( M i j → M' )   Swap rows i and j (1-based).
+   CSWP  ( M i j → M' )   Swap columns i and j.
+   RCI   ( M c i → M' )   Replace row i with c * row i (scalar c).
+   RCIJ  ( M c i j → M' ) Replace row j with row j + c * row i.
+
+   Index ranges are validated against m (rows) or n (cols); out-of-range
+   throws Invalid dimension.  Non-integer or non-numeric indices throw
+   Bad argument type via `_indexAsInt`.  The scalar c in RCI / RCIJ can
+   be any scalar operand (Real, Integer, Complex, BinaryInteger, or
+   Symbolic / Name) — `_scalarBinary('*' / '+', ...)` handles the
+   promotion / symbolic-lift uniformly, same as the existing arithmetic
+   ops on Matrix entries do.
+   ----------------------------------------------------------------- */
+
+register('RSWP', (s) => {
+  const [M, iv, jv] = s.popN(3);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  const i = _indexAsInt(iv, 'RSWP');
+  const j = _indexAsInt(jv, 'RSWP');
+  const m = M.rows.length;
+  if (i < 1 || i > m || j < 1 || j > m) {
+    throw new RPLError('Invalid dimension');
+  }
+  const rows = M.rows.map(r => r.slice());
+  if (i !== j) {
+    const tmp = rows[i - 1]; rows[i - 1] = rows[j - 1]; rows[j - 1] = tmp;
+  }
+  s.push(Matrix(rows));
+});
+
+register('CSWP', (s) => {
+  const [M, iv, jv] = s.popN(3);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  const i = _indexAsInt(iv, 'CSWP');
+  const j = _indexAsInt(jv, 'CSWP');
+  const m = M.rows.length;
+  const cols = m > 0 ? M.rows[0].length : 0;
+  if (i < 1 || i > cols || j < 1 || j > cols) {
+    throw new RPLError('Invalid dimension');
+  }
+  const rows = M.rows.map(r => r.slice());
+  if (i !== j) {
+    for (let k = 0; k < m; k++) {
+      const t = rows[k][i - 1]; rows[k][i - 1] = rows[k][j - 1]; rows[k][j - 1] = t;
+    }
+  }
+  s.push(Matrix(rows));
+});
+
+register('RCI', (s) => {
+  const [M, c, iv] = s.popN(3);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  if (!_isScalarOperand(c)) throw new RPLError('Bad argument type');
+  const i = _indexAsInt(iv, 'RCI');
+  const m = M.rows.length;
+  if (i < 1 || i > m) throw new RPLError('Invalid dimension');
+  const rows = M.rows.map(r => r.slice());
+  const target = rows[i - 1];
+  for (let k = 0; k < target.length; k++) {
+    target[k] = _scalarBinary('*', c, target[k]);
+  }
+  s.push(Matrix(rows));
+});
+
+register('RCIJ', (s) => {
+  const [M, c, iv, jv] = s.popN(4);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  if (!_isScalarOperand(c)) throw new RPLError('Bad argument type');
+  const i = _indexAsInt(iv, 'RCIJ');
+  const j = _indexAsInt(jv, 'RCIJ');
+  const m = M.rows.length;
+  if (i < 1 || i > m || j < 1 || j > m) {
+    throw new RPLError('Invalid dimension');
+  }
+  // HP50 accepts i === j (becomes "scale row_i by (1+c)") — we follow
+  // suit.  The copy below uses the ORIGINAL i-row values, so the self-
+  // add case `row_i + c*row_i` still reads from the pre-update row
+  // even though src and dst alias the same row.
+  const origSrc = M.rows[i - 1].slice();
+  const rows = M.rows.map(r => r.slice());
+  const dst = rows[j - 1];
+  for (let k = 0; k < dst.length; k++) {
+    const scaled = _scalarBinary('*', c, origSrc[k]);
+    dst[k] = _scalarBinary('+', dst[k], scaled);
+  }
+  s.push(Matrix(rows));
+});
+
+/* =================================================================
+   Session 052 — stats (MEAN / SDEV / VAR / TOT), test-matrix
+   constructors (VANDERMONDE / HILBERT), π-rationalization (→Qπ),
+   list iterators (GETI / PUTI).  All user-reachable today from the
+   typed catalog; no UI wiring needed.
+
+   Advanced Guide refs:
+     §18    (MEAN / SDEV / VAR / TOT — stat reductions on a
+             Vector / Matrix that stands in for ΣDAT.  Matrix input
+             reduces COLUMN-WISE — each column is one variable,
+             each row is one observation — and the result is a
+             Vector of per-column stats.  Vector input is the
+             single-variable special case: the result is a scalar.)
+     §15.6  (VANDERMONDE / HILBERT — canonical "test matrices" used
+             for interpolation and ill-conditioning demos.)
+     §12.4  (→Qπ — rationalize a Real as a rational multiple of π.
+             Mirror of →Q, but tries to detect the π factor first.)
+     §13.2  (GETI / PUTI — GET / PUT with auto-increment.  The
+             index advances and wraps to 1 when the end is reached —
+             the classic HP "each consecutive call walks through the
+             container" idiom that makes DOSUBS-style loops trivial.)
+   ================================================================= */
+
+/* --------------- MEAN / SDEV / VAR / TOT — stat reductions -----------
+   HP50 AUR §18.  Scalar statistics over a Vector (single-variable
+   sample) or Matrix (each column is a variable, rows are
+   observations → per-column Vector of stats).
+
+     TOT   ( V → s )     sum of elements
+     MEAN  ( V → s )     arithmetic mean
+     VAR   ( V → s )     sample variance (Bessel n-1 denominator)
+     SDEV  ( V → s )     sqrt(VAR)
+
+     TOT   ( M → v )     column sums  (1×n Vector)
+     MEAN  ( M → v )     per-column means
+     VAR   ( M → v )     per-column sample variances
+     SDEV  ( M → v )     per-column sample SDs
+
+   Type policy:
+     - TOT / MEAN accept Real / Integer / Complex entries.  Vector of
+       Complex returns a Complex scalar (sum / mean of imaginary and
+       real parts independently).
+     - VAR / SDEV accept Real / Integer entries only.  Complex raises
+       Bad argument type (HP50 SDEV-on-complex is not meaningfully
+       defined without choosing a conjugate-pair convention, so we
+       punt until the CAS side wants it).
+     - Symbolic / Name / BinaryInteger entries in any path throw
+       Bad argument type (same policy as CNRM / RNRM / NORM).
+     - Empty Vector ⇒ Bad argument value (no data to reduce).
+
+   Single-observation samples: VAR / SDEV on a length-1 Vector return
+   0 (matches HP50 AUR §18.1, which defines SDEV of a 1-row ΣDAT as
+   zero rather than "undefined").
+   ----------------------------------------------------------------- */
+
+function _statsNumericEntry(x) {
+  if (isReal(x))    return x.value;
+  if (isInteger(x)) return Number(x.value);
+  throw new RPLError('Bad argument type');
+}
+
+function _statsNumOrComplexEntry(x) {
+  if (isReal(x))    return { re: x.value, im: 0, complex: false };
+  if (isInteger(x)) return { re: Number(x.value), im: 0, complex: false };
+  if (isComplex(x)) return { re: x.re, im: x.im, complex: true };
+  throw new RPLError('Bad argument type');
+}
+
+function _wrapComplexOrReal(re, im, sawComplex) {
+  if (sawComplex && im !== 0) return Complex(re, im);
+  if (sawComplex) return Complex(re, 0);
+  return Real(re);
+}
+
+/** Sum of a 1-D numeric array (Vector entries).  Returns Real or
+ *  Complex as appropriate.  Throws Bad argument type on non-numeric. */
+function _sumItems(items) {
+  if (items.length === 0) throw new RPLError('Bad argument value');
+  let re = 0, im = 0, sawComplex = false;
+  for (const x of items) {
+    const p = _statsNumOrComplexEntry(x);
+    re += p.re; im += p.im;
+    if (p.complex) sawComplex = true;
+  }
+  return _wrapComplexOrReal(re, im, sawComplex);
+}
+
+/** Arithmetic mean over items.  Returns Real / Complex. */
+function _meanItems(items) {
+  if (items.length === 0) throw new RPLError('Bad argument value');
+  let re = 0, im = 0, sawComplex = false;
+  for (const x of items) {
+    const p = _statsNumOrComplexEntry(x);
+    re += p.re; im += p.im;
+    if (p.complex) sawComplex = true;
+  }
+  const n = items.length;
+  return _wrapComplexOrReal(re / n, im / n, sawComplex);
+}
+
+/** Sample variance over items.  Bessel correction: divide by n-1.
+ *  n==1 returns 0.  Real / Integer entries only. */
+function _varItems(items) {
+  if (items.length === 0) throw new RPLError('Bad argument value');
+  if (items.length === 1) {
+    // Validate the entry still — a single Complex would otherwise
+    // pass silently.
+    _statsNumericEntry(items[0]);
+    return 0;
+  }
+  let sum = 0;
+  const vals = new Array(items.length);
+  for (let i = 0; i < items.length; i++) {
+    const x = _statsNumericEntry(items[i]);
+    vals[i] = x; sum += x;
+  }
+  const mean = sum / items.length;
+  let ss = 0;
+  for (const x of vals) {
+    const d = x - mean;
+    ss += d * d;
+  }
+  return ss / (items.length - 1);
+}
+
+function _sdevItems(items) {
+  return Math.sqrt(_varItems(items));
+}
+
+/** Apply a per-column reducer to a Matrix.  `reduce(entries)` returns
+ *  a plain scalar or RPL value.  If `wrap` is given, it wraps each
+ *  reducer output (so Real-only reducers stay Real).  Result is a
+ *  Vector of length n (one entry per column). */
+function _perColumn(M, reduceItems, wrap) {
+  const m = M.rows.length;
+  if (m === 0) throw new RPLError('Bad argument value');
+  const n = M.rows[0].length;
+  const out = new Array(n);
+  for (let j = 0; j < n; j++) {
+    const col = new Array(m);
+    for (let i = 0; i < m; i++) col[i] = M.rows[i][j];
+    const r = reduceItems(col);
+    out[j] = wrap ? wrap(r) : r;
+  }
+  return Vector(out);
+}
+
+register('TOT', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) { s.push(_sumItems(v.items)); return; }
+  if (isMatrix(v)) {
+    // Column sums — reducer returns an RPL value already.
+    s.push(_perColumn(v, (col) => _sumItems(col)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('MEAN', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) { s.push(_meanItems(v.items)); return; }
+  if (isMatrix(v)) {
+    s.push(_perColumn(v, (col) => _meanItems(col)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('VAR', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) { s.push(Real(_varItems(v.items))); return; }
+  if (isMatrix(v)) {
+    s.push(_perColumn(v, (col) => _varItems(col), (x) => Real(x)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('SDEV', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) { s.push(Real(_sdevItems(v.items))); return; }
+  if (isMatrix(v)) {
+    s.push(_perColumn(v, (col) => _sdevItems(col), (x) => Real(x)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* --------------- VANDERMONDE / HILBERT — test matrices ---------------
+   HP50 AUR §15.6.  Canonical constructors for classical test
+   matrices — primarily used for polynomial-interpolation problems
+   and as demonstrations of ill-conditioning.
+
+     VANDERMONDE  ( L → M )   L = {v₁ v₂ … vₙ} of n numeric values.
+                              Returns the n×n matrix whose (i, j)
+                              entry is  vᵢ^(j-1)  (so column 1 is
+                              all ones; column 2 is the values
+                              themselves; column 3 is their squares;
+                              etc.).  HP50 also accepts Vector input.
+     HILBERT      ( n → M )   Integer n ≥ 1.  Returns the n×n Hilbert
+                              matrix with H[i][j] = 1/(i+j-1)
+                              (1-based indexing).  Notoriously
+                              ill-conditioned beyond n ≈ 11; we
+                              still accept arbitrary n but emit
+                              IEEE-rounded entries past that point.
+
+   Entry-type policy: VANDERMONDE tolerates Real / Integer / Complex /
+   Symbolic values in the source list — powers are computed through
+   `_scalarBinary('*')` so any type flows through (Symbolic inputs
+   produce a Symbolic-entry matrix, e.g. `{ X Y Z } VANDERMONDE` →
+   [[1 X X²][1 Y Y²][1 Z Z²]]).  HILBERT always produces Real
+   entries — the inverse is expressed as decimal fractions rather
+   than rationals.
+   ----------------------------------------------------------------- */
+
+register('VANDERMONDE', (s) => {
+  const [v] = s.popN(1);
+  let src;
+  if (isList(v))        src = v.items;
+  else if (isVector(v)) src = v.items;
+  else throw new RPLError('Bad argument type');
+  const n = src.length;
+  if (n < 1) throw new RPLError('Bad argument value');
+  for (const x of src) {
+    // Sanity-check the type up front so a bad entry near the end
+    // doesn't leave a half-built matrix on the stack.
+    if (!isReal(x) && !isInteger(x) && !isComplex(x) && !_isSymOperand(x)) {
+      throw new RPLError('Bad argument type');
+    }
+  }
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const vi = src[i];
+    const row = new Array(n);
+    // Column j has entry vi^(j-1).  Running multiplier avoids repeated
+    // `^` ops and keeps Integer entries as Integers when possible
+    // (since `_scalarBinary('*', Integer, Integer)` stays Integer).
+    let acc = Integer(1n);
+    for (let j = 0; j < n; j++) {
+      row[j] = acc;
+      if (j < n - 1) acc = _scalarBinary('*', acc, vi);
+    }
+    rows.push(row);
+  }
+  s.push(Matrix(rows));
+});
+
+register('HILBERT', (s) => {
+  const [v] = s.popN(1);
+  let n;
+  if (isInteger(v)) n = Number(v.value);
+  else if (isReal(v)) {
+    if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+      throw new RPLError('Bad argument value');
+    }
+    n = v.value;
+  } else throw new RPLError('Bad argument type');
+  if (n < 1) throw new RPLError('Bad argument value');
+  const rows = [];
+  for (let i = 1; i <= n; i++) {
+    const row = new Array(n);
+    for (let j = 1; j <= n; j++) {
+      row[j - 1] = Real(1 / (i + j - 1));
+    }
+    rows.push(row);
+  }
+  s.push(Matrix(rows));
+});
+
+/* --------------- →Qπ — rationalize as rational multiple of π ---------
+   HP50 AUR §12.4.  Extension of →Q that tries to recognize a π factor
+   in the input before rationalizing.  The quotient `x / π` is run
+   through the same continued-fraction convergent as →Q; if it
+   rationalizes to a reasonable p/d, the result is wrapped in a
+   Symbolic multiplication by PI.
+
+   Representation:
+     numerator n = ±1, denominator 1:  ±π    →  Symbolic Var('PI')
+                                                (or Neg of it)
+     n = ±1, d > 1:                    ±π/d  →  PI / d
+     |n| > 1, d = 1:                   ±n·π  →  n * PI
+     |n| > 1, d > 1:                   ±n·π/d → (n * PI) / d
+     n = 0:                            0      →  Symbolic Num(0)
+
+   If the quotient doesn't rationalize cleanly (i.e. the continued
+   fraction runs out before converging), we still emit the best
+   p/d * π form — convergents are always rational.  Input must be a
+   Real / Integer; Complex / Symbolic throws Bad argument type.
+   ----------------------------------------------------------------- */
+
+function _piSymbolic(n, d) {
+  // Build the Symbolic AST for the rational multiple n/d of π.
+  // Caller guarantees d ≥ 1 and sign is NOT reflected in n (always
+  // positive numerator).  Returns an AST node ready for Symbolic().
+  const PI = AstVar('PI');
+  let core;
+  if (n === 1) core = PI;
+  else core = AstBin('*', AstNum(n), PI);
+  if (d === 1) return core;
+  return AstBin('/', core, AstNum(d));
+}
+
+register('→Qπ', (s) => {
+  const [v] = s.popN(1);
+  let x;
+  if (isInteger(v)) x = Number(v.value);
+  else if (isReal(v)) x = v.value;
+  else throw new RPLError('Bad argument type');
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  if (x === 0) { s.push(Symbolic(AstNum(0))); return; }
+  const sign = x < 0 ? -1 : 1;
+  const q = Math.abs(x) / Math.PI;
+  const { n, d } = _continuedFractionConvergent(q);
+  if (n === 0) {
+    // Couldn't find any rational multiple of π close enough — fall back
+    // to →Q semantics on the Real input.
+    if (Number.isInteger(x)) { s.push(Symbolic(AstNum(x))); return; }
+    const r = _continuedFractionConvergent(x);
+    if (r.d === 1) { s.push(Symbolic(AstNum(r.n))); return; }
+    if (r.n < 0) {
+      s.push(Symbolic(AstNeg(AstBin('/', AstNum(-r.n), AstNum(r.d)))));
+    } else {
+      s.push(Symbolic(AstBin('/', AstNum(r.n), AstNum(r.d))));
+    }
+    return;
+  }
+  const core = _piSymbolic(n, d);
+  if (sign < 0) {
+    s.push(Symbolic(AstNeg(core)));
+  } else {
+    s.push(Symbolic(core));
+  }
+});
+register('->Qπ', (s) => { lookup('→Qπ').fn(s); });
+
+/* --------------- GETI / PUTI — auto-incrementing GET / PUT -----------
+   HP50 AUR §13.2.  Like GET / PUT but leave the container on the
+   stack and produce the (wrapping) next index — the classic "walk
+   through a list element-by-element inside a loop" primitive.
+
+     GETI  ( L i → L i+1 elt )
+             Pops a container and a 1-based index; pushes back the
+             container, the NEXT index (wrapping to 1 after the end),
+             and the element at the ORIGINAL index.
+
+     PUTI  ( L i val → L' i+1 )
+             Like PUT but returns the incremented index on top instead
+             of the replaced container alone.  Wrapping matches GETI.
+
+   Wrapping rule: when the original index is the last valid slot, the
+   next index wraps to 1 (HP50 behavior — lets `« GETI » DUPx` loops
+   cycle forever; a user wanting a bounded walk pairs GETI with a
+   size check).  The container pushed back is unchanged for GETI; for
+   PUTI it's the patched container.
+
+   Supported container types:
+     - GETI: List, Vector, Matrix ({r c}), String.  Matrix indexing
+       advances column-major: (r, c) → (r, c+1); wrapping c → 1 also
+       advances r (and wrapping r → 1 when past the last row).
+     - PUTI: List, Vector, Matrix.  String PUTI isn't defined by HP50
+       (strings are immutable one-char-at-a-time here); throws.
+   ----------------------------------------------------------------- */
+
+function _advance1DIndex(idx, length) {
+  // 1-based wrap.  Caller has already validated idx ∈ [1, length].
+  return idx >= length ? 1 : idx + 1;
+}
+
+function _advanceMatrixIndex(r, c, rows, cols) {
+  // Column-major advance so GETI walks a row before dropping down.
+  if (c < cols) return { r, c: c + 1 };
+  if (r < rows) return { r: r + 1, c: 1 };
+  return { r: 1, c: 1 };                  // full wrap
+}
+
+register('GETI', (s) => {
+  const [coll, idx] = s.popN(2);
+  if (isList(coll)) {
+    const n = _toIntIdx(idx);
+    if (n < 1 || n > coll.items.length) throw new RPLError('Bad argument value');
+    const nxt = _advance1DIndex(n, coll.items.length);
+    s.push(coll);
+    s.push(Integer(BigInt(nxt)));
+    s.push(coll.items[n - 1]);
+    return;
+  }
+  if (isVector(coll)) {
+    const n = _toIntIdx(idx);
+    if (n < 1 || n > coll.items.length) throw new RPLError('Bad argument value');
+    const nxt = _advance1DIndex(n, coll.items.length);
+    s.push(coll);
+    s.push(Integer(BigInt(nxt)));
+    s.push(coll.items[n - 1]);
+    return;
+  }
+  if (isMatrix(coll)) {
+    if (!isList(idx) || idx.items.length !== 2) {
+      throw new RPLError('Bad argument type');
+    }
+    const rows = coll.rows.length;
+    const cols = rows > 0 ? coll.rows[0].length : 0;
+    const r = _toIntIdx(idx.items[0]);
+    const c = _toIntIdx(idx.items[1]);
+    if (r < 1 || r > rows || c < 1 || c > cols) {
+      throw new RPLError('Bad argument value');
+    }
+    const nxt = _advanceMatrixIndex(r, c, rows, cols);
+    s.push(coll);
+    s.push(RList([Integer(BigInt(nxt.r)), Integer(BigInt(nxt.c))]));
+    s.push(coll.rows[r - 1][c - 1]);
+    return;
+  }
+  if (isString(coll)) {
+    const n = _toIntIdx(idx);
+    if (n < 1 || n > coll.value.length) throw new RPLError('Bad argument value');
+    const nxt = _advance1DIndex(n, coll.value.length);
+    s.push(coll);
+    s.push(Integer(BigInt(nxt)));
+    s.push(Str(coll.value[n - 1]));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('PUTI', (s) => {
+  const [coll, idx, val] = s.popN(3);
+  if (isList(coll)) {
+    const n = _toIntIdx(idx);
+    if (n < 1 || n > coll.items.length) throw new RPLError('Bad argument value');
+    const items = [...coll.items];
+    items[n - 1] = val;
+    const nxt = _advance1DIndex(n, coll.items.length);
+    s.push(RList(items));
+    s.push(Integer(BigInt(nxt)));
+    return;
+  }
+  if (isVector(coll)) {
+    const n = _toIntIdx(idx);
+    if (n < 1 || n > coll.items.length) throw new RPLError('Bad argument value');
+    const items = [...coll.items];
+    items[n - 1] = val;
+    const nxt = _advance1DIndex(n, coll.items.length);
+    s.push(Vector(items));
+    s.push(Integer(BigInt(nxt)));
+    return;
+  }
+  if (isMatrix(coll)) {
+    if (!isList(idx) || idx.items.length !== 2) {
+      throw new RPLError('Bad argument type');
+    }
+    const rows = coll.rows.length;
+    const cols = rows > 0 ? coll.rows[0].length : 0;
+    const r = _toIntIdx(idx.items[0]);
+    const c = _toIntIdx(idx.items[1]);
+    if (r < 1 || r > rows || c < 1 || c > cols) {
+      throw new RPLError('Bad argument value');
+    }
+    const newRows = coll.rows.map((ri, i) => {
+      if (i !== r - 1) return ri;
+      const copy = [...ri];
+      copy[c - 1] = val;
+      return copy;
+    });
+    const nxt = _advanceMatrixIndex(r, c, rows, cols);
+    s.push(Matrix(newRows));
+    s.push(RList([Integer(BigInt(nxt.r)), Integer(BigInt(nxt.c))]));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* =================================================================
+   Session 053 — crunch-mode expansion (2026-04-23).
+
+   This block lands fifteen substantive clusters drawn from the
+   §11 (CAS number-theory), §13 (List), §16 (Types & Tags), §19
+   (Statistics), §9 (Display), and §8 (Error/Debug) priority lists:
+
+     §11 CAS: ISPRIME? / NEXTPRIME / PREVPRIME; EULER; DIVIS / FACTORS;
+              IBERNOULLI; IEGCD; ICHINREM / IABCUV;
+              HORNER; PCOEF / FCOEF.
+     §13 Lists: APPEND.
+     §16 Types: →TAG / DTAG / VTYPE / KIND / UNDER.
+     §19 Stats: MEDIAN; CORR / COV.
+     §9  Display: STD / FIX / SCI / ENG.
+     §8  Errors: DOERR.
+
+   All ops are user-reachable from the typed catalog today; no UI
+   change is required to drive them from the LCD/keypad keypress path.
+   The display-mode quartet (STD/FIX/SCI/ENG) updates `state.display*`
+   fields that existing tests can assert on via `→STR`; wiring them
+   into the live LCD render is explicitly a future UI-enabled session.
+   ================================================================= */
+
+/* --------------- Number-theoretic helpers (integer land) -----------
+   All the primality / totient / divisor ops work over BigInt so
+   HP50-size integers (64+ bits) round-trip cleanly.  Small-n paths
+   use BigInt math anyway — the constants below avoid a Number
+   coercion for readability. */
+
+const _ZERO = 0n;
+const _ONE  = 1n;
+const _TWO  = 2n;
+
+/** Integer square root for non-negative BigInt.  Used by trial
+ *  division (walk p up to √n) and by the quadratic residue check
+ *  inside Miller-Rabin witnesses (not used here, reserved for later). */
+function _isqrtBig(n) {
+  if (n < _ZERO) throw new RPLError('Bad argument value');
+  if (n < _TWO) return n;
+  // Newton's method on BigInt.
+  let x = n, y = (x + _ONE) >> _ONE;
+  while (y < x) { x = y; y = (x + n / x) >> _ONE; }
+  return x;
+}
+
+/** Modular exponentiation a^e mod m on BigInt. */
+function _powModBig(a, e, m) {
+  if (m === _ONE) return _ZERO;
+  let r = _ONE;
+  a = ((a % m) + m) % m;
+  while (e > _ZERO) {
+    if (e & _ONE) r = (r * a) % m;
+    e >>= _ONE;
+    a = (a * a) % m;
+  }
+  return r;
+}
+
+/** Deterministic Miller-Rabin primality for BigInt n.  The witness
+ *  set {2,3,5,7,11,13,17,19,23,29,31,37} is sufficient for all
+ *  n < 3.3 × 10^24 — well past HP50 64-bit range.  Returns boolean. */
+function _isPrimeBig(n) {
+  if (n < _TWO) return false;
+  // Small-prime sieve for speed.
+  const small = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n];
+  for (const p of small) {
+    if (n === p) return true;
+    if (n % p === _ZERO) return false;
+  }
+  // Write n-1 = 2^s * d with d odd.
+  let d = n - _ONE, s = 0n;
+  while ((d & _ONE) === _ZERO) { d >>= _ONE; s += _ONE; }
+  const witnesses = small;
+  outer:
+  for (const a of witnesses) {
+    if (a >= n) continue;
+    let x = _powModBig(a, d, n);
+    if (x === _ONE || x === n - _ONE) continue;
+    for (let r = _ONE; r < s; r++) {
+      x = (x * x) % n;
+      if (x === n - _ONE) continue outer;
+    }
+    return false;
+  }
+  return true;
+}
+
+/** Next prime strictly greater than n.  n may be any BigInt. */
+function _nextPrimeBig(n) {
+  if (n < _TWO) return _TWO;
+  let c = n + _ONE;
+  if (c === _TWO) return _TWO;
+  if ((c & _ONE) === _ZERO) c += _ONE;           // skip to odd
+  while (!_isPrimeBig(c)) c += _TWO;
+  return c;
+}
+
+/** Previous prime strictly less than n.  Returns null if none exists
+ *  (i.e. n ≤ 2).  Callers should raise Bad argument value in that case. */
+function _prevPrimeBig(n) {
+  if (n <= _TWO) return null;
+  if (n === 3n) return _TWO;
+  let c = n - _ONE;
+  if ((c & _ONE) === _ZERO) c -= _ONE;           // skip to odd
+  if (c < 3n) return _TWO;
+  while (c >= 3n && !_isPrimeBig(c)) c -= _TWO;
+  return c < _TWO ? _TWO : c;
+}
+
+/** Trial-division factorization of a positive BigInt.  Returns an
+ *  Array of [prime, exponent] BigInt pairs, sorted ascending by prime.
+ *  1n returns an empty array; 0n is rejected upstream.  Uses a
+ *  2-3-5 wheel step which is good enough for HP50 integers; numbers
+ *  above ~2^50 with a large prime factor will be slow but will still
+ *  terminate. */
+function _factorIntBig(n) {
+  if (n <= _ZERO) throw new RPLError('Bad argument value');
+  const out = [];
+  // Strip small primes (2, 3, 5) first.
+  for (const p of [_TWO, 3n, 5n]) {
+    if (n < p * p) break;
+    let k = _ZERO;
+    while (n % p === _ZERO) { n /= p; k++; }
+    if (k > _ZERO) out.push([p, k]);
+  }
+  // Wheel of {7,11,13,17,19,23,29,31} then +30 increments.
+  const wheelAdds = [4n, 2n, 4n, 2n, 4n, 6n, 2n, 6n];
+  let p = 7n, w = 0;
+  while (p * p <= n) {
+    let k = _ZERO;
+    while (n % p === _ZERO) { n /= p; k++; }
+    if (k > _ZERO) out.push([p, k]);
+    p += wheelAdds[w % 8];
+    w++;
+  }
+  if (n > _ONE) out.push([n, _ONE]);
+  return out;
+}
+
+/** Divisor list for positive BigInt n, in ascending order.  Built
+ *  via prime factorization + expansion. */
+function _divisorsBig(n) {
+  if (n <= _ZERO) throw new RPLError('Bad argument value');
+  if (n === _ONE) return [_ONE];
+  const fs = _factorIntBig(n);
+  let divs = [_ONE];
+  for (const [p, e] of fs) {
+    const next = [];
+    let pk = _ONE;
+    for (let k = _ZERO; k <= e; k++) {
+      for (const d of divs) next.push(d * pk);
+      pk *= p;
+    }
+    divs = next;
+  }
+  divs.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return divs;
+}
+
+/** Euler's totient φ(n) via prime factorization.  φ(1) = 1. */
+function _eulerBig(n) {
+  if (n <= _ZERO) throw new RPLError('Bad argument value');
+  if (n === _ONE) return _ONE;
+  const fs = _factorIntBig(n);
+  let phi = n;
+  for (const [p] of fs) phi = phi / p * (p - _ONE);
+  return phi;
+}
+
+/** Extended GCD on BigInt.  Returns { g, u, v } with u*a + v*b = g.
+ *  g is non-negative; when a = b = 0, g = 0 and u = v = 0 (HP50's
+ *  IEGCD-on-zero-zero convention). */
+function _extGcdBig(a, b) {
+  let old_r = a < _ZERO ? -a : a;
+  let r     = b < _ZERO ? -b : b;
+  let old_s = _ONE, s = _ZERO;
+  let old_t = _ZERO, t = _ONE;
+  while (r !== _ZERO) {
+    const q = old_r / r;
+    [old_r, r] = [r, old_r - q * r];
+    [old_s, s] = [s, old_s - q * s];
+    [old_t, t] = [t, old_t - q * t];
+  }
+  // Flip signs to reflect original a / b signs — since we negated
+  // abs values on the way in, positive old_s / old_t map to the
+  // sign of the original operand.
+  if (a < _ZERO) old_s = -old_s;
+  if (b < _ZERO) old_t = -old_t;
+  return { g: old_r, u: old_s, v: old_t };
+}
+
+/** Coerce an RPL value to a BigInt or throw.  Accepts Integer and
+ *  integer-valued Real (no fractional part).  Rejects Complex /
+ *  BinaryInteger / Symbolic — callers pick the policy. */
+function _toBigIntStrict(v) {
+  if (isInteger(v)) return v.value;
+  if (isReal(v)) {
+    if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+      throw new RPLError('Bad argument value');
+    }
+    return BigInt(v.value);
+  }
+  throw new RPLError('Bad argument type');
+}
+
+/* --------------- ISPRIME? / NEXTPRIME / PREVPRIME --------------------
+   HP50 AUR §12.6.  Primality predicate plus walk-forward / walk-back
+   to the nearest prime.
+
+     ISPRIME?  ( n → b )    b = TRUE (Real 1) or FALSE (Real 0)
+     NEXTPRIME ( n → p )    smallest prime p > n
+     PREVPRIME ( n → p )    largest prime p < n; n ≤ 2 → Bad argument value
+
+   Inputs accepted: Integer, integer-valued Real.  Complex /
+   BinaryInteger / Symbolic throw Bad argument type.  Negative input
+   for ISPRIME? returns FALSE (primes are positive); NEXTPRIME on a
+   negative input returns 2.  PREVPRIME on n ≤ 2 throws (no prime
+   below 2).
+   ----------------------------------------------------------------- */
+
+register('ISPRIME?', (s) => {
+  const [v] = s.popN(1);
+  const n = _toBigIntStrict(v);
+  s.push(_isPrimeBig(n) ? TRUE : FALSE);
+});
+
+register('NEXTPRIME', (s) => {
+  const [v] = s.popN(1);
+  const n = _toBigIntStrict(v);
+  const p = _nextPrimeBig(n);
+  s.push(Integer(p));
+});
+
+register('PREVPRIME', (s) => {
+  const [v] = s.popN(1);
+  const n = _toBigIntStrict(v);
+  const p = _prevPrimeBig(n);
+  if (p === null) throw new RPLError('Bad argument value');
+  s.push(Integer(p));
+});
+
+/* --------------- EULER — Euler's totient φ(n) ------------------------
+   HP50 AUR §12.6.  Count of integers k in [1, n] with gcd(k, n) = 1.
+   Built on top of prime factorization — trivial once _factorIntBig is
+   around.
+
+     EULER  ( n → φ(n) )    n ≥ 1.  Integer or integer-valued Real.
+                             n = 1 returns 1 (by convention).
+                             n ≤ 0 → Bad argument value.
+   ----------------------------------------------------------------- */
+
+register('EULER', (s) => {
+  const [v] = s.popN(1);
+  const n = _toBigIntStrict(v);
+  const phi = _eulerBig(n);
+  s.push(Integer(phi));
+});
+
+/* --------------- DIVIS / FACTORS — integer divisor / factoring -------
+   HP50 AUR §12.6.
+
+     DIVIS    ( n → L )    L is the ascending list of positive
+                           divisors of |n|.  `DIVIS 12` = {1 2 3 4 6 12}.
+                           n = 0 → Bad argument value.  n < 0 uses |n|
+                           (HP50 returns divisors of absolute value).
+     FACTORS  ( n → L )    L is a flat list {p₁ e₁ p₂ e₂ … pₖ eₖ} of
+                           (prime, exponent) pairs.  `FACTORS 12` =
+                           {2 2 3 1}.  n = 1 returns {}.
+                           n ≤ 0 → Bad argument value.  The Symbolic/
+                           polynomial form of FACTORS is deferred — this
+                           is the integer-only path that's cheap today.
+   ----------------------------------------------------------------- */
+
+register('DIVIS', (s) => {
+  const [v] = s.popN(1);
+  const n0 = _toBigIntStrict(v);
+  if (n0 === _ZERO) throw new RPLError('Bad argument value');
+  const n = n0 < _ZERO ? -n0 : n0;
+  const ds = _divisorsBig(n);
+  s.push(RList(ds.map((d) => Integer(d))));
+});
+
+register('FACTORS', (s) => {
+  const [v] = s.popN(1);
+  const n0 = _toBigIntStrict(v);
+  if (n0 <= _ZERO) throw new RPLError('Bad argument value');
+  if (n0 === _ONE) { s.push(RList([])); return; }
+  const fs = _factorIntBig(n0);
+  const flat = [];
+  for (const [p, e] of fs) {
+    flat.push(Integer(p));
+    flat.push(Integer(e));
+  }
+  s.push(RList(flat));
+});
+
+/* --------------- IBERNOULLI — Bernoulli number B(n) ------------------
+   HP50 AUR §12.6.  Returns B_n as an exact rational Symbolic for n ≥ 0.
+   Uses the Akiyama-Tanigawa algorithm with arbitrary-precision rational
+   arithmetic (BigInt numerator / denominator).  Signs follow the
+   B_1 = -1/2 convention (HP50 also uses -1/2, not +1/2).
+
+     IBERNOULLI ( n → Sy )   n ≥ 0.  B_0 = 1, B_1 = -1/2, B_{2k+1} = 0
+                             for k ≥ 1, B_{2k} is the nontrivial even-
+                             indexed rational.  Large n becomes slow
+                             (O(n²) time, O(n) rationals held at once).
+
+   Output format: a Symbolic whose body is Num (integer-valued),
+   Bin('/', n, d), or Neg thereof — matches how →Q renders small
+   rationals, so `IBERNOULLI 6` prints as `'1/42'`.  No floating-point
+   rounding, ever.
+   ----------------------------------------------------------------- */
+
+function _gcdBig(a, b) {
+  a = a < _ZERO ? -a : a;
+  b = b < _ZERO ? -b : b;
+  while (b !== _ZERO) { const t = a % b; a = b; b = t; }
+  return a;
+}
+
+function _ratNormalize(n, d) {
+  if (d === _ZERO) throw new RPLError('Infinite result');
+  if (d < _ZERO) { n = -n; d = -d; }
+  const g = _gcdBig(n < _ZERO ? -n : n, d);
+  return g === _ZERO ? [n, d] : [n / g, d / g];
+}
+function _ratAdd(a, b) {
+  return _ratNormalize(a[0] * b[1] + b[0] * a[1], a[1] * b[1]);
+}
+function _ratSub(a, b) {
+  return _ratNormalize(a[0] * b[1] - b[0] * a[1], a[1] * b[1]);
+}
+function _ratMul(a, b) {
+  return _ratNormalize(a[0] * b[0], a[1] * b[1]);
+}
+
+/** Build a Symbolic AST from a [num, den] rational.  Uses Num(Number)
+ *  which loses precision for numerators above 2^53 — good enough for
+ *  small-index Bernoulli numbers but flagged for larger indices.
+ *  Future work: extend the AST Num kind to carry a BigInt payload so
+ *  `IBERNOULLI 30` = 8615841276005/14322 doesn't lose its tail. */
+function _ratToSymbolic(n, d) {
+  if (d === _ONE) return Symbolic(AstNum(Number(n)));
+  if (n === _ZERO) return Symbolic(AstNum(0));
+  if (n < _ZERO) {
+    return Symbolic(AstNeg(AstBin('/', AstNum(Number(-n)), AstNum(Number(d)))));
+  }
+  return Symbolic(AstBin('/', AstNum(Number(n)), AstNum(Number(d))));
+}
+
+register('IBERNOULLI', (s) => {
+  const [v] = s.popN(1);
+  const nBig = _toBigIntStrict(v);
+  if (nBig < _ZERO) throw new RPLError('Bad argument value');
+  const n = Number(nBig);
+  if (!Number.isSafeInteger(n) || n > 100) {
+    // Hard cap — O(n²) rational work balloons past this.
+    throw new RPLError('Bad argument value');
+  }
+  // Odd n ≥ 3 is zero.
+  if (n >= 3 && (n & 1) === 1) { s.push(Symbolic(AstNum(0))); return; }
+  // Akiyama-Tanigawa.  Work with an array of [num, den] pairs.
+  const a = new Array(n + 1);
+  for (let m = 0; m <= n; m++) {
+    a[m] = [_ONE, BigInt(m + 1)];                // A[m] = 1/(m+1)
+    for (let j = m; j >= 1; j--) {
+      // A[j-1] = j * (A[j-1] - A[j])
+      const diff = _ratSub(a[j - 1], a[j]);
+      a[j - 1] = _ratMul([BigInt(j), _ONE], diff);
+    }
+  }
+  // Akiyama-Tanigawa yields the "second" Bernoulli series B^+_n
+  // (B^+_1 = +1/2).  HP50 and Knuth use the "first" series B^-_n
+  // (B^-_1 = -1/2); for n = 1 flip the sign to land on that
+  // convention.  All other indices agree between the two series.
+  let [num, den] = a[0];
+  if (n === 1) num = -num;
+  s.push(_ratToSymbolic(num, den));
+});
+
+/* --------------- IEGCD — integer extended GCD ------------------------
+   HP50 AUR §12.6.
+
+     IEGCD  ( a b → u v g )   g = gcd(|a|, |b|); u, v are integers
+                               satisfying  u·a + v·b = g.  Both
+                               inputs Integer or integer-valued Real;
+                               Complex/Symbolic/BinInt reject.  g is
+                               always non-negative.  a = b = 0 returns
+                               0 0 0.
+
+   HP50's EGCD expects Symbolic operands (polynomial extended GCD);
+   that's a CAS-infrastructure item deferred until the polynomial-
+   normalize pass lands.  IEGCD is the integer-typed sibling and is
+   the op used in practice for Bézout coefficients.
+   ----------------------------------------------------------------- */
+
+register('IEGCD', (s) => {
+  const [av, bv] = s.popN(2);
+  const a = _toBigIntStrict(av);
+  const b = _toBigIntStrict(bv);
+  const { g, u, v } = _extGcdBig(a, b);
+  s.push(Integer(u));
+  s.push(Integer(v));
+  s.push(Integer(g));
+});
+
+/* --------------- ICHINREM / IABCUV — integer CRT and Bézout ----------
+   HP50 AUR §12.6.
+
+     ICHINREM  ( {a m} {b n} → {x p} )
+                           Chinese Remainder Theorem over the integers.
+                           x ≡ a (mod m), x ≡ b (mod n), p = m*n / gcd
+                           (when gcd(m,n) divides a−b and a solution
+                           exists; otherwise raise Bad argument value).
+                           Result is reduced to [0, p).
+
+     IABCUV    ( a b c → u v )
+                           Solve a·u + b·v = c over the integers.
+                           Requires gcd(a, b) | c; otherwise raise.
+                           Picks the canonical small-coefficient
+                           solution scaled from Bézout (u, v) for
+                           gcd(a, b).
+   ----------------------------------------------------------------- */
+
+function _popIntPair(list) {
+  if (!isList(list) || list.items.length !== 2) {
+    throw new RPLError('Bad argument type');
+  }
+  return [_toBigIntStrict(list.items[0]), _toBigIntStrict(list.items[1])];
+}
+
+register('ICHINREM', (s) => {
+  const [l1, l2] = s.popN(2);
+  const [a, m] = _popIntPair(l1);
+  const [b, n] = _popIntPair(l2);
+  if (m === _ZERO || n === _ZERO) throw new RPLError('Bad argument value');
+  const mAbs = m < _ZERO ? -m : m;
+  const nAbs = n < _ZERO ? -n : n;
+  const { g, u } = _extGcdBig(mAbs, nAbs);
+  const diff = b - a;
+  if (diff % g !== _ZERO) throw new RPLError('Bad argument value');
+  const lcm = (mAbs / g) * nAbs;                    // lcm = m*n/gcd
+  // x = a + m * u * ((b - a) / g), reduced mod lcm
+  let x = a + mAbs * u * (diff / g);
+  x = ((x % lcm) + lcm) % lcm;
+  s.push(RList([Integer(x), Integer(lcm)]));
+});
+
+register('IABCUV', (s) => {
+  const [av, bv, cv] = s.popN(3);
+  const a = _toBigIntStrict(av);
+  const b = _toBigIntStrict(bv);
+  const c = _toBigIntStrict(cv);
+  const { g, u, v } = _extGcdBig(a, b);
+  if (g === _ZERO) {
+    // a = b = 0: only c = 0 has a solution; pick u = v = 0.
+    if (c !== _ZERO) throw new RPLError('Bad argument value');
+    s.push(Integer(_ZERO));
+    s.push(Integer(_ZERO));
+    return;
+  }
+  if (c % g !== _ZERO) throw new RPLError('Bad argument value');
+  const k = c / g;
+  s.push(Integer(u * k));
+  s.push(Integer(v * k));
+});
+
+/* --------------- HORNER — synthetic division of polynomial -----------
+   HP50 AUR §12.6.  Applied to a polynomial presented as a coefficient
+   list in DESCENDING order of degree (same convention as PCOEF's
+   output), HORNER synthetically divides by (x − a).
+
+     HORNER  ( {c_n … c_1 c_0} a → {q_{n-1} … q_0} r a )
+
+   Result: { c_n,  c_{n-1} + a·q_{n-1},  … } — i.e. the Horner-scheme
+   quotient, plus the remainder (= value of the polynomial at x = a),
+   and `a` itself re-pushed on top to match HP50's 3-level return.
+   Empty coefficient list throws Bad argument value.  Coefficients and
+   a are Real / Integer / Complex; Symbolic coefficients are rejected
+   in this list-form (Symbolic-polynomial HORNER is the CAS-side op
+   deferred with the polynomial-normalize pass).
+   ----------------------------------------------------------------- */
+
+register('HORNER', (s) => {
+  const [poly, a] = s.popN(2);
+  if (!isList(poly)) throw new RPLError('Bad argument type');
+  if (poly.items.length === 0) throw new RPLError('Bad argument value');
+  // Accept Real / Integer / Complex / BinaryInteger-less numerics only.
+  for (const c of poly.items) {
+    if (!isReal(c) && !isInteger(c) && !isComplex(c)) {
+      throw new RPLError('Bad argument type');
+    }
+  }
+  if (!isReal(a) && !isInteger(a) && !isComplex(a)) {
+    throw new RPLError('Bad argument type');
+  }
+  const coefs = poly.items;
+  const n = coefs.length;
+  const q = new Array(n - 1);
+  let r = coefs[0];
+  for (let i = 1; i < n; i++) {
+    q[i - 1] = r;
+    // r = r * a + c_i  (via _scalarBinary for mixed numeric-type safety)
+    r = _scalarBinary('+', _scalarBinary('*', r, a), coefs[i]);
+  }
+  s.push(RList(q));
+  s.push(r);
+  s.push(a);
+});
+
+/* --------------- PCOEF / FCOEF — roots ↔ polynomial ------------------
+   HP50 AUR §12.6.
+
+     PCOEF   ( {r_1 … r_n} → {1 c_1 … c_n} )
+              Given a list of roots, returns the coefficient list of
+              the monic polynomial (x − r_1)(x − r_2)…(x − r_n).  Leading
+              coefficient is always Integer(1) — suitable for feeding
+              straight into HORNER.  Real / Integer / Complex roots all
+              flow through.  Empty roots list returns {1}.
+
+     FCOEF   ( {r_1 m_1 … r_k m_k} → Sy )
+              Given (root, multiplicity) pairs, returns the Symbolic
+              polynomial in VX.  Zero-multiplicity pairs are silently
+              skipped (matches HP50).  Negative multiplicity throws
+              Bad argument value.  Numeric roots become AstNum; Symbolic
+              roots lift directly.  Output is always Symbolic.
+   ----------------------------------------------------------------- */
+
+register('PCOEF', (s) => {
+  const [rootsList] = s.popN(1);
+  if (!isList(rootsList)) throw new RPLError('Bad argument type');
+  const roots = rootsList.items;
+  // Accept Real / Integer / Complex roots.  Symbolic rejected — the
+  // symbolic form needs the full CAS polynomial expander.
+  for (const r of roots) {
+    if (!isReal(r) && !isInteger(r) && !isComplex(r)) {
+      throw new RPLError('Bad argument type');
+    }
+  }
+  // Start with polynomial [1].  For each root r, multiply by (x − r):
+  // new[0..n] = old[0..n-1] shifted up  −  r * old[0..n-1]
+  let coefs = [Integer(_ONE)];
+  for (const r of roots) {
+    const m = coefs.length;
+    const next = new Array(m + 1);
+    next[0] = coefs[0];                             // shifted-up leading
+    for (let i = 1; i < m; i++) {
+      next[i] = _scalarBinary('-', coefs[i],
+        _scalarBinary('*', r, coefs[i - 1]));
+    }
+    next[m] = _scalarBinary('-', Integer(_ZERO),
+      _scalarBinary('*', r, coefs[m - 1]));
+    coefs = next;
+  }
+  s.push(RList(coefs));
+});
+
+/** Build `(VX - root)` as an AST. */
+function _vxMinusRoot(root) {
+  const vx = AstVar('X');
+  const ast = _toAst(root);
+  if (!ast) throw new RPLError('Bad argument type');
+  return AstBin('-', vx, ast);
+}
+
+register('FCOEF', (s) => {
+  const [pairList] = s.popN(1);
+  if (!isList(pairList)) throw new RPLError('Bad argument type');
+  if (pairList.items.length % 2 !== 0) {
+    throw new RPLError('Bad argument value');
+  }
+  let acc = null;      // null = polynomial "1"
+  for (let i = 0; i < pairList.items.length; i += 2) {
+    const root = pairList.items[i];
+    const multV = pairList.items[i + 1];
+    if (!isInteger(multV) &&
+        !(isReal(multV) && Number.isInteger(multV.value))) {
+      throw new RPLError('Bad argument type');
+    }
+    const m = Number(isInteger(multV) ? multV.value : multV.value);
+    if (m < 0) throw new RPLError('Bad argument value');
+    for (let k = 0; k < m; k++) {
+      const fac = _vxMinusRoot(root);
+      acc = acc === null ? fac : AstBin('*', acc, fac);
+    }
+  }
+  if (acc === null) acc = AstNum(1);       // empty product = 1
+  s.push(Symbolic(acc));
+});
+
+/* --------------- →TAG / DTAG / VTYPE / KIND / UNDER ------------------
+   HP50 AUR §4.6 and §4.1.  Tagged objects and type-introspection ops.
+
+     →TAG   ( value tag → tagged )
+              Wrap `value` with a string `tag`.  HP50 accepts the tag
+              as a String OR a Name; we accept both and coerce to the
+              string form (Name.id without the tick).  Empty tag OK
+              (mirrors HP50).  Existing tag is replaced — double-tagging
+              is a no-op on top of an already-tagged value.
+
+     DTAG   ( tagged → value )
+              Strip a tag, leaving the inner value.  On an UN-tagged
+              value, passes through unchanged (matches HP50 defensive
+              semantics).
+
+     VTYPE  ( N → n )
+              Recall the stored value for `N` and return its HP50
+              TYPE code.  `N` must be a Name; missing name throws
+              Undefined name.  Saves a DUP-RCL-TYPE triple.
+
+     KIND   ( v → n )
+              Same mapping as TYPE but with HP50's finer subdivision
+              for composites.  In our implementation today the
+              numbers agree with TYPE; reserved for future refinement
+              once the type taxonomy diverges (e.g. for HP49+ library
+              objects).
+
+     UNDER  ( tagged → value tag )
+              Explode a tagged into (value, tag-string).  Symmetric
+              inverse of →TAG.  UN-tagged value throws Bad argument type.
+   ----------------------------------------------------------------- */
+
+function _asTagString(v) {
+  if (isString(v)) return v.value;
+  if (isName(v))   return v.id;
+  throw new RPLError('Bad argument type');
+}
+
+register('→TAG', (s) => {
+  const [val, tagV] = s.popN(2);
+  const tag = _asTagString(tagV);
+  // If value is already tagged, replace the outer tag (HP50 behavior).
+  const inner = isTagged(val) ? val.value : val;
+  s.push(Tagged(tag, inner));
+});
+register('->TAG', (s) => { lookup('→TAG').fn(s); });
+
+register('DTAG', (s) => {
+  const [v] = s.popN(1);
+  if (isTagged(v)) { s.push(v.value); return; }
+  s.push(v);   // HP50: DTAG on non-tagged is a no-op pass-through
+});
+
+register('VTYPE', (s) => {
+  const [nameV] = s.popN(1);
+  if (!isName(nameV)) throw new RPLError('Bad argument type');
+  const stored = varRecall(nameV.id);
+  if (stored === undefined) throw new RPLError(`Undefined name: ${nameV.id}`);
+  s.push(Real(_hp50TypeCode(stored)));
+});
+
+register('KIND', (s) => {
+  const [v] = s.popN(1);
+  s.push(Real(_hp50TypeCode(v)));
+});
+
+register('UNDER', (s) => {
+  const [v] = s.popN(1);
+  if (!isTagged(v)) throw new RPLError('Bad argument type');
+  s.push(v.value);
+  s.push(Str(v.tag));
+});
+
+/* --------------- DOERR — raise a user-supplied error -----------------
+   HP50 AUR §14.2.
+
+     DOERR ( S → ) raise an RPL error whose message is the string S.
+     DOERR ( n → ) raise an error whose number is `n` — looks up the
+                   canonical error-message text if the number is
+                   known; otherwise emits `Error: #Nh` as a fallback.
+     DOERR ( 0 → ) no-op.  HP50 uses "DOERR 0" to mean "clear state
+                   and do nothing"; we treat it the same.
+
+   Ideal partners: IFERR (the trap) and ERRM/ERRN/ERR0 (introspection).
+   A DOERR raised inside an IFERR trap is routed to the THEN clause
+   with the last-error slot populated exactly as if a built-in op had
+   failed.
+   ----------------------------------------------------------------- */
+
+register('DOERR', (s) => {
+  const [v] = s.popN(1);
+  if (isString(v)) {
+    if (v.value === '') throw new RPLError('Interrupted');
+    throw new RPLError(v.value);
+  }
+  if (isInteger(v) || isReal(v) || isBinaryInteger(v)) {
+    let code;
+    if (isInteger(v))            code = Number(v.value);
+    else if (isReal(v))          code = v.value;
+    else                         code = Number(v.value);
+    if (code === 0) return;                   // DOERR 0 = clear / no-op
+    // Reverse-lookup the canonical message for known codes; fall back
+    // to a generic hex form otherwise.  The reverse table is built on
+    // demand each call — cheap, ops.js already owns the forward table
+    // indirectly via setLastError.
+    const known = {
+      0x201: 'Too few arguments',
+      0x202: 'Bad argument type',
+      0x204: 'Bad argument value',
+      0x303: 'Division by zero',
+      0x305: 'Infinite result',
+      0x501: 'Name conflict',
+      0x502: 'Directory not allowed',
+      0x503: 'Directory not empty',
+    };
+    const msg = known[code] || `Error: #${code.toString(16).toUpperCase()}h`;
+    throw new RPLError(msg);
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* --------------- APPEND — add element to end of a list ---------------
+   HP50 AUR §15.1.
+
+     APPEND  ( L v → L' )  Append `v` as a new last element of list L.
+
+   Accepts an RList host; any value type on the right.  Empty list OK.
+   Polymorphic on Vector (append scalar to vector) and String (append
+   character-string to string) was rejected by the HP50 spec — APPEND
+   is the list op.  For a Vector, use `ARRY→ SWAP 1 + →ARRY`-style
+   sequences.
+   ----------------------------------------------------------------- */
+
+register('APPEND', (s) => {
+  const [host, val] = s.popN(2);
+  if (!isList(host)) throw new RPLError('Bad argument type');
+  s.push(RList([...host.items, val]));
+});
+
+/* --------------- STD / FIX / SCI / ENG — number-format modes ---------
+   HP50 AUR §3.2.  State-only changes today — the `_calcState.display*`
+   fields read by the formatter's default path drive `→STR` and any
+   downstream op that passes the state's display mode to `format()`.
+   The LCD render path still uses the display's own `displayOpts`
+   instance; wiring that to follow state.display* is a future UI-enabled
+   session and is not part of this cluster.
+
+     STD                     ( — )       set mode = STD, digits ignored
+     FIX    ( n → )                      set mode = FIX, digits = clamp(n, 0, 11)
+     SCI    ( n → )                      set mode = SCI, digits = clamp(n, 0, 11)
+     ENG    ( n → )                      set mode = ENG, digits = clamp(n, 0, 11)
+
+   The `state.displayMode` / `state.displayDigits` fields are created on
+   demand — we defensively initialise them if absent so this works
+   against any previously-snapshotted state.  Non-integer Real and
+   negative digits throw Bad argument value.
+   ----------------------------------------------------------------- */
+
+function _setDisplayState(mode, digits) {
+  if (_calcState.displayMode === undefined)  _calcState.displayMode = 'STD';
+  if (_calcState.displayDigits === undefined) _calcState.displayDigits = 12;
+  _calcState.displayMode = mode;
+  if (digits !== null) _calcState.displayDigits = digits;
+}
+
+function _popNumDigits(s) {
+  const [n] = s.popN(1);
+  let d;
+  if (isInteger(n)) d = Number(n.value);
+  else if (isReal(n)) {
+    if (!Number.isInteger(n.value)) throw new RPLError('Bad argument value');
+    d = n.value;
+  } else {
+    throw new RPLError('Bad argument type');
+  }
+  if (d < 0) throw new RPLError('Bad argument value');
+  if (d > 11) d = 11;                               // HP50 cap
+  return d;
+}
+
+register('STD', () => { _setDisplayState('STD', null); });
+register('FIX', (s) => { const d = _popNumDigits(s); _setDisplayState('FIX', d); });
+register('SCI', (s) => { const d = _popNumDigits(s); _setDisplayState('SCI', d); });
+register('ENG', (s) => { const d = _popNumDigits(s); _setDisplayState('ENG', d); });
+
+/* --------------- MEDIAN — order-statistic over a Vector --------------
+   HP50 AUR §18.  Standard odd/even convention: middle entry when n is
+   odd, arithmetic mean of the two middle entries when n is even.
+
+     MEDIAN  ( V → m )     Vector V; Real / Integer entries only.
+     MEDIAN  ( M → v )     Matrix M; per-column median as Vector.
+
+   Rejects Complex / Symbolic / BinInt entries (same policy as VAR /
+   SDEV).  Empty Vector throws Bad argument value.  Ties on the
+   ordering go stable — two equal values side-by-side sort to their
+   input order; doesn't affect the median value.
+   ----------------------------------------------------------------- */
+
+function _medianItems(items) {
+  if (items.length === 0) throw new RPLError('Bad argument value');
+  const arr = items.map(_statsNumericEntry).slice().sort((a, b) => a - b);
+  const n = arr.length;
+  if ((n & 1) === 1) return arr[(n - 1) >> 1];
+  return (arr[n / 2 - 1] + arr[n / 2]) / 2;
+}
+
+register('MEDIAN', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) { s.push(Real(_medianItems(v.items))); return; }
+  if (isMatrix(v)) {
+    s.push(_perColumn(v, (col) => _medianItems(col), (x) => Real(x)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* --------------- CORR / COV — paired-sample correlation / covariance -
+   HP50 AUR §18.4.  The HP50 operates on columns of ΣDAT (two
+   independent variables); we accept an m×2 Matrix directly — no
+   sidecar slot required.  Column 1 is X, column 2 is Y.
+
+     CORR  ( M → r )   Pearson product-moment correlation
+                       r = cov(X,Y) / (sdev(X) * sdev(Y))
+                       -1 ≤ r ≤ 1.  Zero-variance columns throw
+                       Infinite result (division by zero in the
+                       denominator).
+     COV   ( M → s )   Sample covariance (Bessel n-1 denominator)
+                       s = Σ (xᵢ - μX)(yᵢ - μY) / (n − 1)
+
+   Input M must be m×2 with m ≥ 2; fewer rows throws Bad argument
+   value (can't form a sample variance).  Real/Integer entries
+   only.  A Vector input is explicitly rejected — the paired-sample
+   ops need two parallel columns.
+   ----------------------------------------------------------------- */
+
+function _twoColsOrThrow(M) {
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  const m = M.rows.length;
+  if (m < 2) throw new RPLError('Bad argument value');
+  if (M.rows[0].length !== 2) throw new RPLError('Invalid dimension');
+  const X = new Array(m), Y = new Array(m);
+  for (let i = 0; i < m; i++) {
+    X[i] = _statsNumericEntry(M.rows[i][0]);
+    Y[i] = _statsNumericEntry(M.rows[i][1]);
+  }
+  return { X, Y, m };
+}
+
+function _meanArr(a) {
+  let s = 0; for (const x of a) s += x; return s / a.length;
+}
+
+function _covArr(X, Y) {
+  const mX = _meanArr(X), mY = _meanArr(Y);
+  let s = 0;
+  for (let i = 0; i < X.length; i++) s += (X[i] - mX) * (Y[i] - mY);
+  return s / (X.length - 1);
+}
+
+function _varArr(A) {
+  const m = _meanArr(A);
+  let s = 0;
+  for (const x of A) { const d = x - m; s += d * d; }
+  return s / (A.length - 1);
+}
+
+register('COV', (s) => {
+  const [M] = s.popN(1);
+  const { X, Y } = _twoColsOrThrow(M);
+  s.push(Real(_covArr(X, Y)));
+});
+
+register('CORR', (s) => {
+  const [M] = s.popN(1);
+  const { X, Y } = _twoColsOrThrow(M);
+  const vX = _varArr(X), vY = _varArr(Y);
+  if (vX === 0 || vY === 0) throw new RPLError('Infinite result');
+  s.push(Real(_covArr(X, Y) / Math.sqrt(vX * vY)));
+});
+
+/* ==================================================================
+   Session 054 — polynomial roots + division, LU, stats aggregates,
+   regression family, CMPLX mode, MERGE directory op.
+
+   HP50 AUR: §12.6 (PROOT), §12.5 (QUOT/REMAINDER), §15.3 (LU),
+   §18.1 (stats aggregates, ΣX/ΣY/…), §18.1 (LINFIT/LOGFIT/EXPFIT/
+   PWRFIT, BESTFIT), §4.2.4 (CMPLX system flag -103), §3.2 (MERGE).
+
+   All ops below are user-reachable via the typed catalog today.  No
+   UI touches.  PROOT rejects Symbolic coefficients (deferred until
+   CAS polynomial-normalize lands).  Stats-aggregate family (NΣ, ΣX,
+   ΣY, ΣXY, ΣX², ΣY², MAXΣ, MINΣ) takes a Matrix argument directly —
+   matches the HP50 ΣDAT-bypass convention established in session 052.
+   Regression family (LINFIT / LOGFIT / EXPFIT / PWRFIT / BESTFIT)
+   follows the same convention: takes a 2-column Matrix, returns the
+   fitted-model Symbolic (or the best-fit family label for BESTFIT).
+   ================================================================= */
+
+/* --------------- PROOT — polynomial root-finder ----------------------
+   HP50 AUR §12.6.
+
+     PROOT  ( {c_n … c_1 c_0} → [ z_1 … z_n ] )
+
+   Returns a Vector of the n roots of the polynomial, in whatever
+   order Durand-Kerner converges to.  Real / Integer / Complex
+   coefficients accepted; Symbolic rejected (deferred until the CAS
+   polynomial-normalize pass lands).  Empty list → Bad argument value.
+   Leading-zero coefficients are trimmed before iteration (so
+   { 0 1 -3 2 } PROOT works).  Zero polynomial throws Bad argument
+   value.  Linear polynomial short-circuits to the closed form.
+
+   Algorithm: Durand-Kerner / Weierstrass.  Start roots at evenly
+   spaced points on a circle of radius 1 + max|c_i/c_n| (Cauchy's
+   bound + 1 — places the initial approximants outside the disk that
+   contains all roots), rotated off the real axis so no two initial
+   points land on each other.  Iterate
+        z_i  ←  z_i - p(z_i) / ∏_{j≠i} (z_i - z_j)
+   to a max of 200 sweeps or until all deltas drop below 1e-12 · |z_i|
+   (plus a floor of 1e-14 for roots near zero).
+   ----------------------------------------------------------------- */
+
+function _coefToCx(c) {
+  if (isInteger(c)) return _cx(Number(c.value), 0);
+  if (isReal(c))    return _cx(c.value, 0);
+  if (isComplex(c)) return _cx(c.re, c.im);
+  throw new RPLError('Bad argument type');
+}
+
+function _cxAbs(z) { return Math.hypot(z.re, z.im); }
+
+function _polyEvalCx(coefs, z) {
+  // coefs in descending degree order, already _cx.
+  let r = coefs[0];
+  for (let i = 1; i < coefs.length; i++) {
+    r = _cxAdd(_cxMul(r, z), coefs[i]);
+  }
+  return r;
+}
+
+register('PROOT', (s) => {
+  const [poly] = s.popN(1);
+  if (!isList(poly)) throw new RPLError('Bad argument type');
+  if (poly.items.length === 0) throw new RPLError('Bad argument value');
+  // Convert coefficients and validate.
+  const cxRaw = poly.items.map(_coefToCx);
+  // Trim leading zeros — degenerate polynomial leading with 0 is
+  // semantically lower-degree.  Zero polynomial → Bad argument value.
+  let start = 0;
+  while (start < cxRaw.length - 1
+         && cxRaw[start].re === 0 && cxRaw[start].im === 0) {
+    start++;
+  }
+  const cx = cxRaw.slice(start);
+  if (cx.length === 1) {
+    // Pure constant (post-trim): no roots.  HP50 returns a 0-length
+    // result — but Vector with 0 entries is illegal.  Honour HP50:
+    // zero constant → Bad argument value; non-zero constant → still
+    // no roots, so return an empty List (HP50 actually produces
+    // `[ ]`, which our Vector rejects — list is the safe compromise).
+    if (cx[0].re === 0 && cx[0].im === 0) {
+      throw new RPLError('Bad argument value');
+    }
+    s.push(RList([]));
+    return;
+  }
+  const n = cx.length - 1;           // polynomial degree
+  const a = cx[0];                    // leading coef
+  // Normalize to monic (safer for the ∏ denominator); store monic in `p`.
+  const p = cx.map((c) => _cxDiv(c, a));
+  // Linear shortcut: x + p[1] = 0 → z = -p[1].
+  if (n === 1) {
+    const z0 = { re: -p[1].re, im: -p[1].im };
+    // Real-coef polynomial with real root → return Real, else Complex
+    // (mirrors the general-path polish at the bottom of this op).
+    const polyIsReal1 = poly.items.every(
+      (c) => isInteger(c) || isReal(c) || (isComplex(c) && c.im === 0));
+    if (polyIsReal1 && Math.abs(z0.im) < 1e-12) {
+      s.push(Vector([ Real(z0.re) ]));
+    } else {
+      s.push(Vector([ Complex(z0.re, z0.im) ]));
+    }
+    return;
+  }
+  // Cauchy bound: R = 1 + max |p[i]| for i = 1..n.
+  let R = 0;
+  for (let i = 1; i <= n; i++) {
+    const m = _cxAbs(p[i]);
+    if (m > R) R = m;
+  }
+  R = 1 + R;
+  // Initial estimates on a circle of radius R, phase 2π(k + 0.25)/n.
+  const roots = new Array(n);
+  for (let k = 0; k < n; k++) {
+    const ang = 2 * Math.PI * (k + 0.25) / n;
+    roots[k] = { re: R * Math.cos(ang), im: R * Math.sin(ang) };
+  }
+  // Durand-Kerner iteration.
+  const MAX_ITER = 400;
+  const TOL = 1e-12;
+  for (let iter = 0; iter < MAX_ITER; iter++) {
+    let maxDelta = 0;
+    const next = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const zi = roots[i];
+      // numerator: p(zi)
+      const num = _polyEvalCx(p, zi);
+      // denominator: ∏_{j≠i} (zi - roots[j])
+      let den = _cx(1, 0);
+      for (let j = 0; j < n; j++) {
+        if (j === i) continue;
+        den = _cxMul(den, _cxSub(zi, roots[j]));
+      }
+      // Guard against a coincident initial point (den == 0) — nudge.
+      if (den.re === 0 && den.im === 0) {
+        next[i] = { re: zi.re + 1e-8, im: zi.im + 1e-8 };
+        continue;
+      }
+      const delta = _cxDiv(num, den);
+      next[i] = _cxSub(zi, delta);
+      const dmag = _cxAbs(delta);
+      const scale = Math.max(_cxAbs(zi), 1);
+      if (dmag / scale > maxDelta) maxDelta = dmag / scale;
+    }
+    for (let i = 0; i < n; i++) roots[i] = next[i];
+    if (maxDelta < TOL) break;
+  }
+  // Clean up near-zero imaginary parts (so real roots surface as Real).
+  // HP50 actually always returns Complex for PROOT; we match that — but
+  // if the polynomial is real and the root's |im| is tiny relative to
+  // |re|, collapse to a clean real.
+  const polyIsReal = poly.items.every(
+    (c) => isInteger(c) || (isReal(c)) || (isComplex(c) && c.im === 0));
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const z = roots[i];
+    if (polyIsReal && Math.abs(z.im) < 1e-9 * Math.max(Math.abs(z.re), 1)) {
+      out[i] = Real(z.re);
+    } else {
+      out[i] = Complex(z.re, z.im);
+    }
+  }
+  s.push(Vector(out));
+});
+
+/* --------------- QUOT / REMAINDER — polynomial division --------------
+   HP50 AUR §12.5.
+
+     QUOT       ( {a_n … a_0} {b_m … b_0} → {q_{n-m} … q_0} )
+     REMAINDER  ( {a_n … a_0} {b_m … b_0} → {r_{m-1} … r_0} )
+
+   Long division of coefficient lists in descending-degree order
+   (matching HORNER / PCOEF convention).  Dividend-degree < divisor-
+   degree → quotient {0}, remainder = dividend.  Divisor = {0}-only
+   (or empty) → Infinite result.  Real / Integer / Complex entries
+   accepted on both sides via `_scalarBinary`; Symbolic rejected
+   (same deferral as HORNER / PCOEF).
+
+   Leading zeros are trimmed from both inputs before dividing.  The
+   remainder list is truncated to length (divisor-degree), padded with
+   a leading zero if the cancellation drops the degree further; if
+   the remainder is the zero polynomial, we return a one-element
+   `{ 0 }` list so callers never see an empty list.
+   ----------------------------------------------------------------- */
+
+function _polyValidateList(items) {
+  for (const c of items) {
+    if (!isReal(c) && !isInteger(c) && !isComplex(c)) {
+      throw new RPLError('Bad argument type');
+    }
+  }
+}
+
+function _polyTrimLeading(items) {
+  let i = 0;
+  while (i < items.length - 1 && _isNumericZero(items[i])) i++;
+  return items.slice(i);
+}
+
+function _isNumericZero(x) {
+  if (isInteger(x)) return x.value === 0n;
+  if (isReal(x))    return x.value === 0;
+  if (isComplex(x)) return x.re === 0 && x.im === 0;
+  return false;
+}
+
+function _polyDivide(A, B) {
+  // A, B are arrays of RPL numerics in descending order (after trim).
+  if (B.length === 0 || (B.length === 1 && _isNumericZero(B[0]))) {
+    throw new RPLError('Infinite result');
+  }
+  const n = A.length - 1, m = B.length - 1;
+  if (n < m) {
+    return { q: [Integer(_ZERO)], r: A.slice() };
+  }
+  // Work on mutable arrays for the in-place subtract.
+  const rem = A.slice();
+  const q = new Array(n - m + 1);
+  const leadB = B[0];
+  for (let i = 0; i <= n - m; i++) {
+    // Highest remaining term: rem[i] / leadB.
+    const qi = _scalarBinary('/', rem[i], leadB);
+    q[i] = qi;
+    // rem[i+k] -= qi * B[k]  for k = 0..m.
+    for (let k = 0; k <= m; k++) {
+      rem[i + k] = _scalarBinary('-', rem[i + k],
+        _scalarBinary('*', qi, B[k]));
+    }
+  }
+  // Remainder occupies the last m entries of rem (one degree less than B).
+  let r = rem.slice(n - m + 1);
+  // Strip leading zeros; empty → {0}.
+  r = _polyTrimLeading(r);
+  if (r.length === 0) r = [Integer(_ZERO)];
+  return { q, r };
+}
+
+register('QUOT', (s) => {
+  const [A, B] = s.popN(2);
+  if (!isList(A) || !isList(B)) throw new RPLError('Bad argument type');
+  if (A.items.length === 0 || B.items.length === 0) {
+    throw new RPLError('Bad argument value');
+  }
+  _polyValidateList(A.items);
+  _polyValidateList(B.items);
+  const At = _polyTrimLeading(A.items);
+  const Bt = _polyTrimLeading(B.items);
+  const { q } = _polyDivide(At, Bt);
+  s.push(RList(q));
+});
+
+register('REMAINDER', (s) => {
+  const [A, B] = s.popN(2);
+  if (!isList(A) || !isList(B)) throw new RPLError('Bad argument type');
+  if (A.items.length === 0 || B.items.length === 0) {
+    throw new RPLError('Bad argument value');
+  }
+  _polyValidateList(A.items);
+  _polyValidateList(B.items);
+  const At = _polyTrimLeading(A.items);
+  const Bt = _polyTrimLeading(B.items);
+  const { r } = _polyDivide(At, Bt);
+  s.push(RList(r));
+});
+
+/* --------------- LU — LU decomposition with partial pivoting ---------
+   HP50 AUR §15.3.
+
+     LU  ( A → L U P )   A is an n×n Matrix; L is lower-triangular
+                         with unit diagonal, U is upper-triangular,
+                         P is the permutation matrix with P·A = L·U.
+                         Real / Integer entries only (matching
+                         `_invMatrixNumeric` / LSQ rejection policy).
+                         Singular A → Infinite result.
+                         Non-square A → Invalid dimension.
+
+   Algorithm: Doolittle-style LU with partial pivoting (row
+   interchanges).  We track the permutation as a 1-D index array
+   `piv[i]` meaning "row i of P·A = row piv[i] of A", and materialize
+   the full P matrix at the end.
+   ----------------------------------------------------------------- */
+
+register('LU', (s) => {
+  const [A] = s.popN(1);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+  const n = A.rows.length;
+  if (n === 0 || A.rows[0].length !== n) {
+    throw new RPLError('Invalid dimension');
+  }
+  // Copy to plain-number working array; rejects non-numeric entries.
+  const M = _asNumArray2D(A.rows).map(r => r.slice());
+  const piv = new Array(n);
+  for (let i = 0; i < n; i++) piv[i] = i;
+  for (let k = 0; k < n; k++) {
+    // Partial-pivot: largest |M[i][k]| over i = k..n-1.
+    let best = k, bestAbs = Math.abs(M[k][k]);
+    for (let i = k + 1; i < n; i++) {
+      const v = Math.abs(M[i][k]);
+      if (v > bestAbs) { best = i; bestAbs = v; }
+    }
+    if (bestAbs < 1e-14) throw new RPLError('Infinite result');
+    if (best !== k) {
+      [M[k], M[best]] = [M[best], M[k]];
+      [piv[k], piv[best]] = [piv[best], piv[k]];
+    }
+    // Elimination: M[i][k] ← M[i][k]/M[k][k]; M[i][j] -= M[i][k]*M[k][j]
+    const pivv = M[k][k];
+    for (let i = k + 1; i < n; i++) {
+      M[i][k] /= pivv;
+      const mik = M[i][k];
+      for (let j = k + 1; j < n; j++) {
+        M[i][j] -= mik * M[k][j];
+      }
+    }
+  }
+  // Split M into L (unit-diagonal lower) and U (upper).
+  const Lrows = [], Urows = [], Prows = [];
+  for (let i = 0; i < n; i++) {
+    const Lr = new Array(n), Ur = new Array(n), Pr = new Array(n);
+    for (let j = 0; j < n; j++) {
+      if (i === j) {
+        Lr[j] = Real(1);
+        Ur[j] = Real(M[i][j]);
+      } else if (i > j) {
+        Lr[j] = Real(M[i][j]);
+        Ur[j] = Real(0);
+      } else {
+        Lr[j] = Real(0);
+        Ur[j] = Real(M[i][j]);
+      }
+      Pr[j] = Real(piv[i] === j ? 1 : 0);
+    }
+    Lrows.push(Lr); Urows.push(Ur); Prows.push(Pr);
+  }
+  s.push(Matrix(Lrows));
+  s.push(Matrix(Urows));
+  s.push(Matrix(Prows));
+});
+
+/* --------------- Stats aggregates: NΣ / ΣX / ΣY / ΣXY / ΣX² / ΣY² ----
+   HP50 AUR §18.1.  The full row of column-wise statistics that feeds
+   the regression family.  Per the session-052 ΣDAT-bypass decision,
+   these take the Matrix argument directly rather than reading it
+   from the hidden ΣDAT variable — so they accept Integer / Real
+   entries via `_statsNumericEntry`.
+
+     NΣ    ( M → N )      Row count (Real).
+     ΣX    ( M → Σx )     Sum of column 1.
+     ΣY    ( M → Σy )     Sum of column 2.  Needs ≥ 2 columns.
+     ΣXY   ( M → Σxy )    Sum of column-1 * column-2.  ≥ 2 columns.
+     ΣX²   ( M → Σx² )    Sum of column-1 squared.
+     ΣY²   ( M → Σy² )    Sum of column-2 squared.  ≥ 2 columns.
+     MAXΣ  ( M → V )      Per-column maximum.  Vector of length n.
+     MINΣ  ( M → V )      Per-column minimum.  Vector of length n.
+
+   All return Real (scalar) or Vector (per-column).  Empty Matrix →
+   Bad argument value.  HP50 also accepts Vector input for ΣX, NΣ,
+   ΣX²; we mirror that on the one-column ops but require ≥ 2-column
+   Matrix for the paired ones.  Both MAXΣ / MINΣ accept Vector too
+   (returning a 1-vector).
+   ----------------------------------------------------------------- */
+
+function _matStatsCol(M, j) {
+  // Extract column j of Matrix M as numeric array.  Caller validates
+  // that j < M.rows[0].length.
+  const m = M.rows.length;
+  if (m === 0) throw new RPLError('Bad argument value');
+  const out = new Array(m);
+  for (let i = 0; i < m; i++) out[i] = _statsNumericEntry(M.rows[i][j]);
+  return out;
+}
+
+function _sumOfArr(a)  { let s = 0; for (const x of a) s += x; return s; }
+function _sumOfSq(a)   { let s = 0; for (const x of a) s += x*x; return s; }
+function _sumOfProd(a, b) {
+  let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+
+function _statsVectorOrMatrixCol0(v) {
+  // For ΣX / ΣX² / NΣ — accept Vector (whole items) or Matrix (column 0).
+  if (isVector(v)) {
+    const n = v.items.length;
+    if (n === 0) throw new RPLError('Bad argument value');
+    return v.items.map(_statsNumericEntry);
+  }
+  if (isMatrix(v)) {
+    return _matStatsCol(v, 0);
+  }
+  throw new RPLError('Bad argument type');
+}
+
+register('NSIGMA', (s) => {
+  // Canonical name NΣ.  We register both the Unicode symbol NΣ and
+  // this ASCII form so programs that type `NSIGMA` still work.
+  const [M] = s.popN(1);
+  if (isVector(M)) {
+    if (M.items.length === 0) throw new RPLError('Bad argument value');
+    s.push(Real(M.items.length));
+    return;
+  }
+  if (isMatrix(M)) {
+    if (M.rows.length === 0) throw new RPLError('Bad argument value');
+    s.push(Real(M.rows.length));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+register('NΣ', (s) => { lookup('NSIGMA').fn(s); });
+
+register('ΣX', (s) => {
+  const [v] = s.popN(1);
+  const X = _statsVectorOrMatrixCol0(v);
+  s.push(Real(_sumOfArr(X)));
+});
+register('SX', (s) => { lookup('ΣX').fn(s); });       // ASCII alias
+
+register('ΣX2', (s) => {
+  const [v] = s.popN(1);
+  const X = _statsVectorOrMatrixCol0(v);
+  s.push(Real(_sumOfSq(X)));
+});
+register('SX2', (s) => { lookup('ΣX2').fn(s); });
+
+register('ΣY', (s) => {
+  const [M] = s.popN(1);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  if (M.rows.length === 0) throw new RPLError('Bad argument value');
+  if (M.rows[0].length < 2) throw new RPLError('Invalid dimension');
+  s.push(Real(_sumOfArr(_matStatsCol(M, 1))));
+});
+register('SY', (s) => { lookup('ΣY').fn(s); });
+
+register('ΣY2', (s) => {
+  const [M] = s.popN(1);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  if (M.rows.length === 0) throw new RPLError('Bad argument value');
+  if (M.rows[0].length < 2) throw new RPLError('Invalid dimension');
+  s.push(Real(_sumOfSq(_matStatsCol(M, 1))));
+});
+register('SY2', (s) => { lookup('ΣY2').fn(s); });
+
+register('ΣXY', (s) => {
+  const [M] = s.popN(1);
+  if (!isMatrix(M)) throw new RPLError('Bad argument type');
+  if (M.rows.length === 0) throw new RPLError('Bad argument value');
+  if (M.rows[0].length < 2) throw new RPLError('Invalid dimension');
+  const X = _matStatsCol(M, 0);
+  const Y = _matStatsCol(M, 1);
+  s.push(Real(_sumOfProd(X, Y)));
+});
+register('SXY', (s) => { lookup('ΣXY').fn(s); });
+
+/* MAXΣ / MINΣ — per-column max / min. */
+register('MAXΣ', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) {
+    if (v.items.length === 0) throw new RPLError('Bad argument value');
+    const a = v.items.map(_statsNumericEntry);
+    s.push(Vector([Real(Math.max(...a))]));
+    return;
+  }
+  if (isMatrix(v)) {
+    if (v.rows.length === 0) throw new RPLError('Bad argument value');
+    const n = v.rows[0].length;
+    const out = new Array(n);
+    for (let j = 0; j < n; j++) {
+      const col = _matStatsCol(v, j);
+      out[j] = Real(Math.max(...col));
+    }
+    s.push(Vector(out));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+register('MAXS', (s) => { lookup('MAXΣ').fn(s); });
+
+register('MINΣ', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) {
+    if (v.items.length === 0) throw new RPLError('Bad argument value');
+    const a = v.items.map(_statsNumericEntry);
+    s.push(Vector([Real(Math.min(...a))]));
+    return;
+  }
+  if (isMatrix(v)) {
+    if (v.rows.length === 0) throw new RPLError('Bad argument value');
+    const n = v.rows[0].length;
+    const out = new Array(n);
+    for (let j = 0; j < n; j++) {
+      const col = _matStatsCol(v, j);
+      out[j] = Real(Math.min(...col));
+    }
+    s.push(Vector(out));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+register('MINS', (s) => { lookup('MINΣ').fn(s); });
+
+/* --------------- LINFIT / LOGFIT / EXPFIT / PWRFIT / BESTFIT ----------
+   HP50 AUR §18.1.  Regression family: fit the column-1 / column-2
+   data in `M` (a 2-column Matrix) to one of four models:
+
+     LINFIT : y = a + b·x            (linear)
+     LOGFIT : y = a + b·ln x         (logarithmic)
+     EXPFIT : y = a · e^(b·x)        (exponential)
+     PWRFIT : y = a · x^b            (power)
+
+   Each fit op returns two values on the stack:
+     - the fitted-model Symbolic (a closed-form expression in `X`)
+     - the correlation coefficient r (Real in [-1, 1])
+   This matches HP50's `ΣLINE`-plus-`CORR` two-output convention so
+   the user can see the quality of the fit alongside the model.
+
+   BESTFIT selects the model with the largest |r| by trying all four
+   and pushes the model name (String) — NOT the expression — on the
+   stack.  This is the HP50 behavior: BESTFIT is diagnostic (which
+   family is the best match?) rather than computational; the user
+   then runs the chosen fit op to get the equation.
+
+   Transformations that require positive values (log X, log Y, etc.)
+   throw Bad argument value if a data point violates the domain.
+   Real / Integer entries only; Complex is rejected by
+   `_statsNumericEntry`.  Rows < 2 → Bad argument value.
+   ----------------------------------------------------------------- */
+
+function _linearFit(X, Y) {
+  // Compute a + b·X fit; returns {a, b, r}.
+  const n = X.length;
+  const mX = _meanArr(X), mY = _meanArr(Y);
+  let sxx = 0, syy = 0, sxy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = X[i] - mX, dy = Y[i] - mY;
+    sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+  }
+  if (sxx === 0) throw new RPLError('Infinite result');
+  const b = sxy / sxx;
+  const a = mY - b * mX;
+  const r = (syy === 0) ? (sxy === 0 ? 1 : 0) : sxy / Math.sqrt(sxx * syy);
+  return { a, b, r };
+}
+
+function _modelToSym(model, a, b) {
+  // Build the AST for the fitted model.  `a`, `b` are plain numbers.
+  const X = AstVar('X');
+  if (model === 'LIN') {
+    // a + b*X
+    return Symbolic(AstBin('+', AstNum(a), AstBin('*', AstNum(b), X)));
+  }
+  if (model === 'LOG') {
+    // a + b*ln(X)
+    return Symbolic(AstBin('+', AstNum(a),
+      AstBin('*', AstNum(b), AstFn('LN', [X]))));
+  }
+  if (model === 'EXP') {
+    // a * exp(b*X)
+    return Symbolic(AstBin('*', AstNum(a),
+      AstFn('EXP', [AstBin('*', AstNum(b), X)])));
+  }
+  if (model === 'PWR') {
+    // a * X^b
+    return Symbolic(AstBin('*', AstNum(a), AstBin('^', X, AstNum(b))));
+  }
+  throw new RPLError('Bad argument value');
+}
+
+function _fitLINFIT(M) {
+  const { X, Y } = _twoColsOrThrow(M);
+  const { a, b, r } = _linearFit(X, Y);
+  return { sym: _modelToSym('LIN', a, b), r, a, b };
+}
+function _fitLOGFIT(M) {
+  const { X, Y } = _twoColsOrThrow(M);
+  for (const x of X) if (x <= 0) throw new RPLError('Bad argument value');
+  const lnX = X.map(Math.log);
+  const { a, b, r } = _linearFit(lnX, Y);
+  return { sym: _modelToSym('LOG', a, b), r, a, b };
+}
+function _fitEXPFIT(M) {
+  const { X, Y } = _twoColsOrThrow(M);
+  for (const y of Y) if (y <= 0) throw new RPLError('Bad argument value');
+  const lnY = Y.map(Math.log);
+  const { a: A, b, r } = _linearFit(X, lnY);
+  // Model: y = e^A · e^(b·x);  so a = e^A.
+  const a = Math.exp(A);
+  return { sym: _modelToSym('EXP', a, b), r, a, b };
+}
+function _fitPWRFIT(M) {
+  const { X, Y } = _twoColsOrThrow(M);
+  for (const x of X) if (x <= 0) throw new RPLError('Bad argument value');
+  for (const y of Y) if (y <= 0) throw new RPLError('Bad argument value');
+  const lnX = X.map(Math.log);
+  const lnY = Y.map(Math.log);
+  const { a: A, b, r } = _linearFit(lnX, lnY);
+  const a = Math.exp(A);
+  return { sym: _modelToSym('PWR', a, b), r, a, b };
+}
+
+register('LINFIT', (s) => {
+  const [M] = s.popN(1);
+  const { sym, r, a, b } = _fitLINFIT(M);
+  setLastFitModel('LIN', a, b);
+  s.push(sym); s.push(Real(r));
+});
+
+register('LOGFIT', (s) => {
+  const [M] = s.popN(1);
+  const { sym, r, a, b } = _fitLOGFIT(M);
+  setLastFitModel('LOG', a, b);
+  s.push(sym); s.push(Real(r));
+});
+
+register('EXPFIT', (s) => {
+  const [M] = s.popN(1);
+  const { sym, r, a, b } = _fitEXPFIT(M);
+  setLastFitModel('EXP', a, b);
+  s.push(sym); s.push(Real(r));
+});
+
+register('PWRFIT', (s) => {
+  const [M] = s.popN(1);
+  const { sym, r, a, b } = _fitPWRFIT(M);
+  setLastFitModel('PWR', a, b);
+  s.push(sym); s.push(Real(r));
+});
+
+register('BESTFIT', (s) => {
+  const [M] = s.popN(1);
+  // Try each fit; catch domain errors so negative-X data doesn't kill
+  // the whole op when at least one fit succeeds.
+  const candidates = [];
+  try { const { r } = _fitLINFIT(M); candidates.push({ name: 'LIN', r }); } catch (_) {}
+  try { const { r } = _fitLOGFIT(M); candidates.push({ name: 'LOG', r }); } catch (_) {}
+  try { const { r } = _fitEXPFIT(M); candidates.push({ name: 'EXP', r }); } catch (_) {}
+  try { const { r } = _fitPWRFIT(M); candidates.push({ name: 'PWR', r }); } catch (_) {}
+  if (candidates.length === 0) {
+    // Data violates every fit's domain — re-run LINFIT to surface the
+    // underlying error message (typically Bad argument value / type).
+    _fitLINFIT(M);
+    // If the re-run didn't throw, bail generically.
+    throw new RPLError('Bad argument value');
+  }
+  let best = candidates[0];
+  for (const c of candidates) {
+    if (Math.abs(c.r) > Math.abs(best.r)) best = c;
+  }
+  s.push(Str(best.name));
+});
+
+/* --------------- CMPLX / CMPLX? — complex-mode toggle ----------------
+   HP50 system flag -103 (`_Complex_` when SET, `_Real_` when CLEAR).
+
+     CMPLX   ( →   )   Toggle the CMPLX flag.  No stack side effects;
+                       fires a state-change event so any future MODES
+                       annunciator redraws.
+     CMPLX?  ( → b )   Push TRUE (1.) if CMPLX is currently ON, FALSE
+                       (0.) otherwise.
+
+   When CMPLX is ON, real-domain-violating ops (LN/LOG on negative
+   Real, ACOS/ASIN on |x|>1) return the principal-branch Complex
+   result instead of throwing.  Fresh calculators boot with CMPLX
+   CLEAR — matches a factory-reset HP50.
+   ----------------------------------------------------------------- */
+
+register('CMPLX', (s) => {
+  toggleComplexMode();
+});
+
+register('CMPLX?', (s) => {
+  s.push(Real(getComplexMode() ? 1 : 0));
+});
+
+/* --------------- MERGE — directory merge --------------------------------
+   HP50 AUR §3.2 (directory manipulation — this slot is `MERGE` in the
+   `MEMORY` soft-menu; documented in §3.2.3 on the 49g+/50g ROM 2.15).
+
+     MERGE  ( D → )   D is a list of (name, value) pairs — exactly the
+                      output shape of VARS → ORDER-agnostic listing, i.e.
+                      { NAME1 VAL1 NAME2 VAL2 ... }.  Each pair is stored
+                      in the current directory, overwriting any
+                      existing entry with the same name (HP50 behavior).
+                      Empty list is a no-op.  Odd-length list or
+                      non-Name keys → Bad argument value.  Accepts a
+                      Directory value in the top position too: the
+                      merged entries are taken from that directory's
+                      Map (HP50 extension — useful for
+                      programmatic configuration merges).
+
+   Every merged value goes through `varStore`, which fires the
+   state-change event once per store so subscribers redraw.
+   ----------------------------------------------------------------- */
+
+register('MERGE', (s) => {
+  const [arg] = s.popN(1);
+  if (isDirectory(arg)) {
+    for (const [name, value] of arg.entries) {
+      varStore(name, value);
+    }
+    return;
+  }
+  if (!isList(arg)) throw new RPLError('Bad argument type');
+  const items = arg.items;
+  if (items.length % 2 !== 0) {
+    throw new RPLError('Bad argument value');
+  }
+  // Validate all keys first so a bad pair near the end doesn't leave
+  // a half-merged directory.
+  for (let i = 0; i < items.length; i += 2) {
+    const key = items[i];
+    if (!isName(key) && !isString(key)) {
+      throw new RPLError('Bad argument value');
+    }
+  }
+  for (let i = 0; i < items.length; i += 2) {
+    const key = items[i];
+    const val = items[i + 1];
+    const name = isName(key) ? key.id : key.value;
+    varStore(name, val);
+  }
+});
+
+/* ==================================================================
+   Session 055 — PEVAL / PTAYL / GRAMSCHMIDT / QR / CHOLESKY /
+   C→P / P→C / EPSX0 / DISTRIB / RDM.
+
+   HP50 AUR: §12.6 (PEVAL / PTAYL), §15.3 (GRAMSCHMIDT / QR /
+   CHOLESKY), §4.4 (C→P / P→C), §11.6 (EPSX0), §11.3 (DISTRIB),
+   §15.2 (RDM).
+
+   All ops below are user-reachable via the typed catalog today.  No
+   UI work.  GRAMSCHMIDT / QR / CHOLESKY / RDM operate on numeric
+   Real/Integer entries (matching the `_invMatrixNumeric` /
+   LSQ/LU rejection policy); PEVAL / PTAYL take coefficient lists in
+   descending-degree order (same convention as HORNER / PCOEF /
+   PROOT / QUOT / REMAINDER).  C→P / P→C are angle-mode aware so a
+   user can flip DEG/RAD and see the ARG coordinate change.  EPSX0
+   walks a Symbolic AST zeroing |num| below a fixed 1e-10 threshold;
+   DISTRIB performs a single-pass distributive-law rewrite
+   (a*(b+c) → a*b+a*c).
+   ================================================================= */
+
+/* --------------- PEVAL — evaluate polynomial at a point ---------------
+   HP50 AUR §12.6.
+
+     PEVAL  ( {c_n … c_0} x → p(x) )
+
+   Evaluates a polynomial whose coefficients are in the list (descending
+   order, same convention as HORNER / PCOEF / PROOT) at the scalar `x`
+   via Horner's scheme.  Real / Integer / Complex coefficients and `x`
+   accepted; Symbolic deferred with the polynomial-normalize pass.
+   Empty list throws Bad argument value.  Single-element (constant
+   polynomial) returns that constant regardless of `x`.
+   ----------------------------------------------------------------- */
+
+register('PEVAL', (s) => {
+  const [poly, x] = s.popN(2);
+  if (!isList(poly)) throw new RPLError('Bad argument type');
+  if (poly.items.length === 0) throw new RPLError('Bad argument value');
+  for (const c of poly.items) {
+    if (!isReal(c) && !isInteger(c) && !isComplex(c)) {
+      throw new RPLError('Bad argument type');
+    }
+  }
+  if (!isReal(x) && !isInteger(x) && !isComplex(x)) {
+    throw new RPLError('Bad argument type');
+  }
+  let r = poly.items[0];
+  for (let i = 1; i < poly.items.length; i++) {
+    r = _scalarBinary('+', _scalarBinary('*', r, x), poly.items[i]);
+  }
+  s.push(r);
+});
+
+/* --------------- PTAYL — polynomial Taylor basis change ---------------
+   HP50 AUR §12.6.
+
+     PTAYL  ( {c_n … c_0} a → {b_n … b_0} )
+
+   Given a polynomial `p(x) = c_n x^n + … + c_0` as a coefficient list
+   in descending degree, returns the coefficient list (also descending)
+   of the same polynomial expressed in the shifted basis (x − a):
+       p(x) = b_n (x − a)^n + b_{n−1} (x − a)^{n−1} + … + b_0.
+
+   Equivalently, `b_k = p^{(k)}(a) / k!`, but we compute via iterated
+   synthetic division at `a` (Horner-scheme); that also sidesteps any
+   factorial precision concerns for large n.  The algorithm is:
+
+     remainders = []
+     while poly.length > 1:
+       (poly, r) = syntheticDivide(poly, a)
+       remainders.push(r)
+     remainders.push(poly[0])
+     return remainders.reverse()  // descending order
+
+   Real / Integer / Complex coefficients and `a` accepted; Symbolic
+   deferred.  Empty list throws Bad argument value.
+   ----------------------------------------------------------------- */
+
+register('PTAYL', (s) => {
+  const [poly, a] = s.popN(2);
+  if (!isList(poly)) throw new RPLError('Bad argument type');
+  if (poly.items.length === 0) throw new RPLError('Bad argument value');
+  for (const c of poly.items) {
+    if (!isReal(c) && !isInteger(c) && !isComplex(c)) {
+      throw new RPLError('Bad argument type');
+    }
+  }
+  if (!isReal(a) && !isInteger(a) && !isComplex(a)) {
+    throw new RPLError('Bad argument type');
+  }
+  // Repeated synthetic-division by (x − a).  After each sweep, the
+  // quotient is one degree lower and the remainder is one shifted
+  // coefficient.  Collect them low-order first, then reverse.
+  let coefs = poly.items.slice();
+  const shifted = [];                     // low-order first (b_0, b_1, …)
+  while (coefs.length > 1) {
+    // One Horner sweep: b[0]=c[0]; b[i] = b[i-1]·a + c[i].  Last b is
+    // the remainder (= p_current(a)); the rest are the new quotient.
+    const next = new Array(coefs.length - 1);
+    let r = coefs[0];
+    for (let i = 1; i < coefs.length; i++) {
+      next[i - 1] = r;
+      r = _scalarBinary('+', _scalarBinary('*', r, a), coefs[i]);
+    }
+    shifted.push(r);                      // b_k for current pass
+    coefs = next;
+  }
+  shifted.push(coefs[0]);                 // the final leading b_n
+  // Reverse to descending order (b_n … b_0).
+  shifted.reverse();
+  s.push(RList(shifted));
+});
+
+/* --------------- GRAMSCHMIDT — orthogonalize columns -------------------
+   HP50 AUR §15.3.
+
+     GRAMSCHMIDT  ( A → Q )
+
+   Returns the matrix Q whose columns form an orthonormal basis for the
+   column space of A, produced by the modified-Gram-Schmidt process.
+   For a full-column-rank A, Q has the same shape as A; if a column
+   becomes linearly dependent during orthogonalization (near-zero norm),
+   we throw Infinite result — matching the HP50 behavior on singular
+   inputs.  Real / Integer entries only (same policy as LU / LSQ).
+
+   Algorithm (modified Gram-Schmidt, numerically stabler than classical):
+     for k in 0..n-1:
+       v_k = A[:,k]
+       for j in 0..k-1:
+         v_k = v_k - (Q[:,j] · v_k) · Q[:,j]
+       r = ||v_k||
+       if r < tol: throw Infinite result
+       Q[:,k] = v_k / r
+   ----------------------------------------------------------------- */
+
+function _gramSchmidtNum(A) {
+  // A is a plain 2-D number array (m × n).  Returns Q (m × n) with
+  // orthonormal columns.  Throws Infinite result on near-singular.
+  const m = A.length;
+  const n = A[0].length;
+  if (n > m) throw new RPLError('Invalid dimension');
+  // Work column-major for clarity.
+  const cols = [];
+  for (let j = 0; j < n; j++) {
+    const col = new Array(m);
+    for (let i = 0; i < m; i++) col[i] = A[i][j];
+    cols.push(col);
+  }
+  const Q = [];
+  for (let k = 0; k < n; k++) {
+    let v = cols[k].slice();
+    for (let j = 0; j < k; j++) {
+      // proj = (Q[j] · v);  v -= proj · Q[j]
+      let proj = 0;
+      for (let i = 0; i < m; i++) proj += Q[j][i] * v[i];
+      for (let i = 0; i < m; i++) v[i] -= proj * Q[j][i];
+    }
+    let norm = 0;
+    for (let i = 0; i < m; i++) norm += v[i] * v[i];
+    norm = Math.sqrt(norm);
+    if (norm < 1e-12) throw new RPLError('Infinite result');
+    for (let i = 0; i < m; i++) v[i] /= norm;
+    Q.push(v);
+  }
+  // Rebuild as m × n row-major matrix from column slices.
+  const rows = new Array(m);
+  for (let i = 0; i < m; i++) {
+    rows[i] = new Array(n);
+    for (let j = 0; j < n; j++) rows[i][j] = Q[j][i];
+  }
+  return rows;
+}
+
+register('GRAMSCHMIDT', (s) => {
+  const [A] = s.popN(1);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+  if (A.rows.length === 0) throw new RPLError('Invalid dimension');
+  const Anum = _asNumArray2D(A.rows);
+  const Q = _gramSchmidtNum(Anum);
+  s.push(Matrix(Q.map(row => row.map(x => Real(x)))));
+});
+
+/* --------------- QR — QR decomposition ---------------------------------
+   HP50 AUR §15.3.
+
+     QR  ( A → Q R P )   A is m×n with m ≥ n.
+                         Q is m×n with orthonormal columns
+                         (Q^T · Q = I_n).  R is n×n upper-triangular.
+                         P is the n×n permutation matrix selected by
+                         column-pivoted QR — for the no-pivot path used
+                         here, P is simply the identity (left in place
+                         so callers can do `A · P = Q · R` in either
+                         regime).  A = Q · R when P = I; else
+                         A · P = Q · R.
+
+   Real / Integer entries only.  Singular column (rank deficient)
+   throws Infinite result via the underlying GRAMSCHMIDT helper.
+   ----------------------------------------------------------------- */
+
+register('QR', (s) => {
+  const [A] = s.popN(1);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+  const m = A.rows.length;
+  if (m === 0) throw new RPLError('Invalid dimension');
+  const n = A.rows[0].length;
+  if (n === 0) throw new RPLError('Invalid dimension');
+  if (m < n) throw new RPLError('Invalid dimension');
+  const Anum = _asNumArray2D(A.rows);
+  const Qnum = _gramSchmidtNum(Anum);   // m × n
+  // R = Q^T · A, but only its upper-triangular (R[j][k] for j ≤ k).
+  const R = [];
+  for (let j = 0; j < n; j++) {
+    const row = new Array(n).fill(0);
+    for (let k = 0; k < n; k++) {
+      if (k < j) { row[k] = 0; continue; }
+      let acc = 0;
+      for (let i = 0; i < m; i++) acc += Qnum[i][j] * Anum[i][k];
+      row[k] = acc;
+    }
+    R.push(row);
+  }
+  // Identity permutation (no column pivoting in this path).
+  const P = [];
+  for (let i = 0; i < n; i++) {
+    const pr = new Array(n).fill(0);
+    pr[i] = 1;
+    P.push(pr);
+  }
+  s.push(Matrix(Qnum.map(row => row.map(x => Real(x)))));
+  s.push(Matrix(R.map(row => row.map(x => Real(x)))));
+  s.push(Matrix(P.map(row => row.map(x => Real(x)))));
+});
+
+/* --------------- CHOLESKY — Cholesky decomposition ---------------------
+   HP50 AUR §15.3.
+
+     CHOLESKY  ( A → L )   A is an n×n symmetric positive-definite
+                           Matrix.  L is the lower-triangular factor
+                           with L·L^T = A.  Non-square → Invalid
+                           dimension; non-symmetric → Bad argument
+                           value; non-positive-definite (any pivot ≤ 0
+                           inside the sqrt) → Infinite result.
+                           Real / Integer entries only.
+
+   Algorithm (standard Cholesky-Banachiewicz):
+     for i = 0..n-1:
+       for j = 0..i:
+         s = A[i][j] - sum_{k=0..j-1} L[i][k] * L[j][k]
+         L[i][j] = (i == j) ? sqrt(s) : s / L[j][j]
+   ----------------------------------------------------------------- */
+
+register('CHOLESKY', (s) => {
+  const [A] = s.popN(1);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+  const n = A.rows.length;
+  if (n === 0 || A.rows[0].length !== n) {
+    throw new RPLError('Invalid dimension');
+  }
+  const M = _asNumArray2D(A.rows);
+  // Symmetry check.
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < i; j++) {
+      if (Math.abs(M[i][j] - M[j][i]) > 1e-10 * (1 + Math.abs(M[i][j]))) {
+        throw new RPLError('Bad argument value');
+      }
+    }
+  }
+  const L = [];
+  for (let i = 0; i < n; i++) L.push(new Array(n).fill(0));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      let acc = M[i][j];
+      for (let k = 0; k < j; k++) acc -= L[i][k] * L[j][k];
+      if (i === j) {
+        if (acc <= 0) throw new RPLError('Infinite result');
+        L[i][j] = Math.sqrt(acc);
+      } else {
+        if (L[j][j] === 0) throw new RPLError('Infinite result');
+        L[i][j] = acc / L[j][j];
+      }
+    }
+  }
+  s.push(Matrix(L.map(row => row.map(x => Real(x)))));
+});
+
+/* --------------- C→P / P→C — complex cartesian ↔ polar ---------------
+   HP50 AUR §4.4.  Converts between rectangular (x, y) and polar
+   (r, θ) representations of a Complex value.  θ is expressed in the
+   current angle mode via `fromRadians` / `toRadians` so the same op
+   round-trips across DEG / RAD / GRAD.
+
+     C→P  ( (x, y) → (r, θ) )
+              where r = √(x²+y²), θ = atan2(y, x) converted from
+              radians.  Real input promotes to (x, 0), then r = |x|,
+              θ = 0 (positive) or π (negative).  Zero → (0, 0).
+     P→C  ( (r, θ) → (x, θ)_x,y )
+              Inverse: x = r·cos θ, y = r·sin θ with θ interpreted in
+              the current angle mode.  r may be negative: HP50 treats
+              that as flipping 180°, so the result is still a valid
+              Cartesian pair.
+
+   Both come in ASCII-alias forms `C->P` / `P->C` too.  Vector / Matrix
+   and Symbolic inputs rejected — the op is strictly scalar-complex.
+   ----------------------------------------------------------------- */
+
+function _cToPOp(s) {
+  const v = s.pop();
+  let re, im;
+  if (isComplex(v))       { re = v.re;                im = v.im; }
+  else if (isReal(v))     { re = v.value;             im = 0;    }
+  else if (isInteger(v))  { re = Number(v.value);     im = 0;    }
+  else throw new RPLError('Bad argument type');
+  const r = Math.hypot(re, im);
+  const th = Math.atan2(im, re);
+  s.push(Complex(r, fromRadians(th)));
+}
+register('C→P',  _cToPOp);
+register('C->P', _cToPOp);
+
+function _pToCOp(s) {
+  const v = s.pop();
+  let r, thUser;
+  if (isComplex(v))       { r = v.re;                thUser = v.im; }
+  else if (isReal(v))     { r = v.value;             thUser = 0;    }
+  else if (isInteger(v))  { r = Number(v.value);     thUser = 0;    }
+  else throw new RPLError('Bad argument type');
+  const th = toRadians(thUser);
+  s.push(Complex(r * Math.cos(th), r * Math.sin(th)));
+}
+register('P→C',  _pToCOp);
+register('P->C', _pToCOp);
+
+/* --------------- EPSX0 — zero out small numeric values ----------------
+   HP50 AUR §11.6.  Walks a Symbolic AST and replaces every numeric
+   node whose absolute value is below the CAS threshold (HP50 reads the
+   variable `EPS` from the current directory; we use a fixed 1e-10 as
+   the default, matching the HP50 factory setting).  The replacement
+   is done in a fresh AST so the input expression is not mutated.
+
+   Pass-through on non-Symbolic (Real / Integer / BinInt / Complex) —
+   the scalar is compared directly and, if below threshold, replaced
+   with Integer(0).  List / Vector / Matrix inputs apply the op
+   element-wise.
+
+     EPSX0  ( Sy → Sy' )
+              Walks the AST.  Numeric node with |value| < 1e-10 → 0.
+              Other nodes recurse into children.
+
+   Simplification after substitution is deferred to the caller
+   (chaining with SIMPLIFY is the HP50 idiom).  Output is always
+   Symbolic, preserving the input kind so `SIMPLIFY` can close the
+   loop.
+   ----------------------------------------------------------------- */
+
+const _EPSX0_THRESHOLD = 1e-10;
+
+function _epsx0Ast(ast) {
+  if (astIsNum(ast)) {
+    if (Math.abs(ast.value) < _EPSX0_THRESHOLD) return AstNum(0);
+    return ast;
+  }
+  if (ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _epsx0Ast(ast.arg);
+    // If inner collapsed to num 0, drop the neg.
+    if (astIsNum(inner) && inner.value === 0) return AstNum(0);
+    return AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    return AstBin(ast.op, _epsx0Ast(ast.l), _epsx0Ast(ast.r));
+  }
+  if (ast.kind === 'fn') {
+    return AstFn(ast.name, ast.args.map(_epsx0Ast));
+  }
+  return ast;
+}
+
+function _epsx0Scalar(v) {
+  if (isInteger(v)) {
+    // Integers are exact — below-threshold only if the value is 0.
+    return v.value === 0n ? Integer(_ZERO) : v;
+  }
+  if (isReal(v)) {
+    return Math.abs(v.value) < _EPSX0_THRESHOLD ? Real(0) : v;
+  }
+  if (isComplex(v)) {
+    const r = Math.abs(v.re) < _EPSX0_THRESHOLD ? 0 : v.re;
+    const i = Math.abs(v.im) < _EPSX0_THRESHOLD ? 0 : v.im;
+    if (i === 0) return Real(r);
+    return Complex(r, i);
+  }
+  return v;
+}
+
+register('EPSX0', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    s.push(Symbolic(_epsx0Ast(v.expr)));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isComplex(v)) {
+    s.push(_epsx0Scalar(v));
+    return;
+  }
+  if (isList(v)) {
+    s.push(RList(v.items.map(item => {
+      if (isSymbolic(item)) return Symbolic(_epsx0Ast(item.expr));
+      if (isReal(item) || isInteger(item) || isComplex(item)) return _epsx0Scalar(item);
+      return item;
+    })));
+    return;
+  }
+  if (isVector(v)) {
+    s.push(Vector(v.items.map(item => {
+      if (isSymbolic(item)) return Symbolic(_epsx0Ast(item.expr));
+      if (isReal(item) || isInteger(item) || isComplex(item)) return _epsx0Scalar(item);
+      return item;
+    })));
+    return;
+  }
+  if (isMatrix(v)) {
+    s.push(Matrix(v.rows.map(row => row.map(item => {
+      if (isSymbolic(item)) return Symbolic(_epsx0Ast(item.expr));
+      if (isReal(item) || isInteger(item) || isComplex(item)) return _epsx0Scalar(item);
+      return item;
+    }))));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* --------------- DISTRIB — distribute multiplication over addition ----
+   HP50 AUR §11.3.  Applies the distributive law to the outermost
+   eligible binary node of a Symbolic expression — that is:
+
+     a*(b+c) → a*b + a*c
+     a*(b-c) → a*b - a*c
+     (b+c)*a → b*a + c*a
+     (b-c)*a → b*a - c*a
+
+   and likewise for division over addition on the left:
+
+     (b+c)/a → b/a + c/a
+     (b-c)/a → b/a - c/a
+
+   The HP50 applies exactly ONE distribute step per invocation — to
+   expand fully, the user calls DISTRIB repeatedly (or uses EXPAND).
+   Our implementation is top-down: recurse through the AST until the
+   first distributable node is found, rewrite it, return — no further
+   passes on the same tree.  Non-distributable expression is
+   returned unchanged.  Non-Symbolic input throws Bad argument type.
+   ----------------------------------------------------------------- */
+
+function _distribOnce(ast) {
+  // Returns [newAst, changed].  Visits in pre-order (root first),
+  // rewrites the first a*(b±c), (b±c)*a, or (b±c)/a it finds, and
+  // stops.  If none found, returns [ast, false].
+  if (ast.kind === 'bin') {
+    if (ast.op === '*') {
+      if (ast.r.kind === 'bin' && (ast.r.op === '+' || ast.r.op === '-')) {
+        // a * (b op c) → (a*b) op (a*c)
+        return [AstBin(ast.r.op,
+          AstBin('*', ast.l, ast.r.l),
+          AstBin('*', ast.l, ast.r.r)), true];
+      }
+      if (ast.l.kind === 'bin' && (ast.l.op === '+' || ast.l.op === '-')) {
+        // (b op c) * a → (b*a) op (c*a)
+        return [AstBin(ast.l.op,
+          AstBin('*', ast.l.l, ast.r),
+          AstBin('*', ast.l.r, ast.r)), true];
+      }
+    }
+    if (ast.op === '/') {
+      if (ast.l.kind === 'bin' && (ast.l.op === '+' || ast.l.op === '-')) {
+        // (b op c) / a → (b/a) op (c/a)
+        return [AstBin(ast.l.op,
+          AstBin('/', ast.l.l, ast.r),
+          AstBin('/', ast.l.r, ast.r)), true];
+      }
+    }
+    // Recurse into children — left first.
+    const [lNew, lCh] = _distribOnce(ast.l);
+    if (lCh) return [AstBin(ast.op, lNew, ast.r), true];
+    const [rNew, rCh] = _distribOnce(ast.r);
+    if (rCh) return [AstBin(ast.op, ast.l, rNew), true];
+    return [ast, false];
+  }
+  if (ast.kind === 'neg') {
+    const [inner, ch] = _distribOnce(ast.arg);
+    return ch ? [AstNeg(inner), true] : [ast, false];
+  }
+  if (ast.kind === 'fn') {
+    for (let i = 0; i < ast.args.length; i++) {
+      const [newArg, ch] = _distribOnce(ast.args[i]);
+      if (ch) {
+        const newArgs = ast.args.slice();
+        newArgs[i] = newArg;
+        return [AstFn(ast.name, newArgs), true];
+      }
+    }
+    return [ast, false];
+  }
+  return [ast, false];
+}
+
+register('DISTRIB', (s) => {
+  const v = s.pop();
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const [newAst, _ch] = _distribOnce(v.expr);
+  s.push(Symbolic(newAst));
+});
+
+/* --------------- RDM — redimension Vector / Matrix --------------------
+   HP50 AUR §15.2.
+
+     RDM  ( V {n}    → V' )     reshape Vector to length-n Vector
+     RDM  ( V {m n}  → M )      reshape Vector to m×n Matrix
+     RDM  ( M {n}    → V )      reshape Matrix to length-n Vector
+     RDM  ( M {m n}  → M' )     reshape Matrix to m'×n' Matrix
+
+   The total element count must match (m·n == |V| or m'·n' == m·n);
+   otherwise throws Invalid dimension.  Reading / writing is row-major
+   for Matrix shapes.  Entries are preserved as-is (no coercion); the
+   shape list may be `{n}` or `{m n}`.  Negative / zero dimensions →
+   Bad argument value.
+
+   Source entries can be any type — we just shuffle them.  Unlike
+   CON / IDN / RANM, RDM keeps heterogeneous entries too (Real and
+   Integer mixed, Symbolic, Complex).
+   ----------------------------------------------------------------- */
+
+function _shapeFromList(L) {
+  // Extract a shape from a list (either {n} or {m n}).  Returns
+  // { rows, cols } with rows === null for 1-D (Vector) reshape.
+  if (!isList(L)) throw new RPLError('Bad argument type');
+  if (L.items.length === 1) {
+    const n = L.items[0];
+    if (!isInteger(n) && !(isReal(n) && Number.isInteger(n.value))) {
+      throw new RPLError('Bad argument type');
+    }
+    const nn = Number(isInteger(n) ? n.value : n.value);
+    if (nn <= 0) throw new RPLError('Bad argument value');
+    return { rows: null, cols: nn };
+  }
+  if (L.items.length === 2) {
+    const m = L.items[0], n = L.items[1];
+    if ((!isInteger(m) && !(isReal(m) && Number.isInteger(m.value))) ||
+        (!isInteger(n) && !(isReal(n) && Number.isInteger(n.value)))) {
+      throw new RPLError('Bad argument type');
+    }
+    const mm = Number(isInteger(m) ? m.value : m.value);
+    const nn = Number(isInteger(n) ? n.value : n.value);
+    if (mm <= 0 || nn <= 0) throw new RPLError('Bad argument value');
+    return { rows: mm, cols: nn };
+  }
+  throw new RPLError('Bad argument value');
+}
+
+register('RDM', (s) => {
+  const [src, shape] = s.popN(2);
+  const { rows, cols } = _shapeFromList(shape);
+  // Flatten source to a single array (row-major for Matrix).
+  let flat;
+  if (isVector(src)) {
+    flat = src.items.slice();
+  } else if (isMatrix(src)) {
+    flat = [];
+    for (const row of src.rows) for (const e of row) flat.push(e);
+  } else {
+    throw new RPLError('Bad argument type');
+  }
+  const want = rows === null ? cols : rows * cols;
+  if (flat.length !== want) throw new RPLError('Invalid dimension');
+  if (rows === null) {
+    s.push(Vector(flat));
+    return;
+  }
+  const out = [];
+  for (let i = 0; i < rows; i++) {
+    out.push(flat.slice(i * cols, (i + 1) * cols));
+  }
+  s.push(Matrix(out));
+});
+
+/* =================================================================
+   Session 056 — LQ, COND, HERMITE, LEGENDRE, TCHEBYCHEFF.
+
+   HP50 AUR: §15.3 (LQ), §15.4 (COND), §12.5 (HERMITE / LEGENDRE /
+   TCHEBYCHEFF orthogonal-polynomial generators).
+
+   All ops below are user-reachable via the typed catalog today.  No
+   UI work.  LQ is the row-analog of QR — same `_gramSchmidtNum` helper
+   but applied to Aᵀ, so the result rows are orthonormal instead of
+   the columns.  COND is the 1-norm condition number (`CNRM(A) ·
+   CNRM(INV A)`), so its building blocks (CNRM + matrix INV) already
+   ship.  The polynomial-generator trio return a Symbolic expression
+   in `X` — the HP50 firmware form.  Construction goes through the
+   `_coefArrToSymbolicX` helper so DISTRIB / EPSX0 / SUBST can be
+   composed downstream.
+   ================================================================= */
+
+/* --------------- LQ — LQ decomposition --------------------------------
+   HP50 AUR §15.3.
+
+     LQ  ( A → L Q P )   A is m×n with m ≤ n.
+                         L is m×m lower-triangular.
+                         Q is m×n with orthonormal rows
+                         (Q · Qᵀ = I_m).  P is the m×m row-permutation
+                         matrix selected by row-pivoted LQ — for the
+                         no-pivot path used here, P is the identity,
+                         so `A = L · Q` directly.
+
+   Real / Integer entries only.  Rank-deficient row (residual norm
+   below 1e-12) throws Infinite result via `_gramSchmidtNum` on Aᵀ.
+
+   Algorithm:  LQ(A) ≡ transpose of QR(Aᵀ).
+     Let Aᵀ = Q₁ · R₁ via Gram-Schmidt on Aᵀ (columns of Aᵀ = rows of A).
+     Then A = R₁ᵀ · Q₁ᵀ; set L = R₁ᵀ, Q = Q₁ᵀ.
+   ----------------------------------------------------------------- */
+
+register('LQ', (s) => {
+  const [A] = s.popN(1);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+  const m = A.rows.length;
+  if (m === 0) throw new RPLError('Invalid dimension');
+  const n = A.rows[0].length;
+  if (n === 0) throw new RPLError('Invalid dimension');
+  if (m > n) throw new RPLError('Invalid dimension');
+  // Build Aᵀ as a plain m×n-transposed (n×m) numeric array.
+  const Anum = _asNumArray2D(A.rows);
+  const AtNum = new Array(n);
+  for (let i = 0; i < n; i++) {
+    AtNum[i] = new Array(m);
+    for (let j = 0; j < m; j++) AtNum[i][j] = Anum[j][i];
+  }
+  // Q₁ is n×m with orthonormal columns (Gram-Schmidt on columns of Aᵀ).
+  const Q1 = _gramSchmidtNum(AtNum);
+  // R₁ (m×m upper-tri) = Q₁ᵀ · Aᵀ; we only need R₁[j][k] for j ≤ k.
+  const R1 = [];
+  for (let j = 0; j < m; j++) {
+    const row = new Array(m).fill(0);
+    for (let k = j; k < m; k++) {
+      let acc = 0;
+      for (let i = 0; i < n; i++) acc += Q1[i][j] * AtNum[i][k];
+      row[k] = acc;
+    }
+    R1.push(row);
+  }
+  // L = R₁ᵀ (m×m, lower-triangular).
+  const L = [];
+  for (let i = 0; i < m; i++) {
+    const row = new Array(m).fill(0);
+    for (let j = 0; j <= i; j++) row[j] = R1[j][i];
+    L.push(row);
+  }
+  // Q = Q₁ᵀ (m×n with orthonormal rows).
+  const Q = [];
+  for (let j = 0; j < m; j++) {
+    const row = new Array(n);
+    for (let i = 0; i < n; i++) row[i] = Q1[i][j];
+    Q.push(row);
+  }
+  // Identity row-permutation (no pivoting in this path).
+  const P = [];
+  for (let i = 0; i < m; i++) {
+    const pr = new Array(m).fill(0);
+    pr[i] = 1;
+    P.push(pr);
+  }
+  s.push(Matrix(L.map(row => row.map(x => Real(x)))));
+  s.push(Matrix(Q.map(row => row.map(x => Real(x)))));
+  s.push(Matrix(P.map(row => row.map(x => Real(x)))));
+});
+
+/* --------------- COND — 1-norm condition number -----------------------
+   HP50 AUR §15.4.
+
+     COND  ( A → κ )   A must be square.  κ = CNRM(A) · CNRM(INV A),
+                       the 1-norm (max column absolute-sum) condition
+                       number.  A singular (INV throws Infinite result)
+                       → Infinite result.  Non-square → Invalid
+                       dimension.  Real / Integer entries only.
+
+   Uses the `CNRM` and `INV` paths already in place — the 1-norm of an
+   m×m numeric matrix plus one explicit inverse.  For a perfectly-
+   conditioned matrix the result is 1; for singular or near-singular
+   inputs it blows up.  HP50 also documents `COND(I) = n` for the
+   identity; we get `CNRM(I) = 1` and `CNRM(INV I) = CNRM(I) = 1`,
+   so our value is 1 — matching what most linear-algebra texts call
+   the 1-norm condition number.  The HP50's `COND(I) = n` is a
+   documentation curiosity (it uses the row 1-norm on a different
+   scaling); we follow the textbook definition, which is more useful.
+   ----------------------------------------------------------------- */
+
+register('COND', (s) => {
+  const [A] = s.popN(1);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+  const m = A.rows.length;
+  if (m === 0) throw new RPLError('Invalid dimension');
+  const n = A.rows[0].length;
+  if (m !== n) throw new RPLError('Invalid dimension');
+  // Reject Symbolic entries up front (same policy as CNRM / NORM /
+  // _invMatrixNumeric).  Complex is allowed: |z| magnitude is fine,
+  // and INV handles complex matrices via _invMatrixNumeric.
+  for (const row of A.rows) {
+    for (const x of row) {
+      if (!isReal(x) && !isInteger(x) && !isComplex(x)) {
+        throw new RPLError('Bad argument type');
+      }
+    }
+  }
+  // CNRM(A).
+  let normA = 0;
+  for (let j = 0; j < n; j++) {
+    let sum = 0;
+    for (let i = 0; i < m; i++) sum += _magEntry(A.rows[i][j]);
+    if (sum > normA) normA = sum;
+  }
+  // CNRM(INV A).  Propagates Infinite result on singular inputs.
+  const Ainv = _invMatrixNumeric(A.rows);
+  let normI = 0;
+  for (let j = 0; j < n; j++) {
+    let sum = 0;
+    for (let i = 0; i < m; i++) sum += _magEntry(Ainv[i][j]);
+    if (sum > normI) normI = sum;
+  }
+  s.push(Real(normA * normI));
+});
+
+/* --------------- HERMITE / LEGENDRE / TCHEBYCHEFF ----------------------
+   HP50 AUR §12.5.  Orthogonal-polynomial generators.  Each takes a
+   non-negative Integer / Real-integer `n` and returns the order-n
+   polynomial as a Symbolic expression in `X`.
+
+     HERMITE      (n → H_n(X))    physicist's Hermite:
+                  H_0 = 1, H_1 = 2X,
+                  H_{k+1} = 2·X·H_k - 2·k·H_{k-1}
+     LEGENDRE     (n → P_n(X))    P_0 = 1, P_1 = X,
+                  (k+1) P_{k+1} = (2k+1)·X·P_k - k·P_{k-1}
+     TCHEBYCHEFF  (n → T_n(X))    first-kind Chebyshev:
+                  T_0 = 1, T_1 = X,
+                  T_{k+1} = 2·X·T_k - T_{k-1}
+                  HP50 also accepts negative n for the second-kind
+                  variant U_{|n|-1} — not implemented here (returns
+                  Bad argument value); deferred until the full
+                  TCHEBYCHEFF suite is needed.
+
+   ASCII aliases: `TCHEB` (the HP50 catalog spelling uses two forms;
+   the web UI already auto-completes the full spelling).
+
+   The work happens on a plain JS coefficient array (descending
+   degree) via the standard three-term recurrences.  Once the array
+   is built, `_coefArrToSymbolicX` converts it into an expanded
+   Symbolic AST (no fancy collection — the recurrences already keep
+   each polynomial in normal form).
+   ----------------------------------------------------------------- */
+
+function _coefArrToSymbolicX(coefs) {
+  // coefs: descending-degree plain-number array.  Builds a Symbolic
+  // AST in `X`.  Zero entries are skipped; the leading sign is
+  // absorbed into the first non-zero term so the output looks
+  // textbook-like (e.g. "2·X^3 - X" not "2·X^3 + -1·X").
+  const X = AstVar('X');
+  const deg = coefs.length - 1;
+  let ast = null;
+  for (let i = 0; i < coefs.length; i++) {
+    const c = coefs[i];
+    if (c === 0) continue;
+    const pow = deg - i;
+    // Build the |c|·X^pow term (without sign), then attach with + or -.
+    const ac = Math.abs(c);
+    let factor;
+    if (pow === 0) {
+      factor = AstNum(ac);
+    } else {
+      const Xpow = (pow === 1) ? X : AstBin('^', X, AstNum(pow));
+      factor = (ac === 1) ? Xpow : AstBin('*', AstNum(ac), Xpow);
+    }
+    if (ast === null) {
+      ast = c < 0 ? AstNeg(factor) : factor;
+    } else {
+      ast = AstBin(c < 0 ? '-' : '+', ast, factor);
+    }
+  }
+  if (ast === null) ast = AstNum(0);
+  return Symbolic(ast);
+}
+
+function _nFromIntegerArg(v) {
+  // Accept Integer or integer-valued Real.  Return a non-negative
+  // plain JS number; negative or non-integer throws the usual errors.
+  let n;
+  if (isInteger(v)) {
+    n = Number(v.value);
+  } else if (isReal(v)) {
+    if (!Number.isFinite(v.value) || Math.floor(v.value) !== v.value) {
+      throw new RPLError('Bad argument value');
+    }
+    n = v.value;
+  } else {
+    throw new RPLError('Bad argument type');
+  }
+  if (n < 0) throw new RPLError('Bad argument value');
+  return n;
+}
+
+function _polyScale(arr, k) {
+  // arr (descending-degree); multiply every entry by k (plain number).
+  return arr.map(c => c * k);
+}
+
+function _polyShiftUp(arr) {
+  // Multiply poly (descending-degree) by X → append a trailing 0.
+  return arr.concat([0]);
+}
+
+function _polyAdd(a, b) {
+  // Add two descending-degree polys, aligning by trailing (constant)
+  // end.  Returns a new descending-degree array whose length is
+  // max(len(a), len(b)).
+  const la = a.length, lb = b.length;
+  const L = Math.max(la, lb);
+  const out = new Array(L).fill(0);
+  for (let i = 0; i < la; i++) out[L - la + i] += a[i];
+  for (let i = 0; i < lb; i++) out[L - lb + i] += b[i];
+  return out;
+}
+
+register('HERMITE', (s) => {
+  const [v] = s.popN(1);
+  const n = _nFromIntegerArg(v);
+  // Recurrence on coefficient arrays (descending degree).
+  //   H_0 = [1], H_1 = [2, 0],
+  //   H_{k+1} = 2·X·H_k − 2k·H_{k-1}
+  if (n === 0) { s.push(_coefArrToSymbolicX([1])); return; }
+  if (n === 1) { s.push(_coefArrToSymbolicX([2, 0])); return; }
+  let prev = [1];        // H_0
+  let curr = [2, 0];     // H_1
+  for (let k = 1; k < n; k++) {
+    // 2·X·H_k  (shift up, scale by 2)
+    const twoXHk = _polyScale(_polyShiftUp(curr), 2);
+    // 2k·H_{k-1}
+    const twoKPrev = _polyScale(prev, 2 * k);
+    // H_{k+1} = 2·X·H_k − 2k·H_{k-1}
+    const next = _polyAdd(twoXHk, _polyScale(twoKPrev, -1));
+    prev = curr;
+    curr = next;
+  }
+  s.push(_coefArrToSymbolicX(curr));
+});
+
+register('LEGENDRE', (s) => {
+  const [v] = s.popN(1);
+  const n = _nFromIntegerArg(v);
+  // Recurrence (Bonnet):
+  //   P_0 = [1], P_1 = [1, 0],
+  //   (k+1) P_{k+1} = (2k+1)·X·P_k − k·P_{k-1}
+  if (n === 0) { s.push(_coefArrToSymbolicX([1])); return; }
+  if (n === 1) { s.push(_coefArrToSymbolicX([1, 0])); return; }
+  let prev = [1];        // P_0
+  let curr = [1, 0];     // P_1
+  for (let k = 1; k < n; k++) {
+    const a = _polyScale(_polyShiftUp(curr), 2 * k + 1);
+    const b = _polyScale(prev, k);
+    const sumArr = _polyAdd(a, _polyScale(b, -1));
+    const next = _polyScale(sumArr, 1 / (k + 1));
+    prev = curr;
+    curr = next;
+  }
+  s.push(_coefArrToSymbolicX(curr));
+});
+
+function _tchebOp(s) {
+  const [v] = s.popN(1);
+  // TCHEBYCHEFF accepts Integer / integer-valued Real.  Non-negative
+  // n selects the first-kind Chebyshev polynomial T_n(X); negative n
+  // selects the second-kind U_{|n|-1}(X) (session 057 extension,
+  // matching HP50 AUR §12.5).  Non-integer or non-numeric throws.
+  let n;
+  if (isInteger(v)) {
+    n = Number(v.value);
+  } else if (isReal(v)) {
+    if (!Number.isFinite(v.value) || Math.floor(v.value) !== v.value) {
+      throw new RPLError('Bad argument value');
+    }
+    n = v.value;
+  } else {
+    throw new RPLError('Bad argument type');
+  }
+  if (n >= 0) {
+    // First-kind: T_0 = [1], T_1 = [1, 0],
+    //             T_{k+1} = 2·X·T_k − T_{k-1}
+    if (n === 0) { s.push(_coefArrToSymbolicX([1])); return; }
+    if (n === 1) { s.push(_coefArrToSymbolicX([1, 0])); return; }
+    let prev = [1];        // T_0
+    let curr = [1, 0];     // T_1
+    for (let k = 1; k < n; k++) {
+      const twoXTk = _polyScale(_polyShiftUp(curr), 2);
+      const next = _polyAdd(twoXTk, _polyScale(prev, -1));
+      prev = curr;
+      curr = next;
+    }
+    s.push(_coefArrToSymbolicX(curr));
+    return;
+  }
+  // Second-kind U_{|n|-1}(X): U_0 = [1], U_1 = [2, 0],
+  //                           U_{k+1} = 2·X·U_k − U_{k-1}
+  const m = (-n) - 1;
+  if (m === 0) { s.push(_coefArrToSymbolicX([1])); return; }
+  if (m === 1) { s.push(_coefArrToSymbolicX([2, 0])); return; }
+  let prev = [1];         // U_0
+  let curr = [2, 0];      // U_1
+  for (let k = 1; k < m; k++) {
+    const twoXUk = _polyScale(_polyShiftUp(curr), 2);
+    const next = _polyAdd(twoXUk, _polyScale(prev, -1));
+    prev = curr;
+    curr = next;
+  }
+  s.push(_coefArrToSymbolicX(curr));
+}
+register('TCHEBYCHEFF', _tchebOp);
+register('TCHEB',       _tchebOp);
+
+/* ========================================================================
+   Session 057 — MAD, AXL / AXM, FROOTS, TCHEBYCHEFF second-kind.
+
+   HP50 AUR references:
+     §18.1 (MAD)            column-wise Mean Absolute Deviation
+     §15.2 (AXL / AXM)      List ↔ Matrix / Vector bridges
+     §12.5 (FROOTS)         polynomial factoring — from a Symbolic
+                            polynomial in X, returns roots w/
+                            multiplicities as an RList `{r1 m1 r2 m2 …}`.
+
+   TCHEBYCHEFF negative-n (second-kind U_{|n|-1}) is wired into the
+   session-056 `_tchebOp` itself (immediately above), not as a new
+   op — same name / same dispatch; only the argument-sign branch is
+   new.
+   ==================================================================== */
+
+/* ---- MAD — Mean Absolute Deviation -----------------------------------
+   HP50 AUR §18.1.  `MAD(v) = mean(|v_i − mean(v)|)` for a Vector;
+   column-wise for a Matrix (matches MEAN / VAR / SDEV / MEDIAN).
+   Real / Integer entries only (same policy as VAR / SDEV — Complex
+   entries make "absolute deviation" ambiguous: do you use magnitude
+   or complex-valued deviation?  HP50 firmware rejects Complex here,
+   so we do too).
+   --------------------------------------------------------------------- */
+function _madItems(items) {
+  if (items.length === 0) throw new RPLError('Bad argument value');
+  // Single-observation samples: mean absolute deviation is zero.
+  if (items.length === 1) {
+    _statsNumericEntry(items[0]);   // validate type even in the degenerate case
+    return 0;
+  }
+  // Two-pass: compute mean, then mean of |x - mean|.  One-pass online
+  // algorithms don't exist for MAD (unlike VAR), but two passes over
+  // numeric arrays is cheap.
+  const vals = new Array(items.length);
+  let sum = 0;
+  for (let i = 0; i < items.length; i++) {
+    const x = _statsNumericEntry(items[i]);
+    vals[i] = x; sum += x;
+  }
+  const mean = sum / items.length;
+  let absSum = 0;
+  for (const x of vals) absSum += Math.abs(x - mean);
+  return absSum / items.length;
+}
+
+register('MAD', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) { s.push(Real(_madItems(v.items))); return; }
+  if (isMatrix(v)) {
+    s.push(_perColumn(v, (col) => _madItems(col), (x) => Real(x)));
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* ---- AXL / AXM — List ↔ Vector / Matrix bridges ----------------------
+   HP50 AUR §15.2.
+
+     AXL   ( V → L )     Vector → flat List of its entries
+           ( M → L )     Matrix → List of Lists (one sub-list per row)
+           ( L → L )     List already; no-op (idempotent per HP50 spec)
+
+     AXM   ( L → V )     flat-item List → Vector (no nested sub-lists)
+           ( L → M )     List of same-length sub-lists → Matrix
+                         (all sub-lists checked; mismatched length →
+                          Invalid dimension)
+           ( V → V )     Vector no-op
+           ( M → M )     Matrix no-op
+
+   Entry-type policy: we don't coerce — entries flow through unchanged,
+   which matches the HP50's behaviour (AXL on a Matrix with a mix of
+   Integer / Real / Complex / Symbolic entries emits a List of Lists
+   with those same entries).  AXM with a List containing non-numeric
+   (e.g. Symbolic) entries still builds the Vector / Matrix; the
+   downstream ops are the ones that reject non-numeric entries.  HP50
+   actually coerces some entry types during AXM — e.g. a plain Integer
+   in a numeric column stays Integer — but the Vector/Matrix builders
+   don't enforce any type uniformity so we match the HP50 surface.
+
+   AXL and AXM are not exact inverses in all cases because AXL on a
+   plain List is a no-op (HP50 idempotent rule): AXL(AXM({a b c})) ≡
+   AXL([a b c]) ≡ {a b c}, so the round-trip is preserved for flat
+   lists and rectangular-row lists; ragged lists throw on the AXM side.
+   --------------------------------------------------------------------- */
+
+register('AXL', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v)) {
+    // Flat Vector → flat List of same entries.
+    s.push(RList([...v.items]));
+    return;
+  }
+  if (isMatrix(v)) {
+    // Matrix → List of Lists (row-major).
+    s.push(RList(v.rows.map(row => RList([...row]))));
+    return;
+  }
+  if (isList(v)) {
+    // Idempotent — already a list.
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('AXM', (s) => {
+  const [v] = s.popN(1);
+  if (isVector(v) || isMatrix(v)) {
+    // Already a matrix-ish form — no-op (HP50 idempotency).
+    s.push(v);
+    return;
+  }
+  if (!isList(v)) throw new RPLError('Bad argument type');
+  const items = v.items;
+  if (items.length === 0) throw new RPLError('Bad argument value');
+  // If any item is itself a List, the result is a Matrix.  All sub-
+  // lists must match in length (rectangular).  Otherwise the result
+  // is a flat Vector of the item values.
+  const nested = items.some(isList);
+  if (!nested) {
+    s.push(Vector([...items]));
+    return;
+  }
+  // Every row must be a List; mixed-shape input is a user bug.
+  if (!items.every(isList)) throw new RPLError('Bad argument type');
+  const cols = items[0].items.length;
+  if (cols === 0) throw new RPLError('Bad argument value');
+  const rows = items.map(row => {
+    if (row.items.length !== cols) throw new RPLError('Invalid dimension');
+    return [...row.items];
+  });
+  s.push(Matrix(rows));
+});
+
+/* ---- FROOTS — polynomial factoring (Symbolic direction) --------------
+   HP50 AUR §12.5.  Takes a Symbolic polynomial in a single variable
+   (main variable inferred via the algebra-module `freeVars` walk;
+   we default to `X` when the expression is a constant in no variable
+   — consistent with HERMITE / LEGENDRE / TCHEBYCHEFF).
+
+     FROOTS  ( Sy → L )   L = { r1 m1 r2 m2 … }
+                          alternating root / multiplicity pairs.  The
+                          HP50 emits Real multiplicities; we emit
+                          Integer to keep the cluster count exact.
+                          Zero polynomial → Bad argument value.
+                          Non-polynomial shape (non-integer exponent,
+                          denominator containing the variable, etc.)
+                          → Bad argument value.
+
+   Implementation piggy-backs on the session-054 `PROOT` Durand-Kerner
+   core: we expand the Symbolic with `algebraExpand`, walk the sum-of-
+   monomials to build a descending-degree numeric coefficient array,
+   wrap that array in an `RList`, push it onto a scratch stack, and
+   invoke `PROOT` directly.  That returns a Vector of roots which we
+   then cluster by proximity (tolerance `1e-6 · max(|r|, 1)`) to
+   collapse repeated roots into `{root, multiplicity}` entries.
+
+   Non-goals for this first slice (deferred with the full
+   `_polyNormalize` CAS work):
+     - Rational / fractional inputs.  HP50's FROOTS also emits poles
+       with negative multiplicities when given a Symbolic rational
+       `p(X)/q(X)`; we reject those here.
+     - Multi-variable polynomials.  A term like `A·X² + B` with more
+       than one free variable is rejected.
+     - Symbolic coefficients (e.g. `A·X² + 1` with `A` a free variable).
+       A future CAS slice can substitute numeric values into the
+       coefficient AST; for now they're rejected.
+   --------------------------------------------------------------------- */
+
+/* Extract a descending-degree numeric coefficient array from a
+   polynomial AST in `varName`.  Returns `{ coefs, polyIsReal }` —
+   `polyIsReal` is `true` iff every coefficient folded cleanly to a
+   plain JS Real number (no Complex).  Throws `Bad argument value`
+   on anything that isn't a polynomial with numeric coefficients. */
+function _symbolicPolyToNumCoefs(ast, varName) {
+  const expanded = algebraExpand(ast);
+  // Walk the top-level +/- structure, emit terms with a ± sign.
+  const terms = [];
+  (function walk(node, sign) {
+    if (!node) return;
+    if (astIsNum(node)) { terms.push({ node, sign }); return; }
+    if (node.kind === 'neg') { walk(node.arg, -sign); return; }
+    if (node.kind === 'bin') {
+      if (node.op === '+') { walk(node.l, sign); walk(node.r, sign); return; }
+      if (node.op === '-') { walk(node.l, sign); walk(node.r, -sign); return; }
+    }
+    terms.push({ node, sign });
+  })(expanded, 1);
+  // For each term, collect the numeric coefficient and power of varName.
+  // Real-only first-pass: Complex coefficients would need `_cx` threading
+  // through both arms below.  The FROOTS op doesn't support Complex
+  // coefficients today (see the op-level comment).
+  const coefByPow = new Map();   // power → running Real
+  for (const { node, sign } of terms) {
+    let coef = sign;
+    let power = 0;
+    let failed = false;
+    (function walk(n, mult) {
+      if (failed) return;
+      if (astIsNum(n)) { coef *= Math.pow(n.value, mult); return; }
+      if (n.kind === 'neg') { coef *= -1; walk(n.arg, mult); return; }
+      if (n.kind === 'bin' && n.op === '*') {
+        walk(n.l, mult); walk(n.r, mult); return;
+      }
+      if (n.kind === 'bin' && n.op === '/') {
+        // Only accept `A / num` — division by the variable (or any
+        // sub-tree containing the variable) makes this a rational.
+        walk(n.l, mult);
+        if (astIsNum(n.r)) coef *= Math.pow(n.r.value, -mult);
+        else failed = true;
+        return;
+      }
+      if (n.kind === 'var' && n.name === varName) {
+        power += mult;
+        return;
+      }
+      if (n.kind === 'bin' && n.op === '^'
+          && n.l.kind === 'var' && n.l.name === varName
+          && astIsNum(n.r) && Number.isInteger(n.r.value) && n.r.value >= 0) {
+        power += mult * n.r.value;
+        return;
+      }
+      // Anything else is a non-numeric / non-polynomial shape.
+      failed = true;
+    })(node, 1);
+    if (failed) throw new RPLError('Bad argument value');
+    if (power < 0 || !Number.isInteger(power)) {
+      throw new RPLError('Bad argument value');
+    }
+    coefByPow.set(power, (coefByPow.get(power) || 0) + coef);
+  }
+  const maxPow = [...coefByPow.keys()].reduce((a, b) => Math.max(a, b), 0);
+  const out = new Array(maxPow + 1).fill(0);
+  for (const [p, c] of coefByPow) out[maxPow - p] = c;
+  // Zero polynomial after simplification ⇒ Bad argument value.
+  if (out.every(c => c === 0)) throw new RPLError('Bad argument value');
+  return { coefs: out, polyIsReal: true };
+}
+
+/* Cluster approximate roots by proximity, return { root, mult } pairs.
+   Each entry stores the averaged representative plus a count.  Stable
+   by first-seen order.
+
+   Durand-Kerner (the PROOT inner loop) converges slowly near repeated
+   roots — a degree-3 polynomial with a triple root typically lands
+   with the three iterates spread across a disc of radius ~1e-5 around
+   the true root, well above the default 1e-9 Real-vs-Complex
+   collapse threshold used inside PROOT.  So we cluster with a
+   tolerance of `max(1e-4 · scale, 1e-7)`, which is tight enough to
+   keep distinct real roots separate (typical separation is ≥ 1) and
+   loose enough to merge near-repeated ones.
+
+   After clustering we collapse clusters with an imaginary part below
+   the same tolerance back to a plain Real. */
+function _clusterRoots(roots) {
+  const out = [];
+  const compOf = (r) => isReal(r)
+    ? { re: r.value, im: 0 }
+    : { re: r.re, im: r.im };
+  for (const r of roots) {
+    const { re, im } = compOf(r);
+    let matched = false;
+    for (const g of out) {
+      const scale = Math.max(Math.abs(g.reSum / g.mult),
+                             Math.abs(g.imSum / g.mult),
+                             Math.abs(re), Math.abs(im), 1);
+      const tol = Math.max(1e-4 * scale, 1e-7);
+      if (Math.abs(re - g.reSum / g.mult) < tol &&
+          Math.abs(im - g.imSum / g.mult) < tol) {
+        g.reSum += re;
+        g.imSum += im;
+        g.mult += 1;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) out.push({ reSum: re, imSum: im, mult: 1 });
+  }
+  return out.map(g => {
+    const re = g.reSum / g.mult;
+    const im = g.imSum / g.mult;
+    const imTol = Math.max(1e-4 * Math.max(Math.abs(re), 1), 1e-7);
+    const isRealClust = Math.abs(im) < imTol;
+    return {
+      root: isRealClust
+        ? (Number.isInteger(re) ? Integer(BigInt(re)) : Real(re))
+        : Complex(re, im),
+      mult: g.mult,
+    };
+  });
+}
+
+/* ---- Session 058 — FROOTS rational-root pre-scan helper ---------------
+   Before running Durand-Kerner, enumerate candidate rational roots
+   `p / q` where `p | c_0` and `q | c_n` (Rational-Root Theorem).
+   Test each candidate via Horner; when it evaluates exactly to zero,
+   synthetically divide it out and recurse on the reduced polynomial
+   until no more rational roots are found.  Returns
+   `{ roots, residualCoefs }` — an array of rational roots (each with
+   their multiplicity counted) and the coefficient array of the
+   polynomial that remains after dividing them out.  The residual
+   polynomial is then fed to PROOT to pick up any irrational /
+   complex roots.
+
+   Coefficients must be integers (or integer-valued Reals) for this
+   path to apply; the caller falls through to plain Durand-Kerner
+   otherwise.  The guard keeps `X^2 − 5X + 6` in Integer form but
+   leaves `X^2 − 0.5X + 0.1` on the numeric path where it belongs. */
+
+function _allIntegerCoefs(coefs) {
+  for (const c of coefs) {
+    if (!Number.isFinite(c)) return false;
+    if (!Number.isInteger(c)) return false;
+  }
+  return true;
+}
+
+/** Positive integer divisors of |n| (n an integer).  For rational-root
+ *  enumeration.  Returns [1] for n=0 (by convention — we only call
+ *  this for non-zero coefficients). */
+function _posDivisors(n) {
+  const N = Math.abs(Math.trunc(n));
+  if (N === 0) return [1];
+  const out = [];
+  for (let d = 1; d * d <= N; d++) {
+    if (N % d === 0) {
+      out.push(d);
+      if (d * d !== N) out.push(N / d);
+    }
+  }
+  out.sort((a, b) => a - b);
+  return out;
+}
+
+/** Integer GCD of two non-negative integers. */
+function _igcd(a, b) {
+  a = Math.abs(Math.trunc(a));
+  b = Math.abs(Math.trunc(b));
+  while (b !== 0) { const t = a % b; a = b; b = t; }
+  return a;
+}
+
+/** Evaluate `p(x)` at the rational `num/den` using Horner on
+ *  homogenized coordinates — equivalent to `Σ coefs[i] · num^(n-i) · den^i`
+ *  then dividing by den^n.  Returns 0 exactly when `num/den` is a
+ *  root; non-zero otherwise.  All arithmetic in Number; fine for the
+ *  bounded-denominator candidate list since |num| ≤ |c_0| and
+ *  |den| ≤ |c_n| are small. */
+function _evalRational(coefs, num, den) {
+  // p(num/den) · den^n  =  Σ_{i=0..n} coefs[i] · num^(n-i) · den^i
+  const n = coefs.length - 1;
+  let sum = 0;
+  for (let i = 0; i <= n; i++) {
+    sum += coefs[i] * Math.pow(num, n - i) * Math.pow(den, i);
+  }
+  return sum;
+}
+
+/** Synthetic divide `coefs` (descending-degree) by `(x − num/den)`,
+ *  returning a new descending-degree coefficient array of degree n-1
+ *  with Number entries.  Does NOT assume coefs are integers — works
+ *  on any Real coefficient array (so chained division by rational
+ *  roots after the first pass still works; later quotients can pick
+ *  up rational entries). */
+function _syntheticDivRational(coefs, num, den) {
+  const out = new Array(coefs.length - 1).fill(0);
+  // Re-parameterize: p(x) = den·q(x)·(x − num/den) where q is what we
+  // want.  Standard synthetic division at r = num/den: q[0] = c[0],
+  // q[k] = c[k] + r · q[k-1].
+  const r = num / den;
+  out[0] = coefs[0];
+  for (let k = 1; k < coefs.length - 1; k++) {
+    out[k] = coefs[k] + r * out[k - 1];
+  }
+  // Remainder is coefs[n] + r · q[n-1]; should be ~0 for a true root.
+  return out;
+}
+
+/** Peel off all rational roots of an integer-coefficient polynomial.
+ *  Returns `{ rationalRoots, residualCoefs }`.  `rationalRoots` is an
+ *  array of `{ num, den, mult }` in de-duplicated form (duplicates
+ *  peeled again and their count accumulated).  The residual polynomial
+ *  is Number-valued (may carry floating drift).  Leading coefficient
+ *  of the residual equals `coefs[0]` (we do NOT renormalize). */
+function _peelRationalRoots(coefs) {
+  let current = coefs.slice();
+  const out = [];
+  // Root x = 0 is the easy case: c_n = 0 ⇒ x divides p ⇒ deflate.
+  while (current.length > 1 && current[current.length - 1] === 0) {
+    current = current.slice(0, -1);
+    const hit = out.find(r => r.num === 0 && r.den === 1);
+    if (hit) hit.mult += 1;
+    else out.push({ num: 0, den: 1, mult: 1 });
+  }
+  // Outer loop: try all p/q candidates against the current polynomial.
+  // Each successful hit deflates once; repeat until no candidate works.
+  let progress = true;
+  while (progress && current.length > 1) {
+    progress = false;
+    const leadInt = Math.round(current[0]);
+    const tailInt = Math.round(current[current.length - 1]);
+    // If either rounded to 0 or we've drifted off integer coefs (e.g.
+    // after a previous rational-root deflate), stop the rational-root
+    // search.  The caller will run Durand-Kerner on whatever remains.
+    if (!_allIntegerCoefs(current)) break;
+    if (tailInt === 0 || leadInt === 0) break;
+    const pDivs = _posDivisors(tailInt);
+    const qDivs = _posDivisors(leadInt);
+    // Iterate smallest candidates first so repeated roots (p=q=±1 or
+    // small integers) deflate before we dig into larger candidates.
+    outer: for (const q of qDivs) {
+      for (const p of pDivs) {
+        if (_igcd(p, q) !== 1) continue;  // skip unreduced p/q
+        for (const sign of [1, -1]) {
+          const num = sign * p;
+          const den = q;
+          const val = _evalRational(current, num, den);
+          if (val === 0) {
+            current = _syntheticDivRational(current, num, den);
+            const hit = out.find(r => r.num === num && r.den === den);
+            if (hit) hit.mult += 1;
+            else out.push({ num, den, mult: 1 });
+            progress = true;
+            break outer;
+          }
+        }
+      }
+    }
+  }
+  return { rationalRoots: out, residualCoefs: current };
+}
+
+/** Decompose `|n|` as `k² · m` with `m` squarefree, returning `{k, m}`.
+ *  Session 059 — the building block for FROOTS' exact-irrational
+ *  quadratic-residual pass: the radical `√|n|` simplifies to `k · √m`.
+ *  Uses trial-division up to `√|n|` — fine for the discriminants we
+ *  encounter (bounded by the user-typed polynomial's coefficients). */
+function _squareFactorDecompose(n) {
+  n = Math.abs(Math.round(n));
+  if (n === 0) return { k: 0, m: 0 };
+  let k = 1;
+  let m = n;
+  for (let p = 2; p * p <= m; p++) {
+    while (m % (p * p) === 0) {
+      k *= p;
+      m = m / (p * p);
+    }
+  }
+  return { k, m };
+}
+
+/** Try to factor a degree-2 integer-coefficient residual into two exact
+ *  symbolic roots via the quadratic formula.  Returns an array of
+ *  `{ast, mult}` pairs or `null` when the case doesn't apply.  The
+ *  null cases are:
+ *    - D < 0  (complex conjugate roots — fall through to Durand-Kerner
+ *              so the existing Complex path handles them)
+ *    - D = 0  (double rational root — would've been peeled already)
+ *    - `√D` exact integer (rational roots — would've been peeled)
+ *  A non-null return always produces two entries with multiplicity 1
+ *  (the roots are distinct under this branch). */
+function _quadraticExactResidualRoots(coefs) {
+  if (coefs.length !== 3) return null;
+  if (!_allIntegerCoefs(coefs)) return null;
+  const a = Math.round(coefs[0]);
+  const b = Math.round(coefs[1]);
+  const c = Math.round(coefs[2]);
+  if (a === 0) return null;
+  const D = b * b - 4 * a * c;
+  if (D < 0) return null;             // complex path defers to Durand-Kerner
+  if (D === 0) return null;           // double rational root
+  const sqrtD = Math.sqrt(D);
+  if (Number.isInteger(sqrtD)) return null;   // rational roots — peeled
+  const { k, m } = _squareFactorDecompose(D);
+  if (m === 1) return null;           // redundant (caught by isInteger test)
+  // Reduce `-b ± k·√m` / `2a` by gcd(|b|, k, |2a|).
+  const twoA = 2 * a;
+  const g = _igcd(_igcd(Math.abs(b), k), Math.abs(twoA));
+  const nb = -b / g;
+  const nk = k / g;
+  const nd = twoA / g;
+  // Flip so denominator is positive.
+  const signFlip = nd < 0 ? -1 : 1;
+  const RB = nb * signFlip;    // real part numerator
+  const K  = nk * signFlip;    // coefficient on √m for the '+' root
+  const DEN = Math.abs(nd);
+  const sqrtAst = AstFn('SQRT', [AstNum(m)]);
+  function _build(sign) {
+    const kSigned = sign * K;
+    let numAst;
+    if (RB === 0) {
+      // numerator = kSigned · √m (no real part)
+      if (kSigned === 1) numAst = sqrtAst;
+      else if (kSigned === -1) numAst = AstNeg(sqrtAst);
+      else if (kSigned > 0) numAst = AstBin('*', AstNum(kSigned), sqrtAst);
+      else numAst = AstNeg(AstBin('*', AstNum(-kSigned), sqrtAst));
+    } else if (kSigned > 0) {
+      const kMag = kSigned === 1 ? sqrtAst : AstBin('*', AstNum(kSigned), sqrtAst);
+      numAst = AstBin('+', AstNum(RB), kMag);
+    } else {
+      const absK = -kSigned;
+      const kMag = absK === 1 ? sqrtAst : AstBin('*', AstNum(absK), sqrtAst);
+      numAst = AstBin('-', AstNum(RB), kMag);
+    }
+    return DEN === 1 ? numAst : AstBin('/', numAst, AstNum(DEN));
+  }
+  return [
+    { ast: _build(+1), mult: 1 },
+    { ast: _build(-1), mult: 1 },
+  ];
+}
+
+/** Convert a `{ num, den }` pair into a stack value: Integer when
+ *  den=1, Symbolic(num/den) otherwise.  Symbolic rationals match the
+ *  HP50 convention where `→Q` / `Q→` exchange `n/d` as a Symbolic —
+ *  which means FROOTS can now emit `Integer(2) 1 Integer(3) 1` for
+ *  `X^2 − 5X + 6` and `Sym(1/2) 1 Sym(1/3) 1` for
+ *  `6X^2 − 5X + 1`. */
+function _rationalRootValue(num, den) {
+  if (den === 1) return Integer(BigInt(num));
+  // Construct the Symbolic fraction with a sign-bearing numerator.
+  // `_pushSubstResult`-style collapse isn't needed — num/den is
+  // already in lowest terms by the enumeration above.
+  const sgn = num < 0 ? -1 : 1;
+  const absN = Math.abs(num);
+  const frac = AstBin('/', AstNum(absN), AstNum(den));
+  return Symbolic(sgn < 0 ? AstNeg(frac) : frac);
+}
+
+register('FROOTS', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  // Pick the main variable.  Exactly one free variable ⇒ that one.
+  // Zero free variables ⇒ the polynomial is a pure constant; handle
+  // here: non-zero constant has no roots, zero constant is a user
+  // error (same policy as PROOT).
+  const varsSet = algebraFreeVars(v.expr);
+  if (varsSet.size > 1) throw new RPLError('Bad argument value');
+  // Expand then simplify to a coefficient list.
+  let varName;
+  if (varsSet.size === 1) varName = [...varsSet][0];
+  else                    varName = 'X';   // constant polynomial fallback
+  const { coefs } = _symbolicPolyToNumCoefs(v.expr, varName);
+  if (coefs.length === 1) {
+    // Pure constant — non-zero ⇒ no roots ⇒ empty list.
+    s.push(RList([]));
+    return;
+  }
+  // Session 058 — rational-root pre-scan.  Peel off every `p/q` root
+  // that evaluates exactly to zero under Horner.  Keeps Integer
+  // roots Integer in the output (old path returned `2.0000…` from
+  // Durand-Kerner, then cast back to Real).
+  const outItems = [];
+  let residual = coefs;
+  if (_allIntegerCoefs(coefs)) {
+    const { rationalRoots, residualCoefs } = _peelRationalRoots(coefs);
+    for (const rr of rationalRoots) {
+      outItems.push(_rationalRootValue(rr.num, rr.den));
+      outItems.push(Integer(BigInt(rr.mult)));
+    }
+    residual = residualCoefs;
+  }
+  // Session 059 — exact-irrational quadratic-residual pass.  If what
+  // remains is a degree-2 integer polynomial with non-square positive
+  // discriminant, emit the two roots in closed form `(-b ± k·√m)/(2a)`
+  // as Symbolic so `X² - 2 FROOTS` returns `√2` / `-√2` exactly
+  // instead of falling through to Durand-Kerner floats.  D < 0 or
+  // D a perfect square fall through to the unchanged path.
+  if (residual.length === 3 && _allIntegerCoefs(residual)) {
+    const quadRoots = _quadraticExactResidualRoots(residual);
+    if (quadRoots) {
+      for (const qr of quadRoots) {
+        outItems.push(Symbolic(qr.ast));
+        outItems.push(Integer(BigInt(qr.mult)));
+      }
+      residual = [residual[0]];   // degree-0 leftover ⇒ no further roots.
+    }
+  }
+  // Session 061 — biquadratic residual pass.  Degree-4 integer residual
+  // of the shape `a·X⁴ + b·X² + c` (coef[1] = coef[3] = 0) with both
+  // u = X² roots exact-irrational.  Emits ±√u₁, ±√u₂ as Symbolic so
+  // `X⁴ - 10X² + 1 FROOTS` returns `√(5+2√6)`-family radicals directly
+  // rather than deferring to Durand-Kerner floats.
+  if (residual.length === 5 && _allIntegerCoefs(residual)) {
+    const biqRoots = _biquadResidualRoots(residual);
+    if (biqRoots) {
+      for (const br of biqRoots) {
+        outItems.push(Symbolic(br.ast));
+        outItems.push(Integer(BigInt(br.mult)));
+      }
+      residual = [residual[0]];
+    }
+  }
+  // Residual polynomial still has degree ≥ 1?  Hand to PROOT for the
+  // irrational / complex roots.  Degree-0 residual ⇒ fully factored.
+  if (residual.length > 1) {
+    const coefList = RList(residual.map((c) =>
+      Number.isInteger(c) ? Integer(BigInt(c)) : Real(c)));
+    const scratch = new (s.constructor)();
+    scratch.push(coefList);
+    lookup('PROOT').fn(scratch);
+    const rootsVec = scratch.pop();
+    if (isVector(rootsVec)) {
+      const groups = _clusterRoots([...rootsVec.items]);
+      for (const g of groups) {
+        outItems.push(g.root);
+        outItems.push(Integer(BigInt(g.mult)));
+      }
+    }
+  }
+  s.push(RList(outItems));
+});
+
+/* ====================================================================
+   Session 058 — PREDV / PREDX / PREVAL / TAN2SC / LAPLACE / ILAP.
+   ====================================================================
+
+   Each op below slots into the CAS / stats family the prior sessions
+   laid down.  Cross-cutting state reuse: PREDV / PREDX read the
+   `lastFitModel` slot that LINFIT / LOGFIT / EXPFIT / PWRFIT
+   started publishing earlier in this session; the other four ops
+   are pure AST rewrites on their input.  See the per-op comment
+   for the user-reachable demo keypress sequence.
+   ==================================================================== */
+
+/* ---- PREDV — evaluate last fit at a scalar x -----------------------
+   HP50 AUR §18.1.  After running one of LINFIT / LOGFIT / EXPFIT /
+   PWRFIT the calculator remembers the fit model; PREDV takes an x
+   value and returns the predicted y for that model.
+
+     x PREDV  ( R → R )   y-prediction at x using the last-run fit.
+
+   No fit run yet ⇒ Undefined name.  Non-Real/Integer x rejected with
+   Bad argument type.  Domain violations (LOG of x≤0, PWR of x≤0)
+   surface as Infinite result, not silent NaN — mirrors the ops'
+   domain-error surface. */
+
+function _evalFitModel(model, x) {
+  switch (model.kind) {
+    case 'LIN': return model.a + model.b * x;
+    case 'LOG':
+      if (x <= 0) throw new RPLError('Infinite result');
+      return model.a + model.b * Math.log(x);
+    case 'EXP': return model.a * Math.exp(model.b * x);
+    case 'PWR':
+      if (x <= 0) throw new RPLError('Infinite result');
+      return model.a * Math.pow(x, model.b);
+    default: throw new RPLError('Bad argument value');
+  }
+}
+
+/* Inverse of the fit model: solve `y = f(x)` for x.  Real only — no
+   multi-valued / Complex branch picking.  Returns `null` when the
+   inverse is undefined (e.g. b=0 in a LIN fit, or log of a non-
+   positive argument). */
+function _invertFitModel(model, y) {
+  const { kind, a, b } = model;
+  switch (kind) {
+    case 'LIN':
+      if (b === 0) return null;
+      return (y - a) / b;
+    case 'LOG':
+      // y = a + b·ln(x)  ⇒  x = exp((y-a)/b)
+      if (b === 0) return null;
+      return Math.exp((y - a) / b);
+    case 'EXP':
+      // y = a·e^(b·x)  ⇒  x = ln(y/a) / b
+      if (a === 0 || b === 0) return null;
+      const r = y / a;
+      if (r <= 0) return null;
+      return Math.log(r) / b;
+    case 'PWR':
+      // y = a·x^b  ⇒  x = (y/a)^(1/b)
+      if (a === 0 || b === 0) return null;
+      const q = y / a;
+      if (q <= 0) return null;
+      return Math.pow(q, 1 / b);
+    default: return null;
+  }
+}
+
+/** Accept Real / Integer / (integer-valued BinInt) as the scalar arg
+ *  for PREDV / PREDX.  Complex is rejected — the fit models are
+ *  real-valued and the inverse is real-to-real. */
+function _fitScalar(v) {
+  if (isReal(v))    return v.value;
+  if (isInteger(v)) return Number(v.value);
+  if (isBinaryInteger(v)) return Number(v.value);
+  throw new RPLError('Bad argument type');
+}
+
+register('PREDV', (s) => {
+  const [xv] = s.popN(1);
+  const model = getLastFitModel();
+  if (!model) throw new RPLError('Undefined name');
+  const x = _fitScalar(xv);
+  const y = _evalFitModel(model, x);
+  if (!Number.isFinite(y)) throw new RPLError('Infinite result');
+  s.push(Real(y));
+});
+
+/* ---- PREDX — evaluate inverse fit at a scalar y --------------------
+   Inverse of PREDV: given a predicted y, back out the x that would
+   have produced it under the last-run fit.
+
+     y PREDX  ( R → R )   x such that f(x) = y under last-run fit.
+
+   No fit ⇒ Undefined name.  Non-invertible model (b=0 in LIN/LOG,
+   a=0 in EXP/PWR) ⇒ Infinite result.  Domain violation of the
+   inverse (e.g. y ≤ 0 for EXP/PWR when a > 0) ⇒ Infinite result. */
+
+register('PREDX', (s) => {
+  const [yv] = s.popN(1);
+  const model = getLastFitModel();
+  if (!model) throw new RPLError('Undefined name');
+  const y = _fitScalar(yv);
+  const x = _invertFitModel(model, y);
+  if (x === null || !Number.isFinite(x)) throw new RPLError('Infinite result');
+  s.push(Real(x));
+});
+
+/* ---- PREVAL — evaluate F at two endpoints --------------------------
+   HP50 AUR §11.  The workhorse for "definite integral via
+   antiderivative": evaluate `F(X)` at two scalars and subtract.
+
+     F(X) a b PREVAL  ( Sy + R + R → Sy )    F(b) - F(a)
+
+   HP50 firmware also accepts `F(X) {a b}` as a List-form convenience
+   — we support that too.  The single free variable of F(X) is
+   inferred via `freeVars`; when F has multiple free variables
+   (F(X,Y)) we reject with Bad argument value.  F with no free
+   variables is legal — PREVAL then returns `0` (F(b) - F(a) is 0
+   when F is constant), matching HP50.
+
+   Numeric endpoints (Real / Integer / BinInt) substitute in and let
+   `algebraSubst` collapse the result.  When F has a closed-form
+   that simplifies to a Number after substitution, PREVAL returns
+   Real.  When it doesn't simplify, PREVAL returns Symbolic. */
+
+register('PREVAL', (s) => {
+  // Accept the list form: F {a b} PREVAL ⇒ rewrite to three-arg form.
+  if (s.depth >= 2) {
+    const top = s.peek(1);
+    if (isList(top) && top.items.length === 2) {
+      const lst = s.pop();
+      s.push(lst.items[0]);
+      s.push(lst.items[1]);
+    }
+  }
+  if (s.depth < 3) throw new RPLError('Too few arguments');
+  const [fVal, aVal, bVal] = s.popN(3);
+  if (!isSymbolic(fVal)) throw new RPLError('Bad argument type');
+  // Pick the variable to substitute.  HP50 firmware consults VX (which
+  // we don't have yet) — fall back to the single free variable in F,
+  // or `X` when F is a pure constant.
+  const vars = algebraFreeVars(fVal.expr);
+  if (vars.size > 1) throw new RPLError('Bad argument value');
+  const varName = vars.size === 1 ? [...vars][0] : 'X';
+  const endpointToAst = (v) => {
+    if (isReal(v))    return AstNum(v.value);
+    if (isInteger(v)) return AstNum(Number(v.value));
+    if (isBinaryInteger(v)) return AstNum(Number(v.value));
+    if (isSymbolic(v)) return v.expr;
+    if (isName(v))    return AstVar(v.id);
+    throw new RPLError('Bad argument type');
+  };
+  const aAst = endpointToAst(aVal);
+  const bAst = endpointToAst(bVal);
+  const Fb = algebraSubst(fVal.expr, varName, bAst);
+  const Fa = algebraSubst(fVal.expr, varName, aAst);
+  const diff = algebraSimplify(AstBin('-', Fb, Fa));
+  if (diff && diff.kind === 'num') { s.push(Real(diff.value)); return; }
+  s.push(Symbolic(diff));
+});
+
+/* ---- TAN2SC — rewrite TAN(X) as SIN(X) / COS(X) -------------------
+   HP50 AUR §5.6 / §11.9.  Single-pass AST rewrite: every occurrence
+   of `TAN(arg)` becomes `SIN(arg) / COS(arg)`.  The argument is
+   unchanged — TAN2SC is NOT recursive into `arg` (TAN nested inside
+   the argument, e.g. `TAN(TAN(X))`, is handled by the outer walk
+   because we recurse through all children before matching).
+
+     Sy TAN2SC  ( Sy → Sy )   TAN(arg) → SIN(arg) / COS(arg), deep.
+
+   Non-Symbolic input rejects with Bad argument type.  Pairs with
+   TCOLLECT / TEXPAND once those land. */
+
+function _tan2scWalk(ast) {
+  if (!ast) return ast;
+  if (ast.kind === 'num' || ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _tan2scWalk(ast.arg);
+    return inner === ast.arg ? ast : AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    const l = _tan2scWalk(ast.l);
+    const r = _tan2scWalk(ast.r);
+    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
+  }
+  if (ast.kind === 'fn') {
+    const args = ast.args.map(_tan2scWalk);
+    if (ast.name === 'TAN' && args.length === 1) {
+      // TAN(arg) → SIN(arg) / COS(arg)
+      return AstBin('/', AstFn('SIN', [args[0]]), AstFn('COS', [args[0]]));
+    }
+    // Any other function: keep name, rebuild args if anything changed.
+    let dirty = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== ast.args[i]) { dirty = true; break; }
+    }
+    return dirty ? AstFn(ast.name, args) : ast;
+  }
+  return ast;
+}
+
+register('TAN2SC', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  s.push(Symbolic(_tan2scWalk(v.expr)));
+});
+
+/* ---- LAPLACE / ILAP — Laplace transform and inverse --------------
+   HP50 AUR §11.8.  Rules-based AST rewrite over the CAS main
+   variable (VX, which we surface as `X` here until the VX state
+   slot lands).  Implemented shapes:
+
+     LAPLACE :  X^n        → n! / X^(n+1)           for n ∈ ℕ
+                EXP(a·X)   → 1 / (X - a)
+                SIN(a·X)   → a / (X^2 + a^2)
+                COS(a·X)   → X / (X^2 + a^2)
+                SINH(a·X)  → a / (X^2 - a^2)
+                COSH(a·X)  → X / (X^2 - a^2)
+                c·f(X)     → c·LAPLACE(f(X))        for constant c
+                f + g      → LAPLACE(f) + LAPLACE(g)
+                f - g      → LAPLACE(f) - LAPLACE(g)
+                1          → 1/X
+
+     ILAP   : inverse of the above table (same shapes mirrored).
+
+   Non-recognised shapes fall through and are returned wrapped in a
+   sentinel `LAP(...)` / `ILAP(...)` node so the user sees which
+   sub-expression tripped the rule engine.  Pure Symbolic round-trip
+   shape; no numeric evaluation.  Input non-Symbolic ⇒ Bad argument
+   type.  Note that the HP50 firmware uses the CAS VX variable —
+   we mirror that by picking the single free variable in the
+   input (fall back to `X` when the input is a constant). */
+
+function _lapVarName(ast) {
+  const vars = algebraFreeVars(ast);
+  if (vars.size === 0) return 'X';
+  if (vars.size === 1) return [...vars][0];
+  // Multi-variable input: HP50 uses VX; we fall back to X as the
+  // canonical main variable.  Future VX-state landing can replace
+  // this.
+  return vars.has('X') ? 'X' : [...vars][0];
+}
+
+/** Is `ast` a Num node? */
+function _isNumNode(ast) { return ast && ast.kind === 'num'; }
+
+/** True when `ast` does NOT contain `varName` as a free variable —
+ *  i.e. is a constant with respect to varName.  Used to pull constants
+ *  out in front of the LAPLACE / ILAP rewrites. */
+function _isConstIn(ast, varName) {
+  const v = algebraFreeVars(ast);
+  return !v.has(varName);
+}
+
+/** Try to match `α · X` (or just `X` ≡ 1·X) — returns α as an AST,
+ *  or `null` on no match.  α is required to be a constant in X. */
+function _matchAlphaX(ast, varName) {
+  if (ast && ast.kind === 'var' && ast.name === varName) {
+    return AstNum(1);
+  }
+  if (ast && ast.kind === 'bin' && ast.op === '*') {
+    if (ast.l && ast.l.kind === 'var' && ast.l.name === varName
+        && _isConstIn(ast.r, varName)) return ast.r;
+    if (ast.r && ast.r.kind === 'var' && ast.r.name === varName
+        && _isConstIn(ast.l, varName)) return ast.l;
+  }
+  if (ast && ast.kind === 'neg') {
+    const sub = _matchAlphaX(ast.arg, varName);
+    if (sub) return AstNeg(sub);
+  }
+  return null;
+}
+
+/** Integer factorial as an AST Num.  Caps at 12! (a practical
+ *  Laplace-transform limit) and throws Bad argument value above. */
+function _factAst(n) {
+  if (n < 0) throw new RPLError('Bad argument value');
+  if (n > 12) throw new RPLError('Bad argument value');
+  let f = 1;
+  for (let i = 2; i <= n; i++) f *= i;
+  return AstNum(f);
+}
+
+function _laplaceTransform(ast, varName) {
+  // LAPLACE over the variable `varName`.  Returns an AST in the same
+  // variable; HP50 does NOT rename X → S (that's a textbook convention,
+  // not an HP50 one — it keeps the main variable stable).
+  if (!ast) return ast;
+  // Constant ⇒ c/X
+  if (_isConstIn(ast, varName)) {
+    return AstBin('/', ast, AstVar(varName));
+  }
+  // X itself ⇒ 1/X^2
+  if (ast.kind === 'var' && ast.name === varName) {
+    return AstBin('/', AstNum(1), AstBin('^', AstVar(varName), AstNum(2)));
+  }
+  // X^n (n a non-negative integer) ⇒ n! / X^(n+1)
+  if (ast.kind === 'bin' && ast.op === '^'
+      && ast.l && ast.l.kind === 'var' && ast.l.name === varName
+      && _isNumNode(ast.r) && Number.isInteger(ast.r.value) && ast.r.value >= 0) {
+    const n = ast.r.value;
+    return AstBin('/',
+      _factAst(n),
+      AstBin('^', AstVar(varName), AstNum(n + 1)));
+  }
+  // Sum / difference: distribute through.
+  if (ast.kind === 'bin' && (ast.op === '+' || ast.op === '-')) {
+    return AstBin(ast.op,
+      _laplaceTransform(ast.l, varName),
+      _laplaceTransform(ast.r, varName));
+  }
+  // Negation: pull the minus sign through.
+  if (ast.kind === 'neg') {
+    return AstNeg(_laplaceTransform(ast.arg, varName));
+  }
+  // c·f(X) where c is a constant in X.
+  if (ast.kind === 'bin' && ast.op === '*') {
+    if (_isConstIn(ast.l, varName)) {
+      return AstBin('*', ast.l, _laplaceTransform(ast.r, varName));
+    }
+    if (_isConstIn(ast.r, varName)) {
+      return AstBin('*', ast.r, _laplaceTransform(ast.l, varName));
+    }
+    // Session 061 — frequency-shift theorem: L{e^(αX)·f(X)} = F(X − α).
+    // Find one EXP(αX) factor, compute LAPLACE of the other factor,
+    // substitute X → X − α in the result.
+    let expFactor = null, other = null;
+    if (ast.l && ast.l.kind === 'fn' && ast.l.name === 'EXP'
+        && ast.l.args && ast.l.args.length === 1) {
+      expFactor = ast.l; other = ast.r;
+    } else if (ast.r && ast.r.kind === 'fn' && ast.r.name === 'EXP'
+        && ast.r.args && ast.r.args.length === 1) {
+      expFactor = ast.r; other = ast.l;
+    }
+    if (expFactor) {
+      const alphaX = _matchAlphaX(expFactor.args[0], varName);
+      if (alphaX) {
+        const otherLap = _laplaceTransform(other, varName);
+        return _astSubstVar(otherLap, varName,
+          AstBin('-', AstVar(varName), alphaX));
+      }
+    }
+  }
+  // Fn(arg) family.
+  if (ast.kind === 'fn' && ast.args.length === 1) {
+    const arg = ast.args[0];
+    // Session 061 — HEAVISIDE / DIRAC transforms.
+    //   L{H(X)}        = 1/X
+    //   L{H(X - a)}    = e^(-aX) / X
+    //   L{δ(X)}        = 1
+    //   L{δ(X - a)}    = e^(-aX)
+    if (ast.name === 'HEAVISIDE') {
+      const aShift = _matchVarShift(arg, varName);
+      if (aShift !== null) {
+        const X = AstVar(varName);
+        if (_isNumNode(aShift) && aShift.value === 0) {
+          return AstBin('/', AstNum(1), X);
+        }
+        const expPart = AstFn('EXP',
+          [AstNeg(AstBin('*', aShift, X))]);
+        return AstBin('/', expPart, X);
+      }
+    }
+    if (ast.name === 'DIRAC') {
+      const aShift = _matchVarShift(arg, varName);
+      if (aShift !== null) {
+        if (_isNumNode(aShift) && aShift.value === 0) return AstNum(1);
+        const X = AstVar(varName);
+        return AstFn('EXP', [AstNeg(AstBin('*', aShift, X))]);
+      }
+    }
+    const alpha = _matchAlphaX(arg, varName);
+    if (alpha) {
+      const X = AstVar(varName);
+      const X2 = AstBin('^', X, AstNum(2));
+      const alpha2 = AstBin('^', alpha, AstNum(2));
+      switch (ast.name) {
+        case 'EXP':
+          // L{e^(αX)} = 1 / (X - α)
+          return AstBin('/', AstNum(1), AstBin('-', X, alpha));
+        case 'SIN':
+          return AstBin('/', alpha, AstBin('+', X2, alpha2));
+        case 'COS':
+          return AstBin('/', X, AstBin('+', X2, alpha2));
+        case 'SINH':
+          return AstBin('/', alpha, AstBin('-', X2, alpha2));
+        case 'COSH':
+          return AstBin('/', X, AstBin('-', X2, alpha2));
+      }
+    }
+  }
+  // Fall-through: wrap in a sentinel LAP(...) so the user sees which
+  // sub-expression tripped the rule engine.
+  return AstFn('LAP', [ast]);
+}
+
+function _inverseLaplace(ast, varName) {
+  // Pure rule-based inverse.  Symmetric to _laplaceTransform; tries
+  // each shape of the transform table in reverse.
+  if (!ast) return ast;
+  // Constant in X ⇒ c · δ(X).  Matches L{c·δ(X)} = c.  A literal `1`
+  // collapses to `δ(X)` without the coefficient.
+  if (_isConstIn(ast, varName)) {
+    if (_isNumNode(ast) && ast.value === 1) {
+      return AstFn('DIRAC', [AstVar(varName)]);
+    }
+    return AstBin('*', ast, AstFn('DIRAC', [AstVar(varName)]));
+  }
+  // Sum / difference: distribute through.
+  if (ast.kind === 'bin' && (ast.op === '+' || ast.op === '-')) {
+    return AstBin(ast.op,
+      _inverseLaplace(ast.l, varName),
+      _inverseLaplace(ast.r, varName));
+  }
+  if (ast.kind === 'neg') {
+    return AstNeg(_inverseLaplace(ast.arg, varName));
+  }
+  // Session 061 — top-level EXP(β·X) ⇒ DIRAC(X + β).  For β = -a, this
+  // gives δ(X - a), matching L{δ(X - a)} = e^(-aX).
+  if (ast.kind === 'fn' && ast.name === 'EXP' && ast.args.length === 1) {
+    const beta = _matchAlphaX(ast.args[0], varName);
+    if (beta) {
+      return AstFn('DIRAC', [AstBin('+', AstVar(varName), beta)]);
+    }
+  }
+  // c · f(X)
+  if (ast.kind === 'bin' && ast.op === '*') {
+    if (_isConstIn(ast.l, varName)) {
+      return AstBin('*', ast.l, _inverseLaplace(ast.r, varName));
+    }
+    if (_isConstIn(ast.r, varName)) {
+      return AstBin('*', ast.r, _inverseLaplace(ast.l, varName));
+    }
+  }
+  // c / X^n ⇒ c · X^(n-1) / (n-1)!    (for n ≥ 1, integer)
+  // Also c / X ⇒ c.
+  if (ast.kind === 'bin' && ast.op === '/') {
+    const num = ast.l, den = ast.r;
+    // Session 061 — EXP(β·X) / X ⇒ HEAVISIDE(X + β).  For β = -a this
+    // gives H(X - a), matching L{H(X - a)} = e^(-aX) / X.
+    if (den.kind === 'var' && den.name === varName
+        && num.kind === 'fn' && num.name === 'EXP' && num.args.length === 1) {
+      const beta = _matchAlphaX(num.args[0], varName);
+      if (beta) {
+        return AstFn('HEAVISIDE', [AstBin('+', AstVar(varName), beta)]);
+      }
+    }
+    // c / X ⇒ c
+    if (den.kind === 'var' && den.name === varName) {
+      if (_isNumNode(num) && num.value === 1) return AstNum(1);
+      if (_isConstIn(num, varName)) return num;
+    }
+    // c / X^n ⇒ c · X^(n-1) / (n-1)!
+    if (den.kind === 'bin' && den.op === '^'
+        && den.l.kind === 'var' && den.l.name === varName
+        && _isNumNode(den.r) && Number.isInteger(den.r.value) && den.r.value >= 1) {
+      const n = den.r.value;
+      const X = AstVar(varName);
+      const tRaised = n - 1 === 0 ? AstNum(1)
+                    : n - 1 === 1 ? X
+                    : AstBin('^', X, AstNum(n - 1));
+      const factNm1 = _factAst(n - 1);
+      const tPart = (n - 1 === 0) ? AstNum(1)
+                  : AstBin('/', tRaised, factNm1);
+      if (_isConstIn(num, varName) && _isNumNode(num) && num.value === 1) {
+        return tPart;
+      }
+      if (_isConstIn(num, varName)) {
+        return AstBin('*', num, tPart);
+      }
+    }
+    // c / (X - a) ⇒ c · EXP(a·X)
+    if (den.kind === 'bin' && den.op === '-'
+        && den.l.kind === 'var' && den.l.name === varName
+        && _isConstIn(den.r, varName)) {
+      const a = den.r;
+      const body = AstFn('EXP', [AstBin('*', a, AstVar(varName))]);
+      if (_isNumNode(num) && num.value === 1) return body;
+      if (_isConstIn(num, varName)) return AstBin('*', num, body);
+    }
+    // (X or α) / (X^2 ± α^2) ⇒ COS / COSH / SIN / SINH
+    if (den.kind === 'bin' && (den.op === '+' || den.op === '-')
+        && den.l.kind === 'bin' && den.l.op === '^'
+        && den.l.l.kind === 'var' && den.l.l.name === varName
+        && _isNumNode(den.l.r) && den.l.r.value === 2) {
+      // Is the right-of-den a perfect square α^2 of a constant?
+      const rc = den.r;
+      let alpha = null;
+      if (rc.kind === 'bin' && rc.op === '^'
+          && _isNumNode(rc.r) && rc.r.value === 2
+          && _isConstIn(rc.l, varName)) {
+        alpha = rc.l;
+      } else if (_isNumNode(rc) && rc.value >= 0) {
+        const root = Math.sqrt(rc.value);
+        if (Number.isInteger(root)) alpha = AstNum(root);
+      }
+      if (alpha) {
+        const op = den.op;
+        // num = X ⇒ COS / COSH
+        if (num.kind === 'var' && num.name === varName) {
+          const fn = op === '+' ? 'COS' : 'COSH';
+          return AstFn(fn, [AstBin('*', alpha, AstVar(varName))]);
+        }
+        // num = α (or α · const?) ⇒ SIN / SINH
+        // Accept exact AST equality to `alpha` for the canonical case.
+        if (_astLike(num, alpha)) {
+          const fn = op === '+' ? 'SIN' : 'SINH';
+          return AstFn(fn, [AstBin('*', alpha, AstVar(varName))]);
+        }
+      }
+    }
+  }
+  // Fall-through: wrap in a sentinel.
+  return AstFn('ILAP', [ast]);
+}
+
+/** Structural equality on AST nodes — shallow numeric equality, deep
+ *  on every other shape.  Used by the ILAP branch to identify
+ *  `numerator === α`. */
+function _astLike(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'num') return a.value === b.value;
+  if (a.kind === 'var') return a.name === b.name;
+  if (a.kind === 'neg') return _astLike(a.arg, b.arg);
+  if (a.kind === 'bin') return a.op === b.op
+    && _astLike(a.l, b.l) && _astLike(a.r, b.r);
+  if (a.kind === 'fn') {
+    if (a.name !== b.name || a.args.length !== b.args.length) return false;
+    for (let i = 0; i < a.args.length; i++) {
+      if (!_astLike(a.args[i], b.args[i])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+register('LAPLACE', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const varName = _lapVarName(v.expr);
+  const out = algebraSimplify(_laplaceTransform(v.expr, varName));
+  s.push(Symbolic(out));
+});
+
+register('ILAP', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const varName = _lapVarName(v.expr);
+  const out = algebraSimplify(_inverseLaplace(v.expr, varName));
+  s.push(Symbolic(out));
+});
+
+/* ====================================================================
+   Session 059 — HALFTAN / TAN2SC2 / TAN2CS2 / inverse-trig rewrites.
+   ====================================================================
+
+   Closes the HP50 tangent-half-angle family that TAN2SC started in
+   session 058, plus four inverse-trig identity rewrites
+   (ACOS2S, ASIN2C, ASIN2T, ATAN2S) from the AUR's "…Ñ TRIG" menu.
+   The exact FROOTS residual-quadratic extractor above handles the
+   `a ± √b` case the session-058 rational-root pre-scan deliberately
+   left to Durand-Kerner — so `X² - 2 FROOTS` now returns
+   `Sym(√2)` / `Sym(-√2)` exactly instead of floats.
+
+   All the rewrites here share the same `_trigIdentityWalk` substrate:
+   a shallow AST walker that recurses into children, then consults a
+   `{ FNNAME: rewrite(arg) → newAst }` map at each `fn` node.  The
+   rewrite is NOT re-walked — so HALFTAN introducing a `TAN(X/2)` does
+   NOT trigger the TAN-handler recursively (matching HP50 semantics).
+   ==================================================================== */
+
+/** Generic shallow rewrite walker for function-call identities.  Map
+ *  keys are function names (e.g. 'SIN', 'TAN', 'ACOS'); values are
+ *  `(arg) => newAst | null`.  A `null` return means "not applicable —
+ *  keep the node".  Children are walked bottom-up, then the handler
+ *  consults the map.  Once a rewrite succeeds, the result is NOT
+ *  re-walked (so HALFTAN's TAN(x/2) output doesn't get handed back to
+ *  its own TAN handler). */
+function _trigIdentityWalk(ast, rewriteMap) {
+  if (!ast) return ast;
+  if (ast.kind === 'num' || ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _trigIdentityWalk(ast.arg, rewriteMap);
+    return inner === ast.arg ? ast : AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    const l = _trigIdentityWalk(ast.l, rewriteMap);
+    const r = _trigIdentityWalk(ast.r, rewriteMap);
+    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
+  }
+  if (ast.kind === 'fn') {
+    const args = ast.args.map(a => _trigIdentityWalk(a, rewriteMap));
+    if (rewriteMap[ast.name] && args.length === 1) {
+      const r = rewriteMap[ast.name](args[0]);
+      if (r != null) return r;
+    }
+    let dirty = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== ast.args[i]) { dirty = true; break; }
+    }
+    return dirty ? AstFn(ast.name, args) : ast;
+  }
+  return ast;
+}
+
+/* ---- HALFTAN — rewrite SIN / COS / TAN via tan(x/2) identities ------
+   HP50 AUR §3-102.  Tangent-half-angle substitution:
+
+     SIN(x) → 2·TAN(x/2) / (1 + TAN(x/2)²)
+     COS(x) → (1 - TAN(x/2)²) / (1 + TAN(x/2)²)
+     TAN(x) → 2·TAN(x/2) / (1 - TAN(x/2)²)
+
+   Sibling to TAN2SC2 / TAN2CS2 below.  Non-Symbolic input throws Bad
+   argument type.  Shallow walk — the introduced TAN(x/2) is NOT
+   re-rewritten (that would infinite-loop).  Idempotent only in the
+   trivial sense: a second invocation rewrites the *new* TAN(x/2) to
+   yet-smaller-argument forms. */
+
+function _halfTanOf(arg) {
+  return AstFn('TAN', [AstBin('/', arg, AstNum(2))]);
+}
+
+register('HALFTAN', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    SIN: (arg) => {
+      const t = _halfTanOf(arg);
+      const tsq = AstBin('^', t, AstNum(2));
+      return AstBin('/',
+        AstBin('*', AstNum(2), t),
+        AstBin('+', AstNum(1), tsq));
+    },
+    COS: (arg) => {
+      const t = _halfTanOf(arg);
+      const tsq = AstBin('^', t, AstNum(2));
+      return AstBin('/',
+        AstBin('-', AstNum(1), tsq),
+        AstBin('+', AstNum(1), tsq));
+    },
+    TAN: (arg) => {
+      const t = _halfTanOf(arg);
+      const tsq = AstBin('^', t, AstNum(2));
+      return AstBin('/',
+        AstBin('*', AstNum(2), t),
+        AstBin('-', AstNum(1), tsq));
+    },
+  });
+  s.push(Symbolic(out));
+});
+
+/* ---- TAN2SC2 — TAN(x) → SIN(2x) / (1 + COS(2x)) ---------------------
+   HP50 AUR §3-249.  Double-angle companion of TAN2SC.  The argument
+   stays as-is in both SIN and COS; we multiply by `2` outside the
+   function call.  Shallow walk: nested TAN(TAN(X)) rewrites inner
+   first (since children are recursed), then outer — so the final
+   result still expresses only in SIN / COS of the rewritten inner
+   argument. */
+
+register('TAN2SC2', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    TAN: (arg) => {
+      const twoArg = AstBin('*', AstNum(2), arg);
+      return AstBin('/',
+        AstFn('SIN', [twoArg]),
+        AstBin('+', AstNum(1), AstFn('COS', [twoArg])));
+    },
+  });
+  s.push(Symbolic(out));
+});
+
+/* ---- TAN2CS2 — TAN(x) → (1 - COS(2x)) / SIN(2x) ---------------------
+   HP50 AUR §3-248.  Dual of TAN2SC2 using `(1 - cos(2x))/sin(2x)`.
+   Same shallow-walk semantics. */
+
+register('TAN2CS2', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    TAN: (arg) => {
+      const twoArg = AstBin('*', AstNum(2), arg);
+      return AstBin('/',
+        AstBin('-', AstNum(1), AstFn('COS', [twoArg])),
+        AstFn('SIN', [twoArg]));
+    },
+  });
+  s.push(Symbolic(out));
+});
+
+/* ---- Inverse-trig identity rewrites ---------------------------------
+   HP50 AUR §3-7 (ACOS2S), §3-17 (ASIN2C, ASIN2T), §3-21 (ATAN2S).
+   Each is a single shallow-walk identity:
+
+     ACOS2S : ACOS(x) → π/2 − ASIN(x)
+     ASIN2C : ASIN(x) → π/2 − ACOS(x)
+     ASIN2T : ASIN(x) → ATAN(x / √(1 − x²))
+     ATAN2S : ATAN(x) → ASIN(x / √(x² + 1))
+
+   `PI` is emitted as `AstVar('PI')` so it round-trips through EXACT
+   mode (under APPROX, `→NUM` / EVAL would fold it to 3.14159…). */
+
+function _piOver2Ast() {
+  return AstBin('/', AstVar('PI'), AstNum(2));
+}
+
+register('ACOS2S', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    ACOS: (arg) => AstBin('-', _piOver2Ast(), AstFn('ASIN', [arg])),
+  });
+  s.push(Symbolic(out));
+});
+
+register('ASIN2C', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    ASIN: (arg) => AstBin('-', _piOver2Ast(), AstFn('ACOS', [arg])),
+  });
+  s.push(Symbolic(out));
+});
+
+register('ASIN2T', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    ASIN: (arg) => {
+      // ATAN(x / √(1 - x²))
+      const xsq = AstBin('^', arg, AstNum(2));
+      const radicand = AstBin('-', AstNum(1), xsq);
+      const denom = AstFn('SQRT', [radicand]);
+      return AstFn('ATAN', [AstBin('/', arg, denom)]);
+    },
+  });
+  s.push(Symbolic(out));
+});
+
+register('ATAN2S', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    ATAN: (arg) => {
+      // ASIN(x / √(x² + 1))
+      const xsq = AstBin('^', arg, AstNum(2));
+      const radicand = AstBin('+', xsq, AstNum(1));
+      const denom = AstFn('SQRT', [radicand]);
+      return AstFn('ASIN', [AstBin('/', arg, denom)]);
+    },
+  });
+  s.push(Symbolic(out));
+});
+
+/* ====================================================================
+   Session 060 — TEXPAND / TLIN / TCOLLECT / EXPLN.
+   ====================================================================
+
+   Rounds out the HP50 trig-CAS family that sessions 058 (TAN2SC) and
+   059 (HALFTAN / TAN2SC2 / TAN2CS2 / inverse-trig rewrites) opened up.
+
+     TEXPAND   — HP50 AUR §3-252.  Expand SIN/COS/TAN of sums via the
+                 addition formulae.
+     TLIN      — HP50 AUR §3-253.  Linearize products of SIN/COS via
+                 product-to-sum identities.
+     TCOLLECT  — HP50 AUR §3-250.  Collect SIN±SIN / COS±COS into
+                 products (sum-to-product).
+     EXPLN     — HP50 AUR §3-75.  Rewrite trig and hyperbolic in terms
+                 of real / complex exponentials (e^x, e^(ix)).
+
+   TEXPAND and EXPLN reuse the session-059 `_trigIdentityWalk` (both
+   dispatch on the function name at a `fn` node).  TLIN and TCOLLECT
+   match on `bin` nodes instead — a multiplication for TLIN, an
+   addition/subtraction for TCOLLECT — so they each carry a small
+   custom walker.  All four are shallow-walk: rewrite results are not
+   re-processed (matching the session-059 recursion-safety invariant).
+   ==================================================================== */
+
+/* ---- TEXPAND — addition-formula expansion of SIN / COS / TAN --------
+   HP50 AUR §3-252.  Identities applied at each SIN/COS/TAN fn node:
+
+     SIN(a+b) = SIN(a)·COS(b) + COS(a)·SIN(b)
+     SIN(a-b) = SIN(a)·COS(b) - COS(a)·SIN(b)
+     COS(a+b) = COS(a)·COS(b) - SIN(a)·SIN(b)
+     COS(a-b) = COS(a)·COS(b) + SIN(a)·SIN(b)
+     TAN(a+b) = (TAN(a) + TAN(b)) / (1 - TAN(a)·TAN(b))
+     TAN(a-b) = (TAN(a) - TAN(b)) / (1 + TAN(a)·TAN(b))
+
+   Plus the parity identities for a unary-negated argument:
+
+     SIN(-x) = -SIN(x),  COS(-x) = COS(x),  TAN(-x) = -TAN(x)
+
+   Anything else (a bare variable, a number, a product, a power, etc.)
+   is left unchanged so composed AST shapes survive round-trips.  The
+   walker is single-pass: nested sums produce one level of expansion
+   per invocation (SIN((a+b)+c) first becomes SIN(a+b)·COS(c)+
+   COS(a+b)·SIN(c); a second TEXPAND expands the two SIN(a+b) /
+   COS(a+b) calls).  Non-Symbolic input throws Bad argument type. */
+
+function _texpandSinArg(arg) {
+  if (arg.kind === 'bin' && arg.op === '+') {
+    return AstBin('+',
+      AstBin('*', AstFn('SIN', [arg.l]), AstFn('COS', [arg.r])),
+      AstBin('*', AstFn('COS', [arg.l]), AstFn('SIN', [arg.r])));
+  }
+  if (arg.kind === 'bin' && arg.op === '-') {
+    return AstBin('-',
+      AstBin('*', AstFn('SIN', [arg.l]), AstFn('COS', [arg.r])),
+      AstBin('*', AstFn('COS', [arg.l]), AstFn('SIN', [arg.r])));
+  }
+  if (arg.kind === 'neg') {
+    // SIN(-x) = -SIN(x)
+    return AstNeg(AstFn('SIN', [arg.arg]));
+  }
+  return null;
+}
+
+function _texpandCosArg(arg) {
+  if (arg.kind === 'bin' && arg.op === '+') {
+    return AstBin('-',
+      AstBin('*', AstFn('COS', [arg.l]), AstFn('COS', [arg.r])),
+      AstBin('*', AstFn('SIN', [arg.l]), AstFn('SIN', [arg.r])));
+  }
+  if (arg.kind === 'bin' && arg.op === '-') {
+    return AstBin('+',
+      AstBin('*', AstFn('COS', [arg.l]), AstFn('COS', [arg.r])),
+      AstBin('*', AstFn('SIN', [arg.l]), AstFn('SIN', [arg.r])));
+  }
+  if (arg.kind === 'neg') {
+    // COS(-x) = COS(x)
+    return AstFn('COS', [arg.arg]);
+  }
+  return null;
+}
+
+function _texpandTanArg(arg) {
+  if (arg.kind === 'bin' && (arg.op === '+' || arg.op === '-')) {
+    const op  = arg.op;                    // '+' or '-'
+    const dop = op === '+' ? '-' : '+';    // denominator uses the dual sign
+    const ta = AstFn('TAN', [arg.l]);
+    const tb = AstFn('TAN', [arg.r]);
+    return AstBin('/',
+      AstBin(op,  ta, tb),
+      AstBin(dop, AstNum(1), AstBin('*', ta, tb)));
+  }
+  if (arg.kind === 'neg') {
+    // TAN(-x) = -TAN(x)
+    return AstNeg(AstFn('TAN', [arg.arg]));
+  }
+  return null;
+}
+
+register('TEXPAND', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    SIN: _texpandSinArg,
+    COS: _texpandCosArg,
+    TAN: _texpandTanArg,
+  });
+  s.push(Symbolic(out));
+});
+
+/* ---- TLIN — product-to-sum linearization ----------------------------
+   HP50 AUR §3-253.  Rewrites products of SIN/COS (and squares of SIN
+   or COS) into linear combinations via product-to-sum:
+
+     SIN(a)·SIN(b) = (COS(a-b) - COS(a+b))/2
+     COS(a)·COS(b) = (COS(a-b) + COS(a+b))/2
+     SIN(a)·COS(b) = (SIN(a+b) + SIN(a-b))/2
+     COS(a)·SIN(b) = (SIN(a+b) - SIN(a-b))/2
+     SIN(a)²       = (1 - COS(2a))/2
+     COS(a)²       = (1 + COS(2a))/2
+
+   Walker matches at `bin('*')` nodes (two fn children), at `bin('^')`
+   nodes whose exponent is the literal integer 2 and whose base is a
+   SIN/COS fn node, and recurses into all other shapes.  Children are
+   linearized first (bottom-up).  Non-SIN/non-COS products are left
+   unchanged.  Non-Symbolic input throws Bad argument type. */
+
+function _tlinProductRewrite(l, r) {
+  if (l.kind !== 'fn' || r.kind !== 'fn') return null;
+  if (l.args.length !== 1 || r.args.length !== 1) return null;
+  if ((l.name !== 'SIN' && l.name !== 'COS') ||
+      (r.name !== 'SIN' && r.name !== 'COS')) return null;
+  const a       = l.args[0];
+  const b       = r.args[0];
+  const aPlusB  = AstBin('+', a, b);
+  const aMinusB = AstBin('-', a, b);
+  const two     = AstNum(2);
+  if (l.name === 'SIN' && r.name === 'SIN') {
+    return AstBin('/',
+      AstBin('-', AstFn('COS', [aMinusB]), AstFn('COS', [aPlusB])),
+      two);
+  }
+  if (l.name === 'COS' && r.name === 'COS') {
+    return AstBin('/',
+      AstBin('+', AstFn('COS', [aMinusB]), AstFn('COS', [aPlusB])),
+      two);
+  }
+  if (l.name === 'SIN' && r.name === 'COS') {
+    return AstBin('/',
+      AstBin('+', AstFn('SIN', [aPlusB]), AstFn('SIN', [aMinusB])),
+      two);
+  }
+  // COS·SIN
+  return AstBin('/',
+    AstBin('-', AstFn('SIN', [aPlusB]), AstFn('SIN', [aMinusB])),
+    two);
+}
+
+function _tlinSquareRewrite(base, exp) {
+  if (base.kind !== 'fn' || base.args.length !== 1) return null;
+  if (exp.kind !== 'num' || exp.value !== 2) return null;
+  if (base.name !== 'SIN' && base.name !== 'COS') return null;
+  const a    = base.args[0];
+  const twoA = AstBin('*', AstNum(2), a);
+  if (base.name === 'SIN') {
+    // SIN²(a) = (1 - COS(2a))/2
+    return AstBin('/',
+      AstBin('-', AstNum(1), AstFn('COS', [twoA])),
+      AstNum(2));
+  }
+  // COS²(a) = (1 + COS(2a))/2
+  return AstBin('/',
+    AstBin('+', AstNum(1), AstFn('COS', [twoA])),
+    AstNum(2));
+}
+
+function _tlinWalk(ast) {
+  if (!ast) return ast;
+  if (ast.kind === 'num' || ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _tlinWalk(ast.arg);
+    return inner === ast.arg ? ast : AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    const l = _tlinWalk(ast.l);
+    const r = _tlinWalk(ast.r);
+    if (ast.op === '*') {
+      const prod = _tlinProductRewrite(l, r);
+      if (prod !== null) return prod;
+    }
+    if (ast.op === '^') {
+      const sq = _tlinSquareRewrite(l, r);
+      if (sq !== null) return sq;
+    }
+    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
+  }
+  if (ast.kind === 'fn') {
+    const args = ast.args.map(_tlinWalk);
+    let dirty = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== ast.args[i]) { dirty = true; break; }
+    }
+    return dirty ? AstFn(ast.name, args) : ast;
+  }
+  return ast;
+}
+
+register('TLIN', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  s.push(Symbolic(_tlinWalk(v.expr)));
+});
+
+/* ---- TCOLLECT — sum-to-product ---------------------------------------
+   HP50 AUR §3-250.  The inverse of TLIN's "product → sum" direction:
+   collects matching `SIN(A) ± SIN(B)` / `COS(A) ± COS(B)` pairs into
+   product form via the sum-to-product identities:
+
+     SIN(A) + SIN(B) =  2·SIN((A+B)/2)·COS((A-B)/2)
+     SIN(A) - SIN(B) =  2·COS((A+B)/2)·SIN((A-B)/2)
+     COS(A) + COS(B) =  2·COS((A+B)/2)·COS((A-B)/2)
+     COS(A) - COS(B) = -2·SIN((A+B)/2)·SIN((A-B)/2)
+
+   Walker matches at `bin('+' | '-')` nodes whose l and r are fn
+   nodes with the same name (both SIN or both COS) and a single arg
+   each.  Otherwise children are walked recursively.  The rewrite is
+   NOT re-walked (so a fresh TCOLLECT result doesn't get re-collected
+   into nested products).  Non-matching bin shapes fall through
+   unchanged. */
+
+function _tcollectSumRewrite(op, l, r) {
+  if (l.kind !== 'fn' || r.kind !== 'fn') return null;
+  if (l.args.length !== 1 || r.args.length !== 1) return null;
+  if (l.name !== r.name) return null;
+  if (l.name !== 'SIN' && l.name !== 'COS') return null;
+  const A    = l.args[0];
+  const B    = r.args[0];
+  const sum  = AstBin('/', AstBin('+', A, B), AstNum(2));
+  const diff = AstBin('/', AstBin('-', A, B), AstNum(2));
+  if (l.name === 'SIN' && op === '+') {
+    return AstBin('*',
+      AstBin('*', AstNum(2), AstFn('SIN', [sum])),
+      AstFn('COS', [diff]));
+  }
+  if (l.name === 'SIN' && op === '-') {
+    return AstBin('*',
+      AstBin('*', AstNum(2), AstFn('COS', [sum])),
+      AstFn('SIN', [diff]));
+  }
+  if (l.name === 'COS' && op === '+') {
+    return AstBin('*',
+      AstBin('*', AstNum(2), AstFn('COS', [sum])),
+      AstFn('COS', [diff]));
+  }
+  // COS - COS  → -2·SIN((A+B)/2)·SIN((A-B)/2)
+  return AstNeg(AstBin('*',
+    AstBin('*', AstNum(2), AstFn('SIN', [sum])),
+    AstFn('SIN', [diff])));
+}
+
+function _tcollectWalk(ast) {
+  if (!ast) return ast;
+  if (ast.kind === 'num' || ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _tcollectWalk(ast.arg);
+    return inner === ast.arg ? ast : AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    const l = _tcollectWalk(ast.l);
+    const r = _tcollectWalk(ast.r);
+    if (ast.op === '+' || ast.op === '-') {
+      const rw = _tcollectSumRewrite(ast.op, l, r);
+      if (rw !== null) return rw;
+    }
+    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
+  }
+  if (ast.kind === 'fn') {
+    const args = ast.args.map(_tcollectWalk);
+    let dirty = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== ast.args[i]) { dirty = true; break; }
+    }
+    return dirty ? AstFn(ast.name, args) : ast;
+  }
+  return ast;
+}
+
+register('TCOLLECT', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  s.push(Symbolic(_tcollectWalk(v.expr)));
+});
+
+/* ---- EXPLN — rewrite trig / hyperbolic as exponentials ---------------
+   HP50 AUR §3-75.  Euler-formula substitutions for the six core
+   trig/hyperbolic functions, using `Var('i')` for the imaginary unit
+   (the project-wide convention — see the FROOTS complex-conjugate
+   branch in `algebra.js` §2778 for precedent).
+
+     SIN(x)  → (e^(i·x) - e^(-i·x)) / (2·i)
+     COS(x)  → (e^(i·x) + e^(-i·x)) / 2
+     TAN(x)  → (e^(i·x) - e^(-i·x)) / (i·(e^(i·x) + e^(-i·x)))
+     SINH(x) → (e^x - e^(-x)) / 2
+     COSH(x) → (e^x + e^(-x)) / 2
+     TANH(x) → (e^x - e^(-x)) / (e^x + e^(-x))
+
+   Shallow-walk on `_trigIdentityWalk`: the `EXP(i·x)` nodes introduced
+   for SIN/COS/TAN are NOT re-processed (EXP has no entry in the
+   rewrite map).  Non-Symbolic input throws Bad argument type.
+
+   Inverse-trig (ASIN/ACOS/ATAN) and inverse-hyperbolic (ASINH/...)
+   rewrites are intentionally deferred — session 059's ACOS2S /
+   ASIN2C / ASIN2T / ATAN2S already cover the inverse-trig identity
+   surface in a non-exponential form; adding the log-of-complex forms
+   alongside makes the output even less tractable without
+   `_polyNormalize`.  Tracked in the Next-pass list. */
+
+function _iAst()  { return AstVar('i'); }
+function _negIAst() { return AstNeg(AstVar('i')); }
+
+function _explnSinArg(arg) {
+  const ix = AstBin('*', _iAst(), arg);
+  const mx = AstBin('*', _negIAst(), arg);
+  return AstBin('/',
+    AstBin('-', AstFn('EXP', [ix]), AstFn('EXP', [mx])),
+    AstBin('*', AstNum(2), _iAst()));
+}
+
+function _explnCosArg(arg) {
+  const ix = AstBin('*', _iAst(), arg);
+  const mx = AstBin('*', _negIAst(), arg);
+  return AstBin('/',
+    AstBin('+', AstFn('EXP', [ix]), AstFn('EXP', [mx])),
+    AstNum(2));
+}
+
+function _explnTanArg(arg) {
+  const ix = AstBin('*', _iAst(), arg);
+  const mx = AstBin('*', _negIAst(), arg);
+  const ep = AstFn('EXP', [ix]);
+  const em = AstFn('EXP', [mx]);
+  return AstBin('/',
+    AstBin('-', ep, em),
+    AstBin('*', _iAst(), AstBin('+', ep, em)));
+}
+
+function _explnSinhArg(arg) {
+  return AstBin('/',
+    AstBin('-', AstFn('EXP', [arg]), AstFn('EXP', [AstNeg(arg)])),
+    AstNum(2));
+}
+
+function _explnCoshArg(arg) {
+  return AstBin('/',
+    AstBin('+', AstFn('EXP', [arg]), AstFn('EXP', [AstNeg(arg)])),
+    AstNum(2));
+}
+
+function _explnTanhArg(arg) {
+  const ep = AstFn('EXP', [arg]);
+  const em = AstFn('EXP', [AstNeg(arg)]);
+  return AstBin('/',
+    AstBin('-', ep, em),
+    AstBin('+', ep, em));
+}
+
+register('EXPLN', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  const out = _trigIdentityWalk(v.expr, {
+    SIN:   _explnSinArg,
+    COS:   _explnCosArg,
+    TAN:   _explnTanArg,
+    SINH:  _explnSinhArg,
+    COSH:  _explnCoshArg,
+    TANH:  _explnTanhArg,
+    // Session 061 — inverse-trig / inverse-hyperbolic extensions.
+    // Hoisted forward refs; definitions in the Session 061 block.
+    ASIN:  _explnAsinArg,
+    ACOS:  _explnAcosArg,
+    ATAN:  _explnAtanArg,
+    ASINH: _explnAsinhArg,
+    ACOSH: _explnAcoshArg,
+    ATANH: _explnAtanhArg,
+  });
+  s.push(Symbolic(out));
+});
+
+/* ====================================================================
+   Session 061 — TSIMP, HEAVISIDE / DIRAC, LAPLACE / ILAP extensions,
+                 EXPLN inverse family, LNCOLLECT, FROOTS biquadratic.
+   ====================================================================
+
+   This run extends three surfaces that were opened in sessions 058–060:
+
+     • §11 trig-CAS (session 059 / 060):  TSIMP  — bounded fixed-point
+       Pythagorean-identity simplifier, closes the surface modulo the
+       multi-session `_polyNormalize`.
+     • EXPLN (session 060):  ASIN / ACOS / ATAN / ASINH / ACOSH / ATANH
+       rewrites to LN-of-complex forms, using the same
+       `_trigIdentityWalk` substrate (six new entries in the rewrite
+       map).
+     • LAPLACE / ILAP (session 058):  HEAVISIDE and DIRAC as first-class
+       ops, their transforms and inverses in the table, plus the
+       frequency-shift theorem L{e^(αX)·f(X)} = F(X − α) and its
+       ILAP inverse (pure Dirac round-trips).
+
+   Two standalone additions round out the run:
+
+     • LNCOLLECT — the logarithm-collection sibling of EXPLN.  Collects
+       LN(a) ± LN(b) into LN(a·b) / LN(a/b) and n·LN(a) into LN(a^n).
+       Shallow bottom-up walk.
+     • FROOTS biquadratic pass — before Durand-Kerner, detect a residual
+       `X⁴ + bX² + c` (degree-4 with `coef[1] = coef[3] = 0`), treat it
+       as `u² + bu + c` where u = X², find the two u-roots via the
+       session-059 quadratic-residual machinery, then emit ±√u₁, ±√u₂
+       as exact Symbolic radicals.
+   ==================================================================== */
+
+/* ---- _astSubstVar — substitute a Var occurrence with an AST ---------
+   Returns a NEW AST with every `Var(name)` replaced by `replacement`.
+   Does not deep-clone non-matching nodes — structural sharing is fine
+   because the walker downstream never mutates. */
+function _astSubstVar(ast, name, replacement) {
+  if (!ast) return ast;
+  if (ast.kind === 'var') return ast.name === name ? replacement : ast;
+  if (ast.kind === 'num') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _astSubstVar(ast.arg, name, replacement);
+    return inner === ast.arg ? ast : AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    const l = _astSubstVar(ast.l, name, replacement);
+    const r = _astSubstVar(ast.r, name, replacement);
+    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
+  }
+  if (ast.kind === 'fn') {
+    const args = ast.args.map(a => _astSubstVar(a, name, replacement));
+    let dirty = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== ast.args[i]) { dirty = true; break; }
+    }
+    return dirty ? AstFn(ast.name, args) : ast;
+  }
+  return ast;
+}
+
+/* ---- _matchVarShift — recognise X, X − a, X + a as a HEAVISIDE /
+       DIRAC argument --------------------------------------------------
+   Returns the shift `a` as an AST (0 for bare `X`), or `null` if the
+   argument isn't one of those shapes.  Used by the LAPLACE dispatch
+   for HEAVISIDE(X − a) and DIRAC(X − a). */
+function _matchVarShift(arg, varName) {
+  if (!arg) return null;
+  if (arg.kind === 'var' && arg.name === varName) return AstNum(0);
+  if (arg.kind === 'bin' && arg.op === '-'
+      && arg.l && arg.l.kind === 'var' && arg.l.name === varName
+      && _isConstIn(arg.r, varName)) {
+    return arg.r;                       // X - a  →  a
+  }
+  if (arg.kind === 'bin' && arg.op === '+'
+      && arg.l && arg.l.kind === 'var' && arg.l.name === varName
+      && _isConstIn(arg.r, varName)) {
+    return AstNeg(arg.r);               // X + a  →  -a  (so H(X+3) ≡ H(X - (-3)))
+  }
+  return null;
+}
+
+/* ---- HEAVISIDE — unit step, Symbolic carrier ------------------------
+   Real/Integer input collapses to 1 (x ≥ 0) or 0 (x < 0), matching the
+   HP50 convention where HEAVISIDE(0) = 1 (right-continuous at the
+   origin).  Symbolic input is kept symbolic — the LAPLACE / ILAP
+   dispatcher recognises `HEAVISIDE(X - a)` as a first-class shape.
+   BinaryInteger is accepted the same as Integer. */
+
+function _realStepValue(x) { return x >= 0 ? 1 : 0; }
+
+register('HEAVISIDE', (s) => {
+  const [v] = s.popN(1);
+  if (isReal(v))          { s.push(Real(_realStepValue(v.value))); return; }
+  if (isInteger(v))       { s.push(Integer(BigInt(_realStepValue(Number(v.value))))); return; }
+  if (isBinaryInteger(v)) { s.push(Integer(BigInt(_realStepValue(Number(v.value))))); return; }
+  if (_isSymOperand(v))   { s.push(Symbolic(AstFn('HEAVISIDE', [_toAst(v)]))); return; }
+  throw new RPLError('Bad argument type');
+});
+
+/* ---- DIRAC — Dirac impulse, Symbolic carrier ------------------------
+   Real/Integer non-zero input collapses to 0.  A literal 0 stays
+   Symbolic (the spike at the origin is singular; returning 0 would be
+   wrong, returning ∞ would lose the integral — HP50 leaves it
+   symbolic).  Symbolic input is kept symbolic so LAPLACE /  ILAP can
+   round-trip `DIRAC(X - a)` through the table. */
+
+register('DIRAC', (s) => {
+  const [v] = s.popN(1);
+  if (isReal(v)) {
+    if (v.value === 0) { s.push(Symbolic(AstFn('DIRAC', [AstNum(0)]))); return; }
+    s.push(Real(0));
+    return;
+  }
+  if (isInteger(v)) {
+    if (v.value === 0n) { s.push(Symbolic(AstFn('DIRAC', [AstNum(0)]))); return; }
+    s.push(Integer(0n));
+    return;
+  }
+  if (isBinaryInteger(v)) {
+    if (v.value === 0n) { s.push(Symbolic(AstFn('DIRAC', [AstNum(0)]))); return; }
+    s.push(Integer(0n));
+    return;
+  }
+  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('DIRAC', [_toAst(v)]))); return; }
+  throw new RPLError('Bad argument type');
+});
+
+/* ---- TSIMP — bounded-iteration Pythagorean-identity trig simplifier
+   HP50 AUR §3-254.  Applies the elementary trig identities:
+
+     SIN(x)² + COS(x)² → 1              (Pythagorean)
+     1 - SIN(x)²       → COS(x)²
+     1 - COS(x)²       → SIN(x)²
+     TAN(x) · COS(x)   → SIN(x)
+     COS(x) · TAN(x)   → SIN(x)
+     SIN(x) / COS(x)   → TAN(x)
+
+   Each pass is a bottom-up walk matching at `bin` nodes; after each
+   pass the result is fed to `algebraSimplify` to fold the arithmetic
+   that the identity exposed (e.g. `COS(X)² + SIN(X)²  + 5` → `1 + 5`
+   → `6`).  The loop terminates when the AST stops changing or after
+   `TSIMP_MAX_ITER` iterations — the guard prevents a pathological
+   composition with `algebraSimplify` from looping forever.
+
+   The rewrites here are narrow by design: they do NOT include the
+   addition-formula / half-angle / product-to-sum rewrites landed in
+   sessions 058–060 (TEXPAND / HALFTAN / TLIN / TCOLLECT).  Those all
+   have their own dedicated ops; bundling them into TSIMP would
+   require a full `_polyNormalize` for termination (a HALFTAN pass
+   replaces `TAN(X)` with a larger expression, which the next pass
+   would happily rewrite back).  A future SIMPLIFY capstone on top of
+   `_polyNormalize` is the right home for that wider pipeline.
+
+   Matches the HP50's most common TSIMP outcome — "reduce a trig
+   expression to its Pythagorean-normal form" — while deferring the
+   deeper algebraic normalisations the capstone will eventually
+   absorb. */
+
+const TSIMP_MAX_ITER = 8;
+
+function _sinCosSqInner(node, fnName) {
+  // Matches `fnName(x)^2` (literal integer 2 exponent).  Returns the
+  // inner `x` AST, or null on no-match.
+  if (!node || node.kind !== 'bin' || node.op !== '^') return null;
+  if (!node.r || node.r.kind !== 'num' || node.r.value !== 2) return null;
+  if (!node.l || node.l.kind !== 'fn' || node.l.name !== fnName
+      || !node.l.args || node.l.args.length !== 1) return null;
+  return node.l.args[0];
+}
+
+function _tryPythagSumToOne(l, r) {
+  // SIN(x)²+COS(x)² or COS(x)²+SIN(x)² → 1  (same inner argument x).
+  const ls = _sinCosSqInner(l, 'SIN');
+  const lc = _sinCosSqInner(l, 'COS');
+  const rs = _sinCosSqInner(r, 'SIN');
+  const rc = _sinCosSqInner(r, 'COS');
+  if (ls && rc && _astLike(ls, rc)) return AstNum(1);
+  if (lc && rs && _astLike(lc, rs)) return AstNum(1);
+  return null;
+}
+
+function _tryOneMinusSqToCofunc(l, r) {
+  // 1 - SIN(x)² → COS(x)²  ;  1 - COS(x)² → SIN(x)²
+  if (!(_isNumNode(l) && l.value === 1)) return null;
+  const rs = _sinCosSqInner(r, 'SIN');
+  if (rs) return AstBin('^', AstFn('COS', [rs]), AstNum(2));
+  const rc = _sinCosSqInner(r, 'COS');
+  if (rc) return AstBin('^', AstFn('SIN', [rc]), AstNum(2));
+  return null;
+}
+
+function _tryTanTimesCosToSin(l, r) {
+  function tanInner(n) {
+    if (!n || n.kind !== 'fn' || n.name !== 'TAN' || !n.args || n.args.length !== 1) return null;
+    return n.args[0];
+  }
+  function cosInner(n) {
+    if (!n || n.kind !== 'fn' || n.name !== 'COS' || !n.args || n.args.length !== 1) return null;
+    return n.args[0];
+  }
+  const lt = tanInner(l), rc = cosInner(r);
+  if (lt && rc && _astLike(lt, rc)) return AstFn('SIN', [lt]);
+  const lc = cosInner(l), rt = tanInner(r);
+  if (lc && rt && _astLike(lc, rt)) return AstFn('SIN', [lc]);
+  return null;
+}
+
+function _trySinOverCosToTan(l, r) {
+  if (!l || l.kind !== 'fn' || l.name !== 'SIN' || !l.args || l.args.length !== 1) return null;
+  if (!r || r.kind !== 'fn' || r.name !== 'COS' || !r.args || r.args.length !== 1) return null;
+  if (!_astLike(l.args[0], r.args[0])) return null;
+  return AstFn('TAN', [l.args[0]]);
+}
+
+function _pythagoreanWalk(ast) {
+  if (!ast) return ast;
+  if (ast.kind === 'num' || ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _pythagoreanWalk(ast.arg);
+    return inner === ast.arg ? ast : AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    const l = _pythagoreanWalk(ast.l);
+    const r = _pythagoreanWalk(ast.r);
+    if (ast.op === '+') {
+      const rw = _tryPythagSumToOne(l, r);
+      if (rw !== null) return rw;
+    }
+    if (ast.op === '-') {
+      const rw = _tryOneMinusSqToCofunc(l, r);
+      if (rw !== null) return rw;
+    }
+    if (ast.op === '*') {
+      const rw = _tryTanTimesCosToSin(l, r);
+      if (rw !== null) return rw;
+    }
+    if (ast.op === '/') {
+      const rw = _trySinOverCosToTan(l, r);
+      if (rw !== null) return rw;
+    }
+    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
+  }
+  if (ast.kind === 'fn') {
+    const args = ast.args.map(_pythagoreanWalk);
+    let dirty = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== ast.args[i]) { dirty = true; break; }
+    }
+    return dirty ? AstFn(ast.name, args) : ast;
+  }
+  return ast;
+}
+
+register('TSIMP', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  let ast = v.expr;
+  for (let i = 0; i < TSIMP_MAX_ITER; i++) {
+    const prev = ast;
+    ast = _pythagoreanWalk(ast);
+    ast = algebraSimplify(ast);
+    if (_astLike(prev, ast)) break;
+  }
+  s.push(Symbolic(ast));
+});
+
+/* ---- EXPLN inverse-trig / inverse-hyperbolic rewrite closures ------
+   Hoisted — referenced from the `register('EXPLN', …)` map above.  Six
+   new branches:
+
+     ASIN(x)  → -i · LN(i·x + √(1 - x²))
+     ACOS(x)  → -i · LN(x + i·√(1 - x²))
+     ATAN(x)  → -(i/2) · LN((1 + i·x) / (1 - i·x))
+     ASINH(x) →  LN(x + √(x² + 1))                 (real)
+     ACOSH(x) →  LN(x + √(x² - 1))                 (real)
+     ATANH(x) →  (1/2) · LN((1 + x) / (1 - x))     (real)
+
+   The trig identities use the project-wide `Var('i')` convention for
+   the imaginary unit (see session 060's notes on `_iAst`).  The
+   hyperbolic identities are real-valued and don't reference `i`.
+
+   The walker is still `_trigIdentityWalk`; the new rewrites produce
+   `LN` and `SQRT` nodes that are NOT re-processed (no LN / SQRT
+   entry in the map).  Branch cuts are a known follow-up — under
+   APPROX mode the user may get a different principal value than
+   the built-in ASIN / ACOS / ATAN; under EXACT / Symbolic the
+   expressions are formally correct. */
+
+function _explnAsinArg(arg) {
+  const x2 = AstBin('^', arg, AstNum(2));
+  const radic = AstBin('-', AstNum(1), x2);
+  const sqrtTerm = AstFn('SQRT', [radic]);
+  const ix = AstBin('*', _iAst(), arg);
+  const inner = AstBin('+', ix, sqrtTerm);
+  return AstNeg(AstBin('*', _iAst(), AstFn('LN', [inner])));
+}
+
+function _explnAcosArg(arg) {
+  const x2 = AstBin('^', arg, AstNum(2));
+  const radic = AstBin('-', AstNum(1), x2);
+  const sqrtTerm = AstFn('SQRT', [radic]);
+  const iSqrt = AstBin('*', _iAst(), sqrtTerm);
+  const inner = AstBin('+', arg, iSqrt);
+  return AstNeg(AstBin('*', _iAst(), AstFn('LN', [inner])));
+}
+
+function _explnAtanArg(arg) {
+  const ix = AstBin('*', _iAst(), arg);
+  const num = AstBin('+', AstNum(1), ix);
+  const den = AstBin('-', AstNum(1), ix);
+  const logFrac = AstFn('LN', [AstBin('/', num, den)]);
+  const halfI = AstBin('/', _iAst(), AstNum(2));
+  return AstNeg(AstBin('*', halfI, logFrac));
+}
+
+function _explnAsinhArg(arg) {
+  const x2 = AstBin('^', arg, AstNum(2));
+  const radic = AstBin('+', x2, AstNum(1));
+  const inner = AstBin('+', arg, AstFn('SQRT', [radic]));
+  return AstFn('LN', [inner]);
+}
+
+function _explnAcoshArg(arg) {
+  const x2 = AstBin('^', arg, AstNum(2));
+  const radic = AstBin('-', x2, AstNum(1));
+  const inner = AstBin('+', arg, AstFn('SQRT', [radic]));
+  return AstFn('LN', [inner]);
+}
+
+function _explnAtanhArg(arg) {
+  const num = AstBin('+', AstNum(1), arg);
+  const den = AstBin('-', AstNum(1), arg);
+  return AstBin('*',
+    AstBin('/', AstNum(1), AstNum(2)),
+    AstFn('LN', [AstBin('/', num, den)]));
+}
+
+/* ---- LNCOLLECT — collect logarithms ---------------------------------
+   HP50 AUR §3-144.  The inverse direction of EXPLN's LN-expansion
+   surface: collect LN(a) ± LN(b) into LN(a·b) / LN(a/b), and rewrite
+   n · LN(a) as LN(a^n) (where n is a numeric literal).  Shallow
+   bottom-up walk at `bin('+' | '-' | '*')` nodes.  Non-matching
+   shapes fall through unchanged.
+
+   The rewrite is NOT re-walked (so a fresh LNCOLLECT result isn't
+   re-processed into nested LNs).  Non-Symbolic input rejects with
+   Bad argument type.
+
+   The coefficient branch matches both `n · LN(a)` and `LN(a) · n`
+   — the latter is unusual but valid AST shape.  Non-numeric
+   coefficients (like `Y · LN(X)`) don't match — HP50 LNCOLLECT
+   collects only numeric powers. */
+
+function _lncollectSumRewrite(op, l, r) {
+  // LN(a) ± LN(b) → LN(a·b) or LN(a/b)
+  if (!l || l.kind !== 'fn' || l.name !== 'LN' || !l.args || l.args.length !== 1) return null;
+  if (!r || r.kind !== 'fn' || r.name !== 'LN' || !r.args || r.args.length !== 1) return null;
+  const a = l.args[0];
+  const b = r.args[0];
+  const combined = op === '+'
+    ? AstBin('*', a, b)
+    : AstBin('/', a, b);
+  return AstFn('LN', [combined]);
+}
+
+function _lncollectCoefRewrite(l, r) {
+  // n · LN(a) → LN(a^n)  (n must be a Num)
+  if (_isNumNode(l) && r && r.kind === 'fn' && r.name === 'LN'
+      && r.args && r.args.length === 1) {
+    return AstFn('LN', [AstBin('^', r.args[0], l)]);
+  }
+  if (_isNumNode(r) && l && l.kind === 'fn' && l.name === 'LN'
+      && l.args && l.args.length === 1) {
+    return AstFn('LN', [AstBin('^', l.args[0], r)]);
+  }
+  return null;
+}
+
+function _lncollectWalk(ast) {
+  if (!ast) return ast;
+  if (ast.kind === 'num' || ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') {
+    const inner = _lncollectWalk(ast.arg);
+    return inner === ast.arg ? ast : AstNeg(inner);
+  }
+  if (ast.kind === 'bin') {
+    const l = _lncollectWalk(ast.l);
+    const r = _lncollectWalk(ast.r);
+    if (ast.op === '+' || ast.op === '-') {
+      const rw = _lncollectSumRewrite(ast.op, l, r);
+      if (rw !== null) return rw;
+    }
+    if (ast.op === '*') {
+      const rw = _lncollectCoefRewrite(l, r);
+      if (rw !== null) return rw;
+    }
+    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
+  }
+  if (ast.kind === 'fn') {
+    const args = ast.args.map(_lncollectWalk);
+    let dirty = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== ast.args[i]) { dirty = true; break; }
+    }
+    return dirty ? AstFn(ast.name, args) : ast;
+  }
+  return ast;
+}
+
+register('LNCOLLECT', (s) => {
+  const [v] = s.popN(1);
+  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  s.push(Symbolic(_lncollectWalk(v.expr)));
+});
+
+/* ---- FROOTS biquadratic residual pass -------------------------------
+   A natural follow-on to session 059's exact-irrational quadratic
+   residual.  If after rational-root peeling the residual polynomial is
+   degree 4 with `coef[1] = coef[3] = 0` (`X⁴ + bX² + c` with
+   optional leading coefficient), treat it as the quadratic
+   `u² + Bu + C` in `u = X²` where B = coefs[2]/coefs[0] and
+   C = coefs[4]/coefs[0].  Find the two u-roots via the existing
+   `_quadraticExactResidualRoots`, then emit the four roots
+   ±√u₁, ±√u₂ as Symbolic radicals.
+
+   Constraints:
+     • All five coefficients must be integers (the underlying quadratic
+       residual pass requires that).
+     • The `u` roots must be exact-irrational (the quadratic residual
+       pass returns null otherwise — complex u-roots or rational u-roots
+       would have already been peeled or fall to Durand-Kerner).
+     • The quadratic in u becomes `a·u² + b·u + c` with leading `a`;
+       we pass `[a, b, c]` unchanged to the quadratic residual pass.
+
+   Returns an array of four `{ast, mult}` items, or null on no-match.
+
+   NOTE: we don't bother with the `u` root being rational — the
+   rational-root peeler upstream would already have extracted those
+   factors when the residual was degree-5+ or via the full-poly scan.
+   For a pure `X⁴ + bX² + c` with rational `u` roots, the current
+   peeler misses them (it scans X-linear roots only), so a future
+   extension can add a `u`-rational path here. */
+
+function _biquadResidualRoots(coefs) {
+  if (coefs.length !== 5) return null;
+  if (!_allIntegerCoefs(coefs)) return null;
+  if (coefs[1] !== 0 || coefs[3] !== 0) return null;
+  if (coefs[0] === 0) return null;
+  // Pass [a, b, c] = [coefs[0], coefs[2], coefs[4]] to the quadratic
+  // residual solver — it returns two exact-irrational u roots or null.
+  const uRoots = _quadraticExactResidualRoots([coefs[0], coefs[2], coefs[4]]);
+  if (!uRoots) return null;
+  // For each u-root, emit ±√u as Symbolic.  We don't attempt to
+  // simplify √(k·√m + RB/DEN)-style — the nested radical stays literal
+  // in the AST.  Matches the HP50 behaviour on `X⁴ - 10X² + 1` which
+  // returns the four nested-radical roots directly.
+  const out = [];
+  for (const ur of uRoots) {
+    const sqrtU = AstFn('SQRT', [ur.ast]);
+    out.push({ ast: sqrtU, mult: 1 });
+    out.push({ ast: AstNeg(sqrtU), mult: 1 });
+  }
+  return out;
+}

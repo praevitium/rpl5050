@@ -1,0 +1,506 @@
+import { Stack } from '../src/rpl/stack.js';
+import { lookup } from '../src/rpl/ops.js';
+import {
+  Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
+  RList, Vector, Matrix,
+  isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
+  isString,
+} from '../src/rpl/types.js';
+import { parseEntry } from '../src/rpl/parser.js';
+import { format, formatStackTop } from '../src/rpl/formatter.js';
+import {
+  state as calcState, setAngle, cycleAngle, toRadians, fromRadians,
+  varStore, varRecall, varList, varPurge, resetHome, currentPath,
+  setLastError, clearLastError, getLastError,
+  goHome, goUp, goInto, makeSubdir,
+  setWordsize, getWordsize, getWordsizeMask,
+  setBinaryBase, getBinaryBase, resetBinaryState,
+  setApproxMode,
+} from '../src/rpl/state.js';
+import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
+import { assert } from './helpers.mjs';
+
+/* EVAL, program execution, quoted-name fidelity, formatStackTop. */
+
+/* ================================================================
+   EVAL — program execution + name auto-eval
+   ================================================================ */
+
+// EVAL of a Real is idempotent (push back unchanged)
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Real(7));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 7,
+         'EVAL of Real(7) = Real(7) on top');
+}
+
+// EVAL of an Integer is idempotent
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(42));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 42n, 'EVAL of Integer is idempotent');
+}
+
+// EVAL of an unbound Name pushes the Name back
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Name('UNDEFINED_THING'));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'UNDEFINED_THING',
+         'EVAL of unbound Name pushes Name back');
+}
+
+// EVAL of a bound Name pushes its value
+{
+  resetHome();
+  varStore('PI', Real(Math.PI));
+  const s = new Stack();
+  s.push(Name('PI'));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === Math.PI,
+         'EVAL of bound Name(PI) pushes Real(pi)');
+}
+
+// EVAL of a Name bound to a Program executes the program
+{
+  resetHome();
+  // Program: << 1 2 + >>  ⇒  3
+  varStore('SUM', Program([Integer(1), Integer(2), Name('+')]));
+  const s = new Stack();
+  s.push(Name('SUM'));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 3n,
+         'EVAL of Name bound to Program runs the program');
+}
+
+// EVAL of a Program directly executes it
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Real(10));
+  s.push(Program([Real(5), Name('+')]));   // << 5 + >>
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 15,
+         'EVAL of << 5 + >> with 10 on stack = 15');
+}
+
+// Inside a program, a bare bound Name is RCL'd and EVAL'd
+{
+  resetHome();
+  varStore('A', Real(40));
+  varStore('B', Real(2));
+  const s = new Stack();
+  // << A B + >>  ⇒  42
+  s.push(Program([Name('A'), Name('B'), Name('+')]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 42,
+         'program << A B + >> with A=40, B=2 evaluates to 42');
+}
+
+// Inside a program, an unbound Name is pushed as a Name (not an error)
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([Name('UNDEF')]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'UNDEF',
+         'unbound Name inside program is pushed back as a Name');
+}
+
+// Numbers and Strings inside a program are pushed unchanged
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([Integer(1), Real(2.5), Str('hi')]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 3, 'program of 3 literals leaves 3 items');
+  assert(s.peek(3).value === 1n && s.peek(2).value === 2.5 && s.peek(1).value === 'hi',
+         'literals pushed in source order');
+}
+
+// Recursive program execution: program calling another program
+{
+  resetHome();
+  // DOUBLE: << 2 * >>     uses bound Name '*' which is the op
+  // QUAD:   << DOUBLE DOUBLE >>
+  varStore('DOUBLE', Program([Integer(2), Name('*')]));
+  varStore('QUAD',   Program([Name('DOUBLE'), Name('DOUBLE')]));
+  const s = new Stack();
+  s.push(Integer(5));
+  s.push(Name('QUAD'));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 20n, 'QUAD(5) via nested EVAL = 20');
+}
+
+// Atomicity: an error mid-program rolls the stack back to the pre-EVAL state
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Real(100));               // pre-existing stack content
+  s.push(Real(1));                 // about to be EVAL'd as part of program
+  // Program: << 1 + 1 0 / >>
+  //   pushes 1, runs +, pushes 1, pushes 0, runs /  → division by zero
+  s.push(Program([Integer(1), Name('+'), Integer(1), Integer(0), Name('/')]));
+  let threw = false;
+  try { lookup('EVAL').fn(s); } catch (e) { threw = true; }
+  assert(threw, 'program with 1/0 throws');
+  // After error, stack should be exactly as it was before EVAL pop:
+  //   level 2: Real(100), level 1: the Program  — wait, no. We snapshotted
+  //   BEFORE the pop, so the Program is still there along with Real(100)
+  //   and Real(1).
+  assert(s.depth === 3, 'on error, stack restored to pre-EVAL depth (3)');
+  assert(isReal(s.peek(3)) && s.peek(3).value === 100, 'level 3 preserved');
+  assert(isReal(s.peek(2)) && s.peek(2).value === 1,   'level 2 preserved');
+  assert(isProgram(s.peek(1)),                          'EVAL\u2019d program restored on top');
+}
+
+// EVAL of a Tagged value strips the tag and evaluates the inner value
+{
+  resetHome();
+  varStore('Z', Real(99));
+  const s = new Stack();
+  // Tagged label "label", value Name('Z')  ⇒  EVAL strips, looks up Z = 99
+  s.push(Tagged('label', Name('Z')));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 99,
+         'EVAL of Tagged unwraps and EVALs the inner value');
+}
+
+// Recursion bound: a self-recursive program eventually errors instead of
+// blowing the JS call stack
+{
+  resetHome();
+  // LOOP: << LOOP >>  — infinite recursion
+  varStore('LOOP', Program([Name('LOOP')]));
+  const s = new Stack();
+  s.push(Name('LOOP'));
+  let threw = false;
+  let msg = '';
+  try { lookup('EVAL').fn(s); } catch (e) { threw = true; msg = e.message; }
+  assert(threw && /recursion/i.test(msg),
+         'self-recursive program throws "recursion too deep"');
+  // Atomicity also covers this case — LOOP Name should still be on the stack
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'LOOP',
+         'after recursion error, original LOOP Name preserved on stack');
+  resetHome();
+}
+
+// Round-trip via parser:  << 1 2 + >>  EVAL  ⇒  3
+{
+  resetHome();
+  const s = new Stack();
+  const values = parseEntry('<< 1 2 + >> EVAL');
+  for (const v of values) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  assert(s.depth === 1 && s.peek().value === 3n,
+         'parsed << 1 2 + >> EVAL produces 3');
+}
+
+// Session 033 — Unicode guillemets `«  »` parse as program markers
+// equivalent to ASCII `<< >>`, so SHIFT-R + (which types the Unicode
+// glyphs the HP50 key is printed with) produces a parse-able program.
+{
+  resetHome();
+  const s = new Stack();
+  const values = parseEntry('« 1 2 + » EVAL');
+  for (const v of values) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  assert(s.depth === 1 && s.peek().value === 3n,
+         'parsed « 1 2 + » EVAL (Unicode guillemets) produces 3');
+}
+{
+  // Mixed delimiters also work — `« 1 2 + >>` is accepted because the
+  // parser normalises both forms to the same internal '<<' / '>>'
+  // delim tokens.  Cheap robustness against copy-paste.
+  resetHome();
+  const s = new Stack();
+  const values = parseEntry('« 7 »');
+  assert(values.length === 1 && values[0].type === 'program',
+         'Unicode-only guillemets produce a Program value');
+  s.push(values[0]);
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && Number(s.peek().value) === 7,
+         '« 7 » EVAL leaves 7 on the stack');
+}
+{
+  // IF / THEN / END inside a Unicode-delimited program still work —
+  // program markers are the only thing we changed; the block-keyword
+  // scanner operates on token text post-normalization.
+  resetHome();
+  const s = new Stack();
+  const values = parseEntry('« IF 1 THEN 42 END » EVAL');
+  for (const v of values) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  assert(s.depth === 1 && Number(s.peek().value) === 42,
+         '« IF 1 THEN 42 END » EVAL leaves 42 (block keywords survive Unicode delimiters)');
+}
+
+/* ================================================================
+   Quoted-Name fidelity — `'X'` is distinct from bare `X`.
+
+   Goal: a program can push a Name literal past EVAL, and the
+   command-line loop treats `'+'` as "push the name" rather than
+   "run the + op".  Implementation: Name has a `quoted` flag; parser
+   sets it for tick-wrapped tokens; EVAL and the entry loop honor it.
+   ================================================================ */
+
+// Constructor defaults: Name() is unquoted
+{
+  const n = Name('X');
+  assert(n.quoted === false, 'Name() default quoted = false');
+  const q = Name('X', { quoted: true });
+  assert(q.quoted === true, 'Name(..., { quoted: true }) sets flag');
+}
+
+// Parser distinguishes 'X' from X
+{
+  const vs = parseEntry("'X' X");
+  assert(vs.length === 2, 'parse emits two tokens');
+  assert(isName(vs[0]) && vs[0].id === 'X' && vs[0].quoted === true,
+         "'X' parses to quoted Name");
+  assert(isName(vs[1]) && vs[1].id === 'X' && vs[1].quoted === false,
+         'bare X parses to unquoted Name');
+}
+
+// Formatter: quoted Name shows with ticks, unquoted bare
+{
+  assert(format(Name('X', { quoted: true })) === "'X'",
+         "format(quoted Name) === 'X'");
+  assert(format(Name('X')) === 'X', 'format(bare Name) === X');
+}
+
+// EVAL of a quoted Name is a push-back, even if the name is bound
+{
+  resetHome();
+  varStore('X', Real(999));
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'X' && s.peek().quoted === true,
+         'EVAL of quoted Name pushes it back even when bound');
+  // And unquoted still auto-RCLs — sanity check we didn't break that
+  s.clear();
+  s.push(Name('X'));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 999,
+         'EVAL of bare bound Name still auto-recalls (regression check)');
+  resetHome();
+}
+
+// Inside a program, a quoted Name survives EVAL even if bound
+{
+  resetHome();
+  varStore('X', Real(42));
+  const s = new Stack();
+  // << 'X' >>  — must push the name, NOT the value 42
+  s.push(Program([Name('X', { quoted: true })]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'X' && s.peek().quoted === true,
+         'quoted Name inside program is pushed literally');
+  resetHome();
+}
+
+// Inside a program, a quoted operator name is pushed (not executed)
+{
+  resetHome();
+  const s = new Stack();
+  // << '+' >>  — pushes the Name '+', does NOT run the + op
+  s.push(Program([Name('+', { quoted: true })]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === '+' && s.peek().quoted === true,
+         "quoted '+' inside program is pushed, not executed");
+}
+
+// Program round-trip: << 'X' STO >> with 42 on level 1 stores 42 in X
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Integer(42));
+  s.push(Program([Name('X', { quoted: true }), Name('STO')]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 0, 'program consumed both operands');
+  assert(varRecall('X')?.value === 42n,
+         "<< 'X' STO >> applied to 42 stored Integer(42) in X");
+  resetHome();
+}
+
+// Parser + entry-loop round-trip: `42 'X' STO  'X' RCL` via corrected loop
+{
+  resetHome();
+  const s = new Stack();
+  const entryLoop = (src) => {
+    for (const v of parseEntry(src)) {
+      if (v?.type === 'name' && !v.quoted) {
+        const op = lookup(v.id);
+        if (op) { op.fn(s); continue; }
+      }
+      s.push(v);
+    }
+  };
+  entryLoop("42 'X' STO");
+  assert(varRecall('X')?.value === 42n,
+         "quoted-aware entry loop: 42 'X' STO stored 42");
+  entryLoop("'X' RCL");
+  assert(s.peek()?.value === 42n, "'X' RCL put 42 on stack");
+  // Now verify that typing `'+'` pushes the Name rather than running the op
+  s.clear();
+  entryLoop("'+'");
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === '+' && s.peek().quoted === true,
+         "typing '+' at the cmdline pushes quoted Name('+'), does not add");
+  resetHome();
+}
+
+// parseEntry round-trip stack-side: `<< 'X' >> EVAL` yields quoted Name('X')
+{
+  resetHome();
+  varStore('X', Real(1));            // bind X so we'd notice a wrong lookup
+  const s = new Stack();
+  const values = parseEntry("<< 'X' >> EVAL");
+  for (const v of values) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'X' && s.peek().quoted === true,
+         "parsed << 'X' >> EVAL produces quoted Name('X') even with X bound");
+  resetHome();
+}
+
+// Formatter round-trip through a program body
+{
+  const p = Program([Name('X', { quoted: true }), Name('+')]);
+  // Formatter wraps programs with « … » and joins tokens with spaces.
+  // Expect: « 'X' + »
+  assert(format(p) === "« 'X' + »",
+         "format(program) renders quoted + bare names distinctly");
+}
+
+/* ================================================================
+   formatStackTop — HP50 stack-level rendering of Names.
+
+   On a real HP50, any Name visible on a stack level is shown with
+   ticks regardless of how it was parsed.  Bare identifiers only
+   exist inside program bodies; by the time one lands on the stack
+   (via a failed lookup or a direct push) it is semantically a name
+   literal.
+
+   The formatStackTop wrapper exists so display.js has one canonical
+   call for "render this value as an LCD stack row".  Non-Name values
+   render identically to plain format(); nested values (list items,
+   program tokens, vector/matrix cells, tagged payloads) do NOT
+   inherit the stack context — they follow the authored form.
+   ================================================================ */
+
+// Top-level Name: ticks on whether or not quoted
+{
+  assert(formatStackTop(Name('X', { quoted: true })) === "'X'",
+         "formatStackTop(quoted Name) === 'X'");
+  assert(formatStackTop(Name('X')) === "'X'",
+         "formatStackTop(bare Name) === 'X' — stack always ticks");
+  // Operator names and funny characters still round-trip
+  assert(formatStackTop(Name('+')) === "'+'",
+         "formatStackTop(bare Name('+')) === \"'+'\"");
+  assert(formatStackTop(Name('UNDEFINED_THING')) === "'UNDEFINED_THING'",
+         "unbound-lookup residue displays with ticks on stack");
+}
+
+// Local names keep their local-arrow marker (no ticks)
+{
+  // HP50 shows locals with a leading down-arrow in trace output; we
+  // preserve the existing formatter convention and do NOT wrap them.
+  assert(formatStackTop(Name('x', { local: true })) === '↓x',
+         'formatStackTop leaves local names alone (no ticks)');
+}
+
+// Non-Name scalars are untouched by stack context
+{
+  assert(formatStackTop(Real(3.14)) === '3.14',
+         'formatStackTop(Real) unchanged');
+  assert(formatStackTop(Integer(42)) === '42',
+         'formatStackTop(Integer) unchanged');
+  // Session 041: EXACT + STD renders integer-valued Complex components
+  // without trailing dots — `(1., 2.)` becomes `(1, 2)`.
+  assert(formatStackTop(Complex(1, 2)) === '(1, 2)',
+         'formatStackTop(Complex) unchanged');
+  assert(formatStackTop(Str('hi')) === '"hi"',
+         'formatStackTop(String) unchanged');
+}
+
+// Nested Names inside container values do NOT inherit the stack tick rule
+{
+  // { X Y } on the stack renders exactly as authored — bare names stay bare.
+  const list = RList([Name('X'), Name('Y')]);
+  assert(formatStackTop(list) === '{ X Y }',
+         'formatStackTop(List) does not tick nested bare names');
+  // But a genuinely-quoted nested Name still ticks — that's a property
+  // of the value, not the render context.
+  const mixed = RList([Name('X'), Name('Y', { quoted: true })]);
+  assert(formatStackTop(mixed) === "{ X 'Y' }",
+         'formatStackTop(List) preserves per-Name quoted flag');
+}
+
+// Program bodies render bare names bare, even when the program is the stack top
+{
+  const p = Program([Name('X'), Name('+')]);
+  assert(formatStackTop(p) === '« X + »',
+         'formatStackTop(Program) shows bare names in program body');
+  const p2 = Program([Name('X', { quoted: true }), Name('+')]);
+  assert(formatStackTop(p2) === "« 'X' + »",
+         'formatStackTop(Program) keeps quoted Names quoted in program body');
+}
+
+// Vectors and matrices of Names follow the same rule as lists
+{
+  // HP50 vectors of names aren't common, but we guard the behavior.
+  const v = Vector([Name('A'), Name('B')]);
+  assert(formatStackTop(v) === '[ A B ]',
+         'formatStackTop(Vector) does not tick nested bare names');
+  const m = Matrix([[Name('A'), Name('B')], [Name('C'), Name('D')]]);
+  assert(formatStackTop(m) === '[[ A B ][ C D ]]',
+         'formatStackTop(Matrix) does not tick nested bare names');
+}
+
+// Tagged: the tag is a raw string; the inner value renders per its own type
+// and inherits no stack context.  A bare Name inside a Tagged therefore
+// displays bare — consistent with container types.
+{
+  const t = Tagged('label', Name('Z'));
+  assert(formatStackTop(t) === 'label: Z',
+         'formatStackTop(Tagged<Name>) keeps bare name bare inside the payload');
+  const t2 = Tagged('label', Name('Z', { quoted: true }));
+  assert(formatStackTop(t2) === "label: 'Z'",
+         'formatStackTop(Tagged<quoted Name>) keeps ticks (per-value)');
+}
+
+// Regression: default format() (no stack context) still behaves as before
+{
+  assert(format(Name('X')) === 'X',
+         'format(bare Name) without stack context still renders bare');
+  assert(format(Name('X', { quoted: true })) === "'X'",
+         'format(quoted Name) without stack context still ticks');
+  assert(format(Program([Name('X', { quoted: true }), Name('+')])) === "« 'X' + »",
+         'format(Program) regression — quoted + bare mix unchanged');
+}
+
