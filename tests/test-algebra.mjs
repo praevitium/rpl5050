@@ -3653,13 +3653,13 @@ giac._setFixtures({
    LAPLACE / ILAP basic rules.
    ================================================================ */
 
-// LAPLACE / ILAP now route through Giac's `laplace` / `ilaplace`
-// (with `X` as both input and output variable, per the HP50 "in
-// place" idiom).  Bulk-register the fixtures the session-058 and
-// session-076 test clusters expect.  Each value is a Giac-parseable
-// string in the exact structural shape the assertions below check
-// for — `1/X`, `1/X^2`, `2/X^3`, … — so the mocked engine returns
-// what the tests assert on.
+// LAPLACE / ILAP route through Giac's `laplace` / `ilaplace` (with
+// `X` as both input and output variable, per the HP50 "in place"
+// idiom).  Bulk-register the fixtures the LAPLACE/ILAP/HEAVISIDE/DIRAC
+// test clusters below expect.  Each value is a Giac-parseable string in
+// the exact structural shape the assertions below check for — `1/X`,
+// `1/X^2`, `2/X^3`, … — so the mocked engine returns what the tests
+// assert on.
 giac._clear();
 giac._setFixtures({
   'laplace(1,X,X)':         '1/X',
@@ -4835,10 +4835,10 @@ function _s061HasVar(node, name) {
   return false;
 }
 
-// TSIMP now routes through Giac's `tsimplify()` — bulk-register the
-// fixtures the session-061 test cluster expects.  Each key is the
-// purge-prefixed Giac command the adapter emits; each value is the
-// canonical Giac output string we parse back into an AST.
+// TSIMP routes through Giac's `tsimplify()` — bulk-register the
+// fixtures the TSIMP test cluster below expects.  Each key is the
+// Giac command the adapter emits; each value is the canonical Giac
+// output string we parse back into an AST.
 giac._clear();
 giac._setFixtures({
   'tsimplify(sin(X)^2+cos(X)^2)':   '1',
@@ -5155,10 +5155,10 @@ giac._setFixtures({
   assert(threw, 'session061: DIRAC on List rejects');
 }
 
-// Session-061 LAPLACE/ILAP HEAVISIDE+DIRAC fixtures — the Giac
-// commands emitted for each test in the cluster below.  Negative
-// numeric constants round-trip through astToGiac as `(-N)*…`, so
-// the fixture keys use that literal form.
+// LAPLACE/ILAP HEAVISIDE+DIRAC fixtures — the Giac commands emitted for
+// each test in the cluster below.  Negative numeric constants round-
+// trip through astToGiac as `(-N)*…`, so the fixture keys use that
+// literal form.
 giac._clear();
 giac._setFixtures({
   'laplace(HEAVISIDE(X),X,X)':          '1/X',
