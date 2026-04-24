@@ -164,25 +164,32 @@ export class Display {
     if (stack) this.renderStack(stack);
   }
 
+  /** Render the command line.
+   *
+   *  CodeMirror (attached via Entry.attach) owns the editing surface
+   *  inside `this.cmdline`, so our job here is limited to:
+   *   - showing a transient error banner (replaces the editor visually
+   *     via a child element we toggle on/off)
+   *   - toggling an `empty` class so CSS can style the placeholder state
+   *  The cursor and text rendering are no longer ours — CM draws them. */
   renderCmdline(entry) {
-    const { buffer, cursor, error } = entry;
-
+    const { buffer, error } = entry;
+    // Lazily carve out an error node that overlays the editor.  Living
+    // inside #cmdline as a sibling to the CM root keeps the layout
+    // cue (same box) while letting CM's DOM stay unmutated.
+    if (!this._errNode) {
+      this._errNode = document.createElement('div');
+      this._errNode.className = 'cmdline-error';
+      this.cmdline.appendChild(this._errNode);
+    }
     if (error) {
-      this.cmdline.textContent = error;
+      this._errNode.textContent = error;
+      this._errNode.hidden = false;
       this.cmdline.classList.remove('empty');
       return;
     }
-    if (buffer.length === 0) {
-      this.cmdline.innerHTML = '';
-      this.cmdline.classList.add('empty');
-      return;
-    }
-    this.cmdline.classList.remove('empty');
-    const pre = document.createTextNode(buffer.slice(0, cursor));
-    const cur = document.createElement('span'); cur.className = 'cursor';
-    const post = document.createTextNode(buffer.slice(cursor));
-    this.cmdline.innerHTML = '';
-    this.cmdline.append(pre, cur, post);
+    this._errNode.hidden = true;
+    this.cmdline.classList.toggle('empty', buffer.length === 0);
   }
 
   setMenu(slots) {

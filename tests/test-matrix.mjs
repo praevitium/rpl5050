@@ -1546,7 +1546,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const r1b = s.pop();
     lookup('RAND').fn(s);
     const r2b = s.pop();
-    assert(r1a.value === r1b.value && r2a.value === r2b.value,
+    assert(r1a.value.eq(r1b.value) && r2a.value.eq(r2b.value),
       'session050: RAND is deterministic under RDZ-equivalent reseed');
   }
 
@@ -1559,7 +1559,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const r1 = s.pop();
     lookup('RAND').fn(s);
     const r2 = s.pop();
-    assert(r1.value !== r2.value,
+    assert(!r1.value.eq(r2.value),
       'session050: consecutive RAND draws differ');
   }
 

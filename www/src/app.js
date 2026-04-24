@@ -148,9 +148,27 @@ class App {
       this.display.renderStack(this.stack);
     });
 
+    // Attach CodeMirror to the command-line surface.  Entry-level
+    // operations keep using entry.type() / entry.buffer setter etc.; the
+    // EditorView is the live DOM for user-driven editing (mouse, keyboard
+    // shortcuts, selection, autogrow).  App-level keys (Enter, Escape,
+    // arrows-when-empty) route back here via the callbacks below.
+    this.entry.attach(this.display.cmdline, {
+      onCommit:         () => this.commitEntry(),
+      onCancel:         () => this.cancelEntry(),
+      onArrowUpEmpty:   () => this.enterInteractiveStack(),
+      onArrowDownEmpty: () => { if (this.stack.depth >= 1) this.editLevel1(); },
+      onArrowLeftEmpty: () => this.prevMenuPage(),
+      onArrowRightEmpty:() => { this.stack.depth >= 2 ? this.swapTop() : this.nextMenuPage(); },
+    });
+
     // Initial render
     this.display.renderStack(this.stack);
     this.display.renderCmdline(this.entry);
+
+    // Give the editor focus on boot so the cursor is visible immediately.
+    // `drawSelection()` only paints the caret when the editor has focus.
+    this.entry.focus();
     this.display.setMenu(['', '', '', '', '', '']);
     this.display.setAngleMode(calcState.angle);
     this.display.setPath(currentPath());
@@ -931,6 +949,14 @@ class App {
       // Ignore if user is typing into a real <input>/<textarea>
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      // If CodeMirror (or one of its keybindings) already claimed this
+      // event, don't double-handle.  CM's bindings call preventDefault on
+      // consumed keys — Enter / Escape / arrows-with-content / every
+      // printable char when the editor has focus — so the document-level
+      // handler below only fires for keys CM declined or for events
+      // dispatched while the editor isn't focused.
+      if (e.defaultPrevented) return;
 
       // Editor-style modifier shortcuts (Ctrl/Cmd-Z / -Y / -C); the
       // helper lives in src/ui/shortcuts.js so it can be unit-tested

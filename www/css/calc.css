@@ -69,6 +69,10 @@ body {
 
 .bezel {
   flex: 1 1 auto;
+  min-width: 0;                /* allow shrink below content width —
+                                  otherwise the cmdline's long text
+                                  leaks up through the flex chain and
+                                  pushes the whole calculator wider */
   display: flex;
   flex-direction: column;
   background:
@@ -117,6 +121,8 @@ body {
   flex: 1 1 auto;
   display: flex;
   min-height: 0;
+  min-width: 0;                /* same reason as .bezel — stop a wide
+                                  child from growing the parent chain */
   background:
     linear-gradient(180deg, var(--screen-bg), var(--screen-bg-2));
   border-radius: var(--radius-screen);
@@ -336,24 +342,87 @@ body {
 .cmdline {
   flex: 0 0 auto;
   min-height: 22px;
-  border-top: 1px solid rgba(0,0,0,.25);
+  border: 1px solid transparent;
+  border-top-color: rgba(0,0,0,.25);
+  border-radius: 3px;
   margin-top: 6px;
-  padding-top: 4px;
+  padding: 4px 4px 2px;
   font-size: clamp(15px, 2vh, 22px);
   line-height: 1.25;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* Hard cap width + box-sizing so padding doesn't leak; the inner
+     CM scroller is the only thing that can grow horizontally (and it
+     scrolls internally).  `min-width: 0` overrides the flex default of
+     `min-width: auto` so this box is allowed to shrink below its
+     content size. */
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  /* Prevent the CM editor's intrinsic width from affecting parent
+     layout: `contain: size` would be ideal but collapses height too;
+     `contain: layout` is enough and leaves vertical sizing alone. */
+  contain: layout;
 }
 .cmdline.empty::after { content: ""; }
-.cmdline .cursor {
-  display: inline-block;
-  width: .55em;
-  height: 1em;
-  background: var(--screen-text);
-  vertical-align: -2px;
-  animation: blink 1s steps(2, end) infinite;
+
+/* Focus ring — CM adds `.cm-focused` to its root when the editor has
+   keyboard focus.  Use `:focus-within` on the outer cmdline (wider
+   browser support than `:has()`) to visually indicate which shortcut
+   surface will receive Ctrl/Cmd-Z etc. */
+.cmdline:focus-within {
+  border-color: var(--screen-text);
 }
-@keyframes blink { 50% { opacity: 0; } }
+
+/* CodeMirror integration — entry.js mounts an EditorView into .cmdline.
+   Reset CM's own borders/backgrounds so it inherits the LCD look, and
+   strip the outline that appears on focus (we use the blinking cursor
+   to signal focus instead). */
+.cmdline .cm-editor {
+  background: transparent;
+  color: var(--screen-text);
+  font: inherit;
+  outline: none !important;
+  /* CM's default editor uses `display: flex` which lets it size to its
+     content width.  Pin to 100% so the inner scroller handles overflow
+     instead of pushing the cmdline (and page) wider. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.cmdline .cm-editor.cm-focused { outline: none !important; }
+.cmdline .cm-scroller {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  /* Hide the horizontal scrollbar — CM keeps the cursor in view on its
+     own as the user types, so a visible bar just eats vertical space. */
+  overflow-x: auto;
+  scrollbar-width: none;       /* Firefox */
+}
+.cmdline .cm-scroller::-webkit-scrollbar { display: none; }
+.cmdline .cm-content {
+  padding: 0;
+  caret-color: var(--screen-text);
+}
+.cmdline .cm-line { padding: 0; }
+
+/* Cursor: `drawSelection()` replaces the native caret with an absolutely-
+   positioned div (.cm-cursor).  CM only shows it when the editor has
+   focus; style thick enough to be visible on the LCD green background
+   and tint to match the LCD text colour. */
+.cmdline .cm-cursor,
+.cmdline .cm-cursor-primary {
+  border-left-color: var(--screen-text) !important;
+  border-left-width: 2px !important;
+}
+
+/* Error overlay — lives as a sibling of the CM root; hidden when no
+   error is set (see display.js renderCmdline). */
+.cmdline-error {
+  color: maroon;
+  font-style: italic;
+}
 
 .menu-bar {
   flex: 0 0 auto;

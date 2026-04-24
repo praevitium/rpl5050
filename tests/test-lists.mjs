@@ -272,7 +272,7 @@ import { assert } from './helpers.mjs';
   const out = s.peek(1);
   assert(out.type === 'list' && out.items.length === 7,
     'SORT returns a List of the same length');
-  const vals = out.items.map(x => x.value);
+  const vals = out.items.map(x => x.value.toNumber());
   assert(JSON.stringify(vals) === JSON.stringify([1, 1, 2, 3, 4, 5, 9]),
     'SORT ascending numeric: 3 1 4 1 5 9 2 → 1 1 2 3 4 5 9');
 }
@@ -282,7 +282,7 @@ import { assert } from './helpers.mjs';
   s.push(RList([Real(2.5), Integer(1n), Real(3)]));
   lookup('SORT').fn(s);
   const out = s.peek(1);
-  const num = v => typeof v.value === 'bigint' ? Number(v.value) : v.value;
+  const num = v => typeof v.value === 'bigint' ? Number(v.value) : v.value.toNumber();
   const vals = out.items.map(num);
   assert(JSON.stringify(vals) === JSON.stringify([1, 2.5, 3]),
     'SORT handles mixed Real / Integer numeric types');
@@ -483,7 +483,7 @@ import { assert } from './helpers.mjs';
   const out = s.peek(1);
   assert(out.type === 'list' && out.items.length === 3,
     'ΔLIST of 4 items → list of 3');
-  const vals = out.items.map(x => x.value);
+  const vals = out.items.map(x => x.value.toNumber());
   assert(JSON.stringify(vals) === JSON.stringify([3, 5, 7]),
     'ΔLIST {1 4 9 16} → {3 5 7}');
 }
@@ -513,7 +513,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(10), Real(7), Real(3)]));
   lookup('DLIST').fn(s);
-  const vals = s.peek(1).items.map(x => x.value);
+  const vals = s.peek(1).items.map(x => x.value.toNumber());
   assert(JSON.stringify(vals) === JSON.stringify([-3, -4]),
     'ASCII alias DLIST works like ΔLIST');
 }

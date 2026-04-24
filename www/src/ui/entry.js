@@ -18,6 +18,10 @@ import {
   saveVarStateForUndo, undoVarState, redoVarState,
   hasVarRedo, clearVarUndo,
 } from '../rpl/state.js';
+import {
+  EditorState, EditorView, keymap, drawSelection,
+  history, historyKeymap, defaultKeymap,
+} from '../../vendor/codemirror/codemirror.bundle.js';
 
 // Maximum length of the command-line history ring buffer.
 // 20 is the HP50 default for CMD — a balance between "enough to scroll
@@ -31,22 +35,130 @@ export class Entry {
 
   constructor(stack, options = {}) {
     this.stack = stack;
-    this.buffer = '';
-    this.cursor = 0;                       // insert point within buffer
+    // CodeMirror EditorState is the source of truth for text + cursor.
+    // The `buffer` and `cursor` getters below read from it; the setters
+    // and the `_dispatch` helper write via transactions.  When `attach()`
+    // is called (browser path), an EditorView is layered on top and
+    // user-driven edits (typing into the DOM, mouse selection, paste)
+    // flow through the same transaction pipeline.  In the headless
+    // Node-test path, no view is created and _state stands alone.
+    this._state = EditorState.create({ doc: '' });
+    this._view = null;
     this.error = '';                       // last error message (for LCD)
     this._listeners = new Set();
     this.onError = options.onError || ((msg) => { this.error = msg; this._emit(); });
-    // Command history.  Ring buffer of committed command-line
-    // entries, newest-last.  Feeds the CMD soft-menu (HIST SHIFT-L)
-    // on the keyboard; capped at HISTORY_MAX entries so long runs
-    // don't unbounded-grow.
-    //
-    // Entries are recorded by _recordHistory() only when a commit
-    // actually happened (non-empty buffer, parsed successfully).  We
-    // deduplicate consecutive identical commits so spamming ENTER
-    // doesn't fill the buffer.
     this._history = [];
   }
+
+  /** Apply a transaction spec to the internal state.  When an EditorView
+   *  is attached, routes through view.dispatch so the DOM stays in sync;
+   *  otherwise mutates _state directly.  Never emits — callers decide
+   *  when subscribers should be notified (matches the legacy pattern
+   *  where a single method batches multiple edits before one _emit). */
+  _dispatch(spec) {
+    if (this._view) {
+      this._view.dispatch(spec);
+      // view.dispatch updates view.state synchronously via our intercept;
+      // this line is a belt-and-suspenders sync for callers that read
+      // right after dispatching.
+      this._state = this._view.state;
+    } else {
+      this._state = this._state.update(spec).state;
+    }
+  }
+
+  get buffer() { return this._state.doc.toString(); }
+  set buffer(s) {
+    const next = String(s ?? '');
+    const docLen = this._state.doc.length;
+    const cur = this.cursor;
+    // Preserve caller's cursor if it falls inside the new string,
+    // else clamp to end.  Callers that care about cursor position
+    // set it explicitly after.
+    const newCursor = Math.min(cur, next.length);
+    this._dispatch({
+      changes: { from: 0, to: docLen, insert: next },
+      selection: { anchor: newCursor },
+    });
+  }
+
+  get cursor() { return this._state.selection.main.head; }
+  set cursor(n) {
+    const len = this._state.doc.length;
+    const clamped = Math.max(0, Math.min(Number(n) || 0, len));
+    this._dispatch({ selection: { anchor: clamped } });
+  }
+
+  /** Browser-only.  Mount a CodeMirror EditorView into `parent` and make
+   *  it the live editing surface for this entry.  Intercepts Enter /
+   *  Shift-Enter / Escape / empty-buffer arrow keys via the app-supplied
+   *  callbacks; everything else (typing, mouse selection, shift+arrow
+   *  selection, clipboard, ctrl/cmd-A, within-buffer undo) goes through
+   *  CM's default keymap.
+   *
+   *  Call once during init.  Calling twice is a no-op. */
+  attach(parent, { onCommit, onCancel, onArrowUpEmpty, onArrowDownEmpty,
+                   onArrowLeftEmpty, onArrowRightEmpty } = {}) {
+    if (this._view) return;
+    const isEmpty = () => this._view.state.doc.length === 0;
+    const delegateIfEmpty = (cb) => () => {
+      if (!isEmpty() || !cb) return false;
+      cb(); return true;
+    };
+    const appKeys = keymap.of([
+      { key: 'Enter',       run: () => { onCommit?.(); return true; } },
+      { key: 'Shift-Enter', run: (view) => {
+          const head = view.state.selection.main.head;
+          view.dispatch({ changes: { from: head, insert: '\n' },
+                          selection: { anchor: head + 1 } });
+          return true;
+      } },
+      { key: 'Escape',      run: () => { onCancel?.(); return true; } },
+      { key: 'ArrowUp',     run: delegateIfEmpty(onArrowUpEmpty) },
+      { key: 'ArrowDown',   run: delegateIfEmpty(onArrowDownEmpty) },
+      { key: 'ArrowLeft',   run: delegateIfEmpty(onArrowLeftEmpty) },
+      { key: 'ArrowRight',  run: delegateIfEmpty(onArrowRightEmpty) },
+    ]);
+    this._view = new EditorView({
+      state: EditorState.create({
+        doc: this.buffer,
+        selection: { anchor: this.cursor },
+        extensions: [
+          history(),
+          drawSelection(),
+          appKeys,                                        // higher priority
+          keymap.of([...historyKeymap, ...defaultKeymap]),// CM defaults
+          // Deliberately NO lineWrapping: long content scrolls
+          // horizontally; newlines appear only when the user presses
+          // Shift-Enter.
+          //
+          // Keep the caret visible after ANY doc/selection change —
+          // paste, drag-drop, virtual-keypad type() calls, etc.  CM's
+          // built-in keymap already scrolls when the user types or
+          // moves the cursor with arrow keys, but events like paste
+          // mutate the doc without a cursor-move transaction of their
+          // own, leaving the caret off-screen.  A transaction extender
+          // attaches a scrollIntoView effect to every edit so the
+          // viewport tracks the caret unconditionally.
+          EditorState.transactionExtender.of((tr) => {
+            if (!tr.docChanged && !tr.selection) return null;
+            const head = tr.state.selection.main.head;
+            return { effects: EditorView.scrollIntoView(head) };
+          }),
+        ],
+      }),
+      parent,
+      dispatch: (tr) => {
+        this._view.update([tr]);
+        this._state = this._view.state;
+        if (tr.docChanged || tr.selection) this._emit();
+      },
+    });
+    this._state = this._view.state;
+  }
+
+  /** Give the editor keyboard focus.  No-op when no view is attached. */
+  focus() { this._view?.focus(); }
 
   subscribe(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
   _emit() { for (const fn of this._listeners) fn(this); }
@@ -411,6 +523,21 @@ export class Entry {
     }
   }
 
+  /** Look up `opName`, run it, and re-throw any error with the command
+   *  name prefixed — so "Bad argument type" becomes "SIN: Bad argument
+   *  type" by the time it reaches flashError / the LCD.  The pre-existing
+   *  stack-rollback in safeRun still kicks in; we only tag the message. */
+  _runOpTagged(opName) {
+    const op = lookup(opName);
+    if (!op) throw new RPLError(`Undefined: ${opName}`);
+    try {
+      this.stack.runOp(() => op.fn(this.stack, this));
+    } catch (e) {
+      const msg = (e && typeof e === 'object' && e.message != null) ? e.message : String(e);
+      throw new RPLError(`${opName}: ${msg}`);
+    }
+  }
+
   /** Commit current buffer to the stack (ENTER). */
   enter() {
     this.error = '';
@@ -436,8 +563,7 @@ export class Entry {
       // argument list.
       for (const v of values) {
         if (v?.type === 'name' && !v.quoted) {
-          const op = lookup(v.id);
-          if (op) { this.stack.runOp(() => op.fn(this.stack, this)); continue; }
+          if (lookup(v.id)) { this._runOpTagged(v.id); continue; }
         }
         this.stack.push(v);
       }
@@ -464,8 +590,7 @@ export class Entry {
         const values = parseEntry(raw);
         for (const v of values) {
           if (v?.type === 'name' && !v.quoted) {
-            const op = lookup(v.id);
-            if (op) { this.stack.runOp(() => op.fn(this.stack, this)); continue; }
+            if (lookup(v.id)) { this._runOpTagged(v.id); continue; }
           }
           this.stack.push(v);
         }
@@ -473,9 +598,7 @@ export class Entry {
         this.buffer = '';
         this.cursor = 0;
       }
-      const op = lookup(name);
-      if (!op) throw new RPLError(`Undefined: ${name}`);
-      this.stack.runOp(() => op.fn(this.stack, this));
+      this._runOpTagged(name);
     });
     this._emit();
   }

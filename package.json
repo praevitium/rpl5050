@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node tests/test-all.mjs",
     "serve": "npx --yes live-server --port=5050 --host=127.0.0.1 --no-browser --entry-file=index.html www",
+    "bundle:vendor": "esbuild www/vendor/codemirror/src-entry.mjs --bundle --format=esm --outfile=www/vendor/codemirror/codemirror.bundle.js",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
@@ -14,9 +15,13 @@
     "build:linux": "tauri build --target x86_64-unknown-linux-gnu"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "@tauri-apps/cli": "^2.0.0",
+    "esbuild": "^0.28.0"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.41.1",
     "@tauri-apps/api": "^2.0.0"
   }
 }
