@@ -989,6 +989,12 @@ class App {
         case 'End':
           if (this.entry.buffer.length > 0) this.entry.cursorEnd();
           return e.preventDefault();
+        case 'F1': this.pressSoftKey(0); return e.preventDefault();
+        case 'F2': this.pressSoftKey(1); return e.preventDefault();
+        case 'F3': this.pressSoftKey(2); return e.preventDefault();
+        case 'F4': this.pressSoftKey(3); return e.preventDefault();
+        case 'F5': this.pressSoftKey(4); return e.preventDefault();
+        case 'F6': this.pressSoftKey(5); return e.preventDefault();
       }
 
       // Any single printable character (including Shift-produced

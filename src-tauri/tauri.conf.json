@@ -13,7 +13,7 @@
         "title": "rp5050sx - RPL Scientific Calculator",
         "width": 600,
         "height": 900,
-        "resizable": false,
+        "resizable": true,
         "fullscreen": false
       }
     ],
