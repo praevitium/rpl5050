@@ -1355,6 +1355,31 @@ import { assert } from './helpers.mjs';
          `factor(X^3+X+1) pass-through (got '${formatAlgebra(r5)}')`);
 }
 
+// --- buildGiacCmd: purge-wrapped caseval command builder ----------
+// Pure string builder — the counterpart of astToGiac.  Purges every
+// free variable alphabetically so reserved-name collisions with Xcas
+// built-ins (UI, GF, IS, …) can't raise "<name> is not defined".
+{
+  const { buildGiacCmd } = await import('../www/src/rpl/cas/giac-convert.mjs');
+  // No free vars — no purge prefix.
+  assert(buildGiacCmd(parseAlgebra('2+3*4'), (e) => `factor(${e})`) === 'factor(2+3*4)',
+         'buildGiacCmd: no purge prefix when AST has no free vars');
+  // Single free var.
+  assert(buildGiacCmd(parseAlgebra('X^2+1'), (e) => `factor(${e})`) === 'purge(X);factor(X^2+1)',
+         'buildGiacCmd: single-var prefix');
+  // Multi var, alphabetical.
+  assert(buildGiacCmd(parseAlgebra('A*X+B'), (e) => `factor(${e})`) === 'purge(A);purge(B);purge(X);factor(A*X+B)',
+         'buildGiacCmd: multi-var alphabetical prefix');
+  // Arbitrary command factory — not limited to factor.
+  assert(buildGiacCmd(parseAlgebra('X+1'), (e) => `expand((${e})^3)`) === 'purge(X);expand((X+1)^3)',
+         'buildGiacCmd: arbitrary command factory');
+  // Function-call names are NOT free vars — SIN stays as a function
+  // and X is the only purge target.  Guards against accidentally
+  // purging HP function names and breaking Giac's command lookup.
+  assert(buildGiacCmd(parseAlgebra('SIN(X)'), (e) => `factor(${e})`) === 'purge(X);factor(sin(X))',
+         'buildGiacCmd: function-name is not purged');
+}
+
 // --- FACTOR op: Giac-backed routing (session 092 CAS pilot) -------
 // Prove that FACTOR on a Symbolic routes through Giac. There is no
 // legacy fallback — the CAS is Giac, full stop. We register fixtures
@@ -1364,8 +1389,11 @@ import { assert } from './helpers.mjs';
 {
   giac._clear();
   // Giac's real output for factor(x^2+2x+1) is `(x+1)^2`; input is the
-  // HP50 uppercase var which astToGiac echoes back as-is.
-  giac._setFixture('factor(X^2+2*X+1)', '(X+1)^2');
+  // HP50 uppercase var which astToGiac echoes back as-is.  The FACTOR
+  // op purges free vars before the factor call to dodge Xcas built-in
+  // name collisions (session 094) — so the caseval key is prefixed with
+  // `purge(X);`.
+  giac._setFixture('purge(X);factor(X^2+2*X+1)', '(X+1)^2');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 2*X + 1')));
   lookup('FACTOR').fn(s);
@@ -1374,14 +1402,14 @@ import { assert } from './helpers.mjs';
          `FACTOR op via Giac: X^2+2X+1 → '(X + 1)^2' (got '${formatAlgebra(s.peek().expr)}')`);
   const log = giac._callLogCopy();
   assert(
-    log.includes('factor(X^2+2*X+1)'),
-    `FACTOR routed through giac.caseval — log: ${JSON.stringify(log)}`,
+    log.includes('purge(X);factor(X^2+2*X+1)'),
+    `FACTOR routed through giac.caseval with purge prefix — log: ${JSON.stringify(log)}`,
   );
   giac._clear();
 }
 {
   giac._clear();
-  giac._setFixture('factor(X^3-1)', '(X-1)*(X^2+X+1)');
+  giac._setFixture('purge(X);factor(X^3-1)', '(X-1)*(X^2+X+1)');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^3 - 1')));
   lookup('FACTOR').fn(s);
@@ -1448,6 +1476,44 @@ import { assert } from './helpers.mjs';
     assert(s.peek().type === 'integer' && s.peek().value === n,
            `FACTOR ${n} passes through`);
   }
+}
+
+// --- FACTOR op: reserved-name collision (session 094) --------------
+// Regression for the "UI is not defined" bug.  Giac's caseval resolves
+// bare identifiers through its global symbol table before running
+// commands, so a handful of two-letter uppercase names (UI, GF, IS,
+// DO, IF, …) collide with Xcas built-ins and fail with
+// `"<name> is not defined"` instead of staying symbolic.  FACTOR
+// purges every free var in the AST first, so the collision no longer
+// triggers.  Two checks: (a) the caseval command Giac actually sees
+// begins with `purge(...)` for each free var, alphabetically; (b) a
+// multi-variable expression purges each name exactly once.
+{
+  giac._clear();
+  giac._setFixture('purge(UI);factor(UI^2+1)', 'UI^2+1');
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('UI^2 + 1')));
+  lookup('FACTOR').fn(s);
+  // factor(UI^2+1) over rationals is irreducible — Giac passes through.
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'UI^2 + 1',
+         `FACTOR UI^2+1 round-trips symbolically (got '${formatAlgebra(s.peek().expr)}')`);
+  const log = giac._callLogCopy();
+  assert(log.length === 1 && log[0] === 'purge(UI);factor(UI^2+1)',
+         `FACTOR purges reserved name UI — log: ${JSON.stringify(log)}`);
+  giac._clear();
+}
+{
+  // Multi-var purge ordering — alphabetical, one purge per var.
+  giac._clear();
+  giac._setFixture('purge(A);purge(B);purge(X);factor(A*X+B)', 'A*X+B');
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('A*X + B')));
+  lookup('FACTOR').fn(s);
+  const log = giac._callLogCopy();
+  assert(log.length === 1 && log[0] === 'purge(A);purge(B);purge(X);factor(A*X+B)',
+         `FACTOR purges every free var alphabetically — log: ${JSON.stringify(log)}`);
+  giac._clear();
 }
 
 // --- SUBST: single-variable numeric substitution ------------------

@@ -113,7 +113,23 @@ export class Entry {
                           selection: { anchor: head + 1 } });
           return true;
       } },
-      { key: 'Escape',      run: () => { onCancel?.(); return true; } },
+      { key: 'Tab',         run: (view) => {
+          const head = view.state.selection.main.head;
+          view.dispatch({ changes: { from: head, insert: '  ' },
+                          selection: { anchor: head + 2 } });
+          return true;
+      } },
+      { key: 'Escape',      run: (view) => {
+          // Escape on an empty buffer drops focus instead of doing the
+          // (no-op) cancel — matches the "ESC once to stop editing" idiom
+          // from VS Code and friends.
+          if (view.state.doc.length === 0) {
+            view.contentDOM.blur();
+            return true;
+          }
+          onCancel?.();
+          return true;
+      } },
       { key: 'ArrowUp',     run: delegateIfEmpty(onArrowUpEmpty) },
       { key: 'ArrowDown',   run: delegateIfEmpty(onArrowDownEmpty) },
       { key: 'ArrowLeft',   run: delegateIfEmpty(onArrowLeftEmpty) },
@@ -160,15 +176,28 @@ export class Entry {
   /** Give the editor keyboard focus.  No-op when no view is attached. */
   focus() { this._view?.focus(); }
 
+  /** Drop keyboard focus from the editor.  No-op when no view is
+   *  attached or when the editor wasn't focused to begin with. */
+  blur() { this._view?.contentDOM?.blur?.(); }
+
+  /** Whether the editor currently holds keyboard focus. */
+  hasFocus() { return !!this._view?.hasFocus; }
+
   subscribe(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
   _emit() { for (const fn of this._listeners) fn(this); }
 
-  /** Append raw text at the cursor. */
+  /** Append raw text at the cursor.  Pulls keyboard focus into the
+   *  editor so physical typing flows straight in after a virtual-key or
+   *  soft-menu insertion — without this, the user would type, lose
+   *  visible focus, click a keypad button that inserts a digit, and
+   *  then have to click back into the editor before they could keep
+   *  typing on the physical keyboard. */
   type(text) {
     this.error = '';
     this.buffer = this.buffer.slice(0, this.cursor) + text + this.buffer.slice(this.cursor);
     this.cursor += text.length;
     this._emit();
+    this.focus();
   }
 
   /** True when the buffer has an unclosed backtick-quote — i.e. the cursor
@@ -333,6 +362,7 @@ export class Entry {
     this.cursor = this.buffer.length;
     this.error = '';
     this._emit();
+    this.focus();
   }
 
   /** Move the cursor one character left.  No-op at position 0. */

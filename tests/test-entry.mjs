@@ -162,7 +162,7 @@ import { assert, assertThrows } from './helpers.mjs';
   {
     const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
     giac._clear();
-    giac._setFixture('factor(X^2+2*X+1)', '(X+1)^2');
+    giac._setFixture('purge(X);factor(X^2+2*X+1)', '(X+1)^2');
     const s = new Stack();
     const e = new Entry(s);
     for (const ch of "`X^2 + 2*X + 1`") {
@@ -179,8 +179,11 @@ import { assert, assertThrows } from './helpers.mjs';
   // SOLVE flow: `'X^2 - 4' 'X' SOLVE` typed as chars ending with SOLVE
   // reached via bare-name lookup on ENTER commit.
   {
+    const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
     const s = new Stack();
     const e = new Entry(s);
+    giac._clear();
+    giac._setFixture('purge(X);solve(X^2-4,X)', '[2,-2]');
     for (const ch of "`X^2 - 4` `X` SOLVE") {
       if ('+-*/^'.includes(ch) && e.isAlgebraic()) e.typeOrExec(ch, ch);
       else e.type(ch);
@@ -191,12 +194,15 @@ import { assert, assertThrows } from './helpers.mjs';
     roots.sort();
     assert(JSON.stringify(roots) === JSON.stringify(['X = -2', 'X = 2']),
       `SOLVE roots = ${JSON.stringify(roots)}`);
+    giac._clear();
   }
 
   // DERIV flow: `'SIN(X^2)' 'X' DERIV`
   {
     const s = new Stack();
     const e = new Entry(s);
+    giac._clear();
+    giac._setFixture('purge(X);diff(sin(X^2),X)', '2*X*cos(X^2)');
     for (const ch of "`SIN(X^2)` `X` DERIV") {
       if ('+-*/^'.includes(ch) && e.isAlgebraic()) e.typeOrExec(ch, ch);
       else e.type(ch);
@@ -208,6 +214,7 @@ import { assert, assertThrows } from './helpers.mjs';
     // chain rule: d/dX[SIN(X^2)] = COS(X^2)*2*X  (simplify may reorder)
     assert(d.includes('COS(X^2)') && (d.includes('2*X') || d.includes('2X')),
       `DERIV(SIN(X^2),X) = '${d}'`);
+    giac._clear();
   }
 
   // Virtual button simulation: call the shifted action for − key (parens)

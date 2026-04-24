@@ -451,18 +451,16 @@ function makeKeyEl(app, key) {
   });
 
   // Track sticky shift visual state for the three modifier kinds.
-  // The α key lights up for BOTH 'alpha' and 'alphaLock' so the user
-  // can see alpha is engaged; a separate 'locked' class on the α key
-  // distinguishes lock from single-shot (CSS can style it bolder).
+  // Each key lights up ('sticky') for both its one-shot AND its lock
+  // state so the user can see the shift is engaged; a separate
+  // 'locked' class distinguishes lock from single-shot so CSS can
+  // style it differently (e.g. bolder, steady vs. blinking).
   if (['alpha', 'shiftL', 'shiftR'].includes(key.kind)) {
+    const lockName = key.kind + 'Lock';
     app.onShiftChange(() => {
-      if (key.kind === 'alpha') {
-        const on = app.shift === 'alpha' || app.shift === 'alphaLock';
-        el.classList.toggle('sticky', on);
-        el.classList.toggle('locked', app.shift === 'alphaLock');
-      } else {
-        el.classList.toggle('sticky', app.shift === key.kind);
-      }
+      const sticky = app.shift === key.kind || app.shift === lockName;
+      el.classList.toggle('sticky', sticky);
+      el.classList.toggle('locked', app.shift === lockName);
     });
   }
   return el;

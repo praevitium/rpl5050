@@ -56,7 +56,7 @@ import {
   freeVars as algebraFreeVars,
 } from './algebra.js';
 import { giac } from './cas/giac-engine.mjs';
-import { astToGiac, giacToAst } from './cas/giac-convert.mjs';
+import { astToGiac, giacToAst, buildGiacCmd, splitGiacList } from './cas/giac-convert.mjs';
 import {
   format as formatValue,
   formatReal, formatBinaryInteger, DEFAULT_DISPLAY,
@@ -4428,7 +4428,10 @@ register('CONVERT', (s) => {
 register('EXPAND', (s) => {
   const v = s.pop();
   if (isSymbolic(v)) {
-    s.push(Symbolic(algebraExpand(v.expr)));
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(v.expr, (e) => `expand(${e})`);
+    const ast = giacToAst(giac.caseval(cmd));
+    s.push(Symbolic(ast));
     return;
   }
   if (isReal(v) || isInteger(v) || isName(v)) {
@@ -4516,16 +4519,21 @@ register('COLLECT', (s) => {
 register('FACTOR', (s) => {
   const v = s.pop();
 
-  // Symbolic input: route to Giac (the new CAS). We convert the AST to
+  // Symbolic input: route to Giac (the new CAS).  We convert the AST to
   // a Giac expression string, call factor(...), then parse Giac's output
-  // back into an AST. No fallback — if Giac isn't ready or the call
-  // errors, the op errors. The legacy algebraFactor path has been retired.
+  // back into an AST.  No fallback — if Giac isn't ready or the call
+  // errors, the op errors.  The legacy algebraFactor path has been retired.
+  //
+  // `buildGiacCmd` wraps the factor call with `purge(...)` statements
+  // for every free variable in the AST.  Without this, Xcas built-in
+  // names that collide with user variables (e.g. `UI`, `GF`) raise
+  // `"<name> is not defined"` instead of staying symbolic.
   if (isSymbolic(v)) {
     if (!giac.isReady()) {
       throw new RPLError('CAS not ready');
     }
-    const giacExpr = astToGiac(v.expr);
-    const giacResult = giac.caseval(`factor(${giacExpr})`);
+    const cmd = buildGiacCmd(v.expr, (e) => `factor(${e})`);
+    const giacResult = giac.caseval(cmd);
     const ast = giacToAst(giacResult);
     s.push(Symbolic(ast));
     return;

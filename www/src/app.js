@@ -49,11 +49,19 @@ class App {
     //   'shiftL'     — next key takes its left (orange) shifted meaning
     //   'shiftR'     — next key takes its right (red) shifted meaning
     //   'alpha'      — next key types its alpha label (single-shot)
-    //   'alphaLock'  — alpha stays on across multiple key presses
-    //                  (entered by pressing α twice in succession; a
-    //                  third α press releases it).  HP50 "alpha lock".
+    //   'shiftLLock' / 'shiftRLock' / 'alphaLock'
+    //                — the respective shift stays engaged across
+    //                  multiple presses until explicitly cleared.
+    // All three modifiers share the same gesture model: a single click
+    // engages the one-shot (and a second slow click cancels it); a
+    // rapid double-click promotes the one-shot to lock; any click on a
+    // locked modifier clears it.  Keeping the three keys identical
+    // means users don't have to remember per-key rules — the double-
+    // click threshold is the one thing to know.
     this.shift = null;
     this._shiftListeners = new Set();
+    this._lastShiftAt = 0;          // timestamp of most recent shiftL/R press
+    this._lastShiftKind = null;     // which shift ('shiftL' / 'shiftR')
 
     // Active soft-menu state.
     // `menuAll` holds every slot; only `menuAll[page*6..page*6+6]` is
@@ -102,8 +110,11 @@ class App {
     this._pendingEditValue = null;
 
     // Plumb the Display's click-delegate callbacks into App-level
-    // handlers.  Stack-row click echoes the value into the command
-    // line; indicator click cycles the underlying mode; path segment
+    // handlers.  Stack-row click echoes the level's decompiled form
+    // into the command-line editor (entry.type focuses as a side
+    // effect, so the user can keep typing).  Interactive-stack
+    // browse mode is still reachable via ▲ on an empty cmdline.
+    // Indicator click cycles the underlying mode; path segment
     // click jumps to that directory.
     this.display.onStackRowClick    = (level) => this.echoStackLevel(level);
     this.display.onIndicatorClick   = (id)    => this.cycleIndicator(id);
@@ -166,9 +177,12 @@ class App {
     this.display.renderStack(this.stack);
     this.display.renderCmdline(this.entry);
 
-    // Give the editor focus on boot so the cursor is visible immediately.
-    // `drawSelection()` only paints the caret when the editor has focus.
-    this.entry.focus();
+    // Note: we deliberately DO NOT auto-focus the editor on boot.  Focus
+    // arrives on first interaction — clicking the cmdline, any text
+    // insertion (virtual-keypad press, CMD recall, ▼ edit-level-1), or
+    // the first non-modifier physical-keyboard press (see
+    // _installKeyboardShortcuts).  This keeps the app from stealing
+    // focus from a host page before the user has actually engaged.
     this.display.setMenu(['', '', '', '', '', '']);
     this.display.setAngleMode(calcState.angle);
     this.display.setPath(currentPath());
@@ -615,6 +629,7 @@ class App {
     this.entry.cursor = text.length;
     this.entry.error  = '';
     this.entry._emit();
+    this.entry.focus();
   }
 
   /** Cancel-aware wrapper around Entry.cancel.  If the buffer was
@@ -636,10 +651,15 @@ class App {
   /** Commit-aware wrapper around Entry.enter.  Clears any pending
    *  edit shadow — once the user presses ENTER, the edited text is
    *  authoritative and the popped original should not be restored on
-   *  a later ESC. */
+   *  a later ESC.  Blurs the editor afterward so the post-commit
+   *  state matches "I'm done with this input" — the next physical
+   *  keystroke goes through the calc's unfocused shortcuts
+   *  (Backspace → DROP, etc.) until the user explicitly re-engages
+   *  the editor. */
   commitEntry() {
     this._pendingEditValue = null;
     this.entry.enter();
+    this.entry.blur();
   }
 
   /** Copy a stack level's decompiled form into the command-line editor
@@ -680,17 +700,11 @@ class App {
         setBinaryBase(order[((i < 0 ? -1 : i) + 1) % order.length]);
         return;
       }
-      // Clicking the α annunciator runs the same
-      // null → alpha → alphaLock → null cycle as the α key on the
-      // keypad.  Mirrors what the user expects: the LCD marker they
-      // can see is the same affordance as the physical button for
-      // the corresponding mode.
-      case 'alpha': {
-        if (this.shift === 'alpha')          this._setShiftDirect('alphaLock');
-        else if (this.shift === 'alphaLock') this._setShiftDirect(null);
-        else                                 this._setShiftDirect('alpha');
-        return;
-      }
+      // Clicking the α annunciator runs the same single-click /
+      // double-click-to-lock cycle as pressing the α key on the
+      // keypad, so the LCD marker is the same affordance as the
+      // physical button.
+      case 'alpha': this.setShift('alpha'); return;
       // Annunciators without a defined click-cycle action just flash a
       // gentle "no-op" — better than a silent miss on a labelled click.
       default:
@@ -720,12 +734,17 @@ class App {
      CANCL as alternative verbs.  ◀ / ESC cancel without acting.
      -------------------------------------------------------------- */
 
-  enterInteractiveStack() {
+  enterInteractiveStack(startLevel = 1) {
     if (this.stack.depth === 0) {
       // Nothing to browse — a silent no-op mirrors HP50.
       return;
     }
     if (this._interactive) return;                 // already active
+    // Drop editor focus so Arrow / Enter events flow to the document-
+    // level keydown handler (which owns the interactive-stack branch).
+    // Without this, CM would eat arrow keys and the selection couldn't
+    // move.  _exitInteractiveStack refocuses the editor on echo paths.
+    this.entry.blur();
     // Save the outgoing soft menu so we can restore it on exit.  A user
     // who'd opened VARS shouldn't lose it after one interactive-stack
     // round-trip.
@@ -734,14 +753,15 @@ class App {
       prevMenuPage: this.menuPage,
       prevMenuKind: this.menuKind,
     };
-    this.display.selectedLevel = 1;
+    const initial = Math.max(1, Math.min(startLevel | 0, this.stack.depth));
+    this.display.selectedLevel = initial;
     const refresh = () => {
       this.display.selectedLevel = this._interactive
         ? this._interactive.level
         : null;
       this.display.renderStack(this.stack);
     };
-    this._interactive.level = 1;
+    this._interactive.level = initial;
     refresh();
 
     const cleanup = () => {
@@ -757,7 +777,10 @@ class App {
     };
 
     const menu = interactiveStackMenu({
-      onEcho:   doAndExit(() => this.echoStackLevel(this._interactive.level)),
+      onEcho:   doAndExit(() => {
+        this.echoStackLevel(this._interactive.level);
+        this.entry.focus();
+      }),
       onPick:   doAndExit(() => {
         this.stack.saveForUndo();
         this.stack.pick(this._interactive.level);  // pick mutates + pushes
@@ -786,10 +809,14 @@ class App {
       this._interactive.level = levelDown(this._interactive.level, this.stack.depth);
       refresh();
     };
-    // ENTER in interactive mode = default action (ECHO, per HP50).
-    this._interactive.defaultAction = doAndExit(
-      () => this.echoStackLevel(this._interactive.level)
-    );
+    // ENTER in interactive mode = default action (ECHO, per HP50).  Echo
+    // is non-destructive — the stack value stays — and returns focus
+    // to the editor so the user can continue typing with the echoed
+    // text at the cursor.
+    this._interactive.defaultAction = doAndExit(() => {
+      this.echoStackLevel(this._interactive.level);
+      this.entry.focus();
+    });
     // Cleanup hook for _exitInteractiveStack.
     this._interactive._cleanup = cleanup;
   }
@@ -829,35 +856,45 @@ class App {
 
   onShiftChange(fn) { this._shiftListeners.add(fn); }
 
+  /** Virtual-button press on a modifier key (shiftL / shiftR / alpha).
+   *  Three-state cycle:
+   *    null         → one-shot      (single click)
+   *    one-shot     → lock          (quick second click — double-click)
+   *    one-shot     → null          (slow second click — toggle off)
+   *    lock         → null          (any click)
+   *    otherShift*  → new one-shot  (switching between L / R / α)
+   *  Any other `state` falls back to plain toggle semantics.
+   */
   setShift(state) {
-    this.shift = (this.shift === state) ? null : state;
+    if (state === 'shiftL' || state === 'shiftR' || state === 'alpha') {
+      const lockName = state + 'Lock';
+      const now = Date.now();
+      const DOUBLE_CLICK_MS = 300;
+      if (this.shift === lockName) {
+        this.shift = null;
+      } else if (this.shift === state) {
+        const doubleClick =
+          (now - this._lastShiftAt) < DOUBLE_CLICK_MS &&
+          this._lastShiftKind === state;
+        this.shift = doubleClick ? lockName : null;
+      } else {
+        this.shift = state;
+      }
+      this._lastShiftAt = now;
+      this._lastShiftKind = state;
+    } else {
+      this.shift = (this.shift === state) ? null : state;
+    }
     for (const fn of this._shiftListeners) fn();
   }
 
-  /** Like setShift, but without the toggle shortcut — sets to exactly
-   *  the requested state.  Needed for the alpha → alphaLock → null
-   *  three-step cycle, which setShift's toggle logic can't express. */
-  _setShiftDirect(state) {
-    if (this.shift === state) return;
-    this.shift = state;
-    for (const fn of this._shiftListeners) fn();
-  }
 
   /** Called by keyboard.js when a virtual key is pressed. */
   handleKey(key) {
     switch (key.kind) {
       case 'shiftL': return this.setShift('shiftL');
       case 'shiftR': return this.setShift('shiftR');
-      case 'alpha': {
-        // α press cycles:   null → alpha → alphaLock → null
-        // Matches HP50: single α enables one-letter alpha; a second α
-        // upgrades to alpha-LOCK (stays on across subsequent keys); a
-        // third α releases it.
-        if (this.shift === 'alpha')          this._setShiftDirect('alphaLock');
-        else if (this.shift === 'alphaLock') this._setShiftDirect(null);
-        else                                 this._setShiftDirect('alpha');
-        return;
-      }
+      case 'alpha':  return this.setShift('alpha');
     }
 
     // Alpha typing.  If alpha shift is active and the pressed key has
@@ -872,9 +909,11 @@ class App {
       return;
     }
 
+    const sL = this.shift === 'shiftL' || this.shift === 'shiftLLock';
+    const sR = this.shift === 'shiftR' || this.shift === 'shiftRLock';
     const action =
-      this.shift === 'shiftL' && key.shiftLAction ? key.shiftLAction :
-      this.shift === 'shiftR' && key.shiftRAction ? key.shiftRAction :
+      sL && key.shiftLAction ? key.shiftLAction :
+      sR && key.shiftRAction ? key.shiftRAction :
       key.action;
 
     // Labeled-but-unimplemented shift: the key shows a label (e.g.
@@ -882,8 +921,8 @@ class App {
     // "Not implemented" rather than silently falling through to the
     // unshifted action — the label was a promise the user followed.
     const unimplementedLabel =
-      (this.shift === 'shiftL' && !key.shiftLAction && key.shiftL) ? key.shiftL :
-      (this.shift === 'shiftR' && !key.shiftRAction && key.shiftR) ? key.shiftR :
+      (sL && !key.shiftLAction && key.shiftL) ? key.shiftL :
+      (sR && !key.shiftRAction && key.shiftR) ? key.shiftR :
       null;
 
     if (unimplementedLabel) {
@@ -892,11 +931,16 @@ class App {
       action(this.entry, this.shift, this);
     }
 
-    // auto-clear shift after one action — but NOT for alphaLock (which
-    // persists) and not when the user just toggled a shift key itself.
+    // Auto-clear shift after one action — but NOT for any *Lock state
+    // (those persist until the user explicitly cancels them) and not
+    // when the user just toggled a shift key itself.
+    const locked =
+      this.shift === 'alphaLock' ||
+      this.shift === 'shiftLLock' ||
+      this.shift === 'shiftRLock';
     if (
       this.shift &&
-      this.shift !== 'alphaLock' &&
+      !locked &&
       !['shiftL','shiftR','alpha'].includes(key.kind)
     ) {
       this.setShift(null);
@@ -913,9 +957,11 @@ class App {
     // unshifted onPress when a shifted handler is not installed.  We
     // read `this.shift` synchronously because handleKey auto-clears
     // shift only AFTER the action returns.
+    const sL = this.shift === 'shiftL' || this.shift === 'shiftLLock';
+    const sR = this.shift === 'shiftR' || this.shift === 'shiftRLock';
     const handler =
-      (this.shift === 'shiftL' && slot.onPressL) ? slot.onPressL :
-      (this.shift === 'shiftR' && slot.onPressR) ? slot.onPressR :
+      (sL && slot.onPressL) ? slot.onPressL :
+      (sR && slot.onPressR) ? slot.onPressR :
       slot.onPress;
     if (!handler) {
       this.entry.flashError({ message: `F${i + 1} (no menu)` });
@@ -958,12 +1004,18 @@ class App {
       // dispatched while the editor isn't focused.
       if (e.defaultPrevented) return;
 
-      // Editor-style modifier shortcuts (Ctrl/Cmd-Z / -Y / -C); the
-      // helper lives in src/ui/shortcuts.js so it can be unit-tested
-      // outside the browser.
-      if (handleModifierShortcut(e, this.entry)) return e.preventDefault();
+      const focused = this.entry.hasFocus();
 
-      // Respect OS shortcuts: remaining ctrl/cmd/alt-combos pass through.
+      // Modifier combos (Ctrl/Cmd/Alt) split by focus:
+      //   focused  → CM and the browser own them (text-editor semantics —
+      //              Cmd-Z undoes buffer edits via CM's history, Cmd-V
+      //              pastes through the native paste event).  We stay out.
+      //   unfocused → calc semantics — Cmd-Z ≡ stack UNDO, Cmd-V ≡ type
+      //              clipboard, Cmd-Y ≡ REDO.  handleModifierShortcut
+      //              covers those.
+      // Any remaining modifier combo (Cmd-T, Cmd-R, …) falls through to
+      // the browser unchanged.
+      if (!focused && handleModifierShortcut(e, this.entry)) return e.preventDefault();
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       // Interactive-stack override: while the browse-cursor is active,
@@ -981,13 +1033,61 @@ class App {
         }
       }
 
+      // F-keys bypass the focus dance.  F1..F6 press soft-menu slots;
+      // F7..F12 we don't claim (reload / devtools / OS shortcuts live
+      // there).  None of them engage the editor.
+      switch (e.key) {
+        case 'F1': this.pressSoftKey(0); return e.preventDefault();
+        case 'F2': this.pressSoftKey(1); return e.preventDefault();
+        case 'F3': this.pressSoftKey(2); return e.preventDefault();
+        case 'F4': this.pressSoftKey(3); return e.preventDefault();
+        case 'F5': this.pressSoftKey(4); return e.preventDefault();
+        case 'F6': this.pressSoftKey(5); return e.preventDefault();
+        case 'F7': case 'F8': case 'F9':
+        case 'F10': case 'F11': case 'F12':
+          return;
+      }
+
+      // Keys whose meaning depends on focus and that should stay OUT
+      // of the editor when it isn't already focused — handled before
+      // the auto-focus grab so pressing them never pulls focus.  When
+      // the editor IS focused, CM owns these (Backspace →
+      // deleteCharBackward, Tab → appKeys 2-space insert) and the
+      // document handler never sees them thanks to defaultPrevented.
+      if (!focused) {
+        switch (e.key) {
+          case 'Backspace':
+            // Classic calc DROP — pop the top of stack.  Same undo
+            // snapshot Entry.backspace takes on an empty buffer; we
+            // skip Entry.backspace itself so a stale non-empty buffer
+            // doesn't get delete-char'd (the user asked for DROP, not
+            // edit, when the editor isn't active).
+            this.stack.saveForUndo();
+            try { this.stack.drop(); } catch (err) { this.entry.flashError(err); }
+            return e.preventDefault();
+          case 'Tab':
+            // Let the browser perform its default focus navigation.
+            return;
+          case 'Escape':
+            // Esc is a dismiss gesture, not an "engage editor" one —
+            // stay out of the editor when it isn't already active.
+            return;
+        }
+      }
+
+      // Any other non-modifier keypress pulls focus into the editor.
+      // The event has already left the editor's DOM path by the time we
+      // handle it here, so focusing doesn't re-dispatch the keystroke —
+      // we still have to perform the action ourselves via the switch
+      // below (type / commitEntry / cursor moves / …).
+      if (!focused) this.entry.focus();
+
       // Named non-text keys handled first.
       switch (e.key) {
         case 'Enter':
           if (e.shiftKey) this.entry.type('\n');
           else this.commitEntry();
           return e.preventDefault();
-        case 'Backspace':  this.entry.backspace();        return e.preventDefault();
         case 'Escape':     this.cancelEntry();            return e.preventDefault();
         case 'ArrowUp':
           // When the editor is active, ▲ only moves the cursor within
@@ -1016,12 +1116,6 @@ class App {
         case 'End':
           if (this.entry.buffer.length > 0) this.entry.cursorEnd();
           return e.preventDefault();
-        case 'F1': this.pressSoftKey(0); return e.preventDefault();
-        case 'F2': this.pressSoftKey(1); return e.preventDefault();
-        case 'F3': this.pressSoftKey(2); return e.preventDefault();
-        case 'F4': this.pressSoftKey(3); return e.preventDefault();
-        case 'F5': this.pressSoftKey(4); return e.preventDefault();
-        case 'F6': this.pressSoftKey(5); return e.preventDefault();
       }
 
       // Any single printable character (including Shift-produced

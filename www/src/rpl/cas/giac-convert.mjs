@@ -19,7 +19,7 @@
 // This module doesn't depend on the Giac engine itself. It's pure
 // string / AST manipulation, so it's safe to use in Node tests.
 
-import { Num, Var, Neg, Bin, Fn, parseAlgebra, formatAlgebra } from "../algebra.js";
+import { Num, Var, Neg, Bin, Fn, parseAlgebra, formatAlgebra, freeVars } from "../algebra.js";
 
 /* ------------------------------------------------------------------
    Function-name maps.
@@ -165,6 +165,95 @@ function emitFn(ast) {
   // --- generic name mapping ---
   const giacName = HP_TO_GIAC[hpName] ?? ast.name;
   return `${giacName}(${args.join(",")})`;
+}
+
+/* ------------------------------------------------------------------
+   Safe caseval command builder — purge free variables first.
+
+   Giac's `caseval` resolves bare identifiers through its global symbol
+   table before handing them to commands like `factor`.  A handful of
+   two-letter uppercase names collide with Xcas built-ins (`UI`, `GF`,
+   `IS`, `DO`, `IF`, …) — when the user stacks `'UI^2+1' FACTOR`,
+   Giac tries to evaluate `UI`, finds the built-in needs a runtime
+   context we haven't set up, and returns `"UI is not defined"`
+   instead of keeping the symbol free.
+
+   `purge(v)` in Xcas reverts `v` to an undefined symbolic name
+   regardless of whether Giac pre-loaded it as a command or the user
+   assigned it in a prior session.  Prepending `purge(v1);purge(v2);…`
+   to every caseval inoculates us against the whole class of
+   name-collision bugs.  Giac's semicolon-sequence returns the value
+   of the last expression, so `purge(X);factor(X^2+2*X+1)` still yields
+   the factored form as the outer result.
+
+   Keeping the builder pure (string in / string out, no engine ref) so
+   tests can pin the exact command text — the mock engine's fixtures
+   are keyed on the full caseval string.
+   ------------------------------------------------------------------ */
+
+/**
+ * Build a Giac caseval command that first purges every free variable
+ * in `exprAst`, then runs `buildCmd(giacExprString)`.
+ *
+ * @param {object}   exprAst    rpl5050 AST whose free variables should
+ *                              be treated as undefined symbolic names.
+ * @param {function} buildCmd   given the astToGiac string, return the
+ *                              Giac command to evaluate, e.g.
+ *                              `(e) => \`factor(${e})\``.
+ * @param {string[]} [extraVars] additional names to purge.  Use for ops
+ *                              that take a standalone variable
+ *                              argument (DERIV, INTEG, SOLVE, …) — the
+ *                              derivative/integration/solve variable
+ *                              goes here so it's purged even when it
+ *                              doesn't appear free in the expression.
+ *                              Also handy for SUBST's replacement ASTs.
+ * @returns {string}            full caseval command string.
+ *
+ * Variable order is alphabetical so the command string is
+ * deterministic across calls (mock-fixture friendly).
+ */
+export function buildGiacCmd(exprAst, buildCmd, extraVars = []) {
+  const giacExpr = astToGiac(exprAst);
+  const body = buildCmd(giacExpr);
+  const all = new Set([...freeVars(exprAst), ...extraVars]);
+  const vars = [...all].sort();
+  if (vars.length === 0) return body;
+  const purges = vars.map((n) => `purge(${n})`).join(';');
+  return `${purges};${body}`;
+}
+
+/**
+ * Split a Giac list literal (`"[a, b, c]"`) into the raw element
+ * strings, respecting nested brackets and parens.  Each element can
+ * then be fed back into `giacToAst`.
+ *
+ * Returns `null` when the input isn't a list — callers can then treat
+ * the string as a scalar result.
+ *
+ * Used by SOLVE (roots list), factor-over-Q variants, and any other op
+ * that expects a homogeneous list of expressions.  The splitter doesn't
+ * interpret the elements itself — a `[sqrt(2), -sqrt(2)]` passes
+ * through as the two raw strings `"sqrt(2)"` and `"-sqrt(2)"`.
+ */
+export function splitGiacList(giacStr) {
+  const s = String(giacStr).trim();
+  if (!(s.startsWith("[") && s.endsWith("]"))) return null;
+  const body = s.slice(1, -1).trim();
+  if (body === "") return [];
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === "," && depth === 0) {
+      parts.push(body.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(body.slice(start).trim());
+  return parts;
 }
 
 /* ------------------------------------------------------------------
