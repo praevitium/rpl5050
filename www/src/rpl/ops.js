@@ -14375,7 +14375,7 @@ register('HEAVISIDE', (s) => {
 register('DIRAC', (s) => {
   const [v] = s.popN(1);
   if (isReal(v)) {
-    if (v.value === 0) { s.push(Symbolic(AstFn('DIRAC', [AstNum(0)]))); return; }
+    if (v.value.isZero()) { s.push(Symbolic(AstFn('DIRAC', [AstNum(0)]))); return; }
     s.push(Real(0));
     return;
   }

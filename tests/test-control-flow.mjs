@@ -1272,7 +1272,7 @@ import { assert } from './helpers.mjs';
       'session068: → with algebraic body leaves a single value on the stack');
     const top = s.peek();
     // Symbolic EVAL with locals bound to integers folds to a Real 7.
-    const val = top.type === 'real' ? top.value
+    const val = top.type === 'real' ? top.value.toNumber()
               : top.type === 'integer' ? Number(top.value)
               : null;
     assert(val === 7,

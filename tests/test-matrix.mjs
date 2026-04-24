@@ -1528,7 +1528,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     lookup('RAND').fn(s);
     const r = s.peek();
-    assert(r.type === 'real' && r.value >= 0 && r.value < 1,
+    assert(r.type === 'real' && r.value.gte(0) && r.value.lt(1),
       `session050: RAND in [0,1) (got ${r.value})`);
   }
 
@@ -1578,7 +1578,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     lookup('RAND').fn(s);
     const firstB = s.pop().value;
 
-    assert(firstA === firstB,
+    assert(firstA.eq(firstB),
       'session050: RDZ-same-seed RAND is deterministic');
   }
 
@@ -1629,7 +1629,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     if (match) {
       for (let i = 0; i < m1.rows.length && match; i++) {
         for (let j = 0; j < m1.rows[0].length && match; j++) {
-          if (m1.rows[i][j].value !== m2.rows[i][j].value) match = false;
+          if (!m1.rows[i][j].value.eq(m2.rows[i][j].value)) match = false;
         }
       }
     }
@@ -1647,7 +1647,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     for (const row of m.rows) {
       for (const cell of row) {
         const v = cell.value;
-        if (v < -9 || v > 9 || !Number.isInteger(v)) allInRange = false;
+        if (v.lt(-9) || v.gt(9) || !v.isInteger()) allInRange = false;
       }
     }
     assert(allInRange, 'session050: seeded RANM entries still in [-9, 9]');

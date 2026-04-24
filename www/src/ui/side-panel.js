@@ -687,7 +687,7 @@ export class SidePanel {
       // Otherwise behave like a soft-menu press: commit any pending
       // buffer first, then run the op.
       if (entry.buffer.trim().length > 0) entry.enter();
-      entry.safeRun(() => op.fn(stack, entry));
+      entry.safeRun(() => op.fn(stack, entry), value);
       return;
     }
     if (action === 'char') {

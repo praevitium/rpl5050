@@ -44,6 +44,20 @@ EXP, trig, hyperbolic) fall through `toRealOrThrow` so Q is silently
 coerced to Real — there's no exact `LN(2/3)`.  Symbolic lift routes
 Q through the AST as `Bin('/', Num(n), Num(d))`.
 
+**Real (`R`) — session 093.**  Real's `.value` is a **decimal.js
+Decimal instance** at precision 15 (was a JS `number` through session
+092).  Every op, formatter, and promotion helper reads Decimals via
+the decimal.js API (`.plus`, `.minus`, `.times`, `.div`, `.pow`,
+`.eq`, `.lt`, `.gte`, `.abs`, `.neg`, `.isZero`, `.isInteger`,
+`.isFinite`, `.toNumber`, `.toFixed`, `.trunc`).  The `promoteNumericPair`
+`'real'` branch returns Decimal instances in both slots, so arithmetic
+chains preserve 15-digit precision without IEEE-754 round-trips
+between ops.  Persistence (`persist.js`) encodes via
+`{ __t: 'decimal', v: '<Decimal.toString()>' }` so full precision
+round-trips through snapshot/rehydrate.  NaN is rejected at the Real
+constructor.  The AST `Num` leaf and `Unit` payload are still JS
+numbers — those are separate namespaces from the stack Real.
+
 ## Conventions (shared across all ops below)
 
 - **List distribution** — lists distribute element-wise via

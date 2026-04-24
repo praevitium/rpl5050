@@ -304,24 +304,24 @@ class App {
       { label: calcState.textbookMode ? 'TXT→FLT' : 'FLT→TXT',
         onPress: () => {
           this.entry.safeRun(() =>
-            lookup(calcState.textbookMode ? 'FLAT' : 'TEXTBOOK').fn(this.stack, this.entry));
+            lookup(calcState.textbookMode ? 'FLAT' : 'TEXTBOOK').fn(this.stack, this.entry), calcState.textbookMode ? 'FLAT' : 'TEXTBOOK');
           rebuild();
         } },
       { label: 'HEX',
-        onPress: () => this.entry.safeRun(() => lookup('HEX').fn(this.stack, this.entry)) },
+        onPress: () => this.entry.safeRun(() => lookup('HEX').fn(this.stack, this.entry), 'HEX') },
       { label: 'DEC',
-        onPress: () => this.entry.safeRun(() => lookup('DEC').fn(this.stack, this.entry)) },
+        onPress: () => this.entry.safeRun(() => lookup('DEC').fn(this.stack, this.entry), 'DEC') },
       { label: 'OCT',
-        onPress: () => this.entry.safeRun(() => lookup('OCT').fn(this.stack, this.entry)) },
+        onPress: () => this.entry.safeRun(() => lookup('OCT').fn(this.stack, this.entry), 'OCT') },
       { label: 'BIN',
-        onPress: () => this.entry.safeRun(() => lookup('BIN').fn(this.stack, this.entry)) },
+        onPress: () => this.entry.safeRun(() => lookup('BIN').fn(this.stack, this.entry), 'BIN') },
       // EXACT/APPROX toggle.  Label shows the target mode the user
       // would switch INTO if they pressed the key, matching the
       // TXT→FLT / FLT→TXT pattern above.
       { label: calcState.approxMode ? 'APX→EXA' : 'EXA→APX',
         onPress: () => {
           this.entry.safeRun(() =>
-            lookup(calcState.approxMode ? 'EXACT' : 'APPROX').fn(this.stack, this.entry));
+            lookup(calcState.approxMode ? 'EXACT' : 'APPROX').fn(this.stack, this.entry), calcState.approxMode ? 'EXACT' : 'APPROX');
           rebuild();
         } },
     ];
@@ -341,7 +341,7 @@ class App {
   _run(opName) {
     return () => {
       if (this.entry.buffer.trim().length > 0) this.entry.enter();
-      this.entry.safeRun(() => lookup(opName).fn(this.stack, this.entry));
+      this.entry.safeRun(() => lookup(opName).fn(this.stack, this.entry), opName);
     };
   }
 
@@ -462,7 +462,7 @@ class App {
         }
         if (isProgram(v)) {
           this.stack.push(v);
-          this.entry.safeRun(() => lookup('EVAL').fn(this.stack, this.entry));
+          this.entry.safeRun(() => lookup('EVAL').fn(this.stack, this.entry), 'EVAL');
           return;
         }
         this.stack.push(v);
@@ -537,7 +537,7 @@ class App {
           if (this.entry.buffer.trim().length > 0) this.entry.enter();
           this.stack.push(target);
           if (isProgram(target) || isName(target)) {
-            this.entry.safeRun(() => lookup('EVAL').fn(this.stack, this.entry));
+            this.entry.safeRun(() => lookup('EVAL').fn(this.stack, this.entry), 'EVAL');
           }
         },
         // Left-shift: type the item's label into the command line —
@@ -579,7 +579,7 @@ class App {
       this.entry.flashError({ message: 'Too few arguments' });
       return;
     }
-    this.entry.safeRun(() => lookup('SWAP').fn(this.stack, this.entry));
+    this.entry.safeRun(() => lookup('SWAP').fn(this.stack, this.entry), 'SWAP');
   }
 
   /** Pull level 1 onto the command line for editing (HP50 EDITB

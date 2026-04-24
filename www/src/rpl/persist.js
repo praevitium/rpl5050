@@ -14,6 +14,8 @@
 
    Encoding rules (handled by encode/decode below):
      - BigInt        → { __t: 'bigint', v: '<digits>' }
+     - Decimal       → { __t: 'decimal', v: '<toString()>' }
+                       (Real's payload is a decimal.js Decimal instance)
      - Map           → { __t: 'map',    v: [[k, encV], ...] }
      - Directory     → { type: 'directory', name, entries: <Map enc> }
                        (parent pointer dropped; relinked on decode)
@@ -31,7 +33,7 @@ import {
   state, currentPath, goHome, goInto, notify,
   setCasVx, resetCasVx,
 } from './state.js';
-import { TYPES } from './types.js';
+import { TYPES, Decimal } from './types.js';
 
 /* PRNG seed survives page reload.  `seedPrng(n)` does the zero-
    avoidance + reduction to [1, PRNG_MOD-1].  Imported here to apply a
@@ -47,6 +49,10 @@ export const SCHEMA_VERSION = 1;
 function encode(v) {
   if (v === null || v === undefined) return v;
   if (typeof v === 'bigint') return { __t: 'bigint', v: v.toString() };
+  // Decimal instance — detect by the constructor (the decimal.js instance
+  // has `Decimal` in its prototype chain).  Preserve full 15-digit
+  // precision by round-tripping through `.toString()`.
+  if (v instanceof Decimal) return { __t: 'decimal', v: v.toString() };
   if (v instanceof Map) {
     return { __t: 'map', v: [...v].map(([k, x]) => [k, encode(x)]) };
   }
@@ -69,6 +75,7 @@ function decode(v) {
   if (Array.isArray(v)) return v.map(decode);
   if (typeof v === 'object') {
     if (v.__t === 'bigint') return BigInt(v.v);
+    if (v.__t === 'decimal') return new Decimal(v.v);
     if (v.__t === 'map') {
       return new Map(v.v.map(([k, x]) => [k, decode(x)]));
     }

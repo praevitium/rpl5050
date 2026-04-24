@@ -58,11 +58,16 @@ backed by three vendored libraries, all under the no-fallback rule
   EXACT/APPROX-aware dispatch: EXACT keeps exactness where
   meaningful, APPROX collapses to Real.  Backed by Fraction.js
   v5.3.4 at `www/src/vendor/fraction.js/`.
-- **Real** — JS number on the stack, but `realBinary` routes
-  intermediate arithmetic through decimal.js at precision 15 so the
-  classic IEEE-754 gotchas (`0.1 + 0.2 → 0.3`, not
-  `0.30000000000000004`) are healed.  Payload shape unchanged.
-  Backed by decimal.js v10.4.3 at `www/src/vendor/decimal.js/`.
+- **Real** — `.value` is a **decimal.js Decimal instance** at
+  precision 15 (session 093 finished the payload migration; session
+  092 had routed arithmetic through Decimal but still unwrapped to JS
+  number on the stack).  Every op, formatter, and persistence codec
+  reads Decimals via the decimal.js API, so arithmetic chains
+  preserve 15-digit precision without IEEE-754 round-trips between
+  ops.  The classic `0.1 + 0.2 → 0.3` gotcha is healed, and
+  `100! / 99!` stays exact-equal to `100` at 100 digits.  Persisted
+  via `{ __t: 'decimal', v: '<toString>' }`.  Backed by decimal.js
+  v10.4.3 at `www/src/vendor/decimal.js/`.
 - **Complex** — `{ re, im }` on the stack; `complexBinary` now
   routes through complex.js (identity preservation for `i*i = -1`,
   correct branch-cut handling in polar-form `^`).  Backed by

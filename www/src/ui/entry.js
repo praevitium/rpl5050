@@ -505,7 +505,7 @@ export class Entry {
    *  app.js) that invoke ops directly need the same rollback
    *  guarantee, otherwise a type error from e.g. the Commands panel
    *  eats the args the op had popped before throwing. */
-  safeRun(body) {
+  safeRun(body, context = '') {
     const rollback = this.stack.save();
     try { body(); }
     catch (e) {
@@ -519,6 +519,15 @@ export class Entry {
       // the current live one but vars don't.  Clearing both keeps the
       // two halves in lock-step.
       clearVarUndo();
+      // Optional prefix — typically the command name the caller ran.
+      // Matches the tagging done inside enter() / execOp() via
+      // `_runOpTagged`, but for callers that don't go through those
+      // paths (side-panel, soft-menu handlers that lookup+invoke ops
+      // directly) and so can't rely on inner-loop tagging.
+      if (context) {
+        const msg = (e && typeof e === 'object' && e.message != null) ? e.message : String(e);
+        e = new RPLError(`${context}: ${msg}`);
+      }
       this.flashError(e);
     }
   }
