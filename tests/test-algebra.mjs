@@ -1717,9 +1717,12 @@ giac._setFixtures({
   const s = new Stack();
   for (const v of parseEntry("`X^2 + 1`")) s.push(v);
   for (const v of parseEntry("`X = 3`")) s.push(v);
+  giac._clear();
+  giac._setFixture('purge(X);subst(X^2+1,X=3)', '10');
   lookup('SUBST').fn(s);
   assert(isReal(s.peek()) && s.peek().value.eq(10),
          `parseEntry → SUBST eqn-form end-to-end: 10 (got ${JSON.stringify(s.peek())})`);
+  giac._clear();
 }
 
 // --- parseAlgebra: `=` at the top level ----------------------------
@@ -1748,6 +1751,20 @@ giac._setFixtures({
 }
 
 // --- SUBST equation form: expr 'var = val' SUBST -------------------
+// Fixtures cover every intermediate caseval result produced by the
+// equation-form, list-of-equations, list-of-pairs, and mixed-list
+// variants.  Sequential list/mixed-list applications each produce
+// their own caseval command, so one fixture per step.
+giac._clear();
+giac._setFixtures({
+  'purge(X);subst(X^2+1,X=3)':                       '10',
+  'purge(A);purge(B);purge(X);purge(Y);subst(A*X+B,X=Y+1)': 'A*(Y+1)+B',
+  'purge(X);purge(Y);subst(X+Y,X=2)':                'Y+2',
+  'purge(Y);subst(Y+2,Y=3)':                         '5',
+  'purge(X);purge(Y);purge(Z);subst(X+Y+Z,X=1)':     'Y+Z+1',
+  'purge(Y);purge(Z);subst(Y+Z+1,Y=2)':              'Z+3',
+  'purge(Z);subst(Z+3,Z=3)':                         '6',
+});
 {
   // Basic numeric eval via equation form.
   const s = new Stack();

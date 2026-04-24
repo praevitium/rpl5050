@@ -4700,6 +4700,27 @@ register('SOLVE', (s) => {
 });
 
 /* ------------------------------------------------------------------
+   ISOL  ( expr 'var' -- { eqn1 eqn2 ... } )
+
+   HP50 CAS command — "isolate" a variable.  On the stock HP50 ISOL
+   inverts an expression algebraically and returns a single equation
+   `X = …` with sign-placeholder variables for the ambiguous branches.
+   Giac doesn't expose an `isolate` primitive; the closest semantic
+   match is `solve(expr,var)` which returns every branch as a concrete
+   root.  We therefore register ISOL as a thin alias of SOLVE: same
+   inputs, same output shape (list of `var=root` equations).  Users
+   writing `'expr' 'X' ISOL` in programs imported from an HP50 will
+   see a list instead of a single equation for multi-branch cases —
+   slightly more informative than the HP's sign-placeholder form, and
+   still composable (DUP HEAD / first-element access picks the branch
+   they'd have gotten natively).
+
+       'A*X + B'  'X' ISOL    →  { 'X = -B/A' }
+       'X^2 - 4'  'X' ISOL    →  { 'X = 2' 'X = -2' }
+   ------------------------------------------------------------------ */
+register('ISOL', lookup('SOLVE').fn);
+
+/* ------------------------------------------------------------------
    SUBST  ( expr 'var' value -- result )                (3-arg form)
    SUBST  ( expr { 'var' value ... } -- result )        (2-arg list)
 
