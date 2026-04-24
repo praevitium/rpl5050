@@ -1414,3 +1414,89 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     assert(s2 === '-7/4', `format(Rational(-7,4)) = '-7/4' (got '${s2}')`);
   }
 }
+
+/* ================================================================
+   Real arithmetic — decimal.js pilot (session 092).
+
+   Real × Real arithmetic goes through decimal.js at precision 15.
+   The point: heal the IEEE-754 artifacts that haunt JS-number
+   arithmetic, so the HP50 classroom-math illusion holds.  The Real
+   payload shape doesn't change (still a JS number); only the
+   intermediate arithmetic runs in Decimal space.
+   ================================================================ */
+{
+  // Sanity — the classic 0.1 + 0.2 ≠ 0.3 trap in JS number arithmetic.
+  // After the decimal.js migration, Real + Real gives an exact 0.3.
+  {
+    const s = new Stack();
+    s.push(Real(0.1));
+    s.push(Real(0.2));
+    lookup('+').fn(s);
+    const r = s.peek();
+    assert(r.type === 'real' && r.value === 0.3,
+      `decimal: 0.1 + 0.2 → Real(0.3) (got ${r.value})`);
+  }
+
+  // Multiplication — `3 * 0.4 - 1.2` lands on exact zero instead of
+  // 2.22e-16.
+  {
+    const s = new Stack();
+    s.push(Real(3));
+    s.push(Real(0.4));
+    lookup('*').fn(s);
+    s.push(Real(1.2));
+    lookup('-').fn(s);
+    const r = s.peek();
+    assert(r.type === 'real' && r.value === 0,
+      `decimal: 3*0.4 - 1.2 → Real(0) (got ${r.value})`);
+  }
+
+  // Division that should be exact — 1/10 stays at 0.1 (no IEEE tail).
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    s.push(Real(10));
+    lookup('/').fn(s);
+    const r = s.peek();
+    assert(r.type === 'real' && r.value === 0.1,
+      `decimal: 1/10 → Real(0.1) (got ${r.value})`);
+  }
+
+  // Power — 1.1^2 = 1.21 exactly (vs. 1.2100000000000002 native).
+  {
+    const s = new Stack();
+    s.push(Real(1.1));
+    s.push(Real(2));
+    lookup('^').fn(s);
+    const r = s.peek();
+    assert(r.type === 'real' && r.value === 1.21,
+      `decimal: 1.1^2 → Real(1.21) (got ${r.value})`);
+  }
+
+  // Compound expression — 0.1 + 0.1 + 0.1 accumulates exactly.
+  {
+    const s = new Stack();
+    s.push(Real(0.1));
+    s.push(Real(0.1));
+    lookup('+').fn(s);
+    s.push(Real(0.1));
+    lookup('+').fn(s);
+    const r = s.peek();
+    assert(r.type === 'real' && r.value === 0.3,
+      `decimal: 0.1 + 0.1 + 0.1 → Real(0.3) (got ${r.value})`);
+  }
+
+  // Division by zero still throws 'Infinite result' (not NaN / Infinity).
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    s.push(Real(0));
+    try {
+      lookup('/').fn(s);
+      assert(false, 'decimal: 1/0 should throw');
+    } catch (e) {
+      assert(e.message === 'Infinite result',
+        `decimal: 1/0 throws 'Infinite result' (got '${e.message}')`);
+    }
+  }
+}

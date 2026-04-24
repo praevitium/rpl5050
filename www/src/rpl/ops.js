@@ -16,6 +16,25 @@ import {
   toRealOrThrow, toComplex, promoteNumericPair,
 } from './types.js';
 import { Fraction } from '../vendor/fraction.js/fraction.mjs';
+import Decimal from '../vendor/decimal.js/decimal.mjs';
+
+/* -------------------------------------------------------------
+   Decimal.js — configured once at module load.
+
+   We use decimal.js to carry Real arithmetic at 15 significant digits
+   internally (one guard digit above the HP50's 12-digit STD display).
+   This heals the classic IEEE-754 gotchas without changing the Real
+   type's shape on the stack: Real stays a `{ type: 'real', value: <JS
+   number> }` — we just do the arithmetic in Decimal space and round
+   back on exit via `.toNumber()`.
+
+   Rounding mode 4 = ROUND_HALF_UP (HP50 rounds .5 away from zero for
+   positive values and toward zero for negative — plain "half-up" here
+   is a close approximation that matches every test case we exercise).
+
+   No-fallback rule applies: if Decimal throws, we let it through.
+   ------------------------------------------------------------- */
+Decimal.set({ precision: 15, rounding: Decimal.ROUND_HALF_UP });
 import {
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
@@ -710,15 +729,37 @@ function _modPow(x, e, n) {
   return result;
 }
 
+/* -------------------------------------------------------------
+   Real × Real arithmetic via decimal.js.
+
+   Every binary op on two JS numbers goes through Decimal so the user
+   sees HP50-style decimal arithmetic:
+     0.1 + 0.2  →  0.3       (not 0.30000000000000004)
+     3 * 0.4 - 1.2  →  0     (not 2.22e-16)
+   We configure Decimal at precision 15 (one guard digit over the HP50
+   STD display's 12 significant digits) and return a JS number via
+   `.toNumber()` — the Real shape on the stack doesn't change.
+
+   `^` with a non-integer base or exponent is delegated to Decimal.pow,
+   which handles fractional exponents correctly.  Integer-exponent and
+   integer-base cases go through the same path; it's uniform and fast
+   enough for classroom-calculator inputs.
+
+   Division-by-zero matches the existing native behaviour: throw
+   'Infinite result'.  Decimal itself would return `Infinity`, but we
+   preserve the pre-migration RPLError so upstream error messaging
+   stays identical.
+   ------------------------------------------------------------- */
 function realBinary(op, a, b) {
+  if (op === '/' && b === 0) throw new RPLError('Infinite result');
+  const da = new Decimal(a);
+  const db = new Decimal(b);
   switch (op) {
-    case '+': return a + b;
-    case '-': return a - b;
-    case '*': return a * b;
-    case '/':
-      if (b === 0) throw new RPLError('Infinite result');
-      return a / b;
-    case '^': return Math.pow(a, b);
+    case '+': return da.plus(db).toNumber();
+    case '-': return da.minus(db).toNumber();
+    case '*': return da.times(db).toNumber();
+    case '/': return da.div(db).toNumber();
+    case '^': return Decimal.pow(da, db).toNumber();
   }
   throw new RPLError('Unknown op ' + op);
 }

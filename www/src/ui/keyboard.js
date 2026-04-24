@@ -83,17 +83,17 @@ export const SOFT_KEYS = [
 /* --------- Rows 2-3: nav/app keys (6) + 4-way arrow diamond --------- */
 
 // These six render into cols 1-3 of the 2-row nav grid.
-// Row-major order: HOME PREV NEXT | VARS STO RCL
+// Row-major order: VARS PREV NEXT | HOME STO RCL
 // (Layout renamed from the historical APPS/MODE/TOOL/VAR/STO▶/NXT — the
 // renamed keys are label-drives-action: HOME descends to HOME directory,
 // VARS opens the soft-menu of the current directory's variables,
 // STO/RCL invoke their namesake ops, PREV/NEXT page the soft-menu.
 // The MODES soft-menu is reachable via the side-panel Commands tab.)
 export const NAV_KEYS = [
-  mk('HOME', { alpha: 'G', action: typeExecName('HOME') }),
+  mk('VARS', { alpha: 'G', action: (e, s, app) => app.showVarsMenu() }),
   mk('PREV', { alpha: 'H', action: (e, s, app) => app.prevMenuPage() }),
   mk('NEXT', { alpha: 'I', action: (e, s, app) => app.nextMenuPage() }),
-  mk('VARS', { alpha: 'J', action: (e, s, app) => app.showVarsMenu() }),
+  mk('HOME', { alpha: 'J', action: typeExecName('HOME') }),
   mk('STO',  { alpha: 'K', action: typeExecName('STO') }),
   mk('RCL',  { alpha: 'L', action: typeExecName('RCL') }),
 ];
@@ -399,7 +399,7 @@ export function renderKeyboard(app, root) {
   // cells already claimed by the cluster, so the three NAV_KEYS of
   // each row will flow into the left three cells automatically as
   // long as the cluster is placed explicitly.
-  root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[0])); // HOME
+  root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[0])); // VARS
   root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[1])); // PREV
   root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[2])); // NEXT
 
@@ -408,7 +408,7 @@ export function renderKeyboard(app, root) {
   ARROW_KEYS.forEach(k => cluster.appendChild(makeKeyEl(app, k)));
   root.navRow.appendChild(cluster);
 
-  root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[3])); // VARS
+  root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[3])); // HOME
   root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[4])); // STO
   root.navRow.appendChild(makeKeyEl(app, NAV_KEYS[5])); // RCL
 
