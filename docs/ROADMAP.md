@@ -14,13 +14,38 @@ Guide.pdf`, `HP50 User Manual.pdf`) remain the fidelity reference.
 
 ---
 
+## Current state — foundations in place
+
+The substrate the roadmap builds on:
+
+- **CAS.**  Giac (Bernard Parisse, GPL-3.0+) is vendored at
+  `www/src/vendor/giac/` and wired through `www/src/rpl/cas/giac-engine.mjs`
+  as a main-thread sync adapter.  Every Symbolic op routes through
+  Giac with a strict no-fallback policy; `algebra.js` is the lean
+  AST + parser/formatter + `freeVars` surface the op layer still
+  needs.
+- **Numeric types.**  Real arithmetic is backed by `decimal.js` at
+  15 digits (`0.1 + 0.2 === 0.3` exactly).  Complex arithmetic is
+  backed by `complex.js` (`i·i = -1`, correct branch-cut pow).
+  Rational is backed by `Fraction.js` with BigInt numerators —
+  `Integer ÷ Integer` in EXACT mode produces a Rational and all
+  unary ops have EXACT/APPROX-aware dispatch.
+- **Interpreter.**  Generator-based `evalRange` supports HALT / CONT
+  / KILL / RUN at any structural depth on the direct-EVAL path; the
+  halted-program LIFO multi-slots suspended programs.
+- **Desktop shell.**  Tauri wrapper; CodeMirror editor is wired for
+  command-line entry.
+
+---
+
 ## Near-term themes (next ~3 release cohorts)
 
 ### 1. Close the last command-support gap cluster
 
-23 HP50 AUR ops are still unregistered in `src/rpl/ops.js`.  The gap is
-small and lopsided: the easy scalar clusters are in, what's left is
-heavier or touches state (MODULO, plotting).  Priority order:
+Roughly two-dozen HP50 AUR ops are still unregistered in
+`src/rpl/ops.js`.  The gap is small and lopsided: the easy scalar
+clusters are in, what's left is heavier or touches state (MODULO,
+plotting).  Priority order:
 
 - **Matrix decomposition — `CHARPOL`, `EGVL`, `EGV`** (medium
   priority).  Characteristic polynomial and eigenvalues round out the
@@ -31,15 +56,15 @@ heavier or touches state (MODULO, plotting).  Priority order:
 - **Modular polynomial ops — `POLYEVAL`, `MULTMOD`** (low).  Both
   depend on a persisted `MODULO` state slot that the calc doesn't
   carry yet; introducing that slot is the prerequisite.  `EUCLID` and
-  `INVMOD` already shipped and provide the template.
+  `INVMOD` already ship and provide the template.
 - **CAS-special functions — `Ei`, `Si`, `Ci`** (low).  Exponential /
   sine / cosine integrals.  Numerically well-studied, but fewer
   HP50 users hit these than the zeta/lambert cluster already shipped.
 - **Reflection — `TVARS`** (low).  Type-filtered sibling of `VARS`;
   one screenful of work once the value-type predicates settle.
 - **Advanced matrix decomps — `JORDAN`, `SCHUR`, `LQD`, `RSD`** (low).
-  These are HP50 completeness checkboxes; `JORDAN` in particular is
-  numerically delicate and rarely used outside teaching.
+  HP50 completeness checkboxes; `JORDAN` in particular is numerically
+  delicate and rarely used outside teaching.
 - **Control-theory — `ACKER`, `CTRB`, `OBSV`** (low).  Small and
   self-contained once `EGVL` lands.
 - **Groebner / CAS — `GREDUCE`, `GXROOT`, `SRPLY`** (low).  Behind
@@ -76,12 +101,12 @@ to the user is thin.  Worth building out:
 
 - **Named stack snapshots.**  A user-visible way to save the whole
   stack + home directory under a label, then restore it later.  HP50
-  calls this "backup ports"; we can do the same with IndexedDB or the
-  file API plus a small menu.
+  calls this "backup ports"; an IndexedDB or file-API equivalent plus
+  a small menu would do the same job.
 - **Import / export programs as text.**  `DECOMP` already stringifies
   Programs; pair it with a robust parser round-trip so users can
-  paste RPL source in and out of a clipboard.  Today the parser
-  accepts `« … »` input, but Symbolic programs with embedded unicode
+  paste RPL source in and out of a clipboard.  The parser accepts
+  `« … »` input today, but Symbolic programs with embedded unicode
   operators (≤, ≠, →) need wider tolerance.
 - **Session-scoped error log.**  A ring buffer of the last 10
   RPLErrors visible from the UI — useful for debugging scripted
@@ -89,17 +114,15 @@ to the user is thin.  Worth building out:
 
 ### 4. RPL interpreter — finish the suspended-execution story
 
-Most of the substrate is in (generator-based `evalRange`, HALT/CONT/
-KILL/RUN at any structural depth, multi-slot halted-program LIFO).
-Open items tracked in `RPL.md`:
+Most of the substrate is in place.  Open items tracked in `RPL.md`:
 
 - HALT inside a **named sub-program called via a variable** (the
   `_evalValueSync` path) still rejects cleanly but doesn't suspend.
   Lifting that requires threading the generator protocol through the
   synchronous Name-eval call — doable but a surgical change.
-- **DBUG / SST / SST↓** step-debugger ops are shipped as stubs; they
-  need a UI surface (a step-mode indicator + single-step button) to
-  be useful to end users.  UI-lane collaboration.
+- **DBUG / SST / SST↓** step-debugger ops ship as stubs; they need a
+  UI surface (a step-mode indicator + single-step button) to be
+  useful to end users.  UI-lane collaboration.
 - **ABORT-level UI.**  `ABORT` propagates cleanly to the outer loop
   but displays via the generic error banner.  A dedicated "Program
   aborted" status-line flash would feel closer to the HP50.
@@ -118,32 +141,20 @@ closing:
   (1.5_m FLOOR)` works; `Tagged Vector of Units` doesn't because the
   V/M apply layer currently drops tags before entering the per-entry
   rounder.  Tagged-over-container is a recurring paper cut.
-
-**Numeric type upgrade — shipped in session 092.**  Three phases
-landed in one session, all under the no-fallback rule:
-
-1. **Rational type** (Fraction.js v5.3.4, BigInt-backed).  New
-   `TYPES.RATIONAL`; `Integer ÷ Integer` in EXACT mode produces a
-   Rational; all unary ops have EXACT/APPROX-aware dispatch (exact in
-   EXACT, collapse-to-Real in APPROX).  Rational lifts into the
-   Symbolic AST as `Bin('/', Num(n), Num(d))`.
-2. **Real → decimal.js backing** (v10.4.3, 15-digit precision).  IEEE
-   artifacts (`0.1 + 0.2 → 0.30000000000000004`) are healed; Real
-   payload shape on the stack is unchanged.
-3. **Complex → complex.js backing** (v2.4.3).  `i*i = -1` exactly,
-   correct branch-cut pow; `{ re, im }` payload unchanged.
-
-Follow-ons on the roadmap: a dedicated num-ratio AST leaf (avoid
-Number() precision loss for BigInt numerators above 2^53), polar /
-CYLIN / SPHERE display paths via complex.js, and migrating the
-remaining complex unary ops (SQRT, LN, EXP, trig) to delegate to
-complex.js rather than keep parallel hand-rolled kernels.
+- **Dedicated num-ratio AST leaf.**  Avoid the `Number()` precision
+  loss for BigInt numerators above 2^53 when a Rational lifts into
+  Symbolic.
+- **Polar / CYLIN / SPHERE display paths** via complex.js — currently
+  handled piecemeal; a single delegation point would halve the surface.
+- **Remaining complex unary ops.**  Migrate SQRT, LN, EXP and the
+  trig / hyperbolic family to delegate to complex.js rather than keep
+  parallel hand-rolled kernels.
 
 ### 6. UI polish and keyboard-first usability
 
-The keypad and interactive stack are feature-complete but the calculator
-is hard to drive without a real HP50 muscle-memory.  A few concrete
-improvements:
+The keypad and interactive stack are feature-complete but the
+calculator is hard to drive without HP50 muscle-memory.  A few
+concrete improvements:
 
 - **Command palette / fuzzy op search.**  `/<name>` opens an overlay,
   types filter the registered op list, Enter invokes the op (as if
@@ -163,8 +174,7 @@ improvements:
 
 ### 7. Unit-test lane — drive the flake count to zero
 
-Baseline right now: 3951 pass / 34 skip / 22 flake.  The skip+flake
-set is concentrated in three areas:
+The skip+flake set is concentrated in three areas:
 
 - **Halt / control-flow interactions under stress** — hardening
   continues as the interpreter lane widens HALT coverage.
@@ -178,14 +188,12 @@ set is concentrated in three areas:
 
 ### 8. Code-review lane — continuing doc ↔ code drift audit
 
-`REVIEW.md` tracks 11 open findings as of the last review pass.
-Standing obligations (the drift patterns this lane sees most):
+`REVIEW.md` tracks the open findings.  Standing obligations (the drift
+patterns this lane sees most):
 
 - `COMMANDS.md` op-count numbers need to be stamped when they move.
 - The `Notes` column on per-op rows sometimes lags widening.
 - `TESTS.md` skip/flake snapshot should match reality.
-- Session log pointer drift between lanes (cohort labels vs. file
-  numbers) is a known recurring story.
 
 No large refactors pending — the code-review lane is mostly in
 maintenance mode and catches drift as it happens.
@@ -206,22 +214,13 @@ These are aspirational and not on any current queue:
   transcript of the last N stack operations with formatted results
   and the entry-line keystrokes that produced them.  Useful for
   coursework and support threads.
-- **WASM CAS core (complete — session 095).**  The hand-rolled
-  symbolic layer in `www/src/rpl/algebra.js` has been retired in
-  favour of [Giac](https://www-fourier.univ-grenoble-alpes.fr/~parisse/giac.html)
-  (Bernard Parisse, GPL-3.0+), vendored at `www/src/vendor/giac/`
-  with a main-thread sync adapter at `www/src/rpl/cas/giac-engine.mjs`.
-  FACTOR shipped in session 092; session 094 added the purge-
-  wrapping helper; session 095 migrated the pilot four (EXPAND,
-  DERIV, INTEG, SOLVE), COLLECT/SUBST, the full trig/exp/log
-  family (TEXPAND/TLIN/LNCOLLECT/EXPLN/TSIMP/TCOLLECT/DISTRIB),
-  and LAPLACE/ILAP/PREVAL — then deleted the unused algebra.js
-  exports (`simplify`, `expand`, `deriv`, `integ`, `solve`,
-  `subst`, `collectByVar`, `factor`, `replaceVar`) along with
-  their direct tests.  `algebra.js` is now the lean AST +
-  parser/formatter + `freeVars` surface that the op layer still
-  needs; every Symbolic op routes through Giac with a strict
-  no-fallback policy.
+- **Offline-first PWA.**  Service worker + cache manifest so the
+  calculator runs without network once loaded; pairs naturally with
+  the Tauri desktop build.
+- **WebWorker-hosted CAS.**  Giac runs on the main thread today.
+  Moving it to a worker would unblock the UI during long `FACTOR`
+  or `SOLVE` calls; the tradeoff is reintroducing async plumbing
+  the op layer currently sidesteps.
 
 ---
 
