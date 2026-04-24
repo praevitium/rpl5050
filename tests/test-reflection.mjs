@@ -717,12 +717,13 @@ import { assert } from './helpers.mjs';
       'session068: DECOMP→STR→ yields a Program (round-trip preserves type)');
     assert(reconstituted.tokens.length === 3,
       'session068: DECOMP→STR→ preserves token count');
-    // Running it should produce 7.
+    // Running it should produce 7.  Under APPROX the push-time
+    // coercion makes the result a Real (Decimal); under EXACT the
+    // integer path keeps it as Integer.  Handle both.
     lookup('EVAL').fn(s);
-    // Level-1 is now the integer 7 (plus possibly other bookkeeping).
     const top = s.peek();
     const topVal = top.type === 'integer' ? Number(top.value)
-                : top.type === 'real'    ? top.value : null;
+                : top.type === 'real'    ? top.value.toNumber() : null;
     assert(topVal === 7,
       'session068: DECOMP→STR→→EVAL reproduces the original result (3 4 + → 7)');
   } finally {
@@ -908,19 +909,25 @@ function _roundTripProgram(prog) {
   setApproxMode(true);
   try {
     const src = Program([Integer(6n), Integer(7n), Name('*'), Integer(2n), Name('-')]);
-    // Original EVAL: 6 7 * 2 - = 40
+    // Original EVAL: 6 7 * 2 - = 40.  Under APPROX the push-time
+    // coercion makes the top-of-stack a Real (Decimal); unwrap with
+    // .toNumber() so the numeric equality test is mode-agnostic.
     const s0 = new Stack();
     s0.push(src);
     lookup('EVAL').fn(s0);
     const origTop = s0.peek();
-    const origVal = origTop.type === 'integer' ? Number(origTop.value) : origTop.value;
+    const origVal = origTop.type === 'integer' ? Number(origTop.value)
+                  : origTop.type === 'real'    ? origTop.value.toNumber()
+                  : origTop.value;
 
     const back = _roundTripProgram(src);
     const s1 = new Stack();
     s1.push(back);
     lookup('EVAL').fn(s1);
     const backTop = s1.peek();
-    const backVal = backTop.type === 'integer' ? Number(backTop.value) : backTop.value;
+    const backVal = backTop.type === 'integer' ? Number(backTop.value)
+                  : backTop.type === 'real'    ? backTop.value.toNumber()
+                  : backTop.value;
     assert(origVal === backVal && origVal === 40,
       'session073: DECOMP→STR→ round-trip preserves EVAL semantics (arith)');
   } finally {
@@ -970,12 +977,15 @@ function _roundTripProgram(prog) {
       Name('END'),
     ]);
     const back = _roundTripProgram(src);
-    // Re-run the round-tripped program.
+    // Re-run the round-tripped program.  Top-of-stack may be Integer
+    // (EXACT) or Real/Decimal (APPROX after push coercion).
     const s = new Stack();
     s.push(back);
     lookup('EVAL').fn(s);
     const top = s.peek();
-    const v = top.type === 'integer' ? Number(top.value) : top.value;
+    const v = top.type === 'integer' ? Number(top.value)
+            : top.type === 'real'    ? top.value.toNumber()
+            : top.value;
     assert(v === 105,
       'session073: DECOMP→STR→ round-trip preserves IF/THEN/ELSE/END (5>0 → 5+100)');
   } finally {

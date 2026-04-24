@@ -697,7 +697,15 @@ function combineLikeTerms(ast) {
  *    c*X ± d*X → (c ± d)*X    (like-terms combiner)
  *  Pure numeric sub-trees collapse to a single Num.
  *  Identity: `simplify(expr)` is idempotent. */
-export function simplify(ast) {
+/* NOTE: simplify, expand, deriv, integ, solve, subst, collectByVar, factor,
+ * and replaceVar were once part of this module's public surface — they
+ * powered ops.js's EXPAND/DERIV/INTEG/SOLVE/SUBST/COLLECT/FACTOR/LAPLACE
+ * pipelines before the Giac migration.  As of session 095 every CAS op
+ * routes through Giac, so these functions are retained only as the
+ * internal scaffolding of a few other live exports (parseAlgebra uses
+ * simplify for `--x → x` collapses at parse time, etc.).  They are NOT
+ * re-exported; tests cover the live surface end-to-end through ops. */
+function simplify(ast) {
   if (!ast) return ast;
   if (ast.kind === 'num' || ast.kind === 'var') return ast;
 
@@ -1088,7 +1096,7 @@ function rebuildSumParts(parts) {
  *  and integer-power sums, then hands the result to simplify() to let
  *  the like-terms combiner collapse matching coefficients.  Unsupported
  *  sub-trees are returned unchanged, keeping EXPAND total. */
-export function expand(ast) {
+function expand(ast) {
   return simplify(expandAst(ast));
 }
 
@@ -1120,7 +1128,7 @@ function expandAst(ast) {
 
 /** Derivative of `ast` with respect to variable `varName`.
  *  Returns a fully simplified AST. */
-export function deriv(ast, varName) {
+function deriv(ast, varName) {
   return simplify(derivRaw(ast, String(varName)));
 }
 
@@ -1314,7 +1322,7 @@ function derivRaw(ast, v) {
  *  handled by straightforward closed-form rules — the rest fall back to
  *  a bare `INTEG(expr, var)` function call so the expression round-trips
  *  and the user can keep working symbolically. */
-export function integ(ast, varName) {
+function integ(ast, varName) {
   return simplify(integRaw(ast, String(varName)));
 }
 
@@ -1746,7 +1754,7 @@ function pickMainVariable(ast) {
  *  polynomial — so `X*(X^2 + 1)` still reads like a factorization
  *  even though the quadratic is irreducible.
  */
-export function factor(ast) {
+function factor(ast) {
   if (!ast) return ast;
   // Expand first so we can pattern-match on a canonical polynomial.
   const expanded = expand(ast);
@@ -2798,7 +2806,7 @@ function numericCoefAt(coefs, power) {
  *  the match, so untouched subtrees share identity.  This is a
  *  structural replace — no renaming, no capture checks needed since
  *  our AST has no binders. */
-export function replaceVar(ast, varName, replacement) {
+function replaceVar(ast, varName, replacement) {
   if (!ast) return ast;
   if (isVar(ast)) return ast.name === varName ? replacement : ast;
   if (isNum(ast)) return ast;
@@ -2826,7 +2834,7 @@ export function replaceVar(ast, varName, replacement) {
 /** subst(expr, varName, valueAst) — single substitution convenience.
  *  Wraps replaceVar + simplify.  Always simplifies afterward so the
  *  result is a cleaned-up AST. */
-export function subst(expr, varName, valueAst) {
+function subst(expr, varName, valueAst) {
   return simplify(replaceVar(expr, varName, valueAst));
 }
 
@@ -2855,7 +2863,7 @@ export function subst(expr, varName, valueAst) {
 /** collectByVar(ast, varName) — polynomial COLLECT entry.  Returns
  *  the regrouped AST or `ast` unchanged if the shape isn't
  *  recognisable. */
-export function collectByVar(ast, varName) {
+function collectByVar(ast, varName) {
   if (!ast) return ast;
   // If the variable doesn't appear at all, nothing to collect.
   if (!freeVars(ast).has(varName)) return simplify(ast);
@@ -2939,7 +2947,7 @@ export function collectByVar(ast, varName) {
  *  symbolic-coefficient, or non-polynomial inputs return null so the
  *  caller can fall through gracefully.
  */
-export function solve(ast, varName) {
+function solve(ast, varName) {
   if (!ast || !varName) return null;
 
   // Normalise equation → expr: L − R.

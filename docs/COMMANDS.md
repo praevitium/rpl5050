@@ -231,11 +231,14 @@ not fallbacks.  Migration is incremental — rows below are flagged
 | Command | Status | Notes |
 |---------|--------|-------|
 | `FACTOR` | ✓ | **Session 092 [Giac]** — Symbolic routed through `factor(...)`; Integer path is native trial-division (Giac's `factor(12)` prints `(2)^2*3` which doesn't match HP50 semantics). No-fallback policy: Symbolic input errors if Giac isn't ready. |
-| `EVAL` `APPROX` `EXPAND` | ✓ | |
-| `COLLECT` `DISTRIB` `TEXPAND` `TLIN` | ✓ | |
-| `LNCOLLECT` `EXPLN` `TSIMP` `TCOLLECT` | ✓ | |
-| `DERIV` `INTEG` `SUM` `SOLVE` | ✓ | |
-| `SUBST` `LAPLACE` `ILAP` `HEAVISIDE` `DIRAC` | ✓ | |
+| `EVAL` `APPROX` | ✓ | |
+| `EXPAND` `COLLECT` `SUBST` | ✓ | **Session 095 [Giac]** — pilot four + COLLECT/SUBST; all routed through `caseval` with the purge-wrapping helper. No-fallback policy. |
+| `DERIV` `INTEG` `SOLVE` | ✓ | **Session 095 [Giac]** — pilot four; SUM is native. |
+| `DISTRIB` `TEXPAND` `TLIN` | ✓ | **Session 095 [Giac]** — trig/exp/log family. |
+| `LNCOLLECT` `EXPLN` `TSIMP` `TCOLLECT` | ✓ | **Session 095 [Giac]** — trig/exp/log family; the native Pythagorean walker was deleted as part of this migration. |
+| `LAPLACE` `ILAP` `PREVAL` | ✓ | **Session 095 [Giac]** — `laplace/ilaplace/preval` via `caseval`. `PREVAL` multi-var path still honors `VX`. |
+| `HEAVISIDE` `DIRAC` | ✓ | |
+| `SUM` | ✓ | Native sum-of-list path. |
 | `HALFTAN` `ASIN2C` `ASIN2T` `ACOS2S` | ✓ | |
 | `ATAN2S` `TAN2SC` `TAN2SC2` `TAN2CS2` | ✓ | |
 | `COLLECT` `EPSX0` | ✓ | |

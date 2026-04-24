@@ -261,6 +261,38 @@ export function splitGiacList(giacStr) {
    ------------------------------------------------------------------ */
 
 /**
+ * Giac's `caseval` returns its result as a C string, and for a handful
+ * of output shapes wraps the expression in literal double-quotes — most
+ * notably when the input was a semicolon sequence (which is the case
+ * for every command built through `buildGiacCmd`, since that helper
+ * prepends `purge(...)` clauses).  The embedded quotes trip up the
+ * HP-style expression parser and the list splitter, which don't accept
+ * `"` as a token.
+ *
+ * Strip a single layer of surrounding double-quotes if present, plus
+ * any standard backslash escapes Giac may have inserted inside.
+ * Expression / list strings never legitimately begin with a quote, so
+ * this is safe.  Unquoted results pass through unchanged.
+ *
+ * Exported so the engine adapter can normalise raw `caseval` output at
+ * the one place it crosses the Giac boundary.
+ */
+export function stripGiacQuotes(s) {
+  if (typeof s !== "string") return s;
+  if (s.length >= 2 && s.charCodeAt(0) === 0x22 && s.charCodeAt(s.length - 1) === 0x22) {
+    const inner = s.slice(1, -1);
+    // Undo the handful of backslash escapes Giac uses when it wraps a
+    // result in quotes: \" \\ \n \t. Anything else passes through.
+    return inner.replace(/\\(["\\nt])/g, (_m, c) => {
+      if (c === "n") return "\n";
+      if (c === "t") return "\t";
+      return c;
+    });
+  }
+  return s;
+}
+
+/**
  * Parse a string returned by Giac into an rpl5050 AST.
  *
  * Strategy: pre-process the string (lowercase Giac names -> HP

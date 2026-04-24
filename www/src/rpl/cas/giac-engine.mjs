@@ -44,6 +44,8 @@
 //     giac.caseval(cmd)      // synchronous; throws if not ready
 //     giac.toLatex(expr)     // shortcut: caseval(`latex(${expr})`)
 
+import { stripGiacQuotes } from "./giac-convert.mjs";
+
 const isBrowser =
   typeof globalThis !== "undefined" &&
   typeof globalThis.document !== "undefined" &&
@@ -121,7 +123,12 @@ class BrowserGiacEngine {
     if (typeof cmd !== "string") {
       throw new TypeError(`giac.caseval: expected string, got ${typeof cmd}`);
     }
-    return this._caseval(cmd);
+    // Giac wraps many results in literal double-quotes (expression-level
+    // strings, semicolon-sequence outputs, etc.).  Normalise at the
+    // engine boundary so every downstream consumer — giacToAst,
+    // splitGiacList, latex pipes — sees the raw expression text without
+    // quote fencing.
+    return stripGiacQuotes(this._caseval(cmd));
   }
 
   toLatex(expr) {
@@ -177,7 +184,11 @@ class MockGiacEngine {
     if (this._fixtures.has(cmd)) {
       const v = this._fixtures.get(cmd);
       if (v instanceof Error) throw v;
-      return v;
+      // Apply the same quote-stripping as the browser engine so
+      // fixtures that intentionally model Giac's quoted output (e.g.
+      // `"(X+1)^2"`) are normalised identically — tests can pin either
+      // shape.
+      return stripGiacQuotes(v);
     }
     if (this._defaultThrow) {
       throw new Error(

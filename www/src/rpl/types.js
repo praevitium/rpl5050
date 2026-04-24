@@ -222,6 +222,82 @@ export function Name(id, { local = false, quoted = false } = {}) {
   });
 }
 
+/* ------------------------------------------------------------------
+   HP50-style global-identifier validation.
+
+   The HP50 AUR (§2.2.4) says a valid user-variable name:
+     1. Is 1 to 127 characters long.
+     2. Starts with a letter — any ASCII letter A..Z / a..z or a Greek
+        letter from the HP character set (α..ω, Α..Ω).
+     3. Contains only letters, digits, or the underscore after the
+        first position.  Arithmetic operators, punctuation, whitespace,
+        brackets, etc. are rejected.
+     4. Is not one of the reserved command / function names the
+        calculator hard-codes (SIN, COS, STO, …).  Storing to a reserved
+        name is refused by the HP50 with "Invalid name".
+
+   Greek ranges here match the Unicode blocks that correspond to the
+   HP character set's Greek letters — U+0391..U+03A9 (Α..Ω, with the
+   final-sigma slot U+03A2 unused anyway) and U+03B1..U+03C9 (α..ω).
+   Sticking to code-point ranges (not \p{L}) keeps behaviour close to
+   the HP50 rather than accepting arbitrary Unicode letters that the
+   device never exposed — "cyrillic A" looking like Latin A is exactly
+   the confusing surface we want to avoid.
+
+   Operator-name references (Name('+', quoted:true) etc.) are a
+   separate concept used for passing operators as first-class values;
+   they fail this check deliberately, and STO / RCL / CRDIR guard
+   against them via isValidHpIdentifier.
+   ------------------------------------------------------------------ */
+
+const HP_IDENT_START_RE =
+  /^[A-Za-z\u0391-\u03A9\u03B1-\u03C9]/;
+const HP_IDENT_REST_RE =
+  /^[A-Za-z0-9\u0391-\u03A9\u03B1-\u03C9_]*$/;
+
+/** Reserved command / function names that cannot be overwritten as
+ *  user variables on the HP50.  Populated lazily at first use to avoid
+ *  a circular import with ops.js — ops.js fills this set via
+ *  `registerReservedName` as it registers each op (see ops.js init
+ *  block).  Callers that want to validate before ops.js has loaded
+ *  get the current (possibly partial) view; in practice the flag-day
+ *  is the ops.js module-load, which precedes any user interaction.
+ */
+const _RESERVED_NAMES = new Set();
+
+/** Register a name as reserved (unavailable for STO target).
+ *  ops.js calls this for every registered op; other callers can use
+ *  it to flag additional names (e.g. internal slots). */
+export function registerReservedName(name) {
+  if (typeof name !== 'string' || name.length === 0) return;
+  _RESERVED_NAMES.add(name);
+  _RESERVED_NAMES.add(name.toUpperCase());
+}
+
+/** Is `name` a reserved HP50 command / function name (checked case-
+ *  insensitively, matching the HP50's uppercase command surface)? */
+export function isReservedHpName(name) {
+  if (typeof name !== 'string' || name.length === 0) return false;
+  return _RESERVED_NAMES.has(name) || _RESERVED_NAMES.has(name.toUpperCase());
+}
+
+/** Syntactic validity only — letters/digits/underscore, starts with
+ *  letter, ≤127 chars.  Does NOT consult the reserved-name list; STO
+ *  etc. layer that check on top. */
+export function isValidHpIdentifier(name) {
+  if (typeof name !== 'string') return false;
+  const n = name.length;
+  if (n === 0 || n > 127) return false;
+  if (!HP_IDENT_START_RE.test(name)) return false;
+  if (!HP_IDENT_REST_RE.test(name.slice(1))) return false;
+  return true;
+}
+
+/** Combined STO-eligibility check: valid syntax AND not reserved. */
+export function isStorableHpName(name) {
+  return isValidHpIdentifier(name) && !isReservedHpName(name);
+}
+
 export function Symbolic(expr) {
   // expr is an AST node — shape defined in src/rpl/algebra.js (future).
   // For now, accept any object and store it.

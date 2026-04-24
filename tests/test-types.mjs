@@ -4,7 +4,7 @@ import {
   Real, Integer, Rational, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isRational, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
-  isString, isNumber, promoteNumericPair,
+  isString, isNumber, promoteNumericPair, Decimal,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
 import { format, formatStackTop } from '../www/src/rpl/formatter.js';
@@ -1334,16 +1334,15 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
           && s.peek(1).n === 2n && s.peek(1).d === 3n,
         'EXACT: SQRT 4/9 → 2/3 (perfect square, exact)');
     }
-    // SQRT on a non-perfect-square Rational → Real (numeric fallback
-    // in the absence of a Symbolic simplifier path; deliberately keeps
-    // the calculator usable rather than erroring).
+    // SQRT on a non-perfect-square Rational → Symbolic(SQRT(2/9)) in
+    // EXACT mode — the irrational is preserved rather than decimated.
+    // Pressing →NUM or toggling APPROX folds it to the 15-digit Real.
     {
       const s = new Stack();
       s.push(Rational(2, 9));
       lookup('SQRT').fn(s);
-      assert(s.peek(1).type === 'real'
-          && Math.abs(s.peek(1).value - Math.sqrt(2/9)) < 1e-12,
-        'EXACT: SQRT 2/9 → Real (non-perfect-square falls to float)');
+      assert(s.peek(1).type === 'symbolic',
+        'EXACT: SQRT 2/9 → Symbolic (non-perfect-square stays exact)');
     }
     // SQRT on a negative Rational → Complex.
     {
@@ -1634,5 +1633,185 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     const txt = format(r);
     assert(txt.includes('LN') && txt.includes('1/3'),
       `rational->AST: LN(X + 1/3) formats with LN(...) and 1/3 (got '${txt}')`);
+  }
+}
+
+/* ================================================================
+   EXACT/APPROX — exactness preservation and push-time decimation.
+
+   EXACT (flag -105 CLEAR):
+     Integer/Rational inputs to transcendental ops keep the result
+     Symbolic when the closed-form answer is not an integer.
+     `SQRT(2)`, `LN(2)`, `EXP(1)`, `SIN(30)` (any angle mode), `2^(1/3)`
+     all stay as Symbolic.  Clean folds like `SQRT(9)=3`, `LN(1)=0`,
+     `SIN(0)=0`, `EXP(0)=1` still collapse to Integer(0/1/3).
+
+   APPROX (flag -105 SET):
+     Integer/Rational/pure-numeric-Symbolic values coerce to Real on
+     the way onto the stack — "fractions and integers decimate on
+     entry, in expressions too."  Values with free variables do NOT
+     decimate; `X + 1` stays symbolic.
+   ================================================================ */
+{
+  /* ---- EXACT-mode exactness for transcendentals ---- */
+  const prev = calcState.approxMode;
+  setApproxMode(false);
+  try {
+    // SQRT(2) stays Symbolic
+    {
+      const s = new Stack();
+      s.push(Integer(2));
+      lookup('SQRT').fn(s);
+      assert(s.peek(1).type === 'symbolic',
+        'EXACT: SQRT(2) → Symbolic (irrational stays exact)');
+    }
+    // SQRT(9)=3 still folds to Integer (clean integer result)
+    {
+      const s = new Stack();
+      s.push(Integer(9));
+      lookup('SQRT').fn(s);
+      assert(s.peek(1).type === 'integer' && s.peek(1).value === 3n,
+        'EXACT: SQRT(9) → Integer(3) (clean fold still folds)');
+    }
+    // SQRT(3/5) stays Symbolic
+    {
+      const s = new Stack();
+      s.push(Rational(3, 5));
+      lookup('SQRT').fn(s);
+      assert(s.peek(1).type === 'symbolic',
+        'EXACT: SQRT(3/5) → Symbolic (non-perfect-square fraction stays exact)');
+    }
+    // LN(2) stays Symbolic
+    {
+      const s = new Stack();
+      s.push(Integer(2));
+      lookup('LN').fn(s);
+      assert(s.peek(1).type === 'symbolic',
+        'EXACT: LN(2) → Symbolic (irrational stays exact)');
+    }
+    // LN(1) = 0 still folds
+    {
+      const s = new Stack();
+      s.push(Integer(1));
+      lookup('LN').fn(s);
+      assert(s.peek(1).type === 'integer' && s.peek(1).value === 0n,
+        'EXACT: LN(1) → Integer(0) (clean fold still folds)');
+    }
+    // EXP(0) = 1 still folds
+    {
+      const s = new Stack();
+      s.push(Integer(0));
+      lookup('EXP').fn(s);
+      assert(s.peek(1).type === 'integer' && s.peek(1).value === 1n,
+        'EXACT: EXP(0) → Integer(1) (clean fold still folds)');
+    }
+    // EXP(1) stays Symbolic
+    {
+      const s = new Stack();
+      s.push(Integer(1));
+      lookup('EXP').fn(s);
+      assert(s.peek(1).type === 'symbolic',
+        'EXACT: EXP(1) → Symbolic');
+    }
+    // 2 ^ (1/3) stays Symbolic
+    {
+      const s = new Stack();
+      s.push(Integer(2));
+      s.push(Rational(1, 3));
+      lookup('^').fn(s);
+      assert(s.peek(1).type === 'symbolic',
+        'EXACT: 2 ^ (1/3) → Symbolic (fractional exponent stays exact)');
+    }
+    // Real SQRT still decimates (Real wasn't ever symbolic-preserving)
+    {
+      const s = new Stack();
+      s.push(Real(2));
+      lookup('SQRT').fn(s);
+      assert(s.peek(1).type === 'real',
+        'EXACT: SQRT(2.0) → Real (Real inputs never lift to Symbolic)');
+    }
+  } finally {
+    setApproxMode(prev);
+  }
+}
+
+{
+  /* ---- APPROX push-time coercion ---- */
+  const prev = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // Integer → Real on push
+    {
+      const s = new Stack();
+      s.push(Integer(42));
+      const v = s.peek(1);
+      assert(v.type === 'real' && v.value.eq(42),
+        'APPROX: push(Integer(42)) coerces to Real(42)');
+    }
+    // Rational → Real on push
+    {
+      const s = new Stack();
+      s.push(Rational(1, 3));
+      const v = s.peek(1);
+      assert(v.type === 'real' && Math.abs(v.value.toNumber() - (1/3)) < 1e-12,
+        'APPROX: push(Rational(1/3)) coerces to Real(0.333…)');
+    }
+    // Symbolic with no free variables — pure-numeric 1/3 — decimates
+    {
+      const s = new Stack();
+      const parsed = parseEntry('`1/3`');        // → Symbolic(AstBin('/',1,3))
+      for (const val of parsed) s.push(val);
+      const v = s.peek(1);
+      assert(v.type === 'real',
+        `APPROX: push(Symbolic(1/3)) coerces to Real (got ${v.type})`);
+      assert(Math.abs(v.value.toNumber() - (1/3)) < 1e-12,
+        `APPROX: Symbolic(1/3) → ~0.333… (got ${v.value})`);
+    }
+    // Symbolic WITH free variables — X + 1 — stays symbolic
+    {
+      const s = new Stack();
+      const parsed = parseEntry('`X+1`');
+      for (const val of parsed) s.push(val);
+      const v = s.peek(1);
+      assert(v.type === 'symbolic',
+        'APPROX: Symbolic with free variables stays Symbolic on push');
+    }
+    // Arithmetic respects coercion: Integer(3) + Integer(4) → Real(7)
+    {
+      const s = new Stack();
+      s.push(Integer(3));
+      s.push(Integer(4));
+      lookup('+').fn(s);
+      const v = s.peek(1);
+      assert(v.type === 'real' && v.value.eq(7),
+        'APPROX: 3 4 + → Real(7) after push coercion');
+    }
+    // Large Integer (beyond 2^53) → Real via Decimal string path, no
+    // precision loss on the integer part
+    {
+      const s = new Stack();
+      s.push(Integer(10n ** 20n));
+      const v = s.peek(1);
+      assert(v.type === 'real',
+        'APPROX: push(big BigInt) coerces to Real');
+      assert(v.value.eq(new Decimal('1e20')),
+        'APPROX: push(10^20) keeps precision via Decimal string');
+    }
+    // EXACT → APPROX transition: existing Integer on the stack doesn't
+    // retroactively decimate, only fresh pushes do.  Stack ops like DUP
+    // preserve what's there.
+    {
+      setApproxMode(false);
+      const s = new Stack();
+      s.push(Integer(5));
+      setApproxMode(true);
+      // DUP must not trigger coercion — it copies a stack slot, it
+      // doesn't push a "new" value.
+      s.dup();
+      assert(s.peek(1).type === 'integer' && s.peek(2).type === 'integer',
+        'APPROX: DUP does not retroactively coerce existing Integer');
+    }
+  } finally {
+    setApproxMode(prev);
   }
 }

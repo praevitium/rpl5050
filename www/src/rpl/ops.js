@@ -14,6 +14,7 @@ import {
   isProgram, isTagged, isList, isSymbolic, isVector, isMatrix, isDirectory,
   isUnit,
   toRealOrThrow, toComplex, promoteNumericPair,
+  isValidHpIdentifier, isStorableHpName, registerReservedName,
 } from './types.js';
 import { Fraction } from '../vendor/fraction.js/fraction.mjs';
 import Decimal from '../vendor/decimal.js/decimal.mjs';
@@ -40,7 +41,7 @@ import {
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
 } from './units.js';
-import { RPLError, RPLAbort, RPLHalt } from './stack.js';
+import { RPLError, RPLAbort, RPLHalt, setPushCoerce } from './stack.js';
 import {
   Var as AstVar, Num as AstNum,
   Bin as AstBin, Fn as AstFn, Neg as AstNeg,
@@ -101,7 +102,13 @@ const FALSE = Real(0);
 const OPS = new Map();
 
 export function register(name, fn, opts = {}) {
-  OPS.set(name.toUpperCase(), { fn, ...opts });
+  const key = name.toUpperCase();
+  OPS.set(key, { fn, ...opts });
+  // Every registered op name is a reserved HP50 identifier: STO, CRDIR,
+  // SVX, etc. all refuse to overwrite a built-in command name.  We
+  // register both the as-given and uppercase forms (types.js re-adds
+  // the uppercase form anyway — this keeps the two sources in sync).
+  registerReservedName(name);
 }
 
 export function lookup(name) {
@@ -420,9 +427,20 @@ function _rationalBinary(op, a, b) {
     case '^': {
       // Fraction.pow only supports rational exponents whose denominator
       // is 1 (integer exponent) or whose result is representable as a
-      // fraction.  For non-integer exponents we drop to Real; integer
-      // exponents stay exact.
+      // fraction.  For non-integer exponents: in APPROX mode we drop
+      // to Real; in EXACT mode we lift to a Symbolic(base ^ exp) so the
+      // irrational stays exact — `2 ^ (1/3)` leaves `2^(1/3)` on the
+      // stack rather than 1.2599….  Integer exponents always stay exact.
       if (fb.d === 1n) { r = fa.pow(fb); break; }
+      if (!getApproxMode()) {
+        const signedBaseN = fa.s * fa.n;
+        const signedExpN = fb.s * fb.n;
+        const baseAst = a.d === 1n
+          ? AstNum(Number(signedBaseN))
+          : AstBin('/', AstNum(Number(signedBaseN)), AstNum(Number(fa.d)));
+        const expAst = AstBin('/', AstNum(Number(signedExpN)), AstNum(Number(fb.d)));
+        return Symbolic(AstBin('^', baseAst, expAst));
+      }
       return Real(Math.pow(Number(fa.s * fa.n) / Number(fa.d),
                            Number(fb.s * fb.n) / Number(fb.d)));
     }
@@ -1044,19 +1062,21 @@ register('SQRT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     // EXACT mode, non-negative Rational: attempt exact square-root.
     // Both numerator and denominator must be perfect squares — then
     // SQRT(a/b) = √a/√b stays a Rational (collapse to Integer when
-    // d=1).  Otherwise fall through to the numeric Real path.
+    // d=1).  Otherwise lift to Symbolic(SQRT(a/b)) to preserve
+    // exactness — pressing →NUM later folds to the decimal.
     const sn = _bigIntIsqrt(v.n);
     const sd = _bigIntIsqrt(v.d);
     if (sn !== null && sd !== null) {
       if (sd === 1n) s.push(Integer(sn));
       else           s.push(Rational(sn, sd));
-    } else s.push(Real(Math.sqrt(Number(v.n) / Number(v.d))));
+    } else s.push(Symbolic(AstFn('SQRT', [_toAst(v)])));
   } else if (isInteger(v) && !getApproxMode()) {
     // EXACT mode, non-negative Integer: exact sqrt if perfect square,
-    // otherwise Real (HP50 surfaces the numeric value in STD display).
+    // else lift to Symbolic(SQRT(n)) so the irrational stays symbolic
+    // (HP50 flag -105 CLEAR semantics — press →NUM to decimate).
     const sn = _bigIntIsqrt(v.value);
     if (sn !== null) s.push(Integer(sn));
-    else             s.push(Real(Math.sqrt(Number(v.value))));
+    else             s.push(Symbolic(AstFn('SQRT', [_toAst(v)])));
   } else {
     s.push(Real(Math.sqrt(toRealOrThrow(v))));
   }
@@ -1098,6 +1118,25 @@ function _bigIntIsqrt(n) {
    on the LCD); old call sites that passed a bare fn still work —
    they get UPPER-cased `fn.name` or a fallback of 'FN'.
    ---------------------------------------------------------------- */
+/* EXACT-mode lift for unary transcendentals.
+   `LN(2)` / `SIN(30)` / `EXP(1)` with an Integer or Rational input in
+   EXACT mode stays symbolic — the HP50 rule is "don't throw away
+   exactness for a 15-digit decimal."  If the naive numeric evaluation
+   happens to collapse to an integer (e.g. `LN(1)=0`, `SIN(0)=0`,
+   `EXP(0)=1`), we DO fold so those common-case results don't stay
+   wrapped as `LN(1)`.  The round-to-integer tolerance (1e-12) mirrors
+   _approxGate in the Symbolic EVAL path so the two entry points agree.
+   Returns a pushable RPL value. */
+function _exactUnaryLift(fnName, yScalar, v) {
+  if (Number.isFinite(yScalar)) {
+    const rounded = Math.round(yScalar);
+    if (Math.abs(yScalar - rounded) < 1e-12) {
+      return Integer(BigInt(rounded));
+    }
+  }
+  return Symbolic(AstFn(fnName, [_toAst(v)]));
+}
+
 function unaryReal(name, fn) {
   if (typeof name === 'function') { fn = name; name = null; }
   const fnName = (name || (fn && fn.name) || 'FN').toUpperCase();
@@ -1105,6 +1144,11 @@ function unaryReal(name, fn) {
     const v = s.pop();
     if (_isSymOperand(v)) {
       s.push(Symbolic(AstFn(fnName, [_toAst(v)])));
+      return;
+    }
+    if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+      const x = isRational(v) ? Number(v.n) / Number(v.d) : Number(v.value);
+      s.push(_exactUnaryLift(fnName, fn(x), v));
       return;
     }
     s.push(Real(fn(toRealOrThrow(v))));
@@ -1117,11 +1161,21 @@ function unaryReal(name, fn) {
    trig returns an angle in the active mode.  Symbolic/Name operands
    are lifted to `SIN(X)` / `ACOS(X)` etc. with no angle-mode
    conversion — the AST carries intent, not units.
+
+   In EXACT mode, an Integer/Rational input that would produce a
+   non-integer result stays symbolic (see _exactUnaryLift).  This
+   matches the HP50 behavior under flag -105 CLEAR: `30 SIN` leaves
+   `SIN(30)` on the stack; pressing →NUM then folds to 0.5 (in DEG).
    ----------------------------------------------------------------- */
 const trigFwd = (name, fn) => _withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) {
     s.push(Symbolic(AstFn(name, [_toAst(v)])));
+    return;
+  }
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    const x = isRational(v) ? Number(v.n) / Number(v.d) : Number(v.value);
+    s.push(_exactUnaryLift(name, fn(toRadians(x)), v));
     return;
   }
   s.push(Real(fn(toRadians(toRealOrThrow(v)))));
@@ -1130,6 +1184,11 @@ const trigInv = (name, fn) => _withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) {
     s.push(Symbolic(AstFn(name, [_toAst(v)])));
+    return;
+  }
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    const x = isRational(v) ? Number(v.n) / Number(v.d) : Number(v.value);
+    s.push(_exactUnaryLift(name, fromRadians(fn(x)), v));
     return;
   }
   s.push(Real(fromRadians(fn(toRealOrThrow(v)))));
@@ -1165,6 +1224,10 @@ register('ACOSH', (s) => {
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ACOSH', [_toAst(v)]))); return; }
   const x = toRealOrThrow(v);
   if (!(x >= 1)) throw new RPLError('Bad argument value');
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    s.push(_exactUnaryLift('ACOSH', Math.acosh(x), v));
+    return;
+  }
   s.push(Real(Math.acosh(x)));
 });
 register('ATANH', (s) => {
@@ -1172,6 +1235,10 @@ register('ATANH', (s) => {
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ATANH', [_toAst(v)]))); return; }
   const x = toRealOrThrow(v);
   if (!(x > -1 && x < 1)) throw new RPLError('Bad argument value');
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    s.push(_exactUnaryLift('ATANH', Math.atanh(x), v));
+    return;
+  }
   s.push(Real(Math.atanh(x)));
 });
 
@@ -2515,11 +2582,11 @@ register('STO', (s) => {
   const [value, nameVal] = s.popN(2);
   if (isList(nameVal)) {
     for (const item of nameVal.items) {
-      _storeOneOrRPL(_coerceDirName(item), value);
+      _storeOneOrRPL(_coerceStorableName(item), value);
     }
     return;
   }
-  _storeOneOrRPL(_coerceDirName(nameVal), value);
+  _storeOneOrRPL(_coerceStorableName(nameVal), value);
 });
 
 function _recallOneOrRPL(id) {
@@ -2611,6 +2678,29 @@ function _coerceDirName(v) {
   throw new RPLError('Bad argument type');
 }
 
+/**
+ * Write-path name coercion.  Same shape as `_coerceDirName` but also
+ * enforces HP50 §2.2.4 identifier rules (letters + digits + underscore,
+ * ≤127 chars, starts with letter, not a reserved command name).  Used
+ * by STO / STO+- etc. / CRDIR / SVX / STOF — anywhere a *new or
+ * overwritten* variable binding is created.  Read-only paths (RCL,
+ * PURGE, VARS) keep using `_coerceDirName` so that they can still
+ * address legacy names the user might have created before the
+ * validator landed.  The HP50 itself raises "Invalid name" for these
+ * cases; we use the same wording so ERRN picks up a recognisable code.
+ */
+function _coerceStorableName(v) {
+  const id = _coerceDirName(v);
+  if (!isValidHpIdentifier(id)) {
+    throw new RPLError(`Invalid name: ${id}`);
+  }
+  if (!isStorableHpName(id)) {
+    // Syntactically valid but reserved (e.g. 'SIN', 'STO').
+    throw new RPLError(`Invalid name: ${id}`);
+  }
+  return id;
+}
+
 function _mkSubdirOrRPL(id) {
   try { makeSubdir(id); }
   catch (e) {
@@ -2628,11 +2718,11 @@ register('CRDIR', (s) => {
     // ones already created stand (we don't attempt a transactional
     // rollback, same as the real unit).
     for (const item of v.items) {
-      _mkSubdirOrRPL(_coerceDirName(item));
+      _mkSubdirOrRPL(_coerceStorableName(item));
     }
     return;
   }
-  _mkSubdirOrRPL(_coerceDirName(v));
+  _mkSubdirOrRPL(_coerceStorableName(v));
 });
 
 register('UPDIR', () => { goUp(); });
@@ -5549,7 +5639,11 @@ function _stoArith(opSymbol) {
     if (isName(a) || isString(a))      { nameVal = a; value = b; }
     else if (isName(b) || isString(b)) { nameVal = b; value = a; }
     else { throw new RPLError('Bad argument type'); }
-    const id = isName(nameVal) ? nameVal.id : nameVal.value;
+    // STO+ / -/ * / /  always writes back into `id`, so validate up-front
+    // against the same rules STO enforces.  Recalling a reserved or
+    // syntactically broken name would only get us to "Undefined name"
+    // anyway — fail earlier with the accurate "Invalid name" error.
+    const id = _coerceStorableName(nameVal);
     const stored = varRecall(id);
     if (stored === undefined) throw new RPLError(`Undefined name: ${id}`);
     // Build a tiny stack, apply binop.  HP50 semantics: STO+ computes
@@ -5820,7 +5914,8 @@ function _incrDecrOp(opSymbol) {
     if (!isName(nameVal) && !isString(nameVal)) {
       throw new RPLError('Bad argument type');
     }
-    const id = isName(nameVal) ? nameVal.id : nameVal.value;
+    // INCR / DECR writes through to `id`, so validate up-front.
+    const id = _coerceStorableName(nameVal);
     const stored = varRecall(id);
     if (stored === undefined) throw new RPLError(`Undefined name: ${id}`);
     s.push(stored);
@@ -7223,6 +7318,15 @@ function _unaryCx(name, realFn, cxFn) {
       s.push(Complex(r.re, r.im));
       return;
     }
+    // EXACT-mode transcendental preservation: Integer/Rational inputs to
+    // LN/EXP/LOG/ALOG/SINH/COSH/TANH/ASINH stay symbolic unless the fold
+    // produces a clean integer (LN(1)=0, EXP(0)=1, etc.).
+    if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+      const x = toRealOrThrow(v);
+      const y = realFn(x);
+      s.push(_exactUnaryLift(name, y, v));
+      return;
+    }
     const x = toRealOrThrow(v);
     const y = realFn(x);
     if (!Number.isFinite(y)) {
@@ -7257,6 +7361,13 @@ function _trigFwdCx(name, realFn, cxFn) {
       s.push(Complex(r.re, r.im));
       return;
     }
+    // EXACT-mode: Integer/Rational inputs stay symbolic unless the fold
+    // produces a clean integer (e.g. SIN(0)=0 in RAD).
+    if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+      const y = realFn(toRadians(toRealOrThrow(v)));
+      s.push(_exactUnaryLift(name, y, v));
+      return;
+    }
     s.push(Real(realFn(toRadians(toRealOrThrow(v)))));
   })));
 }
@@ -7279,6 +7390,18 @@ function _trigInvCx(name, realFn, cxFn) {
       const r = cxFn({ re: v.re, im: v.im });
       s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
       return;
+    }
+    // EXACT-mode: Integer/Rational inputs stay symbolic unless the fold
+    // produces a clean integer in the active angle mode (e.g. ASIN(0)=0).
+    if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+      const x = toRealOrThrow(v);
+      const y = realFn(x);
+      if (Number.isFinite(y)) {
+        s.push(_exactUnaryLift(name, fromRadians(y), v));
+        return;
+      }
+      // Out-of-domain: fall through so CMPLX-mode or error handling below
+      // still applies.
     }
     const x = toRealOrThrow(v);
     const y = realFn(x);
@@ -7327,6 +7450,11 @@ register('ACOSH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     s.push(Complex(r.re, r.im));
     return;
   }
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    const x = toRealOrThrow(v);
+    if (x >= 1) { s.push(_exactUnaryLift('ACOSH', Math.acosh(x), v)); return; }
+    // x < 1: fall through to Complex lift below.
+  }
   const x = toRealOrThrow(v);
   if (x >= 1) { s.push(Real(Math.acosh(x))); return; }
   // Real x < 1 now lifts to Complex (principal branch) rather than
@@ -7341,6 +7469,12 @@ register('ATANH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const r = _cxAtanh({ re: v.re, im: v.im });
     s.push(Complex(r.re, r.im));
     return;
+  }
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    const x = toRealOrThrow(v);
+    if (x === 1 || x === -1) throw new RPLError('Infinite result');
+    if (x > -1 && x < 1) { s.push(_exactUnaryLift('ATANH', Math.atanh(x), v)); return; }
+    // |x| > 1: fall through to Complex lift below.
   }
   const x = toRealOrThrow(v);
   if (x > -1 && x < 1) { s.push(Real(Math.atanh(x))); return; }
@@ -7368,6 +7502,11 @@ register('ASIN', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
     return;
   }
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    const x = toRealOrThrow(v);
+    if (x >= -1 && x <= 1) { s.push(_exactUnaryLift('ASIN', fromRadians(Math.asin(x)), v)); return; }
+    // |x| > 1: fall through to Complex lift below.
+  }
   const x = toRealOrThrow(v);
   if (x >= -1 && x <= 1) { s.push(Real(fromRadians(Math.asin(x)))); return; }
   const r = _cxAsin({ re: x, im: 0 });
@@ -7380,6 +7519,11 @@ register('ACOS', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const r = _cxAcos({ re: v.re, im: v.im });
     s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
     return;
+  }
+  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
+    const x = toRealOrThrow(v);
+    if (x >= -1 && x <= 1) { s.push(_exactUnaryLift('ACOS', fromRadians(Math.acos(x)), v)); return; }
+    // |x| > 1: fall through to Complex lift below.
   }
   const x = toRealOrThrow(v);
   if (x >= -1 && x <= 1) { s.push(Real(fromRadians(Math.acos(x)))); return; }
@@ -12692,13 +12836,72 @@ register('AXM', (s) => {
    `polyIsReal` is `true` iff every coefficient folded cleanly to a
    plain JS Real number (no Complex).  Throws `Bad argument value`
    on anything that isn't a polynomial with numeric coefficients. */
+/* Distribute `*` over `+` / `-` / unary-Neg chains so FROOTS' walker
+   sees a flat sum-of-monomials.  Does NOT combine like terms — the
+   walker itself accumulates `coef · X^power` terms into a coefficient
+   array, so `X·X·X` (three factors contributing 1 to the power) is
+   fine without a `X^3` fold.  Mirrors the minimum surface the retired
+   `algebraExpand` path provided to _symbolicPolyToNumCoefs. */
+function _frootsAdditiveTerms(ast) {
+  const out = [];
+  (function walk(n, sign) {
+    if (!n) return;
+    if (n.kind === 'bin' && (n.op === '+' || n.op === '-')) {
+      walk(n.l, sign);
+      walk(n.r, n.op === '+' ? sign : -sign);
+    } else if (n.kind === 'neg') {
+      walk(n.arg, -sign);
+    } else {
+      out.push({ sign, term: n });
+    }
+  })(ast, 1);
+  return out;
+}
+function _frootsRebuildSum(parts) {
+  if (parts.length === 0) return AstNum(0);
+  let result = parts[0].sign < 0 ? AstNeg(parts[0].term) : parts[0].term;
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i];
+    result = AstBin(p.sign < 0 ? '-' : '+', result, p.term);
+  }
+  return result;
+}
+function _frootsExpandProduct(a, b) {
+  const aTerms = _frootsAdditiveTerms(a);
+  const bTerms = _frootsAdditiveTerms(b);
+  const parts = [];
+  for (const ta of aTerms) {
+    for (const tb of bTerms) {
+      parts.push({ sign: ta.sign * tb.sign, term: AstBin('*', ta.term, tb.term) });
+    }
+  }
+  return _frootsRebuildSum(parts);
+}
+function _frootsExpand(ast) {
+  if (!ast) return ast;
+  if (ast.kind === 'num' || ast.kind === 'var') return ast;
+  if (ast.kind === 'neg') return AstNeg(_frootsExpand(ast.arg));
+  if (ast.kind === 'fn') return AstFn(ast.name, ast.args.map(_frootsExpand));
+  if (ast.kind === 'bin') {
+    const l = _frootsExpand(ast.l);
+    const r = _frootsExpand(ast.r);
+    if (ast.op === '*') return _frootsExpandProduct(l, r);
+    if (ast.op === '^' && r.kind === 'num' && Number.isInteger(r.value)
+        && r.value >= 0 && r.value <= 16) {
+      const n = r.value;
+      if (n === 0) return AstNum(1);
+      if (n === 1) return l;
+      let acc = l;
+      for (let i = 2; i <= n; i++) acc = _frootsExpandProduct(acc, l);
+      return acc;
+    }
+    return AstBin(ast.op, l, r);
+  }
+  return ast;
+}
+
 function _symbolicPolyToNumCoefs(ast, varName) {
-  // Expand the polynomial via Giac so `(X-1)^3` etc. come back as a
-  // flat sum-of-monomials the walker below can read.  Giac is main-
-  // thread synchronous; no async threading needed.
-  if (!giac.isReady()) throw new RPLError('CAS not ready');
-  const expanded = giacToAst(
-    giac.caseval(buildGiacCmd(ast, (e) => `expand(${e})`, [varName])));
+  const expanded = _frootsExpand(ast);
   // Walk the top-level +/- structure, emit terms with a ± sign.
   const terms = [];
   (function walk(node, sign) {
@@ -14175,140 +14378,16 @@ register('DIRAC', (s) => {
   throw new RPLError('Bad argument type');
 });
 
-/* ---- TSIMP — bounded-iteration Pythagorean-identity trig simplifier
-   HP50 AUR §3-254.  Applies the elementary trig identities:
-
-     SIN(x)² + COS(x)² → 1              (Pythagorean)
-     1 - SIN(x)²       → COS(x)²
-     1 - COS(x)²       → SIN(x)²
-     TAN(x) · COS(x)   → SIN(x)
-     COS(x) · TAN(x)   → SIN(x)
-     SIN(x) / COS(x)   → TAN(x)
-
-   Each pass is a bottom-up walk matching at `bin` nodes; after each
-   pass the result is fed to `algebraSimplify` to fold the arithmetic
-   that the identity exposed (e.g. `COS(X)² + SIN(X)²  + 5` → `1 + 5`
-   → `6`).  The loop terminates when the AST stops changing or after
-   `TSIMP_MAX_ITER` iterations — the guard prevents a pathological
-   composition with `algebraSimplify` from looping forever.
-
-   The rewrites here are narrow by design: they do NOT include the
-   addition-formula / half-angle / product-to-sum rewrites landed in
-   sessions 058–060 (TEXPAND / HALFTAN / TLIN / TCOLLECT).  Those all
-   have their own dedicated ops; bundling them into TSIMP would
-   require a full `_polyNormalize` for termination (a HALFTAN pass
-   replaces `TAN(X)` with a larger expression, which the next pass
-   would happily rewrite back).  A future SIMPLIFY capstone on top of
-   `_polyNormalize` is the right home for that wider pipeline.
-
-   Matches the HP50's most common TSIMP outcome — "reduce a trig
-   expression to its Pythagorean-normal form" — while deferring the
-   deeper algebraic normalisations the capstone will eventually
-   absorb. */
-
-const TSIMP_MAX_ITER = 8;
-
-function _sinCosSqInner(node, fnName) {
-  // Matches `fnName(x)^2` (literal integer 2 exponent).  Returns the
-  // inner `x` AST, or null on no-match.
-  if (!node || node.kind !== 'bin' || node.op !== '^') return null;
-  if (!node.r || node.r.kind !== 'num' || node.r.value !== 2) return null;
-  if (!node.l || node.l.kind !== 'fn' || node.l.name !== fnName
-      || !node.l.args || node.l.args.length !== 1) return null;
-  return node.l.args[0];
-}
-
-function _tryPythagSumToOne(l, r) {
-  // SIN(x)²+COS(x)² or COS(x)²+SIN(x)² → 1  (same inner argument x).
-  const ls = _sinCosSqInner(l, 'SIN');
-  const lc = _sinCosSqInner(l, 'COS');
-  const rs = _sinCosSqInner(r, 'SIN');
-  const rc = _sinCosSqInner(r, 'COS');
-  if (ls && rc && _astLike(ls, rc)) return AstNum(1);
-  if (lc && rs && _astLike(lc, rs)) return AstNum(1);
-  return null;
-}
-
-function _tryOneMinusSqToCofunc(l, r) {
-  // 1 - SIN(x)² → COS(x)²  ;  1 - COS(x)² → SIN(x)²
-  if (!(_isNumNode(l) && l.value === 1)) return null;
-  const rs = _sinCosSqInner(r, 'SIN');
-  if (rs) return AstBin('^', AstFn('COS', [rs]), AstNum(2));
-  const rc = _sinCosSqInner(r, 'COS');
-  if (rc) return AstBin('^', AstFn('SIN', [rc]), AstNum(2));
-  return null;
-}
-
-function _tryTanTimesCosToSin(l, r) {
-  function tanInner(n) {
-    if (!n || n.kind !== 'fn' || n.name !== 'TAN' || !n.args || n.args.length !== 1) return null;
-    return n.args[0];
-  }
-  function cosInner(n) {
-    if (!n || n.kind !== 'fn' || n.name !== 'COS' || !n.args || n.args.length !== 1) return null;
-    return n.args[0];
-  }
-  const lt = tanInner(l), rc = cosInner(r);
-  if (lt && rc && _astLike(lt, rc)) return AstFn('SIN', [lt]);
-  const lc = cosInner(l), rt = tanInner(r);
-  if (lc && rt && _astLike(lc, rt)) return AstFn('SIN', [lc]);
-  return null;
-}
-
-function _trySinOverCosToTan(l, r) {
-  if (!l || l.kind !== 'fn' || l.name !== 'SIN' || !l.args || l.args.length !== 1) return null;
-  if (!r || r.kind !== 'fn' || r.name !== 'COS' || !r.args || r.args.length !== 1) return null;
-  if (!_astLike(l.args[0], r.args[0])) return null;
-  return AstFn('TAN', [l.args[0]]);
-}
-
-function _pythagoreanWalk(ast) {
-  if (!ast) return ast;
-  if (ast.kind === 'num' || ast.kind === 'var') return ast;
-  if (ast.kind === 'neg') {
-    const inner = _pythagoreanWalk(ast.arg);
-    return inner === ast.arg ? ast : AstNeg(inner);
-  }
-  if (ast.kind === 'bin') {
-    const l = _pythagoreanWalk(ast.l);
-    const r = _pythagoreanWalk(ast.r);
-    if (ast.op === '+') {
-      const rw = _tryPythagSumToOne(l, r);
-      if (rw !== null) return rw;
-    }
-    if (ast.op === '-') {
-      const rw = _tryOneMinusSqToCofunc(l, r);
-      if (rw !== null) return rw;
-    }
-    if (ast.op === '*') {
-      const rw = _tryTanTimesCosToSin(l, r);
-      if (rw !== null) return rw;
-    }
-    if (ast.op === '/') {
-      const rw = _trySinOverCosToTan(l, r);
-      if (rw !== null) return rw;
-    }
-    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
-  }
-  if (ast.kind === 'fn') {
-    const args = ast.args.map(_pythagoreanWalk);
-    let dirty = false;
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] !== ast.args[i]) { dirty = true; break; }
-    }
-    return dirty ? AstFn(ast.name, args) : ast;
-  }
-  return ast;
-}
+/* ---- TSIMP — trig simplifier (Giac-backed) --------------------------
+   HP50 AUR §3-254.  `tsimplify(expr)` runs Giac's Pythagorean-identity
+   surface (SIN²+COS²→1, 1−SIN²→COS², TAN·COS→SIN, SIN/COS→TAN, and
+   their duals) followed by its own simplify pass — the same loop the
+   retired native walker (`_pythagoreanWalk` + `algebraSimplify`)
+   approximated.  Non-Symbolic input throws Bad argument type. */
 
 register('TSIMP', (s) => {
   const [v] = s.popN(1);
   if (!isSymbolic(v)) throw new RPLError('Bad argument type');
-  // Route through Giac.  `tsimplify(expr)` applies the Pythagorean
-  // identity surface (SIN²+COS²→1, 1−SIN²→COS², TAN·COS→SIN,
-  // SIN/COS→TAN, and their duals) then normalises via the CAS'
-  // own simplify pass — the same loop the previous native walker
-  // approximated with `_pythagoreanWalk` + `algebraSimplify`.
   if (!giac.isReady()) throw new RPLError('CAS not ready');
   const cmd = buildGiacCmd(v.expr, (e) => `tsimplify(${e})`);
   s.push(Symbolic(giacToAst(giac.caseval(cmd))));
@@ -14512,3 +14591,61 @@ function _biquadResidualRoots(coefs) {
   }
   return out;
 }
+
+/* ------------------------------------------------------------------
+   APPROX-mode push-time coercion.
+
+   When flag -105 is SET ("_approx_"), values that land on the stack
+   fresh get collapsed to Real on the way in — this is the user-facing
+   rule "in APPROX mode, fractions and integers are converted to
+   decimal upon entry, in expressions too."  Scope:
+
+     Integer   → Real (BigInt → Decimal via string so precision holds
+                 above 2^53 — a 30-digit factorial decimates cleanly).
+     Rational  → Real via Decimal(n).div(Decimal(d)).
+     Symbolic  → Real when the AST has no free variables AND the
+                 numeric evaluator (algebraEvalAst) reduces it to a
+                 Num node.  `X+1` stays symbolic; `1/3` folds to
+                 0.333…; `2^(1/3)` folds to 1.2599… .
+
+   Types we DON'T touch: Real (already decimal), Complex, BinaryInteger
+   (integer arithmetic domain), Unit (carries a Real value already),
+   Vector/Matrix (their numeric entries are Real-typed by construction
+   on entry), List, Program, Tagged, Name, Directory, String, Grob.
+
+   The coercion consults getApproxMode() on every call — so a flag
+   flip takes effect immediately for the next push, no re-registration
+   needed.  EXACT mode makes this a true no-op.
+
+   Install-time placement: bottom of ops.js, after every helper the
+   coercion might touch (algebraEvalAst) and every type predicate is
+   already in scope from the module imports.
+   ------------------------------------------------------------------ */
+setPushCoerce((v) => {
+  if (!getApproxMode()) return v;
+  if (v == null) return v;
+  if (isInteger(v)) {
+    return Real(new Decimal(v.value.toString()));
+  }
+  if (isRational(v)) {
+    const n = new Decimal(v.n.toString());
+    const d = new Decimal(v.d.toString());
+    return Real(n.div(d));
+  }
+  if (isSymbolic(v)) {
+    // Only fold if there are no free variables to look up — otherwise
+    // the expression is load-bearing (`X+1`) and must stay symbolic.
+    const vars = algebraFreeVars(v.expr);
+    if (vars.size === 0) {
+      // No lookup; no angle-mode (a pure-numeric Symbolic without
+      // trig args doesn't care).  A `num` result folds to Real;
+      // anything else (partial fold, function we can't evaluate) stays
+      // Symbolic so the user sees exactly what they entered.
+      const reduced = algebraEvalAst(v.expr, () => null, _angleAwareFnEval, null);
+      if (reduced && reduced.kind === 'num' && Number.isFinite(reduced.value)) {
+        return Real(reduced.value);
+      }
+    }
+  }
+  return v;
+});

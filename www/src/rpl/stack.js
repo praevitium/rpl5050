@@ -10,6 +10,25 @@
    without polling.
    ================================================================= */
 
+/* Push-time coercion hook.
+   APPROX mode (flag -105 SET) collapses Integer/Rational/purely-numeric
+   Symbolic values to Real on the way onto the stack — "fractions and
+   integers are converted to decimal upon entry, in expressions too."
+   The hook is installed by ops.js at module load (ops.js owns the type
+   predicates and the algebra eval engine the coercion needs).  Until
+   installed, `push` is the identity — keeps the parser and standalone
+   stack tests mode-agnostic, matches prior behavior.
+
+   pushMany and the internal `_items.push` paths (save/restore, stack
+   ops like DUP/ROT/OVER) deliberately BYPASS the coercion: those move
+   values already on the stack; they don't introduce fresh ones.  If a
+   value landed as Integer while EXACT was active and the user later
+   flips to APPROX, a DUP should duplicate the Integer as-is. */
+let _pushCoerce = (v) => v;
+export function setPushCoerce(fn) {
+  _pushCoerce = (typeof fn === 'function') ? fn : ((v) => v);
+}
+
 export class Stack {
   constructor() {
     this._items = [];              // _items[len-1] is level 1
@@ -43,7 +62,7 @@ export class Stack {
 
   /* --------------- mutation --------------- */
   push(value) {
-    this._items.push(value);
+    this._items.push(_pushCoerce(value));
     this._emit();
   }
 
