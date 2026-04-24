@@ -544,10 +544,10 @@ import { assert } from './helpers.mjs';
     `font-family value has no stray double quotes — got '${m[1]}'`);
 }
 // --- pretty.js — √ radical glyph ---------------------
-// SQRT(arg) no longer renders as the literal text `SQRT(...)`; it
-// draws a hook+vinculum via a <path> for the hook and the vinculum
-// segment as part of that path (single stroke).  The radicand is
-// drawn inside, composing with fractions / exponents / etc.
+// SQRT(arg) draws a hook+vinculum via a <path> (the hook and the
+// vinculum segment are part of the same path / single stroke), rather
+// than rendering the literal text `SQRT(...)`.  The radicand is drawn
+// inside, composing with fractions / exponents / etc.
 {
   // SQRT(X) draws the hook-and-vinculum path; no "SQRT" text glyph
   // appears.  The radicand X is a single <text>.

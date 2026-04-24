@@ -3817,8 +3817,8 @@ register('EVAL', (s) => {
   //      it pushed are still needed.
   //   4. CONT calls gen.next() to resume from exactly where HALT left off.
   //   The generator mechanism captures all structural context (FOR
-  //   counter, IF branch, → locals) automatically, so HALT now works at
-  //   any depth — not just at the flat top level of the pilot.
+  //   counter, IF branch, → locals) automatically, so HALT works at
+  //   any structural depth.
   //
   // Non-Program values (Name, Symbolic, Number, etc.) go through the
   // synchronous _evalValueSync path — they cannot HALT, so no special

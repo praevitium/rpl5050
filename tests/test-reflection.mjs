@@ -1265,7 +1265,7 @@ function _roundTripProgram(prog) {
     + 'LIST→/OBJ→(Program) by design (matches →ARRY input shape)');
 }
 
-/* ---- SIZE on Program (session088) ---- */
+/* ---- SIZE on Program ---- */
 {
   resetHome();
   const s = new Stack();

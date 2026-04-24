@@ -1747,12 +1747,11 @@ import { assert } from './helpers.mjs';
     'session073: CONT with empty halted slot raises No halted program');
 }
 
-/* ---- HALT inside structured control flow now works (session088:
-       generator-based evalRange lifted the pilot limitation) ---- */
+/* ---- HALT inside structured control flow ---- */
 {
   resetHome(); clearHalted();
   const s = new Stack();
-  // « IF 1 THEN HALT END »  —  HALT inside IF's true-branch now suspends
+  // « IF 1 THEN HALT END »  —  HALT inside IF's true-branch suspends
   // cleanly; the generator captures the full IF context.
   s.push(Program([
     Name('IF'), Integer(1n), Name('THEN'),
@@ -1769,7 +1768,7 @@ import { assert } from './helpers.mjs';
     'session088: CONT after HALT-inside-IF resumes and finishes cleanly');
 }
 
-/* ---- HALT inside a compiled-local `→` frame now works ---- */
+/* ---- HALT inside a compiled-local `→` frame ---- */
 {
   resetHome(); clearHalted();
   const s = new Stack();
@@ -2520,9 +2519,9 @@ import { assert } from './helpers.mjs';
    Generator-based evalRange: HALT at any structural depth
    ================================================================
 
-   These tests verify that HALT now works inside control structures
-   and compiled-local frames, lifting the "pilot" restriction.
-   The generator mechanism preserves all structural context automatically.
+   These tests verify that HALT suspends cleanly inside every control
+   structure and compiled-local frame.  The generator mechanism
+   preserves all structural context automatically.
    ================================================================ */
 
 /* ---- HALT inside FOR loop ---- */
