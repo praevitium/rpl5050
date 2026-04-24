@@ -1816,3 +1816,100 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     setApproxMode(prev);
   }
 }
+
+/* ================================================================
+   session095: HP50 identifier validator
+
+   Covers the exported helpers in types.js plus the integration with
+   register() in ops.js (every registered op name becomes reserved).
+   The shape follows HP50 AUR §2.2.4: 1-127 letters/digits/underscore
+   starting with a letter, case-sensitive, reserved command names
+   refused for storage.  The validator intentionally permits the HP50
+   Greek range (U+0391-U+03A9, U+03B1-U+03C9) but no wider Unicode.
+   ================================================================ */
+{
+  // --- syntactic validity ----------------------------------------
+  assert(isValidHpIdentifier('X'),     'isValid: single ASCII letter');
+  assert(isValidHpIdentifier('X1'),    'isValid: letter + digit');
+  assert(isValidHpIdentifier('foo_bar'), 'isValid: lowercase + underscore');
+  assert(isValidHpIdentifier('α'),     'isValid: Greek alpha (U+03B1)');
+  assert(isValidHpIdentifier('Ω'),     'isValid: Greek Omega (U+03A9)');
+  assert(isValidHpIdentifier('Xα2_y'), 'isValid: mixed Greek/ASCII/digits/_');
+  assert(isValidHpIdentifier('A'.repeat(127)), 'isValid: 127 chars (max)');
+
+  assert(!isValidHpIdentifier(''),       '!isValid: empty string');
+  assert(!isValidHpIdentifier('1X'),     '!isValid: leading digit');
+  assert(!isValidHpIdentifier('_X'),     '!isValid: leading underscore');
+  assert(!isValidHpIdentifier('X Y'),    '!isValid: space inside');
+  assert(!isValidHpIdentifier('X+Y'),    '!isValid: operator inside');
+  assert(!isValidHpIdentifier("X'"),     '!isValid: tick inside');
+  assert(!isValidHpIdentifier('X.Y'),    '!isValid: period inside');
+  assert(!isValidHpIdentifier('café'),   '!isValid: Latin-1 accent (outside HP set)');
+  assert(!isValidHpIdentifier('日本'),   '!isValid: CJK (outside HP set)');
+  assert(!isValidHpIdentifier('A'.repeat(128)), '!isValid: 128 chars (over limit)');
+  assert(!isValidHpIdentifier(null),     '!isValid: null');
+  assert(!isValidHpIdentifier(42),       '!isValid: number');
+
+  // --- reserved-name bookkeeping ---------------------------------
+  // ops.js registers every op name at module load.  'SIN' / 'STO' are
+  // core ops; querying them should now show reserved.
+  assert(isReservedHpName('SIN'),  'SIN registered as reserved (from ops.js load)');
+  assert(isReservedHpName('sin'),  'SIN case-insensitive match');
+  assert(isReservedHpName('STO'),  'STO registered as reserved');
+  assert(!isReservedHpName('MYVAR'), 'MYVAR (unregistered) is not reserved');
+
+  // Ad-hoc registration — verify the hook works for the non-op path.
+  registerReservedName('MYRESERVED_PROBE_X');
+  assert(isReservedHpName('MYRESERVED_PROBE_X'), 'registerReservedName sticks');
+  assert(isReservedHpName('myreserved_probe_x'), 'registerReservedName: case folds');
+
+  // --- combined storable check ------------------------------------
+  assert(isStorableHpName('MYVAR'),  'isStorable: valid + unreserved');
+  assert(!isStorableHpName('SIN'),   '!isStorable: valid but reserved');
+  assert(!isStorableHpName('1X'),    '!isStorable: invalid shape');
+  assert(!isStorableHpName(''),      '!isStorable: empty');
+
+  // --- STO / CRDIR reject invalid / reserved names ---------------
+  // Wiring integration check: the /ops.js/ write path surfaces
+  // "Invalid name" through RPLError when given anything that fails
+  // isStorableHpName.  The string literal is the canonical message
+  // emitted by _coerceStorableName (ops.js session 095).
+  resetHome();
+  clearLastError();
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    s.push(Name('SIN', { quoted: true }));   // reserved
+    let threw = null;
+    try { lookup('STO').fn(s); } catch (e) { threw = e; }
+    assert(threw && /Invalid name/.test(threw.message),
+           'STO on reserved name SIN throws "Invalid name"');
+  }
+  {
+    const s = new Stack();
+    s.push(Real(1));
+    s.push(Str('1X'));                       // invalid shape
+    let threw = null;
+    try { lookup('STO').fn(s); } catch (e) { threw = e; }
+    assert(threw && /Invalid name/.test(threw.message),
+           'STO on invalid shape "1X" throws "Invalid name"');
+  }
+  {
+    const s = new Stack();
+    s.push(Name('COS', { quoted: true }));   // reserved
+    let threw = null;
+    try { lookup('CRDIR').fn(s); } catch (e) { threw = e; }
+    assert(threw && /Invalid name/.test(threw.message),
+           'CRDIR on reserved name COS throws "Invalid name"');
+  }
+  // Regression guard: a plain legal name still stores.
+  {
+    const s = new Stack();
+    s.push(Real(7));
+    s.push(Name('FOO', { quoted: true }));
+    lookup('STO').fn(s);
+    const v = varRecall('FOO');
+    assert(isReal(v) && v.value.eq(7), 'STO on plain name FOO succeeds');
+  }
+  resetHome();
+}
