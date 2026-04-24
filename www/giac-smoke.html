@@ -65,8 +65,9 @@
   <body>
     <h1>Giac smoke test</h1>
     <p>
-      Loads the vendored Giac WASM engine in a Web Worker, runs a handful of
-      CAS calls, and reports timings. Use the REPL below for ad hoc probes.
+      Loads the vendored Giac WASM engine on the main thread, runs a handful
+      of CAS calls, and reports timings. Use the REPL below for ad hoc probes.
+      caseval() is synchronous after init() resolves.
     </p>
     <div id="log"></div>
     <div id="repl">
@@ -121,10 +122,11 @@
           line("err", stamp(`[init failed] ${err.message}`));
           return;
         }
+        // caseval is now synchronous — no await needed per call.
         for (const c of CASES) {
           const t1 = performance.now();
           try {
-            const r = await giac.caseval(c);
+            const r = giac.caseval(c);
             const dt = performance.now() - t1;
             const div = document.createElement("div");
             div.className = "row";
@@ -140,13 +142,20 @@
         }
       }
 
-      document.getElementById("replRun").addEventListener("click", async () => {
+      document.getElementById("replRun").addEventListener("click", () => {
         const input = document.getElementById("replInput");
         const cmd = input.value.trim();
         if (!cmd) return;
+        if (!giac.isReady()) {
+          const div = document.createElement("div");
+          div.className = "row";
+          div.innerHTML = `<span class="cmd">${cmd.replace(/</g, "&lt;")}</span> <span class="err">!! Giac not ready yet</span>`;
+          log.appendChild(div);
+          return;
+        }
         const t1 = performance.now();
         try {
-          const r = await giac.caseval(cmd);
+          const r = giac.caseval(cmd);
           const dt = performance.now() - t1;
           const div = document.createElement("div");
           div.className = "row";
