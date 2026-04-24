@@ -4,14 +4,46 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 084 (2026-04-23).  In-file assertion labels
-written this session read `session084:` — matching the calendar-day
-cohort, per the session-066 convention.  Sibling lanes already burned
-through session numbers 081 (command-support TRUNC/PSI/CYCLOTOMIC),
-082 (data-types DERIV hyp / INTEG / simplify rounding), 083 (rpl-
-programming multi-slot HALT LIFO + RUN op + IF auto-close).  Session
-085 was claimed mid-run by a code-review lane.  This lane's log file
-is `logs/session-084.md`.
+**Last updated.** Session 095 (2026-04-24).  In-file assertion labels
+written this session read `session095:` — matching the calendar-day
+cohort, per the session-066 convention.  Earlier this session
+logs/session-092 through 094 closed the Giac WASM CAS migration and
+its follow-ups; session 095 finished the cleanup (dead `algebra.js`
+exports gone), fixed the CAS quoted-result parse bug, and landed the
+HP50 AUR §2.2.4 identifier validator.  This lane's log file is
+`logs/session-095.md`.
+
+## Coverage snapshot (session 095)
+
+Baseline at session start (post-dead-code cleanup): `node tests/
+test-all.mjs` = **3453 passing / 0 failing**.
+Final: **3486 passing / 0 failing** (+33 — the validator block in
+`test-types.mjs`).  `test-persist.mjs` 34 / 0.  `sanity.mjs` 22 / 0.
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            |  777 | 0    | −578 from s084 (dead symbolic-op tests removed with `algebra.js` exports). |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |   73 | 0    |                                          |
+| test-control-flow.mjs       |  260 | 0    | `'SUM'` → `'TOTAL'` rename for WHILE loop (name validator: SUM is reserved). |
+| test-entry.mjs              |   86 | 0    |                                          |
+| test-eval.mjs               |   62 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  171 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  660 | 0    |                                          |
+| test-reflection.mjs         |  178 | 0    |                                          |
+| test-stack-ops.mjs          |   32 | 0    |                                          |
+| test-stats.mjs              |   20 | 0    |                                          |
+| test-types.mjs              |  276 | 0    | +33 session-095 validator block (syntactic validity, reserved-name bookkeeping, STO / CRDIR integration). |
+| test-ui.mjs                 |   73 | 0    |                                          |
+| test-units.mjs              |   39 | 0    |                                          |
+| test-variables.mjs          |  248 | 0    | `'SUB'` → `'AFOO'` rename (name validator: SUB is reserved); SVX empty-string assertion now expects "Invalid name". |
+
+---
+
+## Prior snapshot — Session 084 (retained for history)
 
 ---
 
