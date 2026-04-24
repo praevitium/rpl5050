@@ -31,10 +31,10 @@ import { assert } from './helpers.mjs';
 /* Symbolic algebra — parser, simplify, DERIV, EXPAND, COLLECT, FACTOR,
    SUBST, SOLVE, textbook-mode pretty-print, EXACT/APPROX numeric-eval,
    keypad symbolic acceptance, string concat, complex cube-root closed form,
-   FACT / UNDO / cube-root (session 031). */
+   FACT / UNDO / cube-root. */
 
 // ==================================================================
-// Session 016 — CAS kick-off: Symbolic AST + DERIV for polynomials
+// CAS: Symbolic AST + DERIV for polynomials
 // ==================================================================
 
 
@@ -291,12 +291,8 @@ import { assert } from './helpers.mjs';
          `keyboard 'X^2+3*X+1' DERIV renders as '${rendered}'`);
 }
 
-// ------------------------------------------------------------------
-// End session 016 CAS additions
-// ------------------------------------------------------------------
-
 // ==================================================================
-// Session 017 — CAS extensions: fn node, chain rule, Symbolic EVAL
+// CAS extensions: fn node, chain rule, Symbolic EVAL
 // ==================================================================
 
 
@@ -452,10 +448,10 @@ import { assert } from './helpers.mjs';
          `deriv LN(X^2+1) wrt X → '${out}' (want 2*X/(X^2 + 1))`);
 }
 {
-  // ATAN(X)' = 1/(1 + X^2).  Session 019's like-terms combiner
-  // canonicalises additive chains with constants pushed to the tail,
-  // so the denominator prints as `X^2 + 1` here (matches the `LN(X^2+1)'`
-  // case above, which already emits constant-last).
+  // ATAN(X)' = 1/(1 + X^2).  The like-terms combiner canonicalises
+  // additive chains with constants pushed to the tail, so the
+  // denominator prints as `X^2 + 1` here (matches the `LN(X^2+1)'` case
+  // above, which already emits constant-last).
   const d = deriv(parseAlgebra('ATAN(X)'), 'X');
   const out = formatAlgebra(d);
   assert(out === '1/(X^2 + 1)', `deriv ATAN(X) wrt X → '${out}'`);
@@ -585,11 +581,11 @@ import { assert } from './helpers.mjs';
 }
 {
   // LN uses mode-independent eval.  Bind X=e; EVAL 'LN(X)' = 1.
-  // Session 035: under EXACT (new default) the fold is gated by
-  // integer-in-integer-out, so a Real(e) input wouldn't fold to
-  // Real(1.) even though the result is "an integer" numerically.
-  // Opt into APPROX explicitly — we're testing the EVAL numeric fold,
-  // not the EXACT symbolic-preservation behavior.
+  // Under EXACT (the default) the fold is gated by integer-in-integer-out,
+  // so a Real(e) input wouldn't fold to Real(1.) even though the result
+  // is "an integer" numerically.  Opt into APPROX explicitly — we're
+  // testing the EVAL numeric fold, not the EXACT symbolic-preservation
+  // behavior.
   setApproxMode(true);
   resetHome();
   varStore('X', Real(Math.E));
@@ -616,10 +612,10 @@ import { assert } from './helpers.mjs';
 }
 
 // --- pretty.js — SVG pretty-printer MVP -----------------------------
-// Session 018: first slice of textbook-mode rendering.  These tests
-// don't run a browser; they assert structural properties of the
-// returned SVG string (which glyphs, which elements, approximate box
-// sizes).  Visual fidelity is verified through docs/pretty-demo.html.
+// Textbook-mode rendering tests.  These tests don't run a browser; they
+// assert structural properties of the returned SVG string (which glyphs,
+// which elements, approximate box sizes).  Visual fidelity is verified
+// through docs/pretty-demo.html.
 {
   // Smoke test — import resolves, entry points exist.
   const { astToSvg, layoutAst } = await import('../src/rpl/pretty.js');
@@ -696,8 +692,8 @@ import { assert } from './helpers.mjs';
 }
 {
   // astToSvg accepts a derived expression directly.  Smoke test with
-  // DERIV of X^X to catch regressions in the combo of session-017
-  // fn handling + session-018 power rule + pretty-print.
+  // DERIV of X^X to catch regressions in the combo of fn handling,
+  // power rule, and pretty-print.
   const { astToSvg } = await import('../src/rpl/pretty.js');
   const ast = deriv(parseAlgebra('X^X'), 'X');   // X*X^(X-1) + X^X*LN(X)
   const { svg } = astToSvg(ast);
@@ -707,7 +703,7 @@ import { assert } from './helpers.mjs';
     'rendered DERIV contains X and LN glyphs');
 }
 
-// --- pretty.js — √ radical glyph (session 026) ---------------------
+// --- pretty.js — √ radical glyph ---------------------
 // SQRT(arg) no longer renders as the literal text `SQRT(...)`; it
 // draws a hook+vinculum via a <path> for the hook and the vinculum
 // segment as part of that path (single stroke).  The radicand is
@@ -754,15 +750,14 @@ import { assert } from './helpers.mjs';
   const { svg } = astToSvg(parseAlgebra('1 + SQRT(2)'));
   assert((svg.match(/<path /g) || []).length === 1,
     '1 + SQRT(2) has exactly one <path> (the radical)');
-  // Session 041: + separator uses a tighter opSepBox (gap+glyph+gap)
-  // instead of `textBox(' + ')`, so the SVG now contains `>+<` rather
-  // than `> + <`.
+  // + separator uses a tighter opSepBox (gap+glyph+gap) instead of
+  // `textBox(' + ')`, so the SVG contains `>+<` rather than `> + <`.
   assert(svg.includes('>1<') && svg.includes('>2<') && svg.includes('>+<'),
     '1 + SQRT(2) still shows the constants and the + separator');
   assert(!svg.includes('>SQRT<'), 'no literal SQRT text');
 }
 
-// --- pretty.js — ⁿ√k indexed radical for XROOT (session 033) -------
+// --- pretty.js — ⁿ√k indexed radical for XROOT -------
 // XROOT(radicand, index) renders as a √-hook with the index tucked
 // into the crook at SUP_SCALE of base size.  The radical path stays a
 // single <path>; the index is a separate <text>.  Parser now recognises
@@ -778,7 +773,7 @@ import { assert } from './helpers.mjs';
   // simplify() does NOT fold XROOT(8, 3) to 2 — cube-root folding is the
   // job of SOLVE / _cubeRootReconstruct, not simplify; keeping XROOT
   // symbolic at simplify time lets algebra.js build closed-form cube-
-  // root pairs (session 032) without spontaneous numeric collapse.
+  // root pairs without spontaneous numeric collapse.
   const { parseAlgebra: p, simplify: s, formatAlgebra: f } =
     await import('../src/rpl/algebra.js');
   const out = f(s(p('XROOT(8, 3)')));
@@ -849,15 +844,14 @@ import { assert } from './helpers.mjs';
     '1 + XROOT(2, 3) has one <path>');
   assert(svg.includes('>1<') && svg.includes('>2<') && svg.includes('>3<'),
     '1 + XROOT(2, 3) shows all three numerals');
-  // Session 041: `+` now uses opSepBox so the SVG carries a bare `>+<`
-  // glyph rather than the old ` + ` (full-char-width padding).
+  // `+` uses opSepBox so the SVG carries a bare `>+<` glyph
+  // (no full-char-width padding).
   assert(svg.includes('>+<'),
     '1 + XROOT(2, 3) still shows the + separator');
 }
 
 // --- fn node: general power rule in DERIV --------------------------
-// Session 018: previously (u^v)' with non-constant v threw; we now
-// emit the general form  v * u^(v-1) * u' + u^v * LN(u) * v'.
+// (u^v)' emits the general form  v * u^(v-1) * u' + u^v * LN(u) * v'.
 // Cases covered:
 //   - X^X  (both u and v depend on x)
 //   - 2^X  (constant base shortcut; (a^v)' = a^v * LN(a) * v')
@@ -867,10 +861,9 @@ import { assert } from './helpers.mjs';
 {
   // d/dx (X^X) = X * X^(X-1) * 1 + X^X * LN(X) * 1
   //            = X*X^(X-1) + LN(X)*X^X
-  // (Session 020: the second term's factors are alphabetically
-  // ordered by the like-terms combiner's commutative canonicalizer —
-  // 'LN(X)' sorts before 'X^X' so it prints first.  Same math, same
-  // AST depth, just a stable ordering.)
+  // (The second term's factors are alphabetically ordered by the
+  // like-terms combiner's commutative canonicalizer — 'LN(X)' sorts
+  // before 'X^X' so it prints first.)
   const d = deriv(parseAlgebra('X^X'), 'X');
   const out = formatAlgebra(d);
   assert(out === 'X*X^(X - 1) + LN(X)*X^X',
@@ -906,10 +899,10 @@ import { assert } from './helpers.mjs';
 {
   // d/dx (X+1)^X = X * (X+1)^(X-1) * 1 + (X+1)^X * LN(X+1) * 1
   //              = (X+1)^(X-1)*X + (X+1)^X*LN(X+1)
-  // (Session 020: first term's factors reorder — '(X + 1)^(X - 1)'
-  // sorts before 'X' under the commutative canonicalizer because
-  // '(' < 'X' in string compare.  Second term stays as-is because
-  // '(' < 'L' too so '(X + 1)^X' beats 'LN(X + 1)'.)
+  // (First term's factors reorder — '(X + 1)^(X - 1)' sorts before 'X'
+  // under the commutative canonicalizer because '(' < 'X' in string
+  // compare.  Second term stays as-is because '(' < 'L' too so
+  // '(X + 1)^X' beats 'LN(X + 1)'.)
   const d = deriv(parseAlgebra('(X+1)^X'), 'X');
   const out = formatAlgebra(d);
   assert(out === '(X + 1)^(X - 1)*X + (X + 1)^X*LN(X + 1)',
@@ -918,11 +911,9 @@ import { assert } from './helpers.mjs';
 {
   // d/dx X^(2*X) = 2*X * X^(2*X - 1) * 1 + X^(2*X) * LN(X) * 2
   //              = 2*X*X^(2*X - 1) + 2*LN(X)*X^(2*X)
-  // (Session 020: the `X^(2*X)*(LN(X)*2)` form from session 019 is
-  // now canonicalized — the nested `*` chain flattens and sorts
-  // alphabetically: [2, LN(X), X^(2*X)].  Same math; tidier print.
-  // The extra parens around `(LN(X)*2)` are gone because the chain
-  // is a single left-assoc product.)
+  // (The nested `*` chain flattens and sorts alphabetically:
+  // [2, LN(X), X^(2*X)].  The chain is a single left-assoc product so
+  // no extra parens appear.)
   const d = deriv(parseAlgebra('X^(2*X)'), 'X');
   const out = formatAlgebra(d);
   assert(out === '2*X*X^(2*X - 1) + 2*LN(X)*X^(2*X)',
@@ -965,7 +956,7 @@ import { assert } from './helpers.mjs';
   assert(getBinaryBase() === null, 'CLB on fresh state is a no-op');
 }
 
-// --- Session 019: like-terms combiner in simplify() ---------------
+// --- like-terms combiner in simplify() ---------------
 //
 // `simplify` now walks top-level + / - chains and sums the coefficients
 // of matching-body terms.  The rules are:
@@ -1021,10 +1012,10 @@ import { assert } from './helpers.mjs';
          `like-terms combiner is idempotent — '${formatAlgebra(once)}' unchanged on rerun`);
 }
 {
-  // Session 020: commutative canonicalization of `*` chains.  The
-  // like-terms combiner now flattens each term's product into a
-  // sorted factor list before hashing the bucket key, so `X*Y` and
-  // `Y*X` collide under the same body and their coefficients sum.
+  // Commutative canonicalization of `*` chains.  The like-terms
+  // combiner flattens each term's product into a sorted factor list
+  // before hashing the bucket key, so `X*Y` and `Y*X` collide under
+  // the same body and their coefficients sum.
   const out = formatAlgebra(simplify(parseAlgebra('X*Y + Y*X')));
   assert(out === '2*X*Y',
          `commutative canonicalization — 'X*Y + Y*X' → '${out}' (want '2*X*Y')`);
@@ -1077,7 +1068,7 @@ import { assert } from './helpers.mjs';
          `like-terms leaves * chains alone — '${out}' has no additive ops`);
 }
 
-// --- Session 019: EXPAND op + expand() core ------------------------
+// --- EXPAND op + expand() core ------------------------
 //
 // EXPAND multiplies out products and small non-negative integer
 // powers of sums, then passes the result through simplify() so the
@@ -1164,7 +1155,7 @@ import { assert } from './helpers.mjs';
          `EXPAND on a Real is a pass-through`);
 }
 
-// --- Session 020: COLLECT op (CAS menu alias for simplify) ---------
+// --- COLLECT op (CAS menu alias for simplify) ---------
 {
   // COLLECT on a Symbolic sums like terms via the simplifier.
   // 'X + X + Y' must come back as '2*X + Y' — same result as EVAL
@@ -1177,8 +1168,8 @@ import { assert } from './helpers.mjs';
          `COLLECT 'X + X + Y' → '${formatAlgebra(s.peek().expr)}' (want '2*X + Y')`);
 }
 {
-  // COLLECT picks up the session-019 canonicalization path — Y*X bucket
-  // matches X*Y, so the coefficients add.
+  // COLLECT picks up the canonicalization path — Y*X bucket matches
+  // X*Y, so the coefficients add.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X*Y + Y*X')));
   lookup('COLLECT').fn(s);
@@ -1203,7 +1194,7 @@ import { assert } from './helpers.mjs';
          `COLLECT on a Name is a pass-through`);
 }
 
-// --- Session 019: TEXTBOOK / FLAT ops + textbookMode state flag ----
+// --- TEXTBOOK / FLAT ops + textbookMode state flag ----
 {
   const { setTextbookMode, getTextbookMode } =
     await import('../src/rpl/state.js');
@@ -1226,7 +1217,7 @@ import { assert } from './helpers.mjs';
   setTextbookMode(false);                // reset for later tests
 }
 
-// --- Session 019: textbookMode fires a state-change event -----------
+// --- textbookMode fires a state-change event -----------
 {
   const { subscribe, setTextbookMode } =
     await import('../src/rpl/state.js');
@@ -1242,7 +1233,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ===================================================================
-// Session 021 — FACTOR / SUBST / polynomial COLLECT
+// FACTOR / SUBST / polynomial COLLECT
 // ===================================================================
 
 // --- FACTOR: monic quadratic with integer roots --------------------
@@ -1292,21 +1283,20 @@ import { assert } from './helpers.mjs';
          `factor(X^2+1) passes through`);
   // Non-monic with a coprime constant AND irrational roots — gcd is 1
   // AND discriminant isn't a perfect square, so nothing to pull and
-  // no rational roots.  Passes through.  (Session 023's non-monic
-  // rational-root factorer handles inputs like 2*X^2+3*X+1 that DO
-  // have rational roots — those now factor instead of passing through.)
+  // no rational roots.  Passes through.  (The non-monic rational-root
+  // factorer handles inputs like 2*X^2+3*X+1 that DO have rational
+  // roots — those factor instead of passing through.)
   const coprime = factor(parseAlgebra('3*X^2 + 5*X + 1'));
   assert(formatAlgebra(coprime) === '3*X^2 + 5*X + 1',
          `factor(3X^2+5X+1) passes through (got '${formatAlgebra(coprime)}')`);
-  // Symbolic (non-numeric) coefficients — factorMonicOnly fallback
-  // preserves the session-021 behavior: not factorable via the
-  // monic-quadratic integer rule, so pass through.
+  // Symbolic (non-numeric) coefficients — factorMonicOnly fallback:
+  // not factorable via the monic-quadratic integer rule, so pass through.
   const sym = factor(parseAlgebra('A*X^2 + B*X + C'));
   assert(formatAlgebra(sym) === 'A*X^2 + B*X + C',
          `factor(A*X^2+B*X+C) passes through (got '${formatAlgebra(sym)}')`);
 }
 
-// --- FACTOR session 022: scalar-GCD pull (non-monic) ---------------
+// --- FACTOR: scalar-GCD pull (non-monic) ---------------
 {
   const { factor } = await import('../src/rpl/algebra.js');
   // 2(X+1)^2 — gcd=2, reduced core factors as perfect square.
@@ -1337,7 +1327,7 @@ import { assert } from './helpers.mjs';
          `factor(-1*X^2-2X-1) = '${formatAlgebra(r5)}'`);
 }
 
-// --- FACTOR session 022: X-power GCD (common-variable factor) ------
+// --- FACTOR: X-power GCD (common-variable factor) ------
 {
   const { factor } = await import('../src/rpl/algebra.js');
   // X^3 + X — pulls X out, residue X^2+1 is irreducible but rebuilt
@@ -1554,15 +1544,14 @@ import { assert } from './helpers.mjs';
 }
 
 // ===================================================================
-// Session 022 — `=` in algebra grammar + SUBST equation form
+// `=` in algebra grammar + SUBST equation form
 // ===================================================================
 
 // --- parseEntry integration: `'X = 3'` reaches the stack as Symbolic
 {
-  // Before session 022 the outer parser's looksAlgebraic heuristic
-  // only whitelisted +-*/^() — an `=`-only body would fall through
-  // to a bare Name('X = 3').  Now it reaches the algebra parser and
-  // lands as a Symbolic equation.
+  // The outer parser's looksAlgebraic heuristic accepts `=` so an
+  // `=`-only body reaches the algebra parser and lands as a Symbolic
+  // equation (not a bare Name('X = 3')).
   const vs = parseEntry("'X = 3'");
   assert(vs.length === 1 && isSymbolic(vs[0]),
          `parseEntry('X = 3') produces a Symbolic (got ${JSON.stringify(vs)})`);
@@ -1633,8 +1622,8 @@ import { assert } from './helpers.mjs';
          `SUBST list of eqns: X+Y with {X=2, Y=3} → 5 (got ${JSON.stringify(s.peek())})`);
 }
 {
-  // List form still accepts the pre-session-022 alternating pairs.
-  // Regression: equation-entry dispatch must not break the old path.
+  // List form also accepts alternating (name, value) pairs.
+  // Regression: equation-entry dispatch must not break this path.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X + Y')));
   s.push(RList([Name('X', { quoted: true }), Real(2),
@@ -1656,11 +1645,11 @@ import { assert } from './helpers.mjs';
 }
 
 // ===================================================================
-// Session 023 — FACTOR: non-monic rational-root + sum/diff of cubes
-//                `=` pretty-print (textbook mode)
+// FACTOR: non-monic rational-root + sum/diff of cubes
+//          `=` pretty-print (textbook mode)
 // ===================================================================
 
-// --- FACTOR session 023: non-monic quadratic via rational roots ----
+// --- FACTOR: non-monic quadratic via rational roots ----
 {
   const { factor } = await import('../src/rpl/algebra.js');
   // 2*X^2 + 3*X + 1 — roots -1/2 and -1.  Factors as (2X+1)(X+1).
@@ -1690,7 +1679,7 @@ import { assert } from './helpers.mjs';
          `factor(9X^2-6X+1) = '${formatAlgebra(r6)}'`);
 }
 
-// --- FACTOR session 023: non-monic quadratic pass-through shapes ---
+// --- FACTOR: non-monic quadratic pass-through shapes ---
 {
   const { factor } = await import('../src/rpl/algebra.js');
   // 2*X^2 + 3*X + 4 — negative discriminant → passes through.
@@ -1708,7 +1697,7 @@ import { assert } from './helpers.mjs';
          `factor(2X^2-5X+3) = '${formatAlgebra(r3)}'`);
 }
 
-// --- FACTOR session 023: sum/difference of cubes -------------------
+// --- FACTOR: sum/difference of cubes -------------------
 {
   const { factor } = await import('../src/rpl/algebra.js');
   // X^3 + 8 — sum of cubes: (X + 2)(X^2 - 2X + 4).
@@ -1739,7 +1728,7 @@ import { assert } from './helpers.mjs';
          `factor(8X^3-27) = '${formatAlgebra(r6)}'`);
 }
 
-// --- FACTOR session 023: cubes pipeline integration ----------------
+// --- FACTOR: cubes pipeline integration ----------------
 {
   const { factor } = await import('../src/rpl/algebra.js');
   // 2*X^3 + 16 — gcd=2 pulls first, residue X^3 + 8 → (X+2)(X^2-2X+4).
@@ -1768,7 +1757,7 @@ import { assert } from './helpers.mjs';
          `factor(4X^3+27) pass-through (a not perfect cube)`);
 }
 
-// --- FACTOR session 023: EXPAND round-trip for new shapes ----------
+// --- FACTOR: EXPAND round-trip for new shapes ----------
 {
   const { factor, expand } = await import('../src/rpl/algebra.js');
   // factor → EXPAND should return the polynomial form unchanged.
@@ -1788,7 +1777,7 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- FACTOR session 024: general cubic rational-root scan ----------
+// --- FACTOR: general cubic rational-root scan ----------
 // Tests for the `factorCubicRationalRoot` path.  Cases cover distinct
 // integer roots, repeated roots (double and triple), a non-monic
 // cubic, inputs that have no rational root (pass-through), and the
@@ -1916,8 +1905,7 @@ import { assert } from './helpers.mjs';
     `factor(2·cubic expanded) = '${formatAlgebra(factor(parseAlgebra('2*X^3 - 12*X^2 + 22*X - 12')))}'`);
 }
 
-// --- FACTOR session 024: EXPAND round-trip for cubic rational-root
-//                         factorizations -------------------------
+// --- FACTOR: EXPAND round-trip for cubic rational-root factorizations
 // Verify the FACTOR ∘ EXPAND identity at the value level — we compare
 // via evaluation at several X values rather than trusting expand()'s
 // term ordering, which isn't strictly descending-by-power.
@@ -1945,7 +1933,7 @@ import { assert } from './helpers.mjs';
   check('X^3 + X + 2');               // residue irreducible
 }
 
-// --- pretty.js session 023: `=` renders as flat row with spaces ----
+// --- pretty.js: `=` renders as flat row with spaces ----
 {
   const { astToSvg, layoutAst } = await import('../src/rpl/pretty.js');
   // Simple equation — three text glyphs in a row (X, ' = ', 3), no
@@ -1959,8 +1947,8 @@ import { assert } from './helpers.mjs';
          `pretty 'X = 3' has no fraction bar`);
   // Width approximation: 'X' + (0.3 pad) '=' (0.3 pad) + '3' is about
   // 1 + 1.6 + 1 = 3.6 chars at 0.6em·24px ≈ 14.4px per char → roughly
-  // 52px plus 8px padding.  Session 041 tightened the `=` separator
-  // padding from a full ' = ' (3 chars) to 0.3-char gaps either side.
+  // 52px plus 8px padding.  The `=` separator uses 0.3-char gaps either
+  // side (not a full ' = ').
   assert(width > 40 && width < 90,
          `pretty 'X = 3' width ~60 (got ${width})`);
 }
@@ -1993,8 +1981,8 @@ import { assert } from './helpers.mjs';
          `pretty 'X^2 + 1 = 10' has no parens`);
 }
 
-// --- pretty.js session 024: textbook juxtaposition drops `*` on
-//                            Num × (Var|Power|Fn|ParenExpr) shapes ----
+// --- pretty.js: textbook juxtaposition drops `*` on
+//                Num × (Var|Power|Fn|ParenExpr) shapes ----
 {
   const { astToSvg } = await import('../src/rpl/pretty.js');
 
@@ -2065,7 +2053,7 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- FACTOR session 025: general quartic rational-root scan --------
+// --- FACTOR: general quartic rational-root scan --------
 // Tests for the `factorQuarticRationalRoot` path.  Cases cover:
 // - biquadratic X^4 shapes (even-only powers),
 // - cleanly-factoring full quartics,
@@ -2155,7 +2143,7 @@ import { assert } from './helpers.mjs';
       '(2*X - 1)*(2*X + 1)*(4*X^2 + 1)',
     `factor(16X^4 - 1) = '${formatAlgebra(factor(parseAlgebra('16*X^4 - 1')))}'`);
 
-  // Session 027: biquadratic product-of-quadratics detection.
+  // Biquadratic product-of-quadratics detection.
   // X^4 + X^2 + 1 has no rational roots but factors as
   // (X^2 + X + 1)(X^2 - X + 1) over Z.
   assert(
@@ -2183,7 +2171,7 @@ import { assert } from './helpers.mjs';
     `factor(2·biquadratic) = '${formatAlgebra(factor(parseAlgebra('2*X^4 - 10*X^2 + 8')))}'`);
 }
 
-// --- simplify session 025: (u^m)^n collapse ------------------
+// --- simplify: (u^m)^n collapse ------------------
 {
   const { simplify, parseAlgebra, deriv } = await import('../src/rpl/algebra.js');
   assert(formatAlgebra(simplify(parseAlgebra('(X^2)^3'))) === 'X^6',
@@ -2201,7 +2189,7 @@ import { assert } from './helpers.mjs';
          `deriv ATAN(X^2) = 2*X/(X^4 + 1)`);
 }
 
-// --- SOLVE session 025: linear / quadratic / via-FACTOR roots -----
+// --- SOLVE: linear / quadratic / via-FACTOR roots -----
 // Direct tests of algebraSolve (bypass the op harness).  Covers:
 //   - plain-expression input  (expr = 0 implied)
 //   - equation input          (Bin('=', L, R) → L - R = 0)
@@ -2257,9 +2245,9 @@ import { assert } from './helpers.mjs';
          'X = (-1 + SQRT(5))/2 | X = (-1 - SQRT(5))/2',
          `solve(X^2+X-1=0, X)`);
 
-  // Complex conjugate pair when D < 0 (session 026).  The imaginary
-  // unit is `Var('i')` (HP50 symbolic convention).  Output formats
-  // use the standard `(-b ± i·√|D|)/(2a)` shape, reduced.
+  // Complex conjugate pair when D < 0.  The imaginary unit is
+  // `Var('i')` (HP50 symbolic convention).  Output formats use the
+  // standard `(-b ± i·√|D|)/(2a)` shape, reduced.
   assert(fmt(solve(parseAlgebra('X^2 + 1'), 'X')) === 'X = i | X = -i',
          `solve(X^2+1=0, X) → ±i`);
   assert(fmt(solve(parseAlgebra('X^2 + 4'), 'X')) === 'X = 2*i | X = -2*i',
@@ -2267,8 +2255,8 @@ import { assert } from './helpers.mjs';
   assert(fmt(solve(parseAlgebra('X^2 - 2*X + 5'), 'X')) ===
          'X = 1 + 2*i | X = 1 - 2*i',
          `solve(X^2-2X+5=0, X) → 1 ± 2i`);
-  // Session 029: quadratic branch now uses SQRT(f)·i tail order (not i·SQRT(f))
-  // to match the D-K branch's common-denom packaging.  Shape unified.
+  // Quadratic branch uses SQRT(f)·i tail order (not i·SQRT(f)) to match
+  // the D-K branch's common-denom packaging.
   assert(fmt(solve(parseAlgebra('X^2 + X + 1'), 'X')) ===
          'X = (-1 + SQRT(3)*i)/2 | X = (-1 - SQRT(3)*i)/2',
          `solve(X^2+X+1=0, X) → (-1 ± √3·i)/2`);
@@ -2290,10 +2278,9 @@ import { assert } from './helpers.mjs';
          'X = 1 | X = -1 | X = 2 | X = -2',
          `solve(X^4 - 5X^2 + 4 = 0, X)`);
 
-  // Numeric fallback (session 026 real, session 027 complex).
-  // After session 027, SOLVE finds all roots — real from bisection,
-  // complex from Durand-Kerner.  These tests check that real roots
-  // are still exact, and that the complex roots appear as Num-valued
+  // Numeric fallback (real from bisection, complex from Durand-Kerner).
+  // SOLVE finds all roots.  These tests check that real roots are
+  // still exact, and that the complex roots appear as Num-valued
   // `re + |im|*i` / `re - |im|*i` AST pairs.
   {
     const rr = solve(parseAlgebra('X^4 - 2'), 'X');
@@ -2321,13 +2308,10 @@ import { assert } from './helpers.mjs';
     // with real roots.  SOLVE combines the exact rational with the
     // square-root closed form of ±√2.
     //
-    // Session 031: before this session these roots were emitted as
-    // 12-digit decimal Num literals (1.41421356237, …).  The numeric
-    // solver now routes through `_scalarClosedForm` first, so the
+    // The numeric solver routes through `_scalarClosedForm` first, so
     // numeric ±√2 round-trips back to `Fn('SQRT', [Num(2)])` /
-    // `Neg(Fn('SQRT', [Num(2)]))`.  This test asserts the improved
-    // behavior: the rational root stays Num, the irrational roots
-    // come out as the SQRT-shape AST.
+    // `Neg(Fn('SQRT', [Num(2)]))`.  The rational root stays Num; the
+    // irrational roots come out as the SQRT-shape AST.
     const rr = solve(parseAlgebra('X^3 - X^2 - 2*X + 2'), 'X');
     assert(rr && rr.length === 3, `solve cubic mixed → 3 roots, got ${rr.length}`);
     const strs = rr.map(r => formatAlgebra(r));
@@ -2379,7 +2363,7 @@ import { assert } from './helpers.mjs';
          `SOLVE op: 2X+6=0 → X=-3`);
 }
 {
-  // Complex conjugate pair (session 026).  X^2 + 1 = 0 → {±i}.
+  // Complex conjugate pair.  X^2 + 1 = 0 → {±i}.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 1')));
   s.push(Name('X'));
@@ -2402,7 +2386,7 @@ import { assert } from './helpers.mjs';
          `SOLVE op: accepts String 'Y' as var`);
 }
 
-// --- FACTOR session 025: EXPAND round-trip for quartic ---
+// --- FACTOR: EXPAND round-trip for quartic ---
 {
   const { factor, expand, evalAst } = await import('../src/rpl/algebra.js');
   const check = (src) => {
@@ -2425,8 +2409,8 @@ import { assert } from './helpers.mjs';
   check('4*X^4 - 13*X^2 + 3');                // non-monic with irrational residue
   check('16*X^4 - 1');                         // complex quadratic residue
   check('2*X^4 - 10*X^2 + 8');                // scalar GCD + biquadratic
-  // Session 027 additions — EXPAND(FACTOR(x)) round-trip must hold for
-  // the new product-of-quadratics factoring too.
+  // EXPAND(FACTOR(x)) round-trip must hold for the product-of-quadratics
+  // factoring too.
   check('X^4 + X^2 + 1');                     // (X^2+X+1)(X^2-X+1)
   check('X^4 + 4');                            // Sophie Germain
   check('X^4 + 2*X^2 + 1');                    // (X^2+1)^2
@@ -2434,7 +2418,7 @@ import { assert } from './helpers.mjs';
   check('X^4 - X^2 - 2');                      // (X^2+1)(X^2-2)
 }
 
-// --- Session 027: FACTOR biquadratic product-of-quadratics detection.
+// --- FACTOR biquadratic product-of-quadratics detection.
 //     Targets quartics with no rational root that still factor over Z
 //     into two monic quadratics.
 {
@@ -2457,11 +2441,11 @@ import { assert } from './helpers.mjs';
   eq('X^4 - 2', 'X^4 - 2');
 }
 
-// --- Session 028 item 3: non-monic biquadratic FACTOR.  Extends the
-//     session-027 quadratic-pair search beyond the a = 1 monic case
-//     to quartics with a leading integer > 1 that don't GCD-reduce to
-//     monic.  Typical hits: 4X⁴+1 (Sophie Germain analog, a=4),
-//     9X⁴-1 (difference of squares, a=9), (aX²+c)² = a²X⁴+2acX²+c².
+// --- Non-monic biquadratic FACTOR.  Extends the quadratic-pair search
+//     beyond the a = 1 monic case to quartics with a leading integer > 1
+//     that don't GCD-reduce to monic.  Typical hits: 4X⁴+1 (Sophie
+//     Germain analog, a=4), 9X⁴-1 (difference of squares, a=9),
+//     (aX²+c)² = a²X⁴+2acX²+c².
 {
   const { factor } = await import('../src/rpl/algebra.js');
   const eq = (src, want) => {
@@ -2519,18 +2503,16 @@ import { assert } from './helpers.mjs';
   eq('2*X^4 + X^2 + 1', '2*X^4 + X^2 + 1');
 }
 
-// --- Session 027: SOLVE — Durand-Kerner numeric fallback for
-//     complex roots of polynomials degree ≥ 3.  Complements session
-//     026's real-root bisection so `realPower` roots are always
-//     returned.
+// --- SOLVE — Durand-Kerner numeric fallback for complex roots of
+//     polynomials degree ≥ 3.  Complements real-root bisection so
+//     `realPower` roots are always returned.
 {
   const { solve } = await import('../src/rpl/algebra.js');
 
-  // Session 028: the solve() cubic/quartic branch now emits closed-form
-  // surds (e.g. `1/2 + SQRT(3)/2*i` for X^3+1 instead of the old
-  // `0.5 + 0.866025403784*i`).  To keep these assertions shape-agnostic
-  // we evaluate the AST numerically in complex arithmetic.  The 'i'
-  // variable is the imaginary unit (HP50 convention).
+  // The solve() cubic/quartic branch emits closed-form surds
+  // (e.g. `1/2 + SQRT(3)/2*i` for X^3+1).  To keep these assertions
+  // shape-agnostic we evaluate the AST numerically in complex
+  // arithmetic.  The 'i' variable is the imaginary unit (HP50 convention).
   const classifyRoot = (ast) => {
     const ev = (node) => {
       if (!node) return null;
@@ -2548,7 +2530,7 @@ import { assert } from './helpers.mjs';
         if (!a || a.im !== 0 || a.re < 0) return null;
         return { re: Math.sqrt(a.re), im: 0 };
       }
-      // Session 031: cube-root closed form emits `XROOT(f, 3)`.
+      // Cube-root closed form emits `XROOT(f, 3)`.
       if (node.kind === 'fn' && node.name === 'XROOT' && node.args.length === 2) {
         const a = ev(node.args[0]), n = ev(node.args[1]);
         if (!a || !n || a.im !== 0 || n.im !== 0 || n.re === 0) return null;
@@ -2633,9 +2615,9 @@ import { assert } from './helpers.mjs';
   }
 
   // X^4 + 4 = (X^2-2X+2)(X^2+2X+2) — factor() nails the product-of-
-  // quadratics (session 027 item 2) but _rootsFromFactored only reads
-  // linear factors, so SOLVE falls through and Durand-Kerner finds
-  // all four roots: 1±i, -1±i.
+  // quadratics, but _rootsFromFactored only reads linear factors, so
+  // SOLVE falls through and Durand-Kerner finds all four roots:
+  // 1±i, -1±i.
   {
     const rr = solve(parseAlgebra('X^4 + 4'), 'X');
     assert(rr && rr.length === 4, `solve(X^4+4): 4 roots, got ${rr && rr.length}`);
@@ -2662,11 +2644,10 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- Session 028 item 1: closed-form surd detection for Durand-Kerner
-//     output.  Roots like (1 ± i·√3)/2 used to print as
-//     `0.5 ± 0.866025403784*i` and now print with exact surds.  We
-//     check the emitted AST shape via formatAlgebra so the test fails
-//     loudly if someone reverts the closed-form pass.
+// --- Closed-form surd detection for Durand-Kerner output.  Roots like
+//     (1 ± i·√3)/2 print with exact surds.  We check the emitted AST
+//     shape via formatAlgebra so the test fails loudly if someone
+//     reverts the closed-form pass.
 {
   const { solve } = await import('../src/rpl/algebra.js');
 
@@ -2676,8 +2657,8 @@ import { assert } from './helpers.mjs';
     return (rr || []).map(r => formatAlgebra(r.r));
   };
 
-  // X^3 + 1 conjugate pair → `(1 ± SQRT(3)*i)/2` (session 029: common-denom
-  // packaging now groups the shared /2 denominator).
+  // X^3 + 1 conjugate pair → `(1 ± SQRT(3)*i)/2` (common-denom
+  // packaging groups the shared /2 denominator).
   {
     const ss = rootStrs('X^3 + 1');
     assert(ss.includes('(1 + SQRT(3)*i)/2'),
@@ -2688,7 +2669,7 @@ import { assert } from './helpers.mjs';
       `solve(X^3+1): no decimal approximations — got ${JSON.stringify(ss)}`);
   }
 
-  // X^3 - 1 conjugate pair → `(-1 ± SQRT(3)*i)/2` (session 029: common-denom).
+  // X^3 - 1 conjugate pair → `(-1 ± SQRT(3)*i)/2` (common-denom packaging).
   {
     const ss = rootStrs('X^3 - 1');
     assert(ss.includes('(-1 + SQRT(3)*i)/2'),
@@ -2716,7 +2697,7 @@ import { assert } from './helpers.mjs';
     }
   }
 
-  // X^6 - 1 → ±1, (±1 ± SQRT(3)*i)/2   (session 029: common-denom packaging).
+  // X^6 - 1 → ±1, (±1 ± SQRT(3)*i)/2   (common-denom packaging).
   {
     const ss = rootStrs('X^6 - 1');
     assert(ss.length === 6, `solve(X^6-1): 6 roots`);
@@ -2738,13 +2719,12 @@ import { assert } from './helpers.mjs';
       `solve(X^4-2): no false-positive SQRT in output — got ${JSON.stringify(ss)}`);
   }
 
-  // X^3 - 2: the real root is `XROOT(2,3)` (session 031 cube-root
-  // closed form).  Session 032 added a specialised branch that emits
-  // the complex conjugate pair in closed form too — the SQRT(3) you
-  // see there is intentional (it's the √3 in ω = (-1 + i√3)/2), not
-  // a false positive from `_scalarClosedForm`.  The guard here is
-  // narrowed to the REAL root specifically: it must remain a pure
-  // XROOT with no SQRT.
+  // X^3 - 2: the real root is `XROOT(2,3)` (cube-root closed form).
+  // A specialised branch emits the complex conjugate pair in closed
+  // form too — the SQRT(3) there is intentional (it's the √3 in
+  // ω = (-1 + i√3)/2), not a false positive from `_scalarClosedForm`.
+  // The guard here is narrowed to the REAL root specifically: it must
+  // remain a pure XROOT with no SQRT.
   {
     const ss = rootStrs('X^3 - 2');
     const realRoots = ss.filter(s => !s.includes('*i') && !s.endsWith('i') && !s.endsWith('i)'));
@@ -2771,17 +2751,17 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- Session 028 item 1: direct unit tests on _rationalReconstruct /
-//     _surdReconstruct internals via a round-trip through solve().
-//     We rely on public behaviour: when _surdReconstruct recognises a
-//     value it emits SQRT(f); otherwise the decimal approximation
-//     appears.  These cases exercise the boundary carefully.
+// --- Direct unit tests on _rationalReconstruct / _surdReconstruct
+//     internals via a round-trip through solve().  We rely on public
+//     behaviour: when _surdReconstruct recognises a value it emits
+//     SQRT(f); otherwise the decimal approximation appears.  These
+//     cases exercise the boundary carefully.
 {
   const { solve } = await import('../src/rpl/algebra.js');
 
-  // X^2 + X + 1 is handled by the quadratic branch (session 026), not
-  // the D-K path — but its output is the reference format we want
-  // session 028's cubic/quartic output to resemble.  Double-check.
+  // X^2 + X + 1 is handled by the quadratic branch, not the D-K path —
+  // but its output is the reference format we want the cubic/quartic
+  // output to resemble.  Double-check.
   {
     const rr = solve(parseAlgebra('X^2 + X + 1'), 'X');
     const ss = rr.map(r => formatAlgebra(r.r));
@@ -2803,10 +2783,10 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- Session 028 item 2: deflate-then-Durand-Kerner.  After the
-//     real-root passes (FACTOR + bisection) find real roots, solve()
-//     synthetic-divides them out of the coefficient vector before
-//     running D-K on the residue.  Observable wins:
+// --- Deflate-then-Durand-Kerner.  After the real-root passes
+//     (FACTOR + bisection) find real roots, solve() synthetic-divides
+//     them out of the coefficient vector before running D-K on the
+//     residue.  Observable wins:
 //       1.  D-K never has to approximate a real root it would then
 //           be told to skip — so a degree-5 polynomial with 3 real
 //           roots runs D-K on a degree-2 residue, not the full 5.
@@ -2850,11 +2830,11 @@ import { assert } from './helpers.mjs';
       `solve(X^4-2): 4 roots all ≈ 2^(1/4) magnitude — got ${JSON.stringify(ss)}`);
   }
 
-  // X^3 - 2 has a single real root ∛2.  Session 031 now emits it as
-  // the exact cube-root surd `XROOT(2, 3)` rather than a 12-digit
-  // decimal.  Deflation against the numeric real still runs D-K to
-  // find the conjugate pair, which remain 12-digit decimals (those
-  // would need a mixed ∛·√ closed form we don't have yet).
+  // X^3 - 2 has a single real root ∛2.  Emitted as the exact cube-root
+  // surd `XROOT(2, 3)` rather than a 12-digit decimal.  Deflation
+  // against the numeric real still runs D-K to find the conjugate
+  // pair, which remain 12-digit decimals (those would need a mixed
+  // ∛·√ closed form we don't have yet).
   {
     const rr = solve(parseAlgebra('X^3 - 2'), 'X');
     const ss = rr.map(r => formatAlgebra(r.r));
@@ -2875,11 +2855,11 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- Session 029 item 1: common-denominator packaging for complex
-//     roots.  When _scalarClosedForm gives re = p/q and im = r/q (or
-//     surd shapes sharing a denominator), _assembleReImAst repackages
-//     the pair as a single fraction `(reNum ± imNum·i)/q` instead of
-//     `p/q ± r/q·i`.  Quadratic branch updated to the same tail-order
+// --- Common-denominator packaging for complex roots.  When
+//     _scalarClosedForm gives re = p/q and im = r/q (or surd shapes
+//     sharing a denominator), _assembleReImAst repackages the pair as
+//     a single fraction `(reNum ± imNum·i)/q` instead of
+//     `p/q ± r/q·i`.  Quadratic branch uses the same tail-order
 //     (`SQRT(f)·i`) so both paths emit structurally identical shapes.
 {
   const { solve } = await import('../src/rpl/algebra.js');
@@ -2921,9 +2901,8 @@ import { assert } from './helpers.mjs';
       `X^4+1 packaged: (-SQRT(2) - SQRT(2)*i)/2 — got ${JSON.stringify(ss)}`);
   }
 
-  // X^2 + X + 1 — quadratic branch.  After session 029's quadratic-
-  // branch retooling, its output SHAPE now matches the D-K branch's
-  // (`(reNum ± SQRT(f)·i)/d` with i at the tail).
+  // X^2 + X + 1 — quadratic branch.  Its output SHAPE matches the D-K
+  // branch's (`(reNum ± SQRT(f)·i)/d` with i at the tail).
   {
     const rr = solve(parseAlgebra('X^2 + X + 1'), 'X');
     const ss = rr.map(r => formatAlgebra(r.r));
@@ -2964,7 +2943,7 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- Session 029 item 2: generalised sum/difference of cubes in X^k.
+// --- Generalised sum/difference of cubes in X^k.
 //     Extends the k=1 cubes identity to any core polynomial of shape
 //     `a·X^(3k) + b` with a and |b| perfect cubes.  The recursion into
 //     factor() on the two sub-factors further decomposes them when
@@ -3052,11 +3031,11 @@ import { assert } from './helpers.mjs';
   assert(shape('X^6') === 'X^6', `X^6 unchanged — got ${shape('X^6')}`);
 }
 
-// --- Session 029 item 3: odd/even symbolic identities and (-X)^n
-//     integer-power canonicalisation.  Pulls signs out of SIN/TAN/
-//     ASIN/ATAN/SINH/TANH/ASINH/ATANH (odd) and drops them inside
-//     COS/COSH (even).  `(-X)^n` with n a non-negative integer folds
-//     to X^n (even n) or -(X^n) (odd n).  ABS(ABS(x)) → ABS(x).
+// --- Odd/even symbolic identities and (-X)^n integer-power
+//     canonicalisation.  Pulls signs out of SIN/TAN/ASIN/ATAN/SINH/
+//     TANH/ASINH/ATANH (odd) and drops them inside COS/COSH (even).
+//     `(-X)^n` with n a non-negative integer folds to X^n (even n)
+//     or -(X^n) (odd n).  ABS(ABS(x)) → ABS(x).
 {
   const { simplify, deriv } = await import('../src/rpl/algebra.js');
   const s = e => formatAlgebra(simplify(parseAlgebra(e)));
@@ -3075,7 +3054,7 @@ import { assert } from './helpers.mjs';
   assert(s('COS(-X)')  === 'COS(X)',  `COS(-X) → COS(X) — got ${s('COS(-X)')}`);
   assert(s('COSH(-X)') === 'COSH(X)', `COSH(-X) → COSH(X) — got ${s('COSH(-X)')}`);
 
-  // ABS stability — ABS(-x) (existing) + ABS(ABS(x)) (new in 029).
+  // ABS stability — ABS(-x) and ABS(ABS(x)).
   assert(s('ABS(-X)')    === 'ABS(X)', `ABS(-X) existing — got ${s('ABS(-X)')}`);
   assert(s('ABS(ABS(X))') === 'ABS(X)', `ABS(ABS(X)) idempotent — got ${s('ABS(ABS(X))')}`);
 
@@ -3109,9 +3088,9 @@ import { assert } from './helpers.mjs';
     `deriv(COS(-X)) → -SIN(X) — got ${dCosNegX}`);
 }
 
-// --- Session 027: simplify() cancels a common integer factor in a
-//     fraction, so DERIV(SQRT(X^2+1)) reduces to the textbook
-//     X/SQRT(X^2+1) instead of 2*X/(2*SQRT(X^2+1)).
+// --- simplify() cancels a common integer factor in a fraction, so
+//     DERIV(SQRT(X^2+1)) reduces to the textbook X/SQRT(X^2+1) instead
+//     of 2*X/(2*SQRT(X^2+1)).
 {
   const { simplify, deriv } = await import('../src/rpl/algebra.js');
 
@@ -3180,8 +3159,7 @@ import { assert } from './helpers.mjs';
 
 
 /* ============================================================
-   Session 031 — FACT factorial, one-level UNDO, cube-root
-                  closed-form surd detection.
+   FACT factorial, one-level UNDO, cube-root closed-form surd detection.
    ============================================================ */
 {
   // ---- FACT on non-negative Integer (exact, BigInt) ----
@@ -3253,13 +3231,13 @@ import { assert } from './helpers.mjs';
   }
 
   // ============================================================
-  // Session 031 item 2 — one-level UNDO
+  // UNDO / REDO (multi-level)
   // ============================================================
 
-  // ---- Stack.saveForUndo + undo (multi-level: session 037) ----
-  // Session 037 upgraded the one-slot swap to a history stack with a
-  // redo companion.  Single-save round-trip still works; the swap-
-  // twice-to-return-to-original pattern is now UNDO followed by REDO.
+  // ---- Stack.saveForUndo + undo ----
+  // saveForUndo records a snapshot; undo walks back through the history
+  // stack and redo replays forward.  Single-save round-trip: push state,
+  // make a change, UNDO restores, REDO re-applies.
   {
     const s = new Stack();
     s.push(Real(1)); s.push(Real(2));           // state A: { 1 2 }
@@ -3391,10 +3369,10 @@ import { assert } from './helpers.mjs';
   }
 
   // ---- UNDO registered as op (name-based invocation also works) ----
-  // Session 037: LASTSTACK stays registered as an alias for single-step
-  // UNDO (pop-based).  For the "swap back" round-trip, REDO is the new
-  // inverse.  LASTSTACK's legacy swap is indistinguishable from a single
-  // UNDO in the 1-level case, so this still exercises the alias.
+  // LASTSTACK is registered as an alias for single-step UNDO (pop-based).
+  // For the "swap back" round-trip, REDO is the inverse.  LASTSTACK's
+  // swap is indistinguishable from a single UNDO in the 1-level case,
+  // so this still exercises the alias.
   {
     const s = new Stack();
     s.push(Real(1));
@@ -3410,7 +3388,7 @@ import { assert } from './helpers.mjs';
   }
 
   // ============================================================
-  // Session 037 — multi-level UNDO / REDO on the stack
+  // Multi-level UNDO / REDO on the stack
   // ============================================================
   // Three-step chain: save ‣ mutate ‣ save ‣ mutate ‣ save ‣ mutate.
   // UNDO must walk back step-by-step; REDO must walk forward.  Any
@@ -3535,7 +3513,7 @@ import { assert } from './helpers.mjs';
   }
 
   // ============================================================
-  // Session 031 item 3 — cube-root closed-form surd detection
+  // Cube-root closed-form surd detection
   // ============================================================
   {
     const { parseAlgebra, solve, formatAlgebra } = await import('../src/rpl/algebra.js');
@@ -3570,13 +3548,11 @@ import { assert } from './helpers.mjs';
 }
 
 // ============================================================
-// Session 032 — keypad binary/unary ops accept Symbolic + Name
+// Keypad binary/unary ops accept Symbolic + Name
 // ============================================================
-// Before session 032, `'X' 'Y' +` threw "Bad argument type" the
-// instant either operand was a Name or a Symbolic — meaning you could
-// parse '...' entries but couldn't build them up with the keypad.
 // HP50 behavior: any symbolic operand lifts the whole op into the
-// algebra domain.  These tests pin:
+// algebra domain, so `'X' 'Y' +` builds `X + Y` rather than throwing
+// "Bad argument type".  These tests pin:
 //   * binary ops (+ - * / ^) on Sym/Name and Sym/Num combinations;
 //   * the mandatory co-symbolization of the numeric other side;
 //   * unary ops NEG, INV, SQ, SQRT, ABS;
@@ -3731,10 +3707,10 @@ import { assert } from './helpers.mjs';
     assert(asExprStr(s.peek(1)) === 'XROOT(X,3)', `'X' 3 XROOT → XROOT(X,3)`);
   }
 
-  // --- Session 034: `+` with String operand concatenates; Real(1) + "hello"
-  //     → "1hello".  Matches HP50 behaviour and the user's request from
-  //     session 034 ("ABC" 123 + → "ABC123").  Keeps symbolic lift +
-  //     numeric paths working for non-string operands (covered below).
+  // --- `+` with String operand concatenates; Real(1) + "hello"
+  //     → "1hello".  Matches HP50 behaviour ("ABC" 123 + → "ABC123").
+  //     Keeps symbolic lift + numeric paths working for non-string
+  //     operands (covered below).
   {
     const s = new Stack();
     s.push(Real(1));
@@ -3743,7 +3719,7 @@ import { assert } from './helpers.mjs';
     assert(s.depth === 1 && isString(s.peek(1)) && s.peek(1).value === '1.hello',
       'Real(1) "hello" + → "1.hello" (STD-formats the Real)');
   }
-  // --- Session 034: the user's verbatim example, "ABC" 123 + → "ABC123"
+  // --- String + Integer concat: "ABC" 123 + → "ABC123"
   {
     const s = new Stack();
     s.push(Str('ABC'));
@@ -3752,7 +3728,7 @@ import { assert } from './helpers.mjs';
     assert(s.depth === 1 && isString(s.peek(1)) && s.peek(1).value === 'ABC123',
       '"ABC" 123 + → "ABC123"');
   }
-  // --- Session 034: string concat also works with leading numeric side
+  // --- String concat also works with leading numeric side
   {
     const s = new Stack();
     s.push(Integer(123));
@@ -3761,7 +3737,7 @@ import { assert } from './helpers.mjs';
     assert(s.depth === 1 && isString(s.peek(1)) && s.peek(1).value === '123ABC',
       '123 "ABC" + → "123ABC"');
   }
-  // --- Session 034: two strings still concat
+  // --- Two strings concat
   {
     const s = new Stack();
     s.push(Str('foo'));
@@ -3809,9 +3785,7 @@ import { assert } from './helpers.mjs';
     assert(got === '2*X + 1', `keypad built '2*X + 1', got ${got}`);
   }
 
-  /* ========== Session 034: comparison ops produce symbolic ============
-     User request: "The not equals, equals (=), <, >, etc. are not working
-     like they should for symbolics" / "x y > should results in: 'x>y'".
+  /* ========== Comparison ops produce symbolic ============
      Every comparison op (=, ≠, <, >, ≤, ≥ and ASCII aliases <=, >=, <>)
      must (a) parse inside '…' algebraic literals and (b) produce a
      Symbolic result when either operand is a Name or Symbolic.
@@ -3938,10 +3912,9 @@ import { assert } from './helpers.mjs';
   }
 }
 
-/* ========== Session 034: EXACT mode keeps Integer fractions symbolic ==
-   User request: "The Exact indicator (=) seems to be default.  It
-   shouldn't reduce fractions to their decimal equivalents unless it's
-   in approx mode."
+/* ========== EXACT mode keeps Integer fractions symbolic ==
+   EXACT (the default indicator) must not reduce fractions to their
+   decimal equivalents — that is APPROX mode's job.
    ====================================================================== */
 {
   const { setApproxMode, getApproxMode } = await import('../src/rpl/state.js');
@@ -3991,12 +3964,10 @@ import { assert } from './helpers.mjs';
 
 
 // ================================================================
-// Session 032 — complex cube-root closed form for pure X^3 ± k
+// Complex cube-root closed form for pure X^3 ± k
 // ================================================================
-// Session 031 emitted the REAL root of X^3 − k as XROOT(k, 3) but
-// left the conjugate pair as 12-digit decimals.  Session 032 adds a
-// specialised branch in solve() for the "pure cubic + constant"
-// shape (no X² or X term) that emits all three roots in closed form
+// A specialised branch in solve() handles the "pure cubic + constant"
+// shape (no X² or X term) and emits all three roots in closed form
 // via ω = e^{2πi/3} = (−1 + i√3)/2, multiplying the real root by
 // {1, ω, ω²}.
 {
@@ -4056,7 +4027,7 @@ import { assert } from './helpers.mjs';
   }
 
   // --- Every complex root emitted contains `i` — regression guard
-  //     against the pre-session-032 decimal-only output.
+  //     against any decimal-only fallback.
   {
     const ss = rootStrs('X^3 - 2');
     const numericRe = /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i;
@@ -4094,10 +4065,10 @@ import { assert } from './helpers.mjs';
 }
 
 // ================================================================
-// Session 032 — APPROX / EXACT numeric-eval mode
+// APPROX / EXACT numeric-eval mode
 //
-// APPROX (default): EVAL on a Symbolic folds transcendentals to a
-// 12-digit decimal.  EXACT: EVAL only folds when the result is an
+// APPROX: EVAL on a Symbolic folds transcendentals to a 12-digit
+// decimal.  EXACT (default): EVAL only folds when the result is an
 // integer AND every arg was an integer, so SQRT(9) → 3 still folds
 // but SQRT(2) and LN(2) stay symbolic.  →NUM forces APPROX for the
 // span of one EVAL regardless of the flag.
@@ -4218,24 +4189,23 @@ import { assert } from './helpers.mjs';
       `->NUM ASCII alias folds SQRT(4) → 2. — got ${formatStackTop(s.peek())}`);
   }
 
-  // Reset flag to the session-035 default (EXACT) so later tests
-  // aren't affected.  Before session 035 this was `setApproxMode(true)`.
+  // Reset flag to the default (EXACT) so later tests aren't affected.
   setApproxMode(false);
 }
 
 // ==================================================================
-// Session 041 — →NUM coverage in EXACT mode + symbolic constants.
+// →NUM coverage in EXACT mode + symbolic constants.
 //
-// Fixes:
-//   1. Parser: pure-numeric tick-strings like '1/3' and '2^0.5' now
+// Behaviour pinned here:
+//   1. Parser: pure-numeric tick-strings like '1/3' and '2^0.5'
 //      parse as Symbolic rather than Name, so →NUM can reach them.
 //   2. ops.js: PI / E are built-in constants resolved to numbers in
 //      APPROX mode (incl. during the →NUM span) and kept symbolic in
-//      EXACT.  This lets `'PI' →NUM` fold to 3.14159… while
-//      `'PI' EVAL` in EXACT stays as 'PI'.
-//   3. algebra.evalAst grew a `binGate` callback — ops.js passes
-//      `_approxGate` through so EXACT-mode EVAL refuses to fold
-//      `'1/3'` or `'1+0.5'` into a Real.
+//      EXACT.  `'PI' →NUM` folds to 3.14159… while `'PI' EVAL` in
+//      EXACT stays as 'PI'.
+//   3. algebra.evalAst honours a `binGate` callback; ops.js passes
+//      `_approxGate` so EXACT-mode EVAL refuses to fold `'1/3'` or
+//      `'1+0.5'` into a Real.
 // ==================================================================
 {
   const { getApproxMode } = await import('../src/rpl/state.js');
@@ -4258,7 +4228,7 @@ import { assert } from './helpers.mjs';
            `session041: '+' still falls back to a quoted Name`);
   }
 
-  // --- →NUM folds cases that used to stay symbolic under EXACT ------
+  // --- →NUM folds symbolic inputs that EXACT mode keeps symbolic ------
   function runNum(src) {
     resetHome();
     setApproxMode(false);
@@ -4330,7 +4300,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ==================================================================
-// Session 041 — pretty.js opSepBox tightens `+`/`-`/`=` spacing.
+// pretty.js opSepBox tightens `+`/`-`/`=` spacing.
 // ==================================================================
 {
   const { astToSvg } = await import('../src/rpl/pretty.js');
@@ -4357,8 +4327,8 @@ import { assert } from './helpers.mjs';
 }
 
 // ==================================================================
-// Session 041 — Complex display drops trailing `.` on integer-valued
-// components in EXACT + STD mode.
+// Complex display drops trailing `.` on integer-valued components in
+// EXACT + STD mode.
 // ==================================================================
 {
   const prev = (await import('../src/rpl/state.js')).getApproxMode();
@@ -4377,7 +4347,7 @@ import { assert } from './helpers.mjs';
 
 
 // ==================================================================
-// Session 053 — HORNER / PCOEF / FCOEF
+// HORNER / PCOEF / FCOEF
 // ==================================================================
 
 /* ---- HORNER: (x³ - 6x² + 11x - 6) synth-divided by (x - 1) ---- */
@@ -4524,7 +4494,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* =================================================================
-   Session 054 — PROOT, QUOT, REMAINDER.
+   PROOT, QUOT, REMAINDER.
    ================================================================= */
 
 /* ---- PROOT: x² - 3x + 2 = (x-1)(x-2) ---- */
@@ -4660,7 +4630,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* =================================================================
-   Session 055 — PEVAL, PTAYL, EPSX0, DISTRIB.
+   PEVAL, PTAYL, EPSX0, DISTRIB.
    (GRAMSCHMIDT / QR / CHOLESKY / RDM / C→P / P→C live in
    tests/test-matrix.mjs and tests/test-numerics.mjs.)
    ================================================================= */
@@ -4952,8 +4922,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 056 — HERMITE / LEGENDRE / TCHEBYCHEFF (first-kind) and
-   the TCHEB alias.
+   HERMITE / LEGENDRE / TCHEBYCHEFF (first-kind) and the TCHEB alias.
 
    All three ops run a three-term recurrence on a plain coefficient
    array (descending degree), then convert to a Symbolic expression
@@ -5098,8 +5067,8 @@ for (const n of [0, 1, 3, 6]) {
 }
 
 /* ---- Negative n rejected (Bad argument value) — TCHEBYCHEFF
-     now accepts n<0 (second-kind path, session 057), so only
-     HERMITE and LEGENDRE appear here. ---- */
+     accepts n<0 via the second-kind path, so only HERMITE and
+     LEGENDRE appear here. ---- */
 for (const name of ['HERMITE', 'LEGENDRE']) {
   const s = new Stack();
   s.push(Integer(-1n));
@@ -5142,7 +5111,7 @@ for (const name of ['HERMITE', 'LEGENDRE']) {
 }
 
 /* ================================================================
-   Session 057 — TCHEBYCHEFF second-kind (negative n), FROOTS.
+   TCHEBYCHEFF second-kind (negative n), FROOTS.
 
    MAD / AXL / AXM live in test-matrix.mjs (matrix / stats surface).
    ================================================================ */
@@ -5399,12 +5368,11 @@ function _assertRootsMatch(got, expected, name) {
 }
 
 /* ================================================================
-   Session 058 — FROOTS rational-root pre-scan, PREVAL, TAN2SC,
-   LAPLACE / ILAP.
+   FROOTS rational-root pre-scan, PREVAL, TAN2SC, LAPLACE / ILAP.
 
-   Five new symbolic-algebra items.  FROOTS now keeps Integer roots
-   Integer (was Real-cast through Durand-Kerner); PREVAL, TAN2SC,
-   LAPLACE, ILAP are new ops.
+   FROOTS keeps Integer roots Integer (rather than Real-casting
+   through Durand-Kerner).  PREVAL, TAN2SC, LAPLACE, ILAP are
+   symbolic-algebra ops.
    ================================================================ */
 
 /* ---- FROOTS rational-root pre-scan keeps Integer roots Integer ---- */
@@ -5469,10 +5437,10 @@ function _assertRootsMatch(got, expected, name) {
 
 /* ---- FROOTS mixed integer + irrational: X^3 - X^2 - 2X + 2 ----
      = (X - 1)(X^2 - 2) = (X - 1)(X - √2)(X + √2).  Expected output:
-     one Integer root (1) and two roots for ±√2.  Prior to session 059
-     these were Real (Durand-Kerner numerics); after session 059 the
-     quadratic residual is extracted exactly, so they come back as
-     Symbolic nodes.  Accept either shape. */
+     one Integer root (1) and two roots for ±√2.  The quadratic
+     residual is extracted exactly, so the irrational roots come
+     back as Symbolic nodes; Real (Durand-Kerner numerics) is also
+     accepted as a fallback. */
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^3-X^2-2*X+2')));
@@ -5489,11 +5457,11 @@ function _assertRootsMatch(got, expected, name) {
     `session058: irrational roots ±√2 surface as 2 non-integer roots (got ${nonIntRoots.length})`);
   const allSymOrReal = nonIntRoots.every(r => isSymbolic(r) || isReal(r));
   assert(allSymOrReal,
-    'session058: ±√2 roots are Symbolic (session 059) or Real (pre-059)');
+    'session058: ±√2 roots are Symbolic or Real');
 }
 
 /* ================================================================
-   Session 058 — PREVAL: F(X) a b → F(b) - F(a).
+   PREVAL: F(X) a b → F(b) - F(a).
    ================================================================ */
 
 /* ---- PREVAL of X^2 from 0 to 3 = 9 ---- */
@@ -5570,11 +5538,10 @@ function _assertRootsMatch(got, expected, name) {
     'session058: PREVAL on constant F → 0');
 }
 
-/* ---- PREVAL multi-variable F substitutes VX (session 076) ----
-   Previous behavior (pre-session 076): rejected multi-var F with
-   Bad argument value.  New behavior: PREVAL picks VX (default 'X')
-   as the substitution variable, matches HP50 AUR.  For F = X + Y
-   with VX = X, result is (1 + Y) - (0 + Y) = 1. */
+/* ---- PREVAL multi-variable F substitutes VX ----
+   PREVAL picks VX (default 'X') as the substitution variable, per
+   HP50 AUR.  For F = X + Y with VX = X, result is
+   (1 + Y) - (0 + Y) = 1. */
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X+Y')));
@@ -5599,7 +5566,7 @@ function _assertRootsMatch(got, expected, name) {
 }
 
 /* ================================================================
-   Session 058 — TAN2SC: TAN(X) → SIN(X) / COS(X) rewrite.
+   TAN2SC: TAN(X) → SIN(X) / COS(X) rewrite.
    ================================================================ */
 
 /* ---- TAN2SC on TAN(X) ---- */
@@ -5674,7 +5641,7 @@ function _assertRootsMatch(got, expected, name) {
 }
 
 /* ================================================================
-   Session 058 — LAPLACE / ILAP basic rules.
+   LAPLACE / ILAP basic rules.
    ================================================================ */
 
 /* ---- LAPLACE of 1 = 1/X ---- */
@@ -5877,8 +5844,8 @@ function _assertRootsMatch(got, expected, name) {
 }
 
 /* ================================================================
-   Session 059 — HALFTAN, TAN2SC2, TAN2CS2, ACOS2S, ASIN2C,
-                 ASIN2T, ATAN2S, FROOTS exact quadratic residual.
+   HALFTAN, TAN2SC2, TAN2CS2, ACOS2S, ASIN2C,
+   ASIN2T, ATAN2S, FROOTS exact quadratic residual.
    ================================================================ */
 
 // Shared helper: does the AST contain a call to `name`?
@@ -6285,7 +6252,7 @@ function _s059HasFn(node, name) {
     'session059: X²-1 roots stay Integer (exact-quadratic branch declines)');
 }
 
-/* ---- FROOTS with Session-059 branch composes with rational pre-scan ----
+/* ---- FROOTS quadratic-residual branch composes with rational pre-scan ----
      (X - 1)(X² - 5) = X³ - X² - 5X + 5 — rational root X=1, then
      quadratic residual X² - 5 → ±√5. */
 {
@@ -6305,7 +6272,7 @@ function _s059HasFn(node, name) {
 }
 
 /* ================================================================
-   Session 060 — TEXPAND, TLIN, TCOLLECT, EXPLN.
+   TEXPAND, TLIN, TCOLLECT, EXPLN.
    ================================================================ */
 
 // Shared: does the AST contain a call to `name`?
@@ -6812,8 +6779,8 @@ function _s060HasVar(node, name) {
 }
 
 /* ================================================================
-   Session 061 — TSIMP, EXPLN inverse family, HEAVISIDE / DIRAC,
-                 LAPLACE / ILAP extensions, LNCOLLECT, FROOTS biquad.
+   TSIMP, EXPLN inverse family, HEAVISIDE / DIRAC,
+   LAPLACE / ILAP extensions, LNCOLLECT, FROOTS biquad.
    ================================================================ */
 
 // Shared helpers: does the AST contain a call to `name`? / reference Var `name`?
@@ -7377,7 +7344,7 @@ function _s061HasVar(node, name) {
 }
 
 /* ================================================================
-   Session 076 — VX / SVX CAS-main-variable state + ops.
+   VX / SVX CAS-main-variable state + ops.
    ================================================================ */
 
 /* ---- VX push default = Name('X') ---- */
@@ -7496,7 +7463,7 @@ function _s061HasVar(node, name) {
 }
 
 /* ================================================================
-   Session 076 — EXLR: extract left and right sides of a symbolic.
+   EXLR: extract left and right sides of a symbolic.
    ================================================================ */
 
 /* ---- EXLR on A = B ---- */

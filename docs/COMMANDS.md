@@ -21,18 +21,24 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 076 — 2026-04-23)
+## Counts (as of session 081 — 2026-04-23)
 
-- Fully shipped (✓): 409
+- Fully shipped (✓): 412
 - Partially shipped (~): 0
-- Not yet implemented (✗): 32 (see "Not yet supported" below)
+- Not yet implemented (✗): 27 (see "Not yet supported" below)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" src/rpl/ops.js` = **437** at the end of session 076
-(was 429 at the end of session 069); the Fully-shipped count above
-reflects new HP50 ops shipped this run (`VX`, `SVX`, `EXLR`, `EUCLID`,
-`INVMOD` — 5 rows flipped ✗ → ✓).
+`grep -c "register(" src/rpl/ops.js` = **441** at the end of session 081
+(was 437 at the end of session 076); the Fully-shipped count above
+reflects new HP50 ops shipped this run (`TRUNC` two-arg, `PSI`
+digamma + polygamma, `CYCLOTOMIC` — 3 rows flipped ✗ → ✓).
+
+Session 081 also cleaned up two code-review findings from session 080's
+`docs/REVIEW.md`: **C-001** (split the stale `MEM TVARS` row —
+`MEM` is already ✓ at L242, only `TVARS` remains ✗) and **C-002**
+(deleted the ghost `RCWS (STWS/RCWS done) | ✓` row that was already
+covered by the binary-integer section).
 
 ---
 
@@ -45,7 +51,7 @@ reflects new HP50 ops shipped this run (`VX`, `SVX`, `EXLR`, `EUCLID`,
 | `SIGN` | ✓ | Session 062 widening (Sy/L/T). |
 | `ARG` `CONJ` `RE` `IM` | ✓ | |
 | `MAXR` `MINR` | ✓ | Machine Max/Min Real. |
-| `RND` `TRNC` | ✓ | |
+| `RND` `TRNC` `TRUNC` | ✓ | **Session 081** — `TRUNC` two-arg form `(x n → round-toward-zero to n places)` shipped; shares `_truncTowardZero` with `TRNC`, Symbolic lift on `x` or `n`, Integer passthrough. |
 | `MANT` `XPON` | ✓ | |
 | `FLOOR` `CEIL` `IP` `FP` | ✓ | Session 062 — Tagged + List + V/M + Sym lift.  Session 072 — Unit (`1.5_m FLOOR` → `1_m`, uexpr preserved). |
 | `MOD` | ✓ | Floor-div (sign-of-divisor).  Session 062 Sym lift.  Session 068 pinned V/M rejection. |
@@ -59,6 +65,7 @@ reflects new HP50 ops shipped this run (`VX`, `SVX`, `EXLR`, `EUCLID`,
 | `GAMMA` `LNGAMMA` | ✓ | Session 068 — Lanczos-backed special functions. |
 | `Beta` | ✓ | **Session 069** — B(a, b) = Γ(a)Γ(b)/Γ(a+b) via Lanczos log-gamma, Tagged + List + Sy. |
 | `erf` `erfc` | ✓ | **Session 069** — erf via P(1/2, x²); erfc via Q(1/2, x²) for no-cancellation large-x tail. |
+| `PSI` | ✓ | **Session 081** — digamma ψ(x) (1-arg) + polygamma ψ⁽ⁿ⁾(x) (2-arg with integer n ≥ 0).  Reflection for x < 0.5, integer-shift recurrence, Bernoulli asymptotic (2k=12).  Poles at non-positive integers throw `Infinite result`.  Tagged + List + V/M + Sym lift. |
 | `XROOT` | ✓ | Sy lift. |
 | `EXP` `EXPM` `LN` `LNP1` `LOG` `ALOG` | ✓ | |
 | `SIN` `COS` `TAN` `ASIN` `ACOS` `ATAN` | ✓ | Angle-mode aware. |
@@ -169,6 +176,7 @@ reflects new HP50 ops shipped this run (`VX`, `SVX`, `EXLR`, `EUCLID`,
 | `ISPRIME?` `NEXTPRIME` `PREVPRIME` | ✓ | |
 | `EUCLID` | ✓ | **Session 076** — `( a b → {u v g} )` extended-Euclid / Bezout; `u*a + v*b = g`.  Rejects `(0,0)` ("Bad argument value"), non-Integer ("Bad argument type").  Re-signs u,v for negative inputs. |
 | `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  One-arg MODULO-state form deferred until MODULO lands. |
+| `CYCLOTOMIC` | ✓ | **Session 081** — `( n → Φ_n(X) )` n-th cyclotomic polynomial as a Symbolic in X.  BigInt long-division build via `Φ_n = (Xⁿ − 1) / ∏_{d\|n, d<n} Φ_d`.  Capped at n ≤ 200 (MAX_SAFE_INTEGER guard on the descending-degree coefficient array).  Rejects non-Integer and n < 1. |
 
 ## CAS (symbolic)
 
@@ -206,7 +214,7 @@ reflects new HP50 ops shipped this run (`VX`, `SVX`, `EXLR`, `EUCLID`,
 
 | Command | Status | Notes |
 |---------|--------|-------|
-| `IF` `THEN` `ELSE` `END` | ✓ | |
+| `IF` `THEN` `ELSE` `END` | ✓ | **Session 083** — IF auto-closes on missing END at program-body bound, mirroring CASE (session 074) and IFERR (session 077); IF-without-THEN stays a hard error. |
 | `CASE` `THEN` `END` | ✓ | Session 067. |
 | `FOR` `START` `STEP` `NEXT` | ✓ | |
 | `WHILE` `REPEAT` `END` | ✓ | |
@@ -218,8 +226,9 @@ reflects new HP50 ops shipped this run (`VX`, `SVX`, `EXLR`, `EUCLID`,
 | `→PRG` `OBJ→` (on Program) | ✓ | Session 067. |
 | `ABORT` | ✓ | Session 067. |
 | `DECOMP` | ✓ | |
-| `HALT` `CONT` `KILL` | ✓ | Session 074 pilot — top-level program bodies only; HALT inside control flow or `→` raises a pilot-limit error. |
-| `SST` `DBUG` `RUN` | ✗ | Blocked on RunState refactor — rpl5050-rpl lane. |
+| `HALT` `CONT` `KILL` | ✓ | Session 074 pilot — top-level program bodies only; HALT inside control flow or `→` raises a pilot-limit error. **Session 083:** multi-slot halted LIFO (`state.haltedStack`) matches HP50 AUR p.2-135; CONT/KILL pop one slot off the top, new `clearAllHalted()` drains, `haltedDepth()` exposes depth. |
+| `RUN` | ✓ | **Session 083** — registered as a CONT synonym for the no-DBUG case (AUR p.2-177). Will upgrade to debug-aware resume once DBUG substrate lands. |
+| `SST` `DBUG` | ✗ | Blocked on RunState refactor — rpl5050-rpl lane. |
 
 ## Variables & directories
 
@@ -259,8 +268,6 @@ can be picked up as a group.
 
 | Command | Cluster | Priority | Notes |
 |---------|---------|----------|-------|
-| `PSI` | CAS-special | high | Digamma.  Asymptotic + recurrence. |
-| `Psi` (polygamma) | CAS-special | medium | `PSI(x, n)` — nth polygamma. |
 | `ZETA` | CAS-special | low | Riemann zeta — only integer args practical. |
 | `LAMBERT` | CAS-special | low | W-function — iterative. |
 | `Ei` `Si` `Ci` | CAS-special | low | Exponential / sine / cosine integrals. |
@@ -269,15 +276,12 @@ can be picked up as a group.
 | `JORDAN` `SCHUR` `LQD` `RSD` | Matrix | low | Advanced decomps. |
 | `ACKER` `CTRB` `OBSV` | Matrix | low | Control-theory. |
 | `SRPLY` | list | low | Slightly obscure — Sum-of-Repeated-Pairs. |
-| `MEM` `TVARS` | reflection | low | TVARS selects vars by type. |
+| `TVARS` | reflection | low | TVARS selects vars by type.  (MEM shipped — see L242.) |
 | `BARPLOT` `HISTPLOT` `SCATRPLOT` | graphics | ui-lane | (graphics — not in this lane) |
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
-| `RCWS` (STWS/RCWS done) | binary-int | ✓ | |
 | `XNUM` `XQ` | number mode | low | "Numeric / exact" toggles — aliases of →NUM / →Q. |
-| `CYCLOTOMIC` | poly | low | nth cyclotomic polynomial. |
 | `POLYEVAL` `MULTMOD` | modular | low | Modular poly ops — `EUCLID` / `INVMOD` shipped session 076; these two remain (need MODULO state). |
 | `PA2B2` `PROPFRAC` `PARTFRAC` | algebra | medium | PARTFRAC is the big one. |
-| `TRUNC` (two-arg) | real | low | `TRUNC(x, n)` — truncate to n places.  One-arg `TRNC` present. |
 | `COSSIN` | trig-form | low | Rewrite in cos/sin basis. |
 
 ## Will-not-support (by design deviation)
@@ -304,6 +308,23 @@ If a user asks for one of these, the correct response is to point at
 
 Maintain chronologically, most recent first.
 
+- **session 081** (2026-04-23) — `TRUNC` two-arg + `PSI` (digamma +
+  polygamma) + `CYCLOTOMIC`.  `TRUNC` shares the toward-zero kernel
+  with the existing one-arg `TRNC` and lifts to Symbolic when `x` or
+  `n` is a Name / Symbolic.  `PSI` dispatches on arity: one-arg is
+  digamma, two-arg `(x n)` with integer `n ≥ 0` is the n-th polygamma;
+  numerical core is reflection-for-`x<0.5` + integer-shift recurrence
+  up to `y ≥ 8..10` + Bernoulli asymptotic truncated at `2k = 12`;
+  Tagged / List / V/M / Sym lift.  `CYCLOTOMIC` builds Φ_n(X) via
+  iterative exact BigInt long-division `Φ_n = (Xⁿ − 1) / ∏ Φ_d`
+  (d proper divisor of n), capped at n ≤ 200 so the descending
+  coefficient array never overruns `Number.MAX_SAFE_INTEGER`
+  (verified against the famous Φ_105 with its −2 coefficient).
+  Three rows flipped ✗ → ✓.  +41 assertions
+  (`test-numerics.mjs`: 8 TRUNC, 20 PSI, 13 CYCLOTOMIC).  Also
+  resolved REVIEW.md C-001 (split stale `MEM TVARS` row — `MEM`
+  already ✓) and C-002 (deleted ghost `RCWS` row).
+  3745 → 3786.  See `logs/session-081.md`.
 - **session 076** (2026-04-23) — CAS VX slot + EXLR + modular arithmetic.
   Shipped `VX` / `SVX` (CAS main variable — default `X`, persists across
   reload via new `casVx` snapshot field; LAPLACE/ILAP/PREVAL now honor

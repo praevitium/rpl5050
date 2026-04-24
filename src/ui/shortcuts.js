@@ -3,7 +3,7 @@
    (Ctrl / Cmd).  Lives here — not in app.js — so it can be unit-
    tested in Node without a DOM.
 
-   Semantics (session 037, by user request):
+   Semantics:
      Ctrl/Cmd-Z                   → UNDO  (multi-level history)
      Ctrl/Cmd-Y   OR Shift-Ctrl/Cmd-Z → REDO
      Ctrl/Cmd-V                   → PASTE clipboard contents into the

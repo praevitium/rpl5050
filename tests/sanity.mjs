@@ -11,8 +11,7 @@
 
    Not wired into `test-all.mjs`.  Run as `node tests/sanity.mjs`.
 
-   Created session 068 (unit-test lane) per TESTS.md next-run queue
-   item #1.  Asserts cover:
+   Asserts cover:
      · value constructors (Real, Integer, Str, Name)
      · Stack push/pop/peek/depth
      · registered-op lookup succeeds for `+`, `SIN`, `→STR`

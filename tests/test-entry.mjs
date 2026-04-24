@@ -18,12 +18,12 @@ import {
   setApproxMode,
 } from '../src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Entry mode — algebraic entry + shifted keypad ops + command-line history. */
 
 /* ============================================================
-   Session 029 — Algebraic entry mode
+   Algebraic entry mode
 
    These tests exercise the Entry layer (no DOM required).  They
    prove that:
@@ -231,19 +231,17 @@ import { assert } from './helpers.mjs';
 }
 
 /* ============================================================
-   Session 030 — shifted-key ops (hyperbolics, XROOT, complex
-                  helpers, GCD/LCM, and CLEAR/DEL smoke tests)
+   Shifted-key ops (hyperbolics, XROOT, complex helpers, GCD/LCM,
+   and CLEAR/DEL smoke tests).
 
-   Most of the session 030 work is wiring already-existing ops
-   to shifted keys + adding a handful of ops (SINH/COSH/TANH,
-   XROOT, ARG/CONJ/RE/IM, GCD/LCM).  These tests prove the new
-   ops behave, and that Entry.cancel() clears a buffer the way
-   the SHIFT-L + ⌫ (DEL) key binding expects it to.
+   Covers SINH/COSH/TANH, XROOT, ARG/CONJ/RE/IM, GCD/LCM, plus
+   Entry.cancel() clearing a buffer the way the SHIFT-L + ⌫ (DEL)
+   key binding expects.
    ============================================================ */
 {
   const { Entry } = await import('../src/ui/entry.js');
 
-  // ----- hyperbolic ops (new in session 030) -----
+  // ----- hyperbolic ops -----
   {
     const s = new Stack(); s.push(Real(0));
     lookup('SINH').fn(s, null);
@@ -273,8 +271,8 @@ import { assert } from './helpers.mjs';
       `ACOSH(COSH(3)) = 3`);
   }
   {
-    // Session 045: ACOSH of x < 1 now lifts to Complex (principal
-    // branch) rather than throwing — matches HP50 complex-mode behavior.
+    // ACOSH of x < 1 lifts to Complex (principal branch) rather than
+    // throwing — matches HP50 complex-mode behavior.
     // acosh(0.5) = i * π/3 ≈ 0 + 1.04719755i.
     const s = new Stack(); s.push(Real(0.5));
     lookup('ACOSH').fn(s, null);
@@ -291,9 +289,8 @@ import { assert } from './helpers.mjs';
   {
     // ATANH of out-of-domain
     const s = new Stack(); s.push(Real(1));
-    let threw = false;
-    try { lookup('ATANH').fn(s, null); } catch (e) { threw = true; }
-    assert(threw, 'ATANH(1) throws (domain |x| < 1)');
+    assertThrows(() => lookup('ATANH').fn(s, null), null,
+      'ATANH(1) throws (domain |x| < 1)');
   }
 
   // ----- XROOT (two-arg, y x → y^(1/x)) -----
@@ -312,9 +309,8 @@ import { assert } from './helpers.mjs';
   {
     // XROOT by 0 should throw
     const s = new Stack(); s.push(Real(5)); s.push(Real(0));
-    let threw = false;
-    try { lookup('XROOT').fn(s, null); } catch (e) { threw = true; }
-    assert(threw, 'XROOT by 0 throws');
+    assertThrows(() => lookup('XROOT').fn(s, null), null,
+      'XROOT by 0 throws');
   }
 
   // ----- ARG / CONJ / RE / IM -----
@@ -422,9 +418,8 @@ import { assert } from './helpers.mjs';
   {
     // GCD on non-integer Real should throw
     const s = new Stack(); s.push(Real(1.5)); s.push(Real(3));
-    let threw = false;
-    try { lookup('GCD').fn(s, null); } catch (e) { threw = true; }
-    assert(threw, 'GCD(1.5, 3) throws');
+    assertThrows(() => lookup('GCD').fn(s, null), null,
+      'GCD(1.5, 3) throws');
   }
 
   // ----- DEL: Entry.cancel() clears an in-progress buffer -----
@@ -447,7 +442,7 @@ import { assert } from './helpers.mjs';
 }
 
 
-// --- Session 033 — Entry command-line history ----------------------
+// --- Entry command-line history ------------------------------------
 // Ring buffer of committed entry buffers.  Feeds the HIST SHIFT-L CMD
 // soft-menu so the user can recall prior command lines.  Recording
 // only happens on a *successful* parse+commit; failed commits don't
@@ -576,10 +571,10 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 041 — +/- (CHS / toggleSign) respects exponent
+   +/- (CHS / toggleSign) respects exponent
 
-   Fix: when the current number has an E (scientific notation), +/-
-   must flip the exponent's sign, not the mantissa's.  HP50 behavior.
+   When the current number has an E (scientific notation), +/- flips
+   the exponent's sign, not the mantissa's.  HP50 behavior.
    ================================================================ */
 {
   const { Entry } = await import('../src/ui/entry.js');
@@ -591,12 +586,12 @@ import { assert } from './helpers.mjs';
     return e;
   };
 
-  // ---- Core bug repro: 1E7 → 1E-7 (not -1E7) ----
+  // ---- 1E7 → 1E-7 (not -1E7) ----
   {
     const e = mk('1E7');
     e.toggleSign();
     assert(e.buffer === '1E-7',
-      `1E7 +/- → 1E-7 (was the reported bug: mantissa was being negated), got "${e.buffer}"`);
+      `1E7 +/- → 1E-7 (flips exponent sign, not mantissa), got "${e.buffer}"`);
     assert(e.cursor === e.buffer.length,
       '1E7 +/- leaves cursor at end of buffer');
   }
@@ -679,9 +674,9 @@ import { assert } from './helpers.mjs';
 }
 
 // ------------------------------------------------------------------
-// Session 046 additions — LAST / LASTARG via the Entry layer end-to-end
-// (verifies the runOp wiring in entry.js captures consumed args when
-// ops are driven through the user-facing execOp / enter paths).
+// LAST / LASTARG via the Entry layer end-to-end — verifies the runOp
+// wiring in entry.js captures consumed args when ops are driven
+// through the user-facing execOp / enter paths.
 // ------------------------------------------------------------------
 {
   const { Entry } = await import('../src/ui/entry.js');

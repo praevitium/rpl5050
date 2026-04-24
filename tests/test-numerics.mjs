@@ -19,7 +19,7 @@ import {
   setComplexMode, getComplexMode, toggleComplexMode,
 } from '../src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Numerics: basic arithmetic, complex, SQRT, stack ops, parser+format basics,
    trig, angle modes, R↔D, div-by-zero, FLOOR/CEIL/IP/FP/SIGN/MOD/MIN/MAX. */
@@ -5295,4 +5295,582 @@ setAngle('RAD');
   try { lookup('INVMOD').fn(s); }
   catch (e) { threw = /Bad argument type/.test(e.message); }
   assert(threw, 'session076: INVMOD on String rejects with Bad argument type');
+}
+
+/* ================================================================
+   Session 075 (unit-test lane) — DATA_TYPES ✗ rejection sweep
+
+   Charter rule (TESTS.md): "ops marked ✗ in docs/DATA_TYPES.md should
+   have a matching rejection assertion in the tree."  Previous lanes
+   have pinned most of these, but an audit this session surfaced a
+   handful of ✗ cells with no direct test — only wrapped-in-List or
+   wrapped-in-Tagged coverage, or an English "still rejects" comment
+   with no adjacent assertion.  This block adds the missing explicit
+   rejection tests so the matrix is 1:1 with the test tree.
+
+   All assertions hard-asserted — these are already-rejected cells,
+   not gaps against a sibling lane.
+   ================================================================ */
+
+/* ---- GCD/LCM: Complex / Vector / Matrix rejection ---- */
+{
+  // GCD(Complex, Integer) — bare Complex, not wrapped in List or Tagged.
+  // AUR §3 says GCD is integer-only.  `_gcdScalar` rejects Complex
+  // unconditionally — List/Tagged wrappers unwrap first, so this bare
+  // path has no explicit test before session 075.
+  const s = new Stack();
+  s.push(Complex(3, 4));
+  s.push(Integer(6n));
+  assertThrows(() => lookup('GCD').fn(s), /Bad argument/,
+    'session075: GCD(Complex, Integer) rejects (integer-only)');
+}
+{
+  // GCD(Integer, Complex) — argument-order variant.
+  const s = new Stack();
+  s.push(Integer(6n));
+  s.push(Complex(3, 4));
+  assertThrows(() => lookup('GCD').fn(s), /Bad argument/,
+    'session075: GCD(Integer, Complex) rejects (integer-only, level-1 Complex)');
+}
+{
+  // GCD(Vector, Integer) — no element-wise broadcast (AUR §3 scalar-only).
+  const s = new Stack();
+  s.push(Vector([Integer(6n), Integer(9n)]));
+  s.push(Integer(12n));
+  assertThrows(() => lookup('GCD').fn(s), /Bad argument/,
+    'session075: GCD(Vector, Integer) rejects (no broadcast on V)');
+}
+{
+  // GCD(Matrix, Integer) — mirror.
+  const s = new Stack();
+  s.push(Matrix([[Integer(6n), Integer(9n)]]));
+  s.push(Integer(12n));
+  assertThrows(() => lookup('GCD').fn(s), /Bad argument/,
+    'session075: GCD(Matrix, Integer) rejects (no broadcast on M)');
+}
+{
+  // LCM(Complex, Integer) — mirror the GCD case.
+  const s = new Stack();
+  s.push(Complex(3, 4));
+  s.push(Integer(6n));
+  assertThrows(() => lookup('LCM').fn(s), /Bad argument/,
+    'session075: LCM(Complex, Integer) rejects (integer-only)');
+}
+{
+  // LCM(Vector, Integer).
+  const s = new Stack();
+  s.push(Vector([Integer(6n), Integer(9n)]));
+  s.push(Integer(12n));
+  assertThrows(() => lookup('LCM').fn(s), /Bad argument/,
+    'session075: LCM(Vector, Integer) rejects (no broadcast on V)');
+}
+{
+  // LCM(Matrix, Integer).
+  const s = new Stack();
+  s.push(Matrix([[Integer(6n), Integer(9n)]]));
+  s.push(Integer(12n));
+  assertThrows(() => lookup('LCM').fn(s), /Bad argument/,
+    'session075: LCM(Matrix, Integer) rejects (no broadcast on M)');
+}
+
+/* ---- MAX(Complex, Complex) rejection ---- */
+{
+  // The existing session-014 block pinned MOD and MIN on Complex but
+  // skipped MAX — fill the gap.  No total order on ℂ → Bad argument.
+  const s = new Stack();
+  s.push(Complex(1, 1));
+  s.push(Complex(2, 2));
+  assertThrows(() => lookup('MAX').fn(s), null,
+    'session075: MAX(Complex, Complex) rejects (no total order on ℂ)');
+}
+
+/* ---- %T / %CH on Complex ---- */
+{
+  // %T(Complex, Real) — percent family is scalar-only (AUR §3-1).
+  // %T was not directly pinned on Complex; the session-064 comment says
+  // "%/%T/%CH still refuse Complex" but only the % op had an assertion.
+  const s = new Stack();
+  s.push(Complex(1, 1));
+  s.push(Real(10));
+  assertThrows(() => lookup('%T').fn(s), /Bad argument/,
+    'session075: %T(Complex, Real) rejects (percent-family scalar-only)');
+}
+{
+  // %CH(Complex, Real) — mirror.
+  const s = new Stack();
+  s.push(Complex(1, 1));
+  s.push(Real(10));
+  assertThrows(() => lookup('%CH').fn(s), /Bad argument/,
+    'session075: %CH(Complex, Real) rejects (percent-family scalar-only)');
+}
+
+/* ---- CEIL / IP on Complex ---- */
+{
+  // The session-062 block only explicitly pinned FLOOR and FP on Complex;
+  // CEIL and IP were implied by the "same rejection" comment but had no
+  // adjacent assertion.  Fill the gap so the matrix is 1:1.
+  const s = new Stack();
+  s.push(Complex(1.5, 2.5));
+  assertThrows(() => lookup('CEIL').fn(s), /Bad argument type/,
+    'session075: CEIL(Complex) rejects (no floor/ceil on ℂ)');
+}
+{
+  const s = new Stack();
+  s.push(Complex(1.5, 2.5));
+  assertThrows(() => lookup('IP').fn(s), /Bad argument type/,
+    'session075: IP(Complex) rejects (no integer-part on ℂ)');
+}
+
+/* ---- FACT on Vector / Matrix — verify widening direction matches DATA_TYPES ---- */
+/* DATA_TYPES marks FACT V/M as ✓ via `_withVMUnary` (element-wise).
+ * This is a DOUBLE-CHECK positive — if someone reverts the widening
+ * this assertion fails loudly and the regression is attributed here
+ * rather than showing up as a mystery count delta. */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(3n), Integer(4n)]));
+  lookup('FACT').fn(s);
+  const v = s.peek();
+  assert(v.type === 'vector'
+      && v.items[0].value === 6n
+      && v.items[1].value === 24n,
+    'session075: FACT(Vector) distributes element-wise → [6, 24] (regression guard)');
+}
+
+/* =====================================================================
+   Session 081 — TRUNC (two-arg CAS form), PSI (digamma + polygamma)
+   =====================================================================
+
+   TRUNC is the CAS-form sibling of TRNC: identical numeric behaviour
+   `(x, n → y)`, plus a Symbolic lift when either operand is a Name or
+   Symbolic.  PSI is digamma + polygamma — one-arg `(x → ψ(x))` and
+   two-arg `(x, n → ψ^(n)(x))`.  Two-arg dispatch kicks in when the top
+   is a non-negative Integer / integer-valued Real and there's a
+   second argument below.
+*/
+
+/* ---- TRUNC numeric parity with TRNC ---- */
+{
+  // TRUNC(3.14159, 2) → 3.14  (toward-zero truncation at 2 decimals).
+  const s = new Stack();
+  s.push(Real(3.14159));
+  s.push(Integer(2n));
+  lookup('TRUNC').fn(s);
+  assert(Math.abs(s.peek().value - 3.14) < 1e-12,
+    'session081: TRUNC(3.14159, 2) → 3.14');
+}
+{
+  // Negative x: truncation is toward zero.  TRUNC(-1.999, 1) → -1.9.
+  const s = new Stack();
+  s.push(Real(-1.999));
+  s.push(Integer(1n));
+  lookup('TRUNC').fn(s);
+  assert(Math.abs(s.peek().value - (-1.9)) < 1e-12,
+    'session081: TRUNC(-1.999, 1) → -1.9 (toward-zero, matches TRNC)');
+}
+{
+  // Integer input with n ≥ 0 returns the Integer untouched.
+  const s = new Stack();
+  s.push(Integer(42n));
+  s.push(Integer(3n));
+  lookup('TRUNC').fn(s);
+  assert(s.peek().type === 'integer' && s.peek().value === 42n,
+    'session081: TRUNC(Integer(42), 3) → Integer(42) (integer passthrough)');
+}
+
+/* ---- TRUNC Symbolic lift ---- */
+{
+  // Either-side Symbolic → AST wraps with TRUNC(x, n).
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  s.push(Integer(3n));
+  lookup('TRUNC').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'TRUNC'
+      && v.expr.args.length === 2
+      && v.expr.args[0].kind === 'var' && v.expr.args[0].name === 'X'
+      && v.expr.args[1].kind === 'num' && v.expr.args[1].value === 3,
+    'session081: TRUNC(\'X\', 3) lifts to Symbolic TRUNC(X, 3)');
+}
+{
+  // Symbolic on both sides works too.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  s.push(Name('N', { quoted: true }));
+  lookup('TRUNC').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'TRUNC',
+    'session081: TRUNC(\'X\', \'N\') lifts to Symbolic TRUNC(X, N)');
+}
+
+/* ---- TRUNC rejections ---- */
+{
+  // Non-integer n → Bad argument value (inherits from _roundingOp).
+  const s = new Stack();
+  s.push(Real(3.14));
+  s.push(Real(1.5));
+  assertThrows(() => lookup('TRUNC').fn(s), /Bad argument value/,
+    'session081: TRUNC(x, 1.5) rejects non-integer count');
+}
+{
+  // String argument rejects.
+  const s = new Stack();
+  s.push(Str('foo'));
+  s.push(Integer(2n));
+  assertThrows(() => lookup('TRUNC').fn(s), /Bad argument/,
+    'session081: TRUNC(String, 2) rejects non-numeric x');
+}
+{
+  // Too few arguments.
+  const s = new Stack();
+  s.push(Real(3.14));
+  assertThrows(() => lookup('TRUNC').fn(s), /Too few arguments/,
+    'session081: TRUNC with depth < 2 → Too few arguments');
+}
+
+/* ---- PSI one-arg digamma ---- */
+{
+  // ψ(1) = -γ ≈ -0.5772156649015329.  Accept ~1e-10 rel error.
+  const s = new Stack();
+  s.push(Real(1));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (-0.5772156649015329)) < 1e-10,
+    'session081: PSI(1) ≈ -γ');
+}
+{
+  // ψ(1/2) = -γ - 2 ln 2 ≈ -1.9635100260214235.
+  const s = new Stack();
+  s.push(Real(0.5));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (-1.9635100260214235)) < 1e-10,
+    'session081: PSI(1/2) ≈ -γ - 2ln2');
+}
+{
+  // ψ(10) = H_9 - γ ≈ 2.2517525890667215.
+  const s = new Stack();
+  s.push(Real(10));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - 2.2517525890667215) < 1e-10,
+    'session081: PSI(10) ≈ H_9 - γ');
+}
+{
+  // Integer input accepted; same result as the integer-valued Real.
+  const s = new Stack();
+  s.push(Integer(5n));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (1 + 0.5 + 1/3 + 0.25 - 0.5772156649015329)) < 1e-10,
+    'session081: PSI(Integer(5)) ≈ H_4 - γ');
+}
+{
+  // Reflection path (x < 0.5): PSI(0.1) ≈ -10.423754940411078.
+  const s = new Stack();
+  s.push(Real(0.1));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (-10.423754940411078)) < 1e-10,
+    'session081: PSI(0.1) exercises reflection path');
+}
+
+/* ---- PSI two-arg polygamma ---- */
+{
+  // ψ_1(1) = ζ(2) = π²/6 ≈ 1.6449340668482264.
+  const s = new Stack();
+  s.push(Real(1));
+  s.push(Integer(1n));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (Math.PI * Math.PI / 6)) < 1e-10,
+    'session081: PSI(1, 1) = ψ_1(1) ≈ π²/6');
+}
+{
+  // ψ_2(1) = -2 ζ(3) ≈ -2.404113806319188.
+  const s = new Stack();
+  s.push(Real(1));
+  s.push(Integer(2n));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (-2.4041138063191885)) < 1e-10,
+    'session081: PSI(1, 2) = ψ_2(1) ≈ -2ζ(3)');
+}
+{
+  // ψ_1(2) = ζ(2) - 1.  Checks the shift recurrence.
+  const s = new Stack();
+  s.push(Real(2));
+  s.push(Integer(1n));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (Math.PI * Math.PI / 6 - 1)) < 1e-10,
+    'session081: PSI(2, 1) = ψ_1(2) ≈ π²/6 - 1');
+}
+{
+  // Two-arg with n = 0 must collapse to one-arg digamma.
+  const s = new Stack();
+  s.push(Real(1));
+  s.push(Integer(0n));
+  lookup('PSI').fn(s);
+  assert(Math.abs(s.peek().value - (-0.5772156649015329)) < 1e-10,
+    'session081: PSI(1, 0) = ψ_0(1) = digamma(1) = -γ');
+}
+
+/* ---- PSI Symbolic lift ---- */
+{
+  // 1-arg Symbolic → PSI(X) AST node.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  lookup('PSI').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn'
+      && v.expr.name === 'PSI' && v.expr.args.length === 1,
+    'session081: PSI(\'X\') lifts to Symbolic PSI(X)');
+}
+{
+  // 2-arg Symbolic (x is a Name, n is Integer) → PSI(X, 2) AST node.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  s.push(Integer(2n));
+  lookup('PSI').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn'
+      && v.expr.name === 'PSI' && v.expr.args.length === 2
+      && v.expr.args[1].kind === 'num' && v.expr.args[1].value === 2,
+    'session081: PSI(\'X\', 2) lifts to Symbolic PSI(X, 2)');
+}
+
+/* ---- PSI rejections ---- */
+{
+  // Pole at non-positive integer.
+  const s = new Stack();
+  s.push(Real(0));
+  assertThrows(() => lookup('PSI').fn(s), /Infinite result/,
+    'session081: PSI(0) throws Infinite result (simple pole)');
+}
+{
+  // Pole at -1.
+  const s = new Stack();
+  s.push(Integer(-1n));
+  assertThrows(() => lookup('PSI').fn(s), /Infinite result/,
+    'session081: PSI(Integer(-1)) throws Infinite result (simple pole)');
+}
+{
+  // String argument rejects with Bad argument type (no viable numeric
+  // or Symbolic interpretation).
+  const s = new Stack();
+  s.push(Str('foo'));
+  assertThrows(() => lookup('PSI').fn(s), /Bad argument type/,
+    'session081: PSI(String) rejects Bad argument type');
+}
+{
+  // Empty stack.
+  const s = new Stack();
+  assertThrows(() => lookup('PSI').fn(s), /Too few arguments/,
+    'session081: PSI with empty stack → Too few arguments');
+}
+{
+  // Two-arg with negative n falls back to 1-arg (n is not a valid
+  // polygamma order).  Top -1 is an Integer but n < 0 means the
+  // 2-arg branch doesn't fire — PSI then treats -1 as the 1-arg x
+  // and throws Infinite result (pole).
+  const s = new Stack();
+  s.push(Real(2));
+  s.push(Integer(-1n));
+  assertThrows(() => lookup('PSI').fn(s), /Infinite result/,
+    'session081: PSI(x, -1) — negative order falls back to 1-arg on -1, which is a pole');
+}
+
+/* ---- PSI List / Tagged / Vector / Matrix distribution (1-arg) ---- */
+{
+  // 1-arg PSI distributes over a List: PSI({1 2}) → {ψ(1) ψ(2)}.
+  const s = new Stack();
+  s.push(RList([Real(1), Real(2)]));
+  lookup('PSI').fn(s);
+  const out = s.peek();
+  assert(out.type === 'list' && out.items.length === 2
+      && Math.abs(out.items[0].value - (-0.5772156649015329)) < 1e-10
+      && Math.abs(out.items[1].value - (1 - 0.5772156649015329)) < 1e-10,
+    'session081: PSI({1, 2}) distributes element-wise');
+}
+{
+  // 1-arg PSI distributes over a Vector.
+  const s = new Stack();
+  s.push(Vector([Real(1), Real(2)]));
+  lookup('PSI').fn(s);
+  const out = s.peek();
+  assert(out.type === 'vector' && out.items.length === 2
+      && Math.abs(out.items[0].value - (-0.5772156649015329)) < 1e-10,
+    'session081: PSI(Vector) distributes element-wise');
+}
+{
+  // Tagged: PSI unwraps, computes, re-tags.
+  const s = new Stack();
+  s.push(Tagged('arg', Real(1)));
+  lookup('PSI').fn(s);
+  const out = s.peek();
+  assert(out.type === 'tagged' && out.tag === 'arg'
+      && Math.abs(out.value.value - (-0.5772156649015329)) < 1e-10,
+    'session081: PSI(:arg:Real) preserves tag and computes underneath');
+}
+
+/* =====================================================================
+   Session 081 — CYCLOTOMIC (n-th cyclotomic polynomial)
+   =====================================================================
+
+   CYCLOTOMIC returns Φ_n(X), the monic polynomial in Z[X] whose roots
+   are exactly the primitive n-th roots of unity.  Verified against
+   known small-n values and the famous Φ_105 coefficient of −2.
+*/
+
+// Helper: compare a Symbolic result against an expected descending-
+// degree integer coefficient array in X (0 entries skipped, leading
+// sign absorbed) by parsing the Symbolic into ops.js's AST form.
+function _coefArrayOfSymbolic(sym) {
+  // Flatten a + / − / neg / * / ^ / X / Num AST into a descending-
+  // degree coefficient map.  Rough-and-ready — only meant for the
+  // shapes `_coefArrToSymbolicX` actually emits.
+  const map = new Map();            // degree → coefficient
+  function walk(ast, sign) {
+    if (ast.kind === 'num') {
+      map.set(0, (map.get(0) || 0) + sign * ast.value);
+      return;
+    }
+    if (ast.kind === 'var') {
+      map.set(1, (map.get(1) || 0) + sign * 1);
+      return;
+    }
+    if (ast.kind === 'neg') { walk(ast.arg, -sign); return; }
+    if (ast.kind === 'bin') {
+      if (ast.op === '+') { walk(ast.l, sign); walk(ast.r, sign); return; }
+      if (ast.op === '-') { walk(ast.l, sign); walk(ast.r, -sign); return; }
+      if (ast.op === '*') {
+        // coef * X^n  OR  coef * X
+        const c = ast.l.kind === 'num' ? ast.l.value : null;
+        if (c === null) throw new Error('unexpected * shape');
+        let deg = 0;
+        if (ast.r.kind === 'var') deg = 1;
+        else if (ast.r.kind === 'bin' && ast.r.op === '^'
+              && ast.r.l.kind === 'var' && ast.r.r.kind === 'num') {
+          deg = ast.r.r.value;
+        } else throw new Error('unexpected * RHS');
+        map.set(deg, (map.get(deg) || 0) + sign * c);
+        return;
+      }
+      if (ast.op === '^' && ast.l.kind === 'var' && ast.r.kind === 'num') {
+        map.set(ast.r.value, (map.get(ast.r.value) || 0) + sign * 1);
+        return;
+      }
+    }
+    throw new Error('unexpected AST shape: ' + ast.kind);
+  }
+  walk(sym.expr, 1);
+  const deg = Math.max(...map.keys());
+  const out = new Array(deg + 1).fill(0);
+  for (const [k, v] of map) out[deg - k] = v;
+  return out;
+}
+
+function _arrayEq(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+{
+  // Φ_1 = x - 1
+  const s = new Stack();
+  s.push(Integer(1n));
+  lookup('CYCLOTOMIC').fn(s);
+  assert(_arrayEq(_coefArrayOfSymbolic(s.peek()), [1, -1]),
+    'session081: CYCLOTOMIC(1) = Φ_1 = X - 1');
+}
+{
+  // Φ_2 = x + 1
+  const s = new Stack();
+  s.push(Integer(2n));
+  lookup('CYCLOTOMIC').fn(s);
+  assert(_arrayEq(_coefArrayOfSymbolic(s.peek()), [1, 1]),
+    'session081: CYCLOTOMIC(2) = Φ_2 = X + 1');
+}
+{
+  // Φ_3 = x² + x + 1
+  const s = new Stack();
+  s.push(Integer(3n));
+  lookup('CYCLOTOMIC').fn(s);
+  assert(_arrayEq(_coefArrayOfSymbolic(s.peek()), [1, 1, 1]),
+    'session081: CYCLOTOMIC(3) = Φ_3 = X² + X + 1');
+}
+{
+  // Φ_4 = x² + 1
+  const s = new Stack();
+  s.push(Integer(4n));
+  lookup('CYCLOTOMIC').fn(s);
+  assert(_arrayEq(_coefArrayOfSymbolic(s.peek()), [1, 0, 1]),
+    'session081: CYCLOTOMIC(4) = Φ_4 = X² + 1');
+}
+{
+  // Φ_6 = x² - x + 1
+  const s = new Stack();
+  s.push(Integer(6n));
+  lookup('CYCLOTOMIC').fn(s);
+  assert(_arrayEq(_coefArrayOfSymbolic(s.peek()), [1, -1, 1]),
+    'session081: CYCLOTOMIC(6) = Φ_6 = X² - X + 1');
+}
+{
+  // Φ_12 = x⁴ - x² + 1
+  const s = new Stack();
+  s.push(Integer(12n));
+  lookup('CYCLOTOMIC').fn(s);
+  assert(_arrayEq(_coefArrayOfSymbolic(s.peek()), [1, 0, -1, 0, 1]),
+    'session081: CYCLOTOMIC(12) = Φ_12 = X⁴ - X² + 1');
+}
+{
+  // Φ_105 famously has a −2 coefficient — the first cyclotomic whose
+  // coefficients leave {−1, 0, 1}.  Verify the degree is φ(105) = 48
+  // and that a −2 appears.
+  const s = new Stack();
+  s.push(Integer(105n));
+  lookup('CYCLOTOMIC').fn(s);
+  const coefs = _coefArrayOfSymbolic(s.peek());
+  assert(coefs.length === 49, 'session081: CYCLOTOMIC(105) degree = 48');
+  assert(coefs.includes(-2), 'session081: CYCLOTOMIC(105) contains the −2 coefficient');
+}
+{
+  // Integer-valued Real accepted.
+  const s = new Stack();
+  s.push(Real(5));
+  lookup('CYCLOTOMIC').fn(s);
+  const coefs = _coefArrayOfSymbolic(s.peek());
+  assert(_arrayEq(coefs, [1, 1, 1, 1, 1]),
+    'session081: CYCLOTOMIC(Real(5)) = Φ_5 = X⁴ + X³ + X² + X + 1 (integer-Real accepted)');
+}
+
+/* ---- CYCLOTOMIC rejections ---- */
+{
+  // n = 0 throws.
+  const s = new Stack();
+  s.push(Integer(0n));
+  assertThrows(() => lookup('CYCLOTOMIC').fn(s), /Bad argument value/,
+    'session081: CYCLOTOMIC(0) rejects (n must be ≥ 1)');
+}
+{
+  // Negative n throws via _nFromIntegerArg.
+  const s = new Stack();
+  s.push(Integer(-3n));
+  assertThrows(() => lookup('CYCLOTOMIC').fn(s), /Bad argument value/,
+    'session081: CYCLOTOMIC(-3) rejects (n < 0)');
+}
+{
+  // Non-integer Real rejects via _nFromIntegerArg.
+  const s = new Stack();
+  s.push(Real(3.5));
+  assertThrows(() => lookup('CYCLOTOMIC').fn(s), /Bad argument value/,
+    'session081: CYCLOTOMIC(3.5) rejects (non-integer Real)');
+}
+{
+  // Non-numeric rejects with Bad argument type.
+  const s = new Stack();
+  s.push(Str('foo'));
+  assertThrows(() => lookup('CYCLOTOMIC').fn(s), /Bad argument type/,
+    'session081: CYCLOTOMIC(String) rejects Bad argument type');
+}
+{
+  // Precision cap at n > 200.
+  const s = new Stack();
+  s.push(Integer(201n));
+  assertThrows(() => lookup('CYCLOTOMIC').fn(s), /Bad argument value/,
+    'session081: CYCLOTOMIC(201) rejects (precision cap — MAX_SAFE_INTEGER guard)');
 }

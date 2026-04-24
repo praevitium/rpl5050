@@ -1,19 +1,13 @@
 /* Aggregate runner: imports every split test file and prints the
    combined pass/fail summary.
 
-   Session 074 (unit-test lane) — the flat `import './test-foo.mjs';`
-   list was replaced with a dynamic-import loop that snapshots the
-   shared pass/fail counters before and after each file and prints
-   one headline line per file.  Standing TESTS.md queue item #1
-   across sessions 068/070/073 — resolves the "one final number,
-   zero per-file attribution" gap that made per-file regressions
-   hard to spot on inspection.
+   A dynamic-import loop snapshots the shared pass/fail counters
+   before and after each file and prints one headline line per file,
+   giving per-file attribution on top of the aggregate total.
 
-   Resilience bonus: each dynamic import is wrapped in a try/catch
-   so a file that throws *at module-load time* (e.g. the session-068
-   cross-lane `Symbolic` import race) is reported with its filename
-   and the remaining files still run.  One crash no longer knocks
-   out the aggregate. */
+   Each dynamic import is wrapped in a try/catch so a file that throws
+   at module-load time is reported with its filename and the remaining
+   files still run — one crash does not knock out the aggregate. */
 
 import { state } from './helpers.mjs';
 
@@ -67,7 +61,7 @@ for (const r of perFile) {
   console.log(` ${tag}  ${r.file.padEnd(nameW)}  ${String(r.passed).padStart(5)} passed  ${String(r.failed).padStart(3)} failed`);
 }
 
-/* ---------- Module-load crash report (session 074) ---------- */
+/* ---------- Module-load crash report ---------- */
 if (importErrors.length) {
   console.error('\n' + '='.repeat(60));
   console.error(' Module-load failures');
@@ -78,7 +72,7 @@ if (importErrors.length) {
   }
 }
 
-/* ---------- Aggregate line (backwards-compatible) ---------- */
+/* ---------- Aggregate line ---------- */
 const total = state.passed + state.failed;
 const hasImportErr = importErrors.length > 0;
 console.log(state.failed === 0 && !hasImportErr

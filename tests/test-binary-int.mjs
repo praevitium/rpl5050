@@ -25,13 +25,13 @@ import { assert } from './helpers.mjs';
 
 // These tests exercise the formatter in "per-value stored base" mode —
 // a BinInt entered as `#FFh` should render back as `#FFh`.  The live
-// app now boots with binaryBase='d' (so the status-line HEX/DEC/OCT/BIN
+// app boots with binaryBase='d' (so the status-line HEX/DEC/OCT/BIN
 // annunciator always carries a label) which would force every BinInt
-// through decimal here; clear the override up front so the tests keep
-// checking what they were written to check.
+// through decimal here; clear the override up front so the tests
+// observe per-value base.
 setBinaryBase(null);
 
-// Session 014: BinaryInteger type + parser + formatter
+// BinaryInteger type + parser + formatter
 // ------------------------------------------------------------------
 
 // Constructor clamps negatives and rejects bad base letters
@@ -135,7 +135,7 @@ setBinaryBase(null);
 
 // ------------------------------------------------------------------
 
-// Session 015: STWS wordsize + HEX/DEC/OCT/BIN display mode
+// STWS wordsize + HEX/DEC/OCT/BIN display mode
 // ------------------------------------------------------------------
 
 // Default wordsize is 64 bits with no display override.
@@ -231,7 +231,7 @@ setBinaryBase(null);
 }
 
 // ------------------------------------------------------------------
-// Session 015: BinaryInteger arithmetic + bitwise ops
+// BinaryInteger arithmetic + bitwise ops
 // ------------------------------------------------------------------
 
 // + - * / on BinInts: wordsize masked, left-operand base wins.
@@ -272,8 +272,8 @@ setBinaryBase(null);
   s.clear();
 
   // Division by zero throws 'Division by zero' (0x303), NOT the
-  // 'Infinite result' (0x305) that fires for Real /0 — session 018
-  // split these along the integer/float family line to match HP50.
+  // 'Infinite result' (0x305) that fires for Real /0 — the split
+  // along the integer/float family line matches HP50.
   s.pushMany([BinaryInteger(1n, 'h'), BinaryInteger(0n, 'h')]);
   let msg = null;
   try { lookup('/').fn(s); } catch (e) { msg = e.message; }
@@ -311,8 +311,8 @@ setBinaryBase(null);
   resetBinaryState();
 }
 
-// Session 045: mixed BinInt + Real/Integer now coerces (HP50 AUR §10.1).
-// The Real is truncated toward zero, masked to STWS, and promoted to
+// Mixed BinInt + Real/Integer coerces (HP50 AUR §10.1): the Real
+// is truncated toward zero, masked to STWS, and promoted to
 // BinaryInteger with the BinInt's base.
 {
   resetBinaryState();
@@ -372,7 +372,7 @@ setBinaryBase(null);
 }
 
 // ------------------------------------------------------------------
-// Session 015: B→R / R→B converters
+// B→R / R→B converters
 // ------------------------------------------------------------------
 {
   resetBinaryState();
@@ -458,11 +458,7 @@ setBinaryBase(null);
 }
 
 // ------------------------------------------------------------------
-// End session 015 additions
-// ------------------------------------------------------------------
-
-// ------------------------------------------------------------------
-// Session 016 — STWS-aware BinInt literal truncation at parse time
+// STWS-aware BinInt literal truncation at parse time
 // ------------------------------------------------------------------
 
 // Wide literal masked to the current wordsize at parse time.
@@ -517,7 +513,7 @@ setBinaryBase(null);
 }
 
 // ------------------------------------------------------------------
-// Session 044: shift / rotate ops on BinaryInteger
+// Shift / rotate ops on BinaryInteger
 // ------------------------------------------------------------------
 
 // SL: shift left 1 bit at wordsize 8

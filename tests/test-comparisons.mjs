@@ -18,7 +18,7 @@ import {
   setApproxMode,
 } from '../src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Comparisons (==, ≠, <, >, ≤, ≥), logical ops (AND/OR/XOR/NOT), TRUE/FALSE. */
 
@@ -97,7 +97,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   session068 — comparisons expansion (HP50 AUR §4)
+   Comparisons expansion (HP50 AUR §4)
 
    Reference: HP50 AUR §4 "Real-number calculator commands", tables 4-1
    and 4-2 on the type matrix of comparison operators.  Quick summary:
@@ -115,8 +115,7 @@ import { assert } from './helpers.mjs';
 
    Tests that assert a current-day gap are guarded with a `.skip`-
    equivalent (commented-out `assert` + logged `KNOWN GAP`) so the
-   suite stays green and the gap is visible.  Filing is in
-   docs/TESTS.md under "Known gaps".
+   suite stays green and the gap is visible.
    ================================================================ */
 
 /* ---- Complex ==  /  ≠ — both structural on { re, im } pairs ---- */
@@ -170,10 +169,7 @@ import { assert } from './helpers.mjs';
 {
   const s = new Stack();
   s.push(Complex(1, 2)); s.push(Complex(3, 4));
-  let threw = false;
-  try { lookup('<').fn(s); }
-  catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw,
+  assertThrows(() => lookup('<').fn(s), /Bad argument type/i,
     'session068: (1,2) < (3,4) rejects — no total order on ℂ when im≠0');
 }
 
@@ -290,9 +286,7 @@ import { assert } from './helpers.mjs';
   // Real NaN-adjacent edge: HP50 rejects NaN at the Real constructor
   // so this case simply validates that the constructor guard exists —
   // a surprise NaN should never reach ==.  We do NOT test NaN == NaN.
-  let threw = false;
-  try { Real(NaN); } catch (e) { threw = /finite/.test(e.message); }
-  assert(threw,
+  assertThrows(() => Real(NaN), /finite/,
     'session068: Real(NaN) is rejected at construction (prevents NaN==NaN ambiguity)');
 }
 
@@ -319,13 +313,11 @@ import { assert } from './helpers.mjs';
    ships the fix.
    ---------------------------------------------------------------- */
 
-/* ---- GAP (resolved session 072): List / Vector structural equality via == ----
+/* ---- List / Vector structural equality via == ----
    HP50 AUR §4-2 lists Lists and Vectors as valid == operands, with
-   structural semantics.  Previously our eqValues() in src/rpl/ops.js
-   fell through to `return false` for both types.  The data-types lane
-   widened eqValues() in session 072 — flipping these assertions from
-   soft (accept 0 or 1) to hard (expect 1).  See also the session072:
-   block further down for the full per-type sweep. */
+   structural semantics.  `eqValues()` in src/rpl/ops.js treats Lists
+   and Vectors as structurally comparable.  See also the per-type
+   sweep further down. */
 {
   const s = new Stack();
   s.push(RList([Real(1), Real(2), Real(3)]));
@@ -346,8 +338,7 @@ import { assert } from './helpers.mjs';
 /* ---- GAP: String lexicographic < > ≤ ≥ ----
    HP50 User Guide App. J: string comparisons are lexicographic by
    char code.  Our comparePair() rejects String operands with
-   "Bad argument type".
-   See docs/TESTS.md → "Known gaps → rpl5050-data-types". */
+   "Bad argument type". */
 {
   const s = new Stack();
   s.push(Str('a')); s.push(Str('b'));
@@ -362,16 +353,11 @@ import { assert } from './helpers.mjs';
     + 'HP50 expected: 1 — gap if THREW, filed against rpl5050-data-types)');
 }
 
-/* ---- GAP (resolved session 072): SAME on structurally identical Symbolics ----
-   HP50 AUR §4-7 documents SAME as strictly structural.  Previously
-   our eqValues() didn't recurse into Symbolic AST, so two structurally
-   identical Symbolics compared as different.  Fixed in session 072
-   by adding an `isSymbolic(a) && isSymbolic(b)` branch that calls a
-   local `_astStructEqual` over the AST.  This now uses a properly-
-   shaped parser AST (via parseEntry) instead of the hand-built
-   `{k,op,l,r}` (note: parser emits `{kind,...}`, not `{k,...}` — the
-   old soft probe never hit the branch because the fallback returned
-   false regardless). */
+/* ---- SAME on structurally identical Symbolics ----
+   HP50 AUR §4-7 documents SAME as strictly structural.  `eqValues()`
+   has an `isSymbolic(a) && isSymbolic(b)` branch that calls a local
+   `_astStructEqual` over the AST; uses a properly-shaped parser AST
+   (via parseEntry — parser emits `{kind,...}`). */
 {
   const [symA] = parseEntry("'A+B'");
   const [symB] = parseEntry("'A+B'");
@@ -412,11 +398,9 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 072 (data-types lane) — widening cluster #3:
-     Structural equality on List / Vector / Matrix / Symbolic / Tagged
-     / Unit via == and SAME.  This is the full per-type sweep backing
-     the gap-resolution flips above.  Covers positive + negative +
-     length-mismatch + nested + cross-type-rejection for each.
+   Structural equality on List / Vector / Matrix / Symbolic / Tagged /
+   Unit via == and SAME — the full per-type sweep.  Covers positive +
+   negative + length-mismatch + nested + cross-type-rejection for each.
    ================================================================ */
 /* ---- List == List ---- */
 {

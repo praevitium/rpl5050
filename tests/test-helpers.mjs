@@ -1,11 +1,10 @@
 /* Unit tests for the test helpers themselves.
 
-   helpers.mjs grew in session 068 to expose `assertThrows`, `rplEqual`,
-   `runOp`, and `runOpStack` — helpers that were previously re-invented
-   inline at dozens of call sites.  This file asserts the helpers' own
-   contracts so a future refactor to adopt them widely doesn't silently
-   break on an edge case (e.g. the `binaryInteger` vs `binary_integer`
-   type-tag gotcha flagged in docs/TESTS.md after session 066). */
+   helpers.mjs exposes `assertThrows`, `rplEqual`, `runOp`, and
+   `runOpStack`.  This file asserts the helpers' own contracts so a
+   future change doesn't silently break on an edge case (e.g. the
+   `binaryInteger` type-tag, or the Real-vs-Integer cross-type
+   distinction). */
 
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Tagged, Unit,

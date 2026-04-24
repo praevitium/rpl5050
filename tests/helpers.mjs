@@ -4,13 +4,12 @@
    print the aggregate result and exit with a non-zero code on any
    failure.
 
-   Session 068 additions (unit-test lane):
-     - `assertThrows(fn, pattern, msg)` — consolidate the
+   Helpers provided:
+     - `assertThrows(fn, pattern, msg)` — wraps the common
        `let threw = false; try { … } catch (e) { threw = /…/.test(...) }`
-       pattern that was inlined at ~40 call sites across the test tree.
+       pattern.
      - `rplEqual(a, b)` — deep structural equality for RPL value shapes,
-       lifted from `test-arrow-aliases.mjs` so more than one file can
-       share it (queued from session 066's TESTS.md next-run list).
+       shared across test files.
      - `runOp(opName, ...preStack)` — create a fresh Stack, push the
        pre-stack in order (level-k pushed k-th → ends up on top-of-stack
        last, matching RPL convention), run the op, return `peek()`. */

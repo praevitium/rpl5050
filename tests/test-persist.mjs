@@ -159,7 +159,7 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value === 2 &&
        isReal(mat.rows[1][0]) && mat.rows[1][0].value === 3,
        'Matrix cell values restored');
 
-/* --- Session 051: PRNG seed survives the snapshot round-trip.
+/* --- PRNG seed survives the snapshot round-trip.
        Seed the PRNG, advance it once, snapshot, reset, rehydrate; the
        seed field should restore to the same BigInt value, and the
        next draw should match the pre-snapshot draw produced from the
@@ -201,7 +201,7 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value === 2 &&
   resetPrng();
 }
 
-/* --- Session 076: VX (CAS main variable) survives snapshot / rehydrate. --- */
+/* --- VX (CAS main variable) survives snapshot / rehydrate. --- */
 {
   const { setCasVx, resetCasVx, getCasVx } = await import('../src/rpl/state.js');
   resetCasVx();

@@ -1,9 +1,8 @@
-/* Session 064 — coverage for HP50 statistics accumulator ops that were
-   registered in ops.js (session ≤061) but had zero direct test
-   coverage.  The ops in this batch take the "ΣDAT-style" argument
-   directly off the stack (a 2-col Matrix of (x, y) pairs, or a single-
-   column Matrix / Vector for univariate sums) and return a summary
-   scalar or per-column Vector.
+/* Coverage for HP50 statistics accumulator ops registered in ops.js.
+   The ops in this batch take the "ΣDAT-style" argument directly off
+   the stack (a 2-col Matrix of (x, y) pairs, or a single-column Matrix
+   / Vector for univariate sums) and return a summary scalar or
+   per-column Vector.
 
    Ops covered (HP50 AUR §18):
      NΣ / NSIGMA       — observation count
@@ -25,7 +24,7 @@ import {
   Real, Integer, Complex, Str, Vector, Matrix,
   isReal, isInteger, isVector,
 } from '../src/rpl/types.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Dataset from HP50 AUR §18.2 example (simplified):
      X = [1, 2, 3, 4]
@@ -110,11 +109,10 @@ function makeXYMatrix() {
   assert(v.peek().value === 120, 'session064: SY2 (ASCII) == ΣY²');
 
   // ΣY on a single-column input → "Invalid dimension" (needs >=2 cols).
-  let threw = false;
   const w = new Stack();
   w.push(Matrix([[Real(1)], [Real(2)]]));
-  try { lookup('ΣY').fn(w); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session064: ΣY on single-column matrix → Invalid dimension');
+  assertThrows(() => lookup('ΣY').fn(w), /Invalid dimension/,
+    'session064: ΣY on single-column matrix → Invalid dimension');
 }
 
 /* ---- MAXΣ / MINΣ return per-column Vector ---- */
@@ -155,11 +153,10 @@ function makeXYMatrix() {
 /* ---- Error paths ---- */
 {
   // Empty matrix: NΣ rejects (Bad argument value).
-  let threw = false;
   const s = new Stack();
   s.push(Matrix([]));
-  try { lookup('NΣ').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session064: NΣ on empty Matrix → Bad argument value');
+  assertThrows(() => lookup('NΣ').fn(s), /Bad argument value/,
+    'session064: NΣ on empty Matrix → Bad argument value');
 
   // Empty Vector: ΣX rejects (per _statsVectorOrMatrixCol0 — call
   // should either reject at Bad argument value or produce 0).  Actual

@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 /* tests/flake-scan.mjs — Non-determinism detector for the RPL5050 test suite.
 
-   Standing TESTS.md queue item #5 (session 068), promoted in session 074
-   after a baseline run reproduced a HALT/CONT test-ordering flake on
-   the very first invocation that did not recur on 5 subsequent runs.
    The aggregator's module-side-effect architecture means two test files
    can leak shared state into each other's fixtures (angle mode, wordsize,
    binary-base override, halted slot, last-error slot, directory path,
@@ -32,9 +29,8 @@
        get a clean module-state reset every iteration.  `node --import`
        won't work here — we WANT the cold-start boot to be part of the
        equation.
-     · Captures combined stdout+stderr so a mid-run exception (e.g. the
-       session-073-shaped RPLHalt-escaping-CONT crash) is visible in the
-       report rather than silently dropped.
+     · Captures combined stdout+stderr so a mid-run exception is
+       visible in the report rather than silently dropped.
      · Per-run result is a Map<label, 'ok' | 'FAIL'>.  Tally any label
        that sees both outcomes across the full run set → report as
        flaky, with a count of each outcome.

@@ -16,7 +16,7 @@ import {
   setWordsize, getWordsize, getWordsizeMask,
   setBinaryBase, getBinaryBase, resetBinaryState,
   setApproxMode,
-  setHalted, getHalted, clearHalted,
+  setHalted, getHalted, clearHalted, clearAllHalted, haltedDepth,
 } from '../src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
 import { assert } from './helpers.mjs';
@@ -2152,4 +2152,373 @@ import { assert } from './helpers.mjs';
   assert(after && after.message === 'outer-sentinel',
     'session077: auto-closed IFERR still restores outer lastError on exit');
   clearLastError();
+}
+
+/* ================================================================
+   Session 083 — IF auto-close on missing END
+   (queue item 6: CASE inside IF whose own END is also missing)
+
+   Mirrors the CASE auto-close (session 074) and IFERR auto-close
+   (session 077) — a forward scan that falls off the end of the
+   program body is treated as an implicit END.  "IF without THEN"
+   stays a hard error because IF has no default clause.
+   ================================================================ */
+
+/* ---- IF THEN … (no END) on truthy test runs the true-branch ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « IF 1 THEN 42 »    (missing END — auto-closes at body bound)
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'), Integer(42n),
+    // NO END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session083: IF THEN … (no END) auto-closes and runs true-branch');
+}
+
+/* ---- IF THEN … (no END) on falsy test is a no-op ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('IF'), Integer(0n), Name('THEN'), Integer(99n),
+    // NO END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 0,
+    'session083: IF THEN … (no END) with falsy test leaves stack clean');
+}
+
+/* ---- IF THEN … ELSE … (no END) on truthy test runs true-branch ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'), Integer(7n),
+    Name('ELSE'), Integer(11n),
+    // NO END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session083: IF THEN … ELSE … (no END) truthy → true-branch');
+}
+
+/* ---- IF THEN … ELSE … (no END) on falsy test runs else-branch ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('IF'), Integer(0n), Name('THEN'), Integer(7n),
+    Name('ELSE'), Integer(11n),
+    // NO END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 11n,
+    'session083: IF THEN … ELSE … (no END) falsy → else-branch');
+}
+
+/* ---- "IF without THEN" stays a hard error (no default clause) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([
+    Name('IF'), Integer(1n),
+    // NO THEN
+  ]));
+  let caught = null;
+  try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
+  assert(caught && /IF without THEN/.test(caught.message),
+    'session083: IF without THEN still throws (auto-close does NOT apply)');
+}
+
+/* ---- queue-item-6 case: CASE nested inside IF whose END is missing.
+       Previously raised "IF without END" because _skipPastCaseEnd
+       returned toks.length and the outer scanAtDepth0 fell off the
+       end.  With session-083's auto-close the whole « … » is well-
+       formed. ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « IF 1 THEN CASE 1 THEN 101 END END »   <-- note the CASE has only
+  // its own inner END; the outer CASE END is missing; the outer IF
+  // END is also missing.  Both auto-close.
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'),
+    Name('CASE'),
+      Integer(1n), Name('THEN'), Integer(101n), Name('END'),
+      // NO outer CASE END
+    // NO IF END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 101n,
+    'session083: queue-item-6 — CASE in IF, both missing outer END, auto-close composes');
+}
+
+/* ---- Nested IF with inner END but outer END missing auto-closes ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « IF 1 THEN IF 1 THEN 13 END »   (outer END missing)
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'),
+      Name('IF'), Integer(1n), Name('THEN'), Integer(13n), Name('END'),
+    // NO outer END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 13n,
+    'session083: nested IF — outer END missing auto-closes, inner END honoured');
+}
+
+/* ---- IF auto-close from parseEntry source ---- */
+{
+  resetHome();
+  const s = new Stack();
+  const vs = parseEntry('<< IF 1 THEN 55 >> EVAL');
+  for (const v of vs) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  assert(s.depth === 1 && s.peek().value === 55n,
+    'session083: parsed source `<< IF 1 THEN 55 >>` auto-closes and runs');
+}
+
+/* ---- IF auto-close + trailing tokens: trailing lives INSIDE the
+       implicit true-branch (queue discussion: should they run?).
+       With `endIdx = bound`, the true-branch range is [thenIdx+1,
+       bound), so tokens AFTER THEN all execute on truthy test. ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « IF 1 THEN 3 4 + »    (missing END — auto-closes; trailing `+`
+  // is part of the true-branch)
+  s.push(Program([
+    Name('IF'), Integer(1n), Name('THEN'),
+    Integer(3n), Integer(4n), Name('+'),
+    // NO END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session083: IF auto-close treats trailing tokens as true-branch content');
+}
+
+/* ================================================================
+   Session 083 — RUN op (AUR p.2-177): alias for CONT
+   ================================================================ */
+
+/* ---- RUN resumes a halted program (parity with CONT) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([
+    Integer(10n), Name('HALT'),
+    Integer(3n), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 10n, 'session083: RUN setup — HALT pre-state 10');
+  assert(getHalted() !== null, 'session083: RUN setup — halted slot populated');
+  lookup('RUN').fn(s);
+  assert(s.depth === 1 && s.peek().value === 30n,
+    'session083: RUN resumes the halted program (same semantics as CONT)');
+  assert(getHalted() === null,
+    'session083: RUN clears the halted slot on successful finish');
+}
+
+/* ---- RUN with no halted program raises the same error as CONT ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  let caught = null;
+  try { lookup('RUN').fn(s); } catch (e) { caught = e; }
+  assert(caught && /No halted program/.test(caught.message),
+    'session083: RUN with empty halted stack raises No halted program');
+}
+
+/* ---- RUN can chain through multiple HALTs, same as CONT ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([
+    Integer(1n), Name('HALT'),
+    Integer(2n), Name('+'),
+    Name('HALT'),
+    Integer(5n), Name('*'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.peek().value === 1n, 'session083: first HALT — 1 on top (RUN chain)');
+  lookup('RUN').fn(s);
+  assert(s.peek().value === 3n, 'session083: first RUN → 3, re-hits HALT');
+  lookup('RUN').fn(s);
+  assert(s.depth === 1 && s.peek().value === 15n,
+    'session083: second RUN runs 5 * on the 3 → 15, program finishes');
+}
+
+/* ================================================================
+   Session 083 — Multi-slot halted-program stack
+
+   Until session 083, state.halted was a single scalar slot and a
+   second HALT (from a freshly-EVAL'd program launched while an
+   earlier halt was live) would silently overwrite the first.  The
+   LIFO stack preserves the prior suspension — CONT resumes the
+   most-recent halt, the older halt remains on the stack to be
+   CONT'd next.  Matches HP50 AUR p.2-135's stack-of-halted-
+   programs behaviour.
+   ================================================================ */
+
+/* ---- haltedDepth() baseline is zero ---- */
+{
+  resetHome();
+  assert(haltedDepth() === 0,
+    'session083: haltedDepth is zero after a fresh resetHome');
+  assert(getHalted() === null,
+    'session083: getHalted is null when the stack is empty');
+}
+
+/* ---- Two sequential HALTs from two separate EVAL calls stack up ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // First program: halts carrying 10 on the stack.
+  s.push(Program([ Integer(10n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session083: first program halted, 10 on stack');
+  assert(haltedDepth() === 1, 'session083: haltedDepth = 1 after first HALT');
+  const firstHalt = getHalted();
+  assert(firstHalt !== null, 'session083: first halt record is the top');
+  // Second program: halts carrying 20.  Does NOT overwrite the first.
+  s.push(Program([ Integer(20n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 2,
+    'session083: haltedDepth = 2 after a second HALT stacks on top');
+  const secondHalt = getHalted();
+  assert(secondHalt !== null && secondHalt !== firstHalt,
+    'session083: getHalted returns the more-recent halt (LIFO top)');
+}
+
+/* ---- CONT resumes most-recent halt first, preserves the older one.
+       Uses distinct-integer marker pushes after each HALT so the
+       LIFO ordering is unambiguous without mixing per-program
+       arithmetic (which would share the one user stack and couple
+       the assertions). ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Program A (older): pushes 100, halts; CONT appends 1001.
+  s.push(Program([ Integer(100n), Name('HALT'), Integer(1001n) ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 100n,
+    'session083: LIFO — A halted with 100');
+  // Program B (newer): pushes 200, halts; CONT appends 2002.
+  s.push(Program([ Integer(200n), Name('HALT'), Integer(2002n) ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 2 && s.peek().value === 200n,
+    'session083: LIFO — B halted with 200 on top of A');
+  assert(haltedDepth() === 2, 'session083: LIFO — both halts on the stack');
+  // First CONT resumes B (most recent) — pushes B's post-HALT marker 2002.
+  // Stack after: [100, 200, 2002].
+  lookup('CONT').fn(s);
+  assert(s.depth === 3 && s.peek().value === 2002n,
+    'session083: first CONT resumes the more-recent halt (B appends 2002)');
+  assert(haltedDepth() === 1,
+    'session083: after first CONT, one (older) halt remains');
+  // Second CONT resumes A — pushes A's post-HALT marker 1001.
+  // Stack after: [100, 200, 2002, 1001].
+  lookup('CONT').fn(s);
+  assert(s.depth === 4 && s.peek().value === 1001n,
+    'session083: second CONT resumes the older halt (A appends 1001)');
+  assert(haltedDepth() === 0, 'session083: LIFO empty after both CONTs');
+  assert(getHalted() === null,
+    'session083: getHalted is null once the LIFO is drained');
+}
+
+/* ---- KILL peels one halt off the LIFO, preserving the rest ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([ Integer(1n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  s.push(Program([ Integer(2n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 2, 'session083: KILL setup — two halts on LIFO');
+  lookup('KILL').fn(s);
+  assert(haltedDepth() === 1,
+    'session083: KILL peels one halt off the LIFO (not the whole stack)');
+  assert(getHalted() !== null,
+    'session083: after KILL, the older halt is now the top');
+  lookup('KILL').fn(s);
+  assert(haltedDepth() === 0,
+    'session083: second KILL drains the LIFO');
+  assert(getHalted() === null, 'session083: getHalted null after both KILLs');
+}
+
+/* ---- clearAllHalted drains the whole LIFO in one call ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([ Integer(1n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  s.push(Program([ Integer(2n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  s.push(Program([ Integer(3n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 3, 'session083: clearAllHalted setup — three halts');
+  clearAllHalted();
+  assert(haltedDepth() === 0,
+    'session083: clearAllHalted drains the whole LIFO in one call');
+  assert(getHalted() === null,
+    'session083: state.halted goes to null after clearAllHalted');
+}
+
+/* ---- resetHome drains the LIFO (not just the scalar top slot) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([ Integer(1n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  s.push(Program([ Integer(2n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 2, 'session083: resetHome drain — two halts on LIFO');
+  resetHome();
+  assert(haltedDepth() === 0,
+    'session083: resetHome clears the whole halted LIFO (not just the top)');
+  assert(getHalted() === null,
+    'session083: state.halted is null after resetHome drain');
+}
+
+/* ---- Single-slot back-compat: one HALT still behaves exactly as
+       it did pre-session-083 (`state.halted` === getHalted()) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([ Integer(42n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null && haltedDepth() === 1,
+    'session083: back-compat — single HALT still populates a slot');
+  // Check via state.halted directly (the UI subscriber surface).
+  assert(calcState.halted !== null && calcState.halted === getHalted(),
+    'session083: back-compat — state.halted aliases the LIFO top');
+  clearHalted();
+  assert(getHalted() === null && haltedDepth() === 0 && calcState.halted === null,
+    'session083: back-compat — clearHalted on a 1-deep stack empties both');
+}
+
+/* ---- RUN also resumes the LIFO top (same as CONT) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Program([ Integer(1n), Name('HALT') ]));
+  lookup('EVAL').fn(s);
+  s.push(Program([ Integer(2n), Name('HALT'), Integer(100n), Name('+') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 2, 'session083: RUN LIFO setup');
+  lookup('RUN').fn(s);
+  assert(s.peek().value === 102n,
+    'session083: RUN resumes the LIFO top (= B), running 100 + on the 2 → 102');
+  assert(haltedDepth() === 1,
+    'session083: after RUN, the older halt remains on the LIFO');
 }

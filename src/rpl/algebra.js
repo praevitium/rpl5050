@@ -1,32 +1,29 @@
 /* =================================================================
-   Tiny symbolic-algebra module — first slice of the HP50 CAS.
+   Symbolic-algebra module — core of the HP50 CAS.
 
-   Covers: parse / format / simplify / differentiate for single-variable
-   polynomial-ish expressions.  The AST is deliberately small; all nodes
-   are plain frozen objects so they are cheap to compare and share.
+   Covers: parse / format / simplify / expand / factor / differentiate
+   / integrate / solve for polynomial-ish expressions with a small set
+   of known transcendental functions (SIN, COS, LN, EXP, SQRT, …).
+   The AST is deliberately small; all nodes are plain frozen objects
+   so they are cheap to compare and share.
 
      { kind: 'num', value: number }
      { kind: 'var', name: string }
      { kind: 'neg', arg: <node> }
      { kind: 'bin', op: '+'|'-'|'*'|'/'|'^', l: <node>, r: <node> }
+     { kind: 'fn',  name: string, args: <node>[] }
 
-   Why so small?  Because the visible feature is:
+   Why small?  The visible feature is:
      `'X^2 + 3*X + 1' 'X' DERIV  →  '2*X + 3'`
    and we want that to work end-to-end with a parser, a simplifier that
    keeps the output readable (drops 0s, collapses 1*x, merges numeric
    constants), a printer that parenthesises only where needed, and a
    differentiator that implements sum / product / quotient / power rules.
 
-   Deliberate non-goals for this first slice:
-     - function calls like SIN(X), LN(X), EXP(X) — no fn node yet.
-     - multi-argument functions — same reason.
+   Deliberate non-goals:
      - rational simplification across the whole tree (common-denom,
        cancellation).  The simplifier is strictly local (each op makes
        one pattern-match pass over its immediate children).
-
-   Both goals are CAS wishlist items and will land on top of this
-   foundation.  The AST and API are designed so adding a `fn` node
-   later is additive — no existing node or function needs to change.
    ================================================================= */
 
 /* ------------------------------ AST ctors ----------------------------- */
@@ -52,8 +49,7 @@ export function Bin(op, l, r) {
  *         another node kind.
  *
  * Uppercasing happens inside the ctor so callers can pass either case
- * and comparisons stay simple.  Added session 017 to carry SIN/COS/LN/
- * EXP/SQRT/… through parse → simplify → deriv → print.
+ * and comparisons stay simple.
  */
 export function Fn(name, args) {
   return Object.freeze({
@@ -130,22 +126,22 @@ export const KNOWN_FUNCTIONS = Object.freeze({
   ASIN: { arity: 1 },
   ACOS: { arity: 1 },
   ATAN: { arity: 1 },
-  // Hyperbolic / inverse hyperbolic.  Session 029 (item 3): added so
-  // the parser recognises `SINH(-X)` etc. as function calls rather
-  // than word-splitting; unlocks the odd/even symbolic rewrites below.
-  // Numeric eval is mode-independent (no degrees/radians for hyp fns)
-  // so these are safe to fold on Num args at simplify time.
+  // Hyperbolic / inverse hyperbolic.  Parser recognises `SINH(-X)` etc.
+  // as function calls rather than word-splitting; unlocks the odd/even
+  // symbolic rewrites below.  Numeric eval is mode-independent (no
+  // degrees/radians for hyp fns) so these are safe to fold on Num args
+  // at simplify time.
   SINH:  { arity: 1, eval: Math.sinh },
   COSH:  { arity: 1, eval: Math.cosh },
   TANH:  { arity: 1, eval: Math.tanh },
   ASINH: { arity: 1, eval: Math.asinh },
   ACOSH: { arity: 1, eval: x => x >= 1 ? Math.acosh(x) : null },
   ATANH: { arity: 1, eval: x => (x > -1 && x < 1) ? Math.atanh(x) : null },
-  // Factorial (session 031).  Only non-negative integer-valued Reals are
-  // folded here; fractional/negative values are left symbolic at simplify
-  // time — the stack op FACT uses a Lanczos gamma approximation, but the
-  // simplifier should not inject floating-point gamma values into what the
-  // user wrote symbolically.  Non-integer-valued numeric arg → leave as FACT(x).
+  // Factorial.  Only non-negative integer-valued Reals are folded here;
+  // fractional/negative values are left symbolic at simplify time — the
+  // stack op FACT uses a Lanczos gamma approximation, but the simplifier
+  // should not inject floating-point gamma values into what the user
+  // wrote symbolically.  Non-integer-valued numeric arg → leave as FACT(x).
   FACT: { arity: 1, eval: x => {
     if (!Number.isInteger(x) || x < 0) return null;
     if (x > 170) return null; // overflow — leave symbolic
@@ -153,13 +149,11 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     for (let i = 2; i <= x; i++) acc *= i;
     return acc;
   } },
-  // XROOT(y, x) = the x-th root of y = y^(1/x).  Session 033 surfaced
-  // XROOT at the parser level so users can type `'XROOT(2, 3)'` at the
-  // entry line and the resulting Symbolic round-trips — previously
-  // XROOT was only produced internally by _cubeRootReconstruct /
-  // cube-root SOLVE branches.  Numeric eval is defined for
-  // (y >= 0, x > 0); negative-radicand or non-integer-index cases fall
-  // back to symbolic (null) so nothing spuriously folds to NaN.
+  // XROOT(y, x) = the x-th root of y = y^(1/x).  Parser accepts
+  // `'XROOT(2, 3)'` at the entry line and the resulting Symbolic
+  // round-trips.  Numeric eval is defined for (y >= 0, x > 0);
+  // negative-radicand or non-integer-index cases fall back to symbolic
+  // (null) so nothing spuriously folds to NaN.
   XROOT: { arity: 2, eval: (y, x) => {
     if (!Number.isFinite(y) || !Number.isFinite(x)) return null;
     if (x === 0) return null;
@@ -172,16 +166,15 @@ export const KNOWN_FUNCTIONS = Object.freeze({
   // symbolic results round-trip through the entry line.
   SUM:   { arity: 1 },
   INTEG: { arity: 2 },
-  // Session 061 — Heaviside step and Dirac delta.  Heaviside has a
-  // well-defined numeric evaluator (0 for x < 0, 1 for x ≥ 0).  Dirac
-  // is zero at every non-zero real and a distribution at zero; we
-  // fold only the zero case (leave symbolic) and the non-zero case
-  // (evaluates to 0).  Used as LAPLACE / ILAP table entries for
-  // shifted step and impulse functions.
+  // Heaviside step and Dirac delta.  Heaviside has a well-defined
+  // numeric evaluator (0 for x < 0, 1 for x ≥ 0).  Dirac is zero at
+  // every non-zero real and a distribution at zero; we fold only the
+  // zero case (leave symbolic) and the non-zero case (evaluates to 0).
+  // Used as LAPLACE / ILAP table entries for shifted step and impulse
+  // functions.
   HEAVISIDE: { arity: 1, eval: x => x >= 0 ? 1 : 0 },
   DIRAC:     { arity: 1, eval: x => x === 0 ? null : 0 },
-  // Session 062 — type-widening.  These ops previously threw on
-  // Symbolic / Name operands; they now lift to AstFn(...) wrappers so
+  // Type-widening ops.  These lift to AstFn(...) wrappers so
   // `'X' FLOOR` etc. produces a Symbolic rather than an error.  Listing
   // here lets the entry parser recognise the textual form (`FLOOR(X)`)
   // as a function call so the lifted Symbolic round-trips through the
@@ -210,15 +203,14 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     return a >= b ? a : b;
   } },
-  // Session 064 — GCD / LCM widened to accept Symbolic/Name operands.
-  // The stack op produces `Symbolic(AstFn('GCD', [l, r]))` when either
-  // operand is a Name or Symbolic, and we register the textual form
-  // here so it round-trips through `parseEntry`.  Numeric evaluators
-  // only fold on non-negative integer-valued Reals — HP50 GCD/LCM
-  // reject non-integer Reals, and the simplifier must not invent a
-  // fractional folding rule that the stack op itself would refuse.
-  // Polynomial GCD / LCM on true symbolic expressions stays deferred
-  // (CAS work).
+  // GCD / LCM accept Symbolic/Name operands.  The stack op produces
+  // `Symbolic(AstFn('GCD', [l, r]))` when either operand is a Name or
+  // Symbolic, and we register the textual form here so it round-trips
+  // through `parseEntry`.  Numeric evaluators only fold on non-negative
+  // integer-valued Reals — HP50 GCD/LCM reject non-integer Reals, and
+  // the simplifier must not invent a fractional folding rule that the
+  // stack op itself would refuse.  Polynomial GCD / LCM on true
+  // symbolic expressions stays deferred (CAS work).
   GCD: { arity: 2, eval: (a, b) => {
     if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
@@ -234,15 +226,15 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     while (y !== 0) { [x, y] = [y, x % y]; }
     return Math.abs(a / x * b);
   } },
-  // Session 064 (new-ops cluster) — combinatorial.  Both arity-2 with
-  // integer arguments only.  When either side is a Name/Symbolic the
-  // stack op lifts to `Symbolic(AstFn('COMB', [l, r]))`; registering
-  // the textual form here lets `'COMB(N, K)'` round-trip through
-  // `parseEntry`.  The numeric evaluator only folds valid cases
-  // (non-negative integers with m ≤ n) and returns `null` otherwise,
-  // so the simplifier leaves bogus argument combos symbolic rather
-  // than injecting a nonsense value — the stack op's "Bad argument
-  // value" error is the right response at run time, not simplify time.
+  // Combinatorial — both arity-2 with integer arguments only.  When
+  // either side is a Name/Symbolic the stack op lifts to
+  // `Symbolic(AstFn('COMB', [l, r]))`; registering the textual form
+  // here lets `'COMB(N, K)'` round-trip through `parseEntry`.  The
+  // numeric evaluator only folds valid cases (non-negative integers
+  // with m ≤ n) and returns `null` otherwise, so the simplifier leaves
+  // bogus argument combos symbolic rather than injecting a nonsense
+  // value — the stack op's "Bad argument value" error is the right
+  // response at run time, not simplify time.
   COMB:  { arity: 2, eval: (n, m) => {
     if (!Number.isInteger(n) || !Number.isInteger(m)) return null;
     if (n < 0 || m < 0 || m > n) return null;
@@ -257,15 +249,15 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     for (let i = 0; i < m; i++) out *= (n - i);
     return out;
   } },
-  // Session 068 — integer-division single-result siblings of IDIV2.
-  // Stack ops lift to Symbolic(AstFn('IQUOT', [l, r])) when either
-  // operand is a Name/Symbolic; registering the textual form here lets
-  // the entry parser recognise `IQUOT(A, B)` as a function call and
-  // round-trip through parseEntry.  Numeric evaluator folds only on
-  // integer-valued Reals with a non-zero divisor — matches the stack
-  // op's rejections (non-integer → "Bad argument value", zero-divisor
-  // → "Infinite result") by returning null rather than inventing a
-  // fractional fold or NaN.
+  // Integer-division single-result siblings of IDIV2.  Stack ops lift
+  // to Symbolic(AstFn('IQUOT', [l, r])) when either operand is a
+  // Name/Symbolic; registering the textual form here lets the entry
+  // parser recognise `IQUOT(A, B)` as a function call and round-trip
+  // through parseEntry.  Numeric evaluator folds only on integer-valued
+  // Reals with a non-zero divisor — matches the stack op's rejections
+  // (non-integer → "Bad argument value", zero-divisor → "Infinite
+  // result") by returning null rather than inventing a fractional fold
+  // or NaN.
   IQUOT: { arity: 2, eval: (a, b) => {
     if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
@@ -278,12 +270,12 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     if (b === 0) return null;
     return a - Math.trunc(a / b) * b;
   } },
-  // Session 068 — special functions.  GAMMA gets a numeric evaluator
-  // that only folds on positive-integer-valued Reals (so simplify
-  // produces exact factorials rather than floating-point Γ values);
-  // LNGAMMA also only folds when the numeric result is guaranteed
-  // finite and mode-independent.  Generic folding on non-integer x is
-  // deferred to EVAL — the stack ops handle it via the Lanczos path.
+  // Special functions.  GAMMA gets a numeric evaluator that only folds
+  // on positive-integer-valued Reals (so simplify produces exact
+  // factorials rather than floating-point Γ values); LNGAMMA also only
+  // folds when the numeric result is guaranteed finite and
+  // mode-independent.  Generic folding on non-integer x is deferred to
+  // EVAL — the stack ops handle it via the Lanczos path.
   GAMMA: { arity: 1, eval: x => {
     if (!Number.isFinite(x)) return null;
     if (!Number.isInteger(x)) return null;
@@ -294,18 +286,18 @@ export const KNOWN_FUNCTIONS = Object.freeze({
     return acc;                        // Γ(n) = (n-1)!
   } },
   LNGAMMA: { arity: 1 },
-  // Session 068 — STAT-DIST upper tail (terminal numeric op, no
-  // symbolic simplification rules to exploit; listed here only for
-  // parser round-trip so `'UTPC(4, 9.5)'` works at the entry line).
+  // STAT-DIST upper tail (terminal numeric op, no symbolic
+  // simplification rules to exploit; listed here only for parser
+  // round-trip so `'UTPC(4, 9.5)'` works at the entry line).
   UTPC: { arity: 2 },
-  // Session 069 — Beta-family special functions + STAT-DIST UTPF /
-  // UTPT + erf / erfc.  All parser round-trip only: there are no
-  // clean symbolic simplification rules for these in the HP50 CAS,
-  // and their numeric evaluators all live on the stack side (they
-  // need the Lanczos log-gamma / incomplete-beta helpers that the
-  // algebra layer does not have).  Entering `'Beta(3, 4)'` therefore
-  // survives as a Symbolic; `EVAL` hands it to the stack op which
-  // computes the numeric value via _betaScalar.
+  // Beta-family special functions + STAT-DIST UTPF / UTPT + erf / erfc.
+  // All parser round-trip only: there are no clean symbolic
+  // simplification rules for these in the HP50 CAS, and their numeric
+  // evaluators all live on the stack side (they need the Lanczos
+  // log-gamma / incomplete-beta helpers that the algebra layer does
+  // not have).  Entering `'Beta(3, 4)'` therefore survives as a
+  // Symbolic; `EVAL` hands it to the stack op which computes the
+  // numeric value via _betaScalar.
   // (KNOWN_FUNCTIONS lookups use ident.toUpperCase(), so keep the keys
   // uppercase even when the HP50 spelling is mixed-case — the parser
   // and simplifier both normalise the name before the lookup.  The
@@ -342,10 +334,9 @@ export function isKnownFunction(name) {
  *  `'X + 1 = 3'` parses as `Bin('=', X+1, 3)`.  Nested comparisons
  *  (`'(X = Y) + 1'`) are rejected at parse time because parseP's
  *  parenthesis body drops back to parseE, which never looks for a
- *  comparison.  Session 022 pinned down SUBST's `'X = 3'` shape;
- *  session 033 (this one) extended the grammar to the full HP50
- *  inequality family so `'X < 5'`, `'Y ≠ 0'`, etc. land as Symbolics
- *  rather than falling through to bare-Name-quoted.
+ *  comparison.  The grammar covers the full HP50 inequality family
+ *  so `'X < 5'`, `'Y ≠ 0'`, etc. land as Symbolics rather than
+ *  falling through to bare-Name-quoted.
  *
  *  ASCII fallbacks `<=` / `>=` are normalised to the Unicode Bin ops
  *  `≤` / `≥` so downstream formatter / pretty-printer / simplifier
@@ -521,9 +512,8 @@ export function parseAlgebra(src) {
 
 /* ------------------------- like-terms combiner ------------------------
  *
- * Added session 019.  Extends the local simplifier so any top-level
- * + / - chain over a tree gets its coefficients summed per-variable-
- * body.  Examples:
+ * Extends the local simplifier so any top-level + / - chain over a tree
+ * gets its coefficients summed per-variable-body.  Examples:
  *     X + X         →  2*X
  *     2*X + 3*X     →  5*X
  *     X + 2*X + Y   →  3*X + Y
@@ -590,8 +580,7 @@ function flattenAddSub(ast, sign, out) {
  *
  * We do NOT combine matching bases into powers here (`X*X` stays
  * `X*X`, not `X^2`) — that's EXPAND's job, and promoting it into the
- * general simplifier would reshape DERIV's output.  Added session
- * 020. */
+ * general simplifier would reshape DERIV's output. */
 function canonicalizeTermBody(body) {
   if (!isBin(body) || body.op !== '*') return { coef: 1, body };
   const factors = [];
@@ -633,12 +622,12 @@ function combineLikeTerms(ast) {
   for (const { coef, body } of flat) {
     if (body === null) { constant += coef; continue; }
     // Canonicalize product ordering so `X*Y` and `Y*X` share a bucket
-    // key (session 020).  Also peels any remaining Num factors out of
-    // the body into a numeric-extra coefficient — flattenAddSub's
-    // shallow Num-strip already handled `Num*body` and `body*Num`, but
-    // parser output like `2*X*Y = (2*X)*Y` hides the `2` inside a
-    // nested Bin and only gets extracted here.  If the body collapses
-    // to all-numeric the extra bubbles into the running constant bucket.
+    // key.  Also peels any remaining Num factors out of the body into
+    // a numeric-extra coefficient — flattenAddSub's shallow Num-strip
+    // already handled `Num*body` and `body*Num`, but parser output
+    // like `2*X*Y = (2*X)*Y` hides the `2` inside a nested Bin and
+    // only gets extracted here.  If the body collapses to all-numeric
+    // the extra bubbles into the running constant bucket.
     const canon = canonicalizeTermBody(body);
     const fullCoef = coef * canon.coef;
     if (canon.body === null) { constant += fullCoef; continue; }
@@ -659,7 +648,7 @@ function combineLikeTerms(ast) {
   // formatter add parens around the body (`2*(X*Y)`) because the body
   // is itself a `*` node and `*` is left-associative at print time.
   // Left-folding the coef in front yields `2*X*Y` — cleaner, same AST
-  // semantics.  Session 020.
+  // semantics.
   const parts = [];
   for (const t of kept) {
     const sign = t.coef < 0 ? '-' : '+';
@@ -705,7 +694,7 @@ function combineLikeTerms(ast) {
  *    x / 1 → x      0 / x → 0
  *    x ^ 0 → 1      x ^ 1 → x
  *    --x → x
- *    c*X ± d*X → (c ± d)*X    (session 019 like-terms combiner)
+ *    c*X ± d*X → (c ± d)*X    (like-terms combiner)
  *  Pure numeric sub-trees collapse to a single Num.
  *  Identity: `simplify(expr)` is idempotent. */
 export function simplify(ast) {
@@ -767,7 +756,7 @@ export function simplify(ast) {
       if (isNum(r) && r.value === 1) return l;
       if (isNum(l) && l.value === 0 && !(isNum(r) && r.value === 0)) return Num(0);
       if (astEqual(l, r) && !(isNum(r) && r.value === 0)) return Num(1);
-      // Session 027: cancel common integer factor in a fraction so
+      // Cancel common integer factor in a fraction so
       // DERIV(SQRT(X^2+1)) = 2*X/(2*SQRT(X^2+1)) reduces to the
       // textbook X/SQRT(X^2+1).  See `_cancelIntegerFactor`.
       {
@@ -780,16 +769,15 @@ export function simplify(ast) {
       if (isNum(r) && r.value === 1) return l;        // x^1 → x
       if (isNum(l) && l.value === 0) return Num(0);   // 0^n = 0 (n>0 caught above)
       if (isNum(l) && l.value === 1) return Num(1);   // 1^x = 1
-      // (u^m)^n → u^(m*n) when both exponents are Num.  Session 025:
-      // cleans up DERIV chain-rule output like ATAN(X^2) → 2*X/(X^4+1)
-      // instead of 2*X/((X^2)^2 + 1).  Conservative — we require BOTH
-      // m and n to be numeric literals so we don't chase u^(v*w) shapes
-      // where v or w might be zero or negative and introduce branch
-      // issues.
+      // (u^m)^n → u^(m*n) when both exponents are Num.  Cleans up
+      // DERIV chain-rule output like ATAN(X^2) → 2*X/(X^4+1) instead
+      // of 2*X/((X^2)^2 + 1).  Conservative — we require BOTH m and n
+      // to be numeric literals so we don't chase u^(v*w) shapes where
+      // v or w might be zero or negative and introduce branch issues.
       if (isBin(l) && l.op === '^' && isNum(l.r) && isNum(r)) {
         return simplify(Bin('^', l.l, Num(l.r.value * r.value)));
       }
-      // Session 029 (item 3): (-X)^n for integer n.
+      // (-X)^n for integer n.
       //   n even → X^n      (sign dropped)
       //   n odd  → -(X^n)   (sign kept, Neg pushed outside)
       // Only for non-negative integer n; negative powers would need
@@ -882,10 +870,58 @@ function simplifyFn(ast) {
       return Fn('ABS', [a.l]);
     }
 
-    // Session 029 (item 3): odd / even symbolic identities.  `Neg(x)`
-    // here is the one-and-only negation shape simplify uses (it never
-    // produces `-1 * x` — that's folded into a Num-prefix *).  We pull
-    // the sign OUT of odd functions and DROP it inside even functions:
+    // Rounding / sign idempotency identities.  Every one of these
+    // reduces a nested rounding call to its inner shape because the
+    // inner result is ALREADY integer-valued (FLOOR / CEIL / IP / —for
+    // FP — fractional), so re-applying any integer-rounder is a no-op.
+    // All are angle-mode-independent and match the HP50 CAS behaviour
+    // for rounding-of-rounding expressions.  Written defensively —
+    // only the exact shapes match; anything else (e.g. `FLOOR(X + 1)`)
+    // stays as-is for later passes.
+    //
+    //   FLOOR(FLOOR(x)) = FLOOR(x)       IP(FLOOR(x))  = FLOOR(x)
+    //   CEIL(CEIL(x))   = CEIL(x)        IP(CEIL(x))   = CEIL(x)
+    //   IP(IP(x))       = IP(x)          IP(FP(x))     = 0
+    //   FP(FP(x))       = FP(x)          FLOOR(IP(x))  = IP(x)
+    //   FLOOR(CEIL(x))  = CEIL(x)        CEIL(IP(x))   = IP(x)
+    //   CEIL(FLOOR(x))  = FLOOR(x)       FLOOR(FP(x))  ∈ {-1,0} → leave
+    //   FP(FLOOR(x))    = 0              CEIL(FP(x))   ∈ {0,1}  → leave
+    //   FP(CEIL(x))     = 0              SIGN(SIGN(x)) = SIGN(x)
+    //   FP(IP(x))       = 0              SIGN(ABS(x))  → leave  (∈ {0,1})
+    //
+    // (FLOOR/CEIL of FP(x) are left symbolic because the result
+    // depends on whether x is negative/positive — not a clean
+    // idempotency.)
+    const ROUND_INT_PRODUCERS = new Set(['FLOOR', 'CEIL', 'IP']);
+    if (isFn(a) && a.args.length === 1) {
+      const inner = a;
+      const innerName = a.name;
+      // Rule family 1: outer rounder is itself integer-producing and
+      // inner is already integer-producing ⇒ inner wins (outer is a
+      // no-op on integers).
+      if (ROUND_INT_PRODUCERS.has(name) && ROUND_INT_PRODUCERS.has(innerName)) {
+        return inner;
+      }
+      // Rule family 2: FP of an integer-producing rounder = 0.
+      if (name === 'FP' && ROUND_INT_PRODUCERS.has(innerName)) {
+        return Num(0);
+      }
+      // Rule family 3: FP(FP(x)) = FP(x) — FP result is in (-1, 1) but
+      // the second application is also stable because FP(FP(x)) = FP(x)
+      // whenever |x| < 1.  Concretely: FP is idempotent on its image.
+      if (name === 'FP' && innerName === 'FP') {
+        return inner;
+      }
+      // Rule family 4: SIGN(SIGN(x)) = SIGN(x) — SIGN is idempotent.
+      if (name === 'SIGN' && innerName === 'SIGN') {
+        return inner;
+      }
+    }
+
+    // Odd / even symbolic identities.  `Neg(x)` here is the
+    // one-and-only negation shape simplify uses (it never produces
+    // `-1 * x` — that's folded into a Num-prefix *).  We pull the sign
+    // OUT of odd functions and DROP it inside even functions:
     //
     //   SIN(-x) → -SIN(x)   ASIN(-x) → -ASIN(x)   TAN(-x) → -TAN(x)
     //   SINH(-x) → -SINH(x) TANH(-x) → -TANH(x)   ATANH(-x) → -ATANH(x)
@@ -907,9 +943,9 @@ function simplifyFn(ast) {
 
 /* ------------------------------ EXPAND -------------------------------- *
  *
- * Added session 019.  `expand(ast)` multiplies-out products and small
- * non-negative integer powers of sums, then runs simplify() on the
- * result so the like-terms combiner gathers coefficients:
+ * `expand(ast)` multiplies-out products and small non-negative integer
+ * powers of sums, then runs simplify() on the result so the like-terms
+ * combiner gathers coefficients:
  *
  *     (X+1)^2       →  X^2 + 2*X + 1
  *     (X+1)^3       →  X^3 + 3*X^2 + 3*X + 1
@@ -1092,27 +1128,35 @@ export function deriv(ast, varName) {
  *  variable of differentiation `v`, emits  f'(u) * u'  where f'(u) is
  *  spelled out per known builtin:
  *
- *     SIN(u)'  =  COS(u) * u'
- *     COS(u)'  = -SIN(u) * u'
- *     TAN(u)'  = (1 + TAN(u)^2) * u'        (equivalently SEC(u)^2)
- *     ASIN(u)' =  u' / SQRT(1 - u^2)
- *     ACOS(u)' = -u' / SQRT(1 - u^2)
- *     ATAN(u)' =  u' / (1 + u^2)
- *     LN(u)'   =  u' / u
- *     LOG(u)'  =  u' / (u * LN(10))
- *     EXP(u)'  =  EXP(u) * u'
- *     ALOG(u)' =  ALOG(u) * LN(10) * u'
- *     SQRT(u)' =  u' / (2*SQRT(u))
- *     ABS(u)'  =  (u/ABS(u)) * u'          (sign(u) * u' symbolically)
+ *     SIN(u)'   =  COS(u) * u'
+ *     COS(u)'   = -SIN(u) * u'
+ *     TAN(u)'   = (1 + TAN(u)^2) * u'        (equivalently SEC(u)^2)
+ *     ASIN(u)'  =  u' / SQRT(1 - u^2)
+ *     ACOS(u)'  = -u' / SQRT(1 - u^2)
+ *     ATAN(u)'  =  u' / (1 + u^2)
+ *     LN(u)'    =  u' / u
+ *     LOG(u)'   =  u' / (u * LN(10))
+ *     EXP(u)'   =  EXP(u) * u'
+ *     ALOG(u)'  =  ALOG(u) * LN(10) * u'
+ *     SQRT(u)'  =  u' / (2*SQRT(u))
+ *     ABS(u)'   =  (u/ABS(u)) * u'          (sign(u) * u' symbolically)
+ *     SINH(u)'  =  COSH(u) * u'
+ *     COSH(u)'  =  SINH(u) * u'             (NOT `-SINH` — cosh is even
+ *                                           but d/dx cosh = +sinh)
+ *     TANH(u)'  = (1 - TANH(u)^2) * u'       (SECH^2 form, but we lack SECH)
+ *     ASINH(u)' =  u' / SQRT(u^2 + 1)
+ *     ACOSH(u)' =  u' / SQRT(u^2 - 1)        (valid for u > 1)
+ *     ATANH(u)' =  u' / (1 - u^2)            (valid for |u| < 1)
  *
  *  HP50 trig DERIV results are always stated in terms of the "other"
  *  trig — i.e. SIN's derivative is COS, not "cos in rad mode" — because
  *  the CAS's angle-mode semantics apply uniformly.  We mirror that
  *  here; the resulting Fn nodes will pick up the active mode at
- *  numeric-EVAL time.
+ *  numeric-EVAL time.  Hyperbolic families are angle-mode-independent,
+ *  so those rewrites are unconditional.
  *
  *  Unsupported functions throw a clear error; DERIV is typed-up for
- *  the common trig / log / exp / root set, not user-defined calls. */
+ *  the common trig / log / exp / root / hyp set, not user-defined calls. */
 function derivFn(ast, v) {
   const name = ast.name;
   if (ast.args.length !== 1) {
@@ -1165,6 +1209,36 @@ function derivFn(ast, v) {
       // d/dx |u| = u/|u| * u'  (sign(u) * u' symbolically).  We encode
       // as Bin('/', u, Fn('ABS', [u])) * du.
       return Bin('*', Bin('/', u, Fn('ABS', [u])), du);
+    // Hyperbolic family — mode-independent derivatives.
+    case 'SINH':
+      return Bin('*', Fn('COSH', [u]), du);
+    case 'COSH':
+      // d/dx cosh(u) = +sinh(u) * u' — no sign flip (cosh is even, but
+      // its derivative is odd sinh; the chain-rule factor carries no
+      // extra sign).  Don't confuse with d/dx cos(u) which does flip.
+      return Bin('*', Fn('SINH', [u]), du);
+    case 'TANH': {
+      // sech^2(u) * u' — but we don't expose SECH; use the algebraic
+      // identity sech^2 = 1 - tanh^2 so the result stays inside the
+      // KNOWN_FUNCTIONS surface and round-trips cleanly.
+      const sech2 = Bin('-', Num(1), Bin('^', Fn('TANH', [u]), Num(2)));
+      return Bin('*', sech2, du);
+    }
+    case 'ASINH': {
+      // u' / SQRT(u^2 + 1)
+      const inner = Bin('+', Bin('^', u, Num(2)), Num(1));
+      return Bin('/', du, Fn('SQRT', [inner]));
+    }
+    case 'ACOSH': {
+      // u' / SQRT(u^2 - 1)
+      const inner = Bin('-', Bin('^', u, Num(2)), Num(1));
+      return Bin('/', du, Fn('SQRT', [inner]));
+    }
+    case 'ATANH': {
+      // u' / (1 - u^2)
+      const denom = Bin('-', Num(1), Bin('^', u, Num(2)));
+      return Bin('/', du, denom);
+    }
   }
   throw new Error(`DERIV: unsupported function '${name}'`);
 }
@@ -1295,6 +1369,15 @@ function integRaw(ast, v) {
         case 'COS':  return Fn('SIN', [Var(v)]);
         case 'EXP':  return Fn('EXP', [Var(v)]);
         case 'LN':   return Bin('-', Bin('*', Var(v), Fn('LN', [Var(v)])), Var(v));
+        // Hyperbolic + ALOG antiderivatives (f(x) with x as the
+        // variable of integration only; chain rule stays deferred,
+        // matching the SIN/COS/EXP/LN shape).
+        //   ∫ SINH(x) dx = COSH(x)
+        //   ∫ COSH(x) dx = SINH(x)
+        //   ∫ ALOG(x) dx = ALOG(x) / LN(10)    [since d/dx 10^x = 10^x·ln(10)]
+        case 'SINH': return Fn('COSH', [Var(v)]);
+        case 'COSH': return Fn('SINH', [Var(v)]);
+        case 'ALOG': return Bin('/', Fn('ALOG', [Var(v)]), Fn('LN', [Num(10)]));
       }
     }
   }
@@ -1423,8 +1506,7 @@ export function formatAlgebra(ast) {
 
 // `=` and comparison operators (≠, <, >, ≤, ≥) are the loosest-binding
 // operators — below + / -.  Only emitted at the top level of an equation
-// (parseEq); every other grammar production lives above it.  Session 022
-// (= only); Session 034 (comparison operators).
+// (parseEq); every other grammar production lives above it.
 const PREC = {
   '=': 0, '≠': 0, '<': 0, '>': 0, '≤': 0, '≥': 0,
   '+': 1, '-': 1, '*': 2, '/': 2, '^': 3,
@@ -1471,7 +1553,7 @@ function fmt(ast, parentPrec) {
     // + / - / comparisons get surrounding spaces; * / / / ^ stay tight.
     // Comparison ops print without surrounding spaces so `x>y` renders
     // exactly like the user types it — matches HP50 behaviour and matches
-    // the user's expectation that `x y >` produces `'x>y'`.  Session 034.
+    // the user's expectation that `x y >` produces `'x>y'`.
     const sep = (ast.op === '+' || ast.op === '-' || ast.op === '=')
                 ? ` ${ast.op} `
                 : ast.op;
@@ -1482,19 +1564,17 @@ function fmt(ast, parentPrec) {
 }
 
 /* ==================================================================
-   FACTOR — first slice, session 021.
+   FACTOR
 
-   `factor(ast)` recognises a small set of common polynomial shapes
-   and returns a factored form; anything outside the recognised set
-   is returned unchanged (partial by design, same philosophy as
-   EXPAND).  Currently supported:
+   `factor(ast)` recognises a set of common polynomial shapes and
+   returns a factored form; anything outside the recognised set is
+   returned unchanged (partial by design, same philosophy as EXPAND).
+   Supported shapes include:
 
      - MONIC QUADRATIC with integer roots:
          X^2 + b*X + c  →  (X + r1)*(X + r2)
-       with `r1`, `r2` integer roots of the quadratic and
-       `b`, `c` integer coefficients.  If r1 === r2 the result is
-       `(X + r)^2` (session 021 folds this through the existing
-       combinePowers path by reconstructing as a squared binomial).
+       with `r1`, `r2` integer roots and `b`, `c` integer
+       coefficients.  If r1 === r2 the result is `(X + r)^2`.
        Both distinct-integer and repeated-root cases handled.
 
      - DIFFERENCE OF SQUARES with integer constant:
@@ -1502,21 +1582,13 @@ function fmt(ast, parentPrec) {
        Subset of the quadratic rule (b=0), but handy because it's
        the form most users recognise.
 
-   Non-goals for this slice:
-     - Non-monic leading coefficient (a*X^2 + b*X + c with a != 1)
-       — small polynomial; handled in a later session.
-     - Cubic and higher degree.  Rational-root theorem sweep is
-       future work.
-     - Multi-variable polynomials.  The main variable is inferred
-       from `freeVars`; if there are multiple, FACTOR bails.
-     - Rational (numerator / denominator) expressions.  If the
-       input has a '/' op at the top level we pass through.
-     - Factoring out a GCD from a non-quadratic.
+     - Non-monic quadratic, cubic (general + sum/difference of
+       cubes), quartic (rational-root + product-of-quadratics),
+       and sparse a·X^(3k) + b.  See the individual helpers below.
 
    All unsupported shapes pass through unchanged, matching the
    partial-CAS convention — users get EXPAND-style "best effort"
-   rather than a noisy error.  The session 020 CAS menu's F4 slot
-   delegates to this op; placeholder "not yet" path retired.
+   rather than a noisy error.  The CAS menu's F4 slot delegates here.
 ================================================================== */
 
 /** extractPolyCoeffs(ast, varName) — treat `ast` as a polynomial in
@@ -1541,7 +1613,7 @@ function fmt(ast, parentPrec) {
  *  gracefully pass through.
  *
  *  Shared by FACTOR (this section) and `collectByVar` (polynomial
- *  COLLECT) below — same extraction primitive.  Added session 021.
+ *  COLLECT) below — same extraction primitive.
  */
 function extractPolyCoeffs(ast, varName) {
   const terms = flattenAddSub(ast, 1, []);
@@ -1588,7 +1660,7 @@ function extractPolyCoeffs(ast, varName) {
  *  unusual (negative / non-integer X-exponent, fractional division
  *  involving X, a Neg wrapper that we couldn't normalise, etc.) —
  *  in which case the caller should treat the whole expression as
- *  not-a-polynomial-in-varName.  Added session 021.
+ *  not-a-polynomial-in-varName.
  */
 function splitVarPower(body, varName) {
   let power = 0;
@@ -1661,7 +1733,7 @@ function pickMainVariable(ast) {
  *  returning the input verbatim (guarantees EXPAND ∘ FACTOR is a
  *  no-op on non-factorable inputs).
  *
- *  Pipeline (session 022 extended):
+ *  Pipeline:
  *    1. Pull out a leading `X^minK` when coef[k]=0 for every k<minK
  *       (X-GCD factoring).  `X^3 + X` → `X*(X^2 + 1)`.
  *    2. Pull out an integer scalar GCD from the reduced coefficients
@@ -1729,12 +1801,12 @@ export function factor(ast) {
   // dispatch to a specialised factorer:
   //   - coreDegree 2, leading 1        → factorMonicQuadratic
   //   - coreDegree 2, leading > 1      → factorNonMonicQuadratic
-  //       (rational-root hunting via discriminant, session 023)
+  //       (rational-root hunting via discriminant)
   //   - coreDegree 3 with only leading
   //     and constant terms              → factorSumOrDiffOfCubes
-  //       (sum/difference-of-cubes identity, session 023)
+  //       (sum/difference-of-cubes identity)
   //   - coreDegree 3, general cubic     → factorCubicRationalRoot
-  //       (rational-root scan + synthetic division, session 024)
+  //       (rational-root scan + synthetic division)
   // Any other shape falls through to rebuildNumericPoly below.
   let coreFactored = null;
   if (allInt && coreCoefs.every(Number.isInteger)) {
@@ -1756,13 +1828,13 @@ export function factor(ast) {
         coreCoefs[3], coreCoefs[2], coreCoefs[1], coreCoefs[0], mainVar);
     } else if (coreDegree === 4 && coreCoefs[0] !== 0) {
       // General quartic — rational-root scan then recurse into the
-      // cubic factorer on the residue.  Session 025.
+      // cubic factorer on the residue.
       coreFactored = factorQuarticRationalRoot(
         coreCoefs[4], coreCoefs[3], coreCoefs[2], coreCoefs[1],
         coreCoefs[0], mainVar);
-      // Session 027: no rational root?  Try a product-of-quadratics
-      // factorization over the integers.  Catches X^4+X^2+1,
-      // X^4+4 (Sophie Germain), X^4+2X^2+1 = (X^2+1)^2, etc.
+      // No rational root?  Try a product-of-quadratics factorization
+      // over the integers.  Catches X^4+X^2+1, X^4+4 (Sophie Germain),
+      // X^4+2X^2+1 = (X^2+1)^2, etc.
       if (coreFactored === null) {
         coreFactored = factorQuarticAsProductOfQuadratics(
           coreCoefs[4], coreCoefs[3], coreCoefs[2], coreCoefs[1],
@@ -1770,8 +1842,8 @@ export function factor(ast) {
       }
     }
 
-    // Session 029 (item 2): sparse `a·X^(3k) + b` generalises the
-    // cubes identity to any multiple-of-3 exponent.  Catches
+    // Sparse `a·X^(3k) + b` generalises the cubes identity to any
+    // multiple-of-3 exponent.  Catches
     //   X^6 − 1, X^6 + 1, X^6 ± 8, X^9 ± 27, 8·X^6 + 1, …
     // and recurses so further-reducible sub-factors (X²−1, X⁴+X²+1)
     // land on their own specialised factorers.  Guarded to only fire
@@ -1899,10 +1971,9 @@ function factorMonicQuadratic(b, c, varName) {
  *  Ordering: r1 is the "larger" root (sqrtD ≥ 0); the (larger)(smaller)
  *  order matches how factorMonicQuadratic emits its factors.
  *
- *  Added session 023 as a companion to factorMonicQuadratic —
- *  now the core factoring table is:
- *     lead == 1  → factorMonicQuadratic  (session 021)
- *     lead > 1   → factorNonMonicQuadratic  (session 023)
+ *  Companion to factorMonicQuadratic — the core factoring table is:
+ *     lead == 1  → factorMonicQuadratic
+ *     lead > 1   → factorNonMonicQuadratic
  */
 function factorNonMonicQuadratic(a, b, c, varName) {
   if (!Number.isInteger(a) || !Number.isInteger(b) || !Number.isInteger(c)) {
@@ -1970,11 +2041,10 @@ function _lowestTerms(num, denom) {
  *  Returns null when either side isn't a perfect cube, leaving the
  *  polynomial to rebuild via rebuildNumericPoly in the caller.
  *
- *  Session 029 (item 2) extracted the generic `(Y, Y², Y³)` builder
- *  into `factorSumOrDiffOfCubesOfXk` below, letting this function
- *  delegate for k=1.  Keeps the exported entry point small and
- *  readable while sharing the identity-building code with the
- *  generalised X^(3k) path (`X^6 + 8`, `X^9 - 27`, etc.).
+ *  Delegates to `factorSumOrDiffOfCubesOfXk` below for k=1.  That
+ *  helper holds the generic `(Y, Y², Y³)` identity-building code and
+ *  is also reused by the generalised X^(3k) path (`X^6 + 8`,
+ *  `X^9 - 27`, etc.).
  */
 function factorSumOrDiffOfCubes(a, b, varName) {
   return factorSumOrDiffOfCubesOfXk(a, b, 1, varName);
@@ -1989,11 +2059,11 @@ function factorSumOrDiffOfCubes(a, b, varName) {
  *  is further factored to `(X−1)(X+1)` and the quadratic factors to
  *  `(X²+X+1)(X²−X+1)`, giving the full product.
  *
- *  Session 029 (item 2).  Dispatched from `factor()` when the core
- *  coefficient vector is `[e, 0, 0, …, 0, a]` with `e ≠ 0` and the
- *  gap has length 3k−1 (i.e. the only non-zero coefficients are at
- *  positions 0 and 3k).  Returns null when either side isn't a perfect
- *  cube; the caller falls back to rebuildNumericPoly.
+ *  Dispatched from `factor()` when the core coefficient vector is
+ *  `[e, 0, 0, …, 0, a]` with `e ≠ 0` and the gap has length 3k−1
+ *  (i.e. the only non-zero coefficients are at positions 0 and 3k).
+ *  Returns null when either side isn't a perfect cube; the caller
+ *  falls back to rebuildNumericPoly.
  */
 function factorSumOrDiffOfCubesOfXk(a, b, k, varName) {
   if (!Number.isInteger(a) || !Number.isInteger(b) ||
@@ -2035,7 +2105,7 @@ function factorSumOrDiffOfCubesOfXk(a, b, k, varName) {
   // (X²+X+1)(X²−X+1)`.  Recurse via the public `factor` entry point
   // to pull those apart.  The classic cubic branch (k=1) gets linear
   // factors (no recursion value) and an irreducible-over-ℚ quadratic,
-  // so we skip the recursion there to preserve session 023's output.
+  // so we skip the recursion there.
   if (k === 1) return Bin('*', linear, quad);
 
   const linFac  = factor(linear);
@@ -2094,9 +2164,9 @@ function _cubeRoot(n) {
  *  consistent enough that (X − 1)(X − 2)(X − 3) kinds of factorizations
  *  come out with the same-order-each-time linear factor first.
  *
- *  Added session 024.  Sits AFTER the cubes branch in the factor()
- *  dispatch: cubes handles `a·X³ + d` (coef[1] = coef[2] = 0), and
- *  this handles the general cubic with non-zero middle coefficients.
+ *  Sits AFTER the cubes branch in the factor() dispatch: cubes handles
+ *  `a·X³ + d` (coef[1] = coef[2] = 0), and this handles the general
+ *  cubic with non-zero middle coefficients.
  */
 function factorCubicRationalRoot(a, b, c, d, varName) {
   if (!Number.isInteger(a) || !Number.isInteger(b) ||
@@ -2338,8 +2408,8 @@ function factorQuarticRationalRoot(a, b, c, d, e, varName) {
  *
  *  Strategy:
  *    1. Enumerate ordered integer pairs (a₁, a₂) with a₁·a₂ = a and
- *       a₁ ≤ a₂.  Non-monic case (session 028) iterates pairs beyond
- *       (1, a); monic just hits (1, 1).
+ *       a₁ ≤ a₂.  Non-monic case iterates pairs beyond (1, a); monic
+ *       just hits (1, 1).
  *    2. For each (a₁, a₂), enumerate signed integer pairs (q, s) with
  *       q·s = e.
  *    3. Solve the residual 2×2 linear system in (p, r):
@@ -2353,12 +2423,12 @@ function factorQuarticRationalRoot(a, b, c, d, e, varName) {
  *  Preconditions: a, b, c, d, e are integers, a > 0.  Upstream
  *  `factor()` pulls out sign and content GCD before calling here.
  *
- *  Typical hits (session 027 monic):
+ *  Typical monic hits:
  *      X⁴ + X² + 1    = (X² + X + 1)(X² − X + 1)
  *      X⁴ + 4         = (X² − 2X + 2)(X² + 2X + 2)   (Sophie Germain)
  *      X⁴ + 2X² + 1   = (X² + 1)²                    (repeated quad)
  *
- *  New in session 028 (non-monic hits):
+ *  Non-monic hits:
  *      2·X⁴ + X² + 1  = (2·X² + 2·X + 1)(X² − X + 1)   [none known; illustrative]
  *      4·X⁴ + 1       = (2·X² + 2·X + 1)(2·X² − 2·X + 1)
  *      4·X⁴ − 4X² + 1 = (2·X² − 1)²
@@ -2417,8 +2487,8 @@ function factorQuarticAsProductOfQuadratics(a, b, c, d, e, varName) {
           Math.abs(b) + Math.abs(d) + Math.abs(c) + 10
         );
         // Scan outward from zero (0, +1, -1, +2, -2, ...) so the
-        // positive-first convention matches the session-027 monic
-        // output order: X⁴+X²+1 → (X²+X+1)(X²−X+1) not the reverse.
+        // positive-first convention matches the monic output order:
+        // X⁴+X²+1 → (X²+X+1)(X²−X+1) not the reverse.
         const tryPt = (pt) => {
           if ((b - a2 * pt) % a1 !== 0) return false;
           const rt = (b - a2 * pt) / a1;
@@ -2523,9 +2593,8 @@ function _positiveDivisors(n) {
 
 /** factorMonicOnly(coefs, power, mainVar, expanded) — fallback path
  *  for polynomials with non-numeric coefficients (e.g. symbolic
- *  scalars like `A*X^2 + B*X + C`).  Keeps the session-021 behavior
- *  intact: only the strict monic-quadratic case with integer b, c
- *  factors; everything else passes through. */
+ *  scalars like `A*X^2 + B*X + C`).  Only the strict monic-quadratic
+ *  case with integer b, c factors; everything else passes through. */
 function factorMonicOnly(coefs, power, mainVar, expanded) {
   if (power !== 2) return expanded;
   const a = numericCoefAt(coefs, 2);
@@ -2589,7 +2658,7 @@ function _gcd(a, b) {
  *
  *  Pull a signed integer content out of a product-tree.  `ast === k * rest`
  *  semantically, with `rest === null` meaning "1".  Used by `simplify()`'s
- *  fraction-reducer (session 027) to cancel common integer factors.
+ *  fraction-reducer to cancel common integer factors.
  *
  *  Recognised shapes:
  *    Num(n)              →  { k: n, rest: null }     (n must be an integer)
@@ -2705,7 +2774,7 @@ function numericCoefAt(coefs, power) {
 /* ==================================================================
    SUBST — substitute a value for a variable in an expression.
 
-   Session 021.  Two stack shapes supported:
+   Two stack shapes supported:
 
      3-arg:  expr 'var' value SUBST
        →  simplify( expr with Var varName replaced by `value` )
@@ -2779,8 +2848,8 @@ export function subst(expr, varName, valueAst) {
    original order by appending them unchanged.  We also preserve
    stable ordering: highest power first (classic textbook form).
 
-   Session 021.  Scoped to handle any integer power of the var;
-   linear and quadratic are the common cases.
+   Scoped to handle any integer power of the var; linear and quadratic
+   are the common cases.
 ================================================================== */
 
 /** collectByVar(ast, varName) — polynomial COLLECT entry.  Returns
@@ -2842,11 +2911,14 @@ export function collectByVar(ast, varName) {
 /* ==================================================================
    SOLVE — one-variable equation / polynomial root finder.
 
-   Session 025.  Current coverage:
+   Coverage:
 
      linear:     a·X + b = 0        →  X = -b/a
      quadratic:  a·X² + b·X + c = 0 →  up to two roots via the
                                         discriminant formula.
+     cubic / quartic / higher: rational-root scan via factor(),
+                  then numeric real-root bisection and Durand-Kerner
+                  for complex roots.
 
    Input can be a bare expression (treated as `expr = 0`) or an
    equation `Bin('=', L, R)` (we solve `L - R = 0`).  The `varName`
@@ -2857,9 +2929,7 @@ export function collectByVar(ast, varName) {
    equation `Bin('=', Var(varName), rootAst)`.  The caller (the SOLVE
    op in ops.js) wraps those in Symbolics and puts them into an RList.
    When the discriminant is negative we emit complex solutions as
-   `(re, im)` AST nodes — but complex AST support is a separate
-   thread; this pass returns an empty array for D < 0 and lets the
-   caller decide how to report it.
+   `re ± im·i` AST nodes using `Var('i')` as the imaginary unit.
 ================================================================== */
 
 /** solve(ast, varName) — return an array of solution ASTs for the
@@ -2930,9 +3000,9 @@ export function solve(ast, varName) {
         const kScaled     =  k / g;
         const denomScaled = twoA / g;
         // Imaginary atom: `i` when k=1,f=1 ; `k·i` when f=1 ; `√f·i`
-        // when k=1 ; otherwise `k·√f·i`.  Session 029 (item 1) moves
-        // `i` to the tail so the quadratic branch matches the D-K
-        // branch's `(reNum ± imNum·i)/d` shape for a unified grammar.
+        // when k=1 ; otherwise `k·√f·i`.  `i` sits at the tail so the
+        // quadratic branch matches the D-K branch's `(reNum ± imNum·i)/d`
+        // shape for a unified grammar.
         const I = Var('i');
         const imagAtom = (() => {
           if (f === 1 && kScaled === 1) return I;
@@ -3036,14 +3106,14 @@ export function solve(ast, varName) {
     return surdAsts;
   }
 
-  // Session 032: specialised branch for the *pure* cubic `a·X³ + c = 0`
-  // (no X² or X term).  The three cube roots of −c/a are r·{1, ω, ω²}
-  // with ω = (−1 + i√3)/2 — closed-form symbolic output without
-  // falling back to Durand-Kerner's 12-digit decimals for the
-  // conjugate pair.  We only fire this when the real cube root of
-  // −c/a reconstructs as sign·k·∛f/m (f > 1) — pure rationals like
-  // X³ − 8 still go through the factor() path below (which emits the
-  // integer root 2 without getting the complex pair wrong).
+  // Specialised branch for the *pure* cubic `a·X³ + c = 0` (no X² or
+  // X term).  The three cube roots of −c/a are r·{1, ω, ω²} with
+  // ω = (−1 + i√3)/2 — closed-form symbolic output without falling
+  // back to Durand-Kerner's 12-digit decimals for the conjugate pair.
+  // We only fire this when the real cube root of −c/a reconstructs as
+  // sign·k·∛f/m (f > 1) — pure rationals like X³ − 8 still go through
+  // the factor() path below (which emits the integer root 2 without
+  // getting the complex pair wrong).
   if (realPower === 3 && numCoefs[2] === 0 && numCoefs[1] === 0) {
     const a = numCoefs[3];
     const c = numCoefs[0];
@@ -3064,10 +3134,9 @@ export function solve(ast, varName) {
   }
 
   // Degree ≥ 3: defer to factor() — if factor() produces a product of
-  // linear factors we can read roots off it.  Pragmatic: a cubic with
-  // rational roots is now a solved problem (session 024), and the
-  // quartic landed this session.  So try factoring and see if the
-  // result is a product of linear / power factors.
+  // linear factors we can read roots off it.  Cubic and quartic with
+  // rational roots are handled by factor(); try that first and see if
+  // the result is a product of linear / power factors.
   if (realPower >= 3) {
     const coreCoefs = numCoefs.slice(0, realPower + 1);
     const rebuilt = rebuildNumericPoly(coreCoefs, realPower, varName);
@@ -3081,11 +3150,11 @@ export function solve(ast, varName) {
       return exactRoots.map(r => Bin('=', Var(varName), r));
     }
 
-    // Fallback (session 026): numeric real-root scan.  Either
-    // _rootsFromFactored couldn't parse the shape (returned null) or
-    // FACTOR left an irreducible residue (some roots are irrational or
-    // complex — cases like X^4 - 2, X^3 + X - 1, 5*X^3 - 3*X + 1, ...).
-    // We find every real root numerically via sign-change bisection +
+    // Fallback: numeric real-root scan.  Either _rootsFromFactored
+    // couldn't parse the shape (returned null) or FACTOR left an
+    // irreducible residue (some roots are irrational or complex —
+    // cases like X^4 - 2, X^3 + X - 1, 5*X^3 - 3*X + 1, ...).  We
+    // find every real root numerically via sign-change bisection +
     // Newton polish, then merge with the exact roots we already have,
     // deduping on proximity.
     const merged   = exactRoots ? [...exactRoots] : [];
@@ -3097,16 +3166,16 @@ export function solve(ast, varName) {
       known.push(r);
     }
 
-    // Session 027: Durand-Kerner pass for complex roots.  If we still
-    // haven't found `realPower` roots (typical for an odd cubic with a
+    // Durand-Kerner pass for complex roots.  If we still haven't
+    // found `realPower` roots (typical for an odd cubic with a
     // single real root + a conjugate pair, or a quartic with no
     // real roots at all), run the complex solver and pick up any roots
     // with non-negligible imaginary part.  Real roots from Durand-
     // Kerner are ignored here — the bisection pass above is more
     // reliable on the real axis.
     //
-    // Session 028 (item 2): deflate the polynomial against each real
-    // root we already have before running D-K.  This has two wins:
+    // Deflate the polynomial against each real root we already have
+    // before running D-K.  This has two wins:
     //   1. D-K works on a smaller (degree − #real-roots) polynomial,
     //      so convergence is faster and better conditioned.
     //   2. We don't have to filter out spurious near-real outputs from
@@ -3144,9 +3213,9 @@ export function solve(ast, varName) {
  *  If the residual is too large the root isn't ours and we return null
  *  so the caller can skip deflation for that root.
  *
- *  Session 028 (item 2): the Durand-Kerner pass is only interested in
- *  non-real roots, so deflating out real roots found by the earlier
- *  passes tightens convergence.
+ *  The Durand-Kerner pass is only interested in non-real roots, so
+ *  deflating out real roots found by the earlier passes tightens
+ *  convergence.
  */
 function _deflatePoly(coefs, root) {
   const n = coefs.length - 1;
@@ -3181,8 +3250,8 @@ function _deflatePoly(coefs, root) {
  *      trade-off.  Rational tangent roots are picked up by the exact
  *      FACTOR pass anyway, which runs first.
  *    - Complex roots are intentionally not sought here — the exact
- *      quadratic branch handles D<0 (session 026), and a separate
- *      Durand-Kerner / Laguerre pass is the obvious future extension.
+ *      quadratic branch handles D<0, and the Durand-Kerner pass above
+ *      handles higher-degree complex roots.
  */
 function _numericRealRoots(coefs) {
   const n = coefs.length - 1;
@@ -3246,13 +3315,13 @@ function _numericRealRoots(coefs) {
 function _numericRootAst(r) {
   const rounded = Math.round(r);
   if (Math.abs(r - rounded) < 1e-10) return Num(rounded);
-  // Session 031: try a closed-form reconstruction (rational / square-
-  // root surd / cube root) before falling back to the 12-digit decimal.
-  // This is what turns `solve(X^3 − 2)`'s real root from
-  // `1.25992104989` into `XROOT(2, 3)`.  _scalarClosedForm rejects
-  // false positives via a tight `Math.abs(reconstructed - r) < tol`
-  // check, so pure transcendentals (e.g. roots of `X^3 + X − 1`) are
-  // left alone and still emit the numeric decimal.
+  // Try a closed-form reconstruction (rational / square-root surd /
+  // cube root) before falling back to the 12-digit decimal.  This is
+  // what turns `solve(X^3 − 2)`'s real root from `1.25992104989` into
+  // `XROOT(2, 3)`.  _scalarClosedForm rejects false positives via a
+  // tight `Math.abs(reconstructed - r) < tol` check, so pure
+  // transcendentals (e.g. roots of `X^3 + X − 1`) are left alone and
+  // still emit the numeric decimal.
   const closed = _scalarClosedForm(r);
   if (closed) return closed;
   // toPrecision may return scientific notation — keep whichever the
@@ -3364,9 +3433,9 @@ function _numericComplexRoots(coefs) {
  *  splitting |x| and the sign separately so Math.floor never drifts
  *  across the zero.  Returns null for NaN/Infinity.
  *
- *  Session 028 (item 1): fuels closed-form surd detection on complex
- *  roots emitted by Durand-Kerner — `re² = p/q` gives us the
- *  ingredients to recover `re = k·√f/m`.
+ *  Fuels closed-form surd detection on complex roots emitted by
+ *  Durand-Kerner — `re² = p/q` gives us the ingredients to recover
+ *  `re = k·√f/m`.
  */
 function _rationalReconstruct(x, maxDen = 100, tol = 1e-9) {
   if (!isFinite(x)) return null;
@@ -3450,11 +3519,11 @@ function _surdAst(sign, k, f, m) {
 /** _cubeRootReconstruct(x, maxDen, tol) → {sign, k, f, m} with
  *  x ≈ sign · k · ∛f / m, f cube-free and > 1, gcd(k, m) = 1, or null.
  *
- *  Session 031: cube-root counterpart of `_surdReconstruct`.  Covers the
- *  real root of `X^3 − k` (= ∛k) and the broader k·∛f/m family that
- *  shows up when a rational polynomial has a lone rational cube as its
- *  constant term after scaling.  We only return a match when the cube
- *  actually lands on a rational with modest numerator/denominator — so
+ *  Cube-root counterpart of `_surdReconstruct`.  Covers the real root
+ *  of `X^3 − k` (= ∛k) and the broader k·∛f/m family that shows up
+ *  when a rational polynomial has a lone rational cube as its constant
+ *  term after scaling.  We only return a match when the cube actually
+ *  lands on a rational with modest numerator/denominator — so
  *  transcendentals / higher-order surds don't accidentally pass.
  *
  *  Algorithm: x³ must reconstruct to a rational N/D.  Then
@@ -3497,9 +3566,8 @@ function _cubeRootReconstruct(x, maxDen = 30, tol = 1e-9) {
  *  Assumes f > 1 and cube-free, k ≥ 1, m ≥ 1, gcd(k, m) = 1.
  *
  *  Uses HP50's `XROOT(arg, 3)` spelling for ∛ (consistent with the
- *  XROOT stack op registered in session 030).  The cube-root radical
- *  itself is always positive; the `sign` parameter wraps the final
- *  result in a Neg when negative.
+ *  XROOT stack op).  The cube-root radical itself is always positive;
+ *  the `sign` parameter wraps the final result in a Neg when negative.
  */
 function _cubeRootAst(sign, k, f, m) {
   const radical = Fn('XROOT', [Num(f), Num(3)]);
@@ -3523,8 +3591,6 @@ function _cubeRootAst(sign, k, f, m) {
  *  with collapses for aN ∈ {1, −1}.  Mirrors the quadratic branch's
  *  `(nb ± imagAtom)/denom` grammar so downstream formatters don't
  *  need a new case.
- *
- *  Session 032.
  */
 function _cubicComplexRootsFromSurd(sign, k, f, m) {
   const alphaNum = sign * k;
@@ -3561,8 +3627,8 @@ function _cubicComplexRootsFromSurd(sign, k, f, m) {
  *  x (rational, k·√f/m, or k·∛f/m), or null when no simple form fits.
  *  Preference order: Integer / pure rational > square-root surd > cube-root.
  *
- *  Session 031: cube-root fallback added so `solve(X^3 − k)`'s real root
- *  prints exactly as `XROOT(k, 3)` rather than a 12-digit approximation.
+ *  The cube-root fallback lets `solve(X^3 − k)`'s real root print
+ *  exactly as `XROOT(k, 3)` rather than a 12-digit approximation.
  */
 function _scalarClosedForm(x, tol = 1e-9) {
   const rat = _rationalReconstruct(x, 100, tol);
@@ -3576,24 +3642,24 @@ function _scalarClosedForm(x, tol = 1e-9) {
 
 /** _complexRootAst(re, im) — build `re + im·i` as an AST.
  *
- *  Session 028 (item 1): first try closed-form reconstruction of both
- *  components (rational or `k·√f/m` surd).  When both fit, emit the
- *  exact closed form so e.g. `X^3 + 1` prints `1/2 + (√3/2)·i` instead
- *  of `0.5 + 0.866025403784·i`.  When either component is irreducibly
+ *  First try closed-form reconstruction of both components (rational
+ *  or `k·√f/m` surd).  When both fit, emit the exact closed form so
+ *  e.g. `X^3 + 1` prints `1/2 + (√3/2)·i` instead of
+ *  `0.5 + 0.866025403784·i`.  When either component is irreducibly
  *  irrational (e.g. `2^(1/4)` from `X^4 - 2`'s pure-imaginary roots),
- *  fall back to the session-027 numeric shape.
+ *  fall back to the numeric shape.
  */
 function _complexRootAst(re, im) {
   const Ivar = Var('i');
 
-  // --- Closed-form attempt (session 028) ---
+  // --- Closed-form attempt ---
   const reAst = _scalarClosedForm(re);
   const imAst = _scalarClosedForm(im);
   if (reAst && imAst) {
     return _assembleReImAst(reAst, imAst, re, im, Ivar);
   }
 
-  // --- Numeric fallback (session 027) ---
+  // --- Numeric fallback ---
   const snap = x => {
     const rd = Math.round(x);
     if (Math.abs(x - rd) < 1e-10) return rd;
@@ -3627,8 +3693,8 @@ function _complexRootAst(re, im) {
  *  `denom` is a positive integer.  `sign` is +1 or -1 so the caller can
  *  reconstruct the signed value as `sign * num / denom`.
  *
- *  Session 029 (item 1):  lets `_complexRootAst` unify `1/2 ± √3/2·i`
- *  into `(1 ± √3·i)/2` when both components land on the same denom.
+ *  Lets `_complexRootAst` unify `1/2 ± √3/2·i` into `(1 ± √3·i)/2`
+ *  when both components land on the same denom.
  */
 function _extractClosedFormParts(ast) {
   if (!ast) return null;
@@ -3667,11 +3733,12 @@ function _extractClosedFormParts(ast) {
  *    - im ≈ ±1                  →  collapse  1·i → i, -1·i → -i.
  *    - im < 0                   →  emit `re - |im|·i` rather than
  *      `re + (-|im|)·i` for a readable diff shape.
- *    - Session 029 (item 1):  when both reAst and imAst decompose to
- *      closed-form shapes with the same integer denominator > 1,
- *      repackage as `(reNum ± imNum·i) / d`.  Matches the quadratic
- *      branch's output shape for `X^2 + X + 1` and unifies the visual
- *      grammar across the quadratic / cubic / higher-degree branches.
+ *    - Common-denominator packaging: when both reAst and imAst
+ *      decompose to closed-form shapes with the same integer
+ *      denominator > 1, repackage as `(reNum ± imNum·i) / d`.  Matches
+ *      the quadratic branch's output shape for `X^2 + X + 1` and
+ *      unifies the visual grammar across the quadratic / cubic /
+ *      higher-degree branches.
  */
 function _assembleReImAst(reAst, imAst, reNumeric, imNumeric, Ivar) {
   const reIsZero = Math.abs(reNumeric) < 1e-12;
@@ -3679,7 +3746,7 @@ function _assembleReImAst(reAst, imAst, reNumeric, imNumeric, Ivar) {
   if (reIsZero && imIsZero) return Num(0);
   if (imIsZero) return reAst;
 
-  // --- Session 029: common-denominator packaging ---
+  // --- Common-denominator packaging ---
   if (!reIsZero) {
     const rP = _extractClosedFormParts(reAst);
     const iP = _extractClosedFormParts(imAst);

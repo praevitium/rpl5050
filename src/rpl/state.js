@@ -2,8 +2,7 @@
    Global calculator modes / flags.
 
    This module owns cross-cutting state that the RPL core, UI display
-   and keyboard all need to read or mutate in lockstep — angle mode
-   today; number display mode and flags in later sessions.
+   and keyboard all need to read or mutate in lockstep.
 
    Keep it small and synchronous.  Anything that should react to
    changes can subscribe().  Ops mutate via the `set*` helpers so the
@@ -53,64 +52,62 @@ export const state = {
   // the current wordsize (HP50 convention — HEX pads to ceil(ws/4)
   // hex digits, BIN to ws digits, etc.).  The `null` value — "each
   // BinInt renders in its own stored base" — is still reachable via
-  // CLB for users who want session-014 per-value display.
+  // CLB for users who want per-value display.
   binaryBase: 'd',
   // Textbook (pretty-print) display mode for Symbolic values on the
   // stack.  When true, display.renderStack swaps formatStackTop for
   // astToSvg on any Symbolic row so the user sees textbook-style 2D
   // math (fractions, exponents, scaled parens).  When false, stack
-  // rendering is the pre-session-019 flat text.  Other types (Real,
-  // Integer, BinInt, Complex, List, …) always render as flat text —
-  // textbookMode only affects Symbolic.  Added session 019; mirrors
-  // HP50 system flag -80 semantically.  Default is ON — 2D rendering
-  // is the friendlier first-boot experience; users who want flat text
-  // can press FLAT (or toggle the MODES menu FLT→TXT softkey).
+  // rendering is flat text.  Other types (Real, Integer, BinInt,
+  // Complex, List, …) always render as flat text — textbookMode only
+  // affects Symbolic.  Mirrors HP50 system flag -80 semantically.
+  // Default is ON — 2D rendering is the friendlier first-boot
+  // experience; users who want flat text can press FLAT (or toggle
+  // the MODES menu FLT→TXT softkey).
   textbookMode: true,
-  // APPROX vs EXACT numeric-eval mode.  Session 032: added as the
-  // scaffolding for the HP50 flag -105 ("_approx_" when SET,
-  // "_exact_" when CLEAR).  When `true` (APPROX), EVAL folds Fn(...)
-  // nodes aggressively to 12-digit decimals — `SQRT(2) → 1.41421356237`.
-  // When `false` (EXACT), EVAL only folds Fn(...) when the result is
-  // effectively an integer AND every input is an integer — so
-  // `SQRT(9) → 3` still folds but `SQRT(2)` stays symbolic.  The
-  // `→NUM` op (ENTER SHIFT-R) forces APPROX for the duration of one
-  // EVAL and restores whatever was previously set.
+  // APPROX vs EXACT numeric-eval mode.  Mirrors HP50 flag -105
+  // ("_approx_" when SET, "_exact_" when CLEAR).  When `true`
+  // (APPROX), EVAL folds Fn(...) nodes aggressively to 12-digit
+  // decimals — `SQRT(2) → 1.41421356237`.  When `false` (EXACT),
+  // EVAL only folds Fn(...) when the result is effectively an
+  // integer AND every input is an integer — so `SQRT(9) → 3` still
+  // folds but `SQRT(2)` stays symbolic.  The `→NUM` op (ENTER
+  // SHIFT-R) forces APPROX for the duration of one EVAL and restores
+  // whatever was set before the call.
   //
-  // Session 035: default flipped to EXACT (`false`) to match the real
-  // HP50 — flag -105 is CLEAR at boot on a factory-reset unit.  Tests
-  // that assume APPROX fold decimals must setApproxMode(true) up front.
-  // The MODES menu (session 020) now exposes an EXA↔APX toggle so
-  // users can flip from the keypad without alpha-typing the op name.
+  // Default is EXACT (`false`) to match the real HP50 — flag -105 is
+  // CLEAR at boot on a factory-reset unit.  Tests that assume APPROX
+  // fold decimals must setApproxMode(true) up front.  The MODES menu
+  // exposes an EXA↔APX toggle so users can flip from the keypad
+  // without alpha-typing the op name.
   approxMode: false,
-  // User / system flag storage (session 040).  A single Set<number>
-  // keyed by the flag number; positive numbers address user flags
-  // (1..128), negatives address system flags (-1..-128) per HP50
-  // convention.  The ops SF/CF/FS?/FC?/FS?C/FC?C manipulate this set.
-  // Zero is not a legal flag number — ops reject it as Bad argument.
-  // No cross-cutting behavior is yet wired to any specific system
-  // flag number; the Set is the bookkeeping surface that future
-  // features (MODES-menu toggles, SYMB IMPL, etc.) can consult.
+  // User / system flag storage.  A single Set<number> keyed by the
+  // flag number; positive numbers address user flags (1..128),
+  // negatives address system flags (-1..-128) per HP50 convention.
+  // The ops SF/CF/FS?/FC?/FS?C/FC?C manipulate this set.  Zero is
+  // not a legal flag number — ops reject it as Bad argument.  No
+  // cross-cutting behavior is yet wired to any specific system flag
+  // number; the Set is the bookkeeping surface that future features
+  // (MODES-menu toggles, SYMB IMPL, etc.) can consult.
   userFlags: new Set(),
-  // CMPLX mode (session 054).  Mirrors HP50 system flag -103
-  // ("_Complex_" when SET, "_Real_" when CLEAR).  When ON, ops whose
-  // real path would produce NaN or an out-of-domain error (LN/LOG on
-  // negative reals, ACOS/ASIN on |x|>1) return the principal-branch
-  // Complex result instead.  When OFF (the boot default), those same
-  // inputs throw "Bad argument value" — matching a factory-reset
-  // HP50.  SQRT and the inverse hyperbolics already lift to Complex
-  // unconditionally (session-045 decision); CMPLX doesn't affect
-  // them.  Toggled by the `CMPLX` op (session 054), observable via
-  // `CMPLX?`.
+  // CMPLX mode.  Mirrors HP50 system flag -103 ("_Complex_" when
+  // SET, "_Real_" when CLEAR).  When ON, ops whose real path would
+  // produce NaN or an out-of-domain error (LN/LOG on negative reals,
+  // ACOS/ASIN on |x|>1) return the principal-branch Complex result
+  // instead.  When OFF (the boot default), those same inputs throw
+  // "Bad argument value" — matching a factory-reset HP50.  SQRT and
+  // the inverse hyperbolics already lift to Complex unconditionally;
+  // CMPLX doesn't affect them.  Toggled by the `CMPLX` op, observable
+  // via `CMPLX?`.
   complexMode: false,
-  // Last-fit model (session 058).  One of `{ kind, a, b }` with
-  // `kind` in `'LIN' | 'LOG' | 'EXP' | 'PWR'` and `a`, `b` plain JS
-  // Numbers — or `null` if no regression has been run yet.  Written
-  // by LINFIT / LOGFIT / EXPFIT / PWRFIT (the five ops that publish
-  // a fitted model), consumed by PREDV / PREDX to evaluate the
-  // model at a scalar without the user having to re-type the
-  // closed-form Symbolic.  BESTFIT does NOT publish a model — it
-  // only reports the family name; matches the HP50 firmware rule
-  // that BESTFIT is diagnostic, not computational.
+  // Last-fit model.  One of `{ kind, a, b }` with `kind` in
+  // `'LIN' | 'LOG' | 'EXP' | 'PWR'` and `a`, `b` plain JS Numbers —
+  // or `null` if no regression has been run yet.  Written by LINFIT
+  // / LOGFIT / EXPFIT / PWRFIT, consumed by PREDV / PREDX to
+  // evaluate the model at a scalar without the user having to
+  // re-type the closed-form Symbolic.  BESTFIT does NOT publish a
+  // model — it only reports the family name; matches the HP50
+  // firmware rule that BESTFIT is diagnostic, not computational.
   //
   // Stored as plain Numbers, not Real/Integer wrappers — the model
   // is an internal scratch slot, not a user-addressable variable.
@@ -118,10 +115,10 @@ export const state = {
   // slot is NOT persisted across reloads; running any *FIT op
   // after a reload re-establishes it.
   lastFitModel: null,
-  // CAS "main variable" slot (session 076 — VX / SVX).  HP50 firmware
-  // stores a single CAS directory variable named `VX` that every
-  // CAS-aware op consults when it needs to pick a canonical variable
-  // against which to operate: DERVX, INTVX, LAPLACE, ILAP, PREVAL on
+  // CAS "main variable" slot (VX / SVX).  HP50 firmware stores a
+  // single CAS directory variable named `VX` that every CAS-aware
+  // op consults when it needs to pick a canonical variable against
+  // which to operate: DERVX, INTVX, LAPLACE, ILAP, PREVAL on
   // multi-free-variable input, TABVAL, TAYLOR0, etc.  We store it
   // here as a plain uppercase-ish string (Name.id).  Default is `'X'`
   // — matches the HP50 factory default.  Written by the SVX op and
@@ -131,17 +128,29 @@ export const state = {
   // optional `casVx` field on decode so a future version bump is
   // backwards-compatible.
   casVx: 'X',
-  // Suspended-execution slot (session 073 — HALT/CONT/KILL pilot).
-  // Populated by HALT when it suspends the currently-running program.
-  // Shape: { tokens: Array, ip: number, length: number } or null.
+  // Suspended-execution slots — a LIFO stack of halted records.
+  // Each record shape is
+  //   { tokens: Array, ip: number, length: number }
   //   `tokens`   — the program's token list at the HALT point
   //   `ip`       — index of the next token to execute on CONT
   //   `length`   — upper bound (cached `tokens.length` at HALT time)
-  // Read by the CONT op to resume; cleared by KILL.  Currently the
-  // pilot only captures HALTs at the top level of a Program body
-  // (no structured control flow depth, no active compiled-local
-  // frame) — future RunState work will generalise this.
+  //
+  // `halted` carries the *top* of the LIFO stack (the most recently
+  // suspended program) or `null` when no program is currently
+  // suspended.  UI subscribers and tests that check `state.halted
+  // !== null` continue to work unchanged.  `haltedStack` carries the
+  // full stack in push order (oldest at index 0, most-recent at
+  // index haltedStack.length - 1); it is populated by `setHalted`
+  // and drained by `clearHalted`.
+  //
+  // HALT only fires at depth 0 of a Program body with no compiled-
+  // local frame active.  Multi-slot matters when a user runs a
+  // second program from the keypad while an earlier one is still
+  // halted — CONT then resumes the newer halt first, and the older
+  // halt remains on the stack to be CONT'd next.  HP50 AUR p.2-135
+  // describes this stack-of-halted-programs behaviour.
   halted: null,
+  haltedStack: [],
 };
 
 function _emit() {
@@ -377,20 +386,30 @@ export function clearLastFitModel() {
   _emit();
 }
 
-/* ---------------------- halted-program slot -------------------------
-   Session 073 — HALT/CONT/KILL substrate pilot.  A single slot that
-   carries the suspended program's token stream + instruction pointer
-   between the HALT that captured it and the CONT that resumes it.
+/* ---------------------- halted-program stack ------------------------
+   HALT/CONT/KILL substrate.  `state.halted` is a convenience view of
+   the stack's top, or `null` when the stack is empty.  `haltedStack`
+   is the full LIFO stack; each record is a plain object with fields
+   `{tokens, ip, length}` (see the `state.halted` comment above).
 
-   The slot is a plain object with fields `{tokens, ip, length}` (see
-   the `state.halted` comment above) or `null` when no program is
-   currently suspended.  Only one suspension is tracked at a time —
-   HP50 supports a stack of halted programs but the pilot keeps it to
-   one.  Setting the slot emits a state-change so the UI can render
-   a status annunciator if desired.
+   HP50 AUR p.2-135 describes a stack of halted programs — CONT
+   resumes the most-recently suspended program, and a prior suspension
+   remains on the stack to be CONT'd next.  The single-slot observable
+   surface (`state.halted`) stays reachable for subscribers that only
+   care about "is anything halted?".
+
+   Getters/setters:
+     setHalted(h)    — push h on the stack; state.halted = h.  Emits.
+     getHalted()     — return the top (= state.halted), or null.
+     clearHalted()   — pop one record.  state.halted follows the top
+                       of the post-pop stack.  Emits if the top changed.
+     clearAllHalted()— drain the whole stack.  Used by resetHome().
+     haltedDepth()   — number of currently-halted programs on the stack
+                       (zero = no suspensions).
    ------------------------------------------------------------------ */
 
 export function setHalted(h) {
+  state.haltedStack.push(h);
   state.halted = h;
   _emit();
 }
@@ -398,17 +417,30 @@ export function setHalted(h) {
 export function getHalted() { return state.halted; }
 
 export function clearHalted() {
-  if (state.halted === null) return;
+  if (state.haltedStack.length === 0) return;
+  state.haltedStack.pop();
+  const top = state.haltedStack.length === 0
+    ? null
+    : state.haltedStack[state.haltedStack.length - 1];
+  state.halted = top;
+  _emit();
+}
+
+export function clearAllHalted() {
+  if (state.haltedStack.length === 0 && state.halted === null) return;
+  state.haltedStack.length = 0;
   state.halted = null;
   _emit();
 }
 
+export function haltedDepth() { return state.haltedStack.length; }
+
 /* ----------------------- CAS main variable (VX) ---------------------
-   Session 076.  Single string slot holding the Name.id of the current
-   CAS main variable.  The VX / SVX ops are thin wrappers around these
-   getters and setters — see src/rpl/ops.js.  LAPLACE, ILAP, PREVAL
-   (and future DERVX / INTVX / TABVAL / TAYLOR0) fall back to this
-   value when their input is multi-free-variable or constant.
+   Single string slot holding the Name.id of the current CAS main
+   variable.  The VX / SVX ops are thin wrappers around these getters
+   and setters — see src/rpl/ops.js.  LAPLACE, ILAP, PREVAL (and
+   future DERVX / INTVX / TABVAL / TAYLOR0) fall back to this value
+   when their input is multi-free-variable or constant.
 
    The name must be a non-empty string of characters a name can carry —
    we accept anything the Name() type accepts at construction time and
@@ -445,9 +477,8 @@ export function resetCasVx() {
 
    No specific system flag has cross-cutting side-effects yet; the set
    is pure bookkeeping so user programs can set, test, and branch on
-   flags without erroring out.  Future sessions wire individual flag
-   numbers (e.g. flag -40 "clock display") to their features without
-   changing this API.
+   flags without erroring out.  Features that need to react to a
+   specific flag can consult this Set without changing the API.
 
    _validFlag() coerces the number and normalises it to an integer in
    [-128, -1] ∪ [1, 128].  Invalid values throw so ops can surface a
@@ -503,7 +534,7 @@ export function resetBinaryState() {
    LCG (different constants, but the API contract is identical: RDZ 0
    re-seeds from a clock source, RDZ n with non-zero n picks a
    deterministic seed).  One PRNG state is shared by all three ops so
-   `RDZ 12345 RAND RAND` is reproducible across sessions, and
+   `RDZ 12345 RAND RAND` is reproducible across page reloads, and
    `RDZ 12345 { 2 3 } RANM` produces the same matrix every time.
 
    Default boot seed: PRNG_DEFAULT (a fixed value) — matches the
@@ -628,21 +659,19 @@ export function varPurge(id) {
 }
 
 /** A sorted list of variable name-ids in the current directory.
- *  The sort is a stable alphabetical ordering of the ids as they
- *  appear in the current directory.  The HP50 hardware returns names
- *  in the directory's internal (insertion / ORDER-arranged) order; our
- *  `varList` is used both by VARS (which wants the internal order) and
- *  by UI callers that already sort locally — session 047 keeps the
- *  sorted view here and adds `varOrder()` below for the raw internal
- *  order so ORDER can reshape it. */
+ *  The sort is a stable alphabetical ordering of the ids.  The HP50
+ *  hardware returns names in the directory's internal (insertion /
+ *  ORDER-arranged) order; this sorted view is for UI callers that
+ *  want alphabetical display.  VARS itself uses `varOrder()` below
+ *  so ORDER's reshuffle is visible on the stack. */
 export function varList() {
   return [...state.current.entries.keys()].sort();
 }
 
 /** The internal (insertion / ORDER-set) order of variable name-ids in
  *  the current directory — no sort.  ORDER mutates this sequence.
- *  VARS now pushes in this order (session 047) so ORDER's reshuffle is
- *  visible on the stack. */
+ *  VARS pushes in this order so ORDER's reshuffle is visible on the
+ *  stack. */
 export function varOrder() {
   return [...state.current.entries.keys()];
 }
@@ -692,17 +721,16 @@ export function currentPath() {
  *  snapping `current` back to HOME.  A resetHome() in one test must not
  *  leak subdirectory state into the next.
  *
- *  Session 077: also clears the suspended-execution slot so a HALT'd
- *  program from the previous test cannot be CONT'd into from the next.
- *  Matches the "clean slate" intent of resetHome — a stale halted slot
- *  is a subtle hazard for the HALT/CONT substrate (session 075 filed
- *  a single-reproduction flake of exactly that shape against this
- *  lane).  resetHome() already emits once via _home; clearHalted()
- *  emits again only if state.halted was non-null. */
+ *  Also drains the suspended-execution stack so a HALT'd program from
+ *  the previous test cannot be CONT'd into from the next.  Matches the
+ *  "clean slate" intent of resetHome — a stale halted slot is a subtle
+ *  hazard for the HALT/CONT substrate.  Both the scalar `state.halted`
+ *  view and the backing `haltedStack` are cleared so no record survives. */
 export function resetHome() {
   _home.entries.clear();
   state.current = _home;
-  state.halted = null;                   // session 077: no-emit direct reset
+  state.halted = null;                   // no-emit direct reset
+  state.haltedStack.length = 0;          // drain the LIFO too
   _emit();
 }
 
@@ -805,10 +833,10 @@ const _ERROR_NUMBERS = Object.freeze({
   // ±Infinity which RPL doesn't carry as a number.
   'Division by zero':     0x303,
   'Infinite result':      0x305,
-  // Directory-protection errors (session 013) — codes chosen to fit
-  // the HP50 "variable / directory" error family without claiming
-  // specific manual entries; swap in canonical codes once the
-  // Advanced User's Reference §D is spot-checked.
+  // Directory-protection errors — codes chosen to fit the HP50
+  // "variable / directory" error family without claiming specific
+  // manual entries; swap in canonical codes once the Advanced User's
+  // Reference §D is spot-checked.
   'Name conflict':        0x501,
   'Directory not allowed':0x502,
   'Directory not empty':  0x503,
@@ -863,8 +891,7 @@ export function restoreLastError(rec) {
 }
 
 /* ================================================================
-   Multi-level UNDO for VARIABLE + DIRECTORY state
-   (session 032 introduced, session 037 upgraded).
+   Multi-level UNDO for VARIABLE + DIRECTORY state.
 
    Companion to Stack's saveForUndo/undo/redo/hasUndo/hasRedo/
    clearUndo.  Snapshots the HOME tree (deep clone: directories cloned,

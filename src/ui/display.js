@@ -20,19 +20,19 @@ export class Display {
     // The App layer owns the clamp; renderStack just uses whatever
     // offset is passed in.
     this.stackScroll = 0;
-    // Session 037 — interactive stack visual cursor.  null means no
-    // level is selected (normal rendering); otherwise the 1-based
-    // level is highlighted with `.stack-row.selected`.
+    // Interactive stack visual cursor.  null means no level is
+    // selected (normal rendering); otherwise the 1-based level is
+    // highlighted with `.stack-row.selected`.
     this.selectedLevel = null;
-    // Session 037 — optional click/hover callbacks injected by App.
-    // Left null by default so the Display stays standalone for tests.
+    // Optional click/hover callbacks injected by App.  Left null by
+    // default so the Display stays standalone for tests.
     this.onStackRowClick    = null;  // (level:number) => void
     this.onIndicatorClick   = null;  // (id:string) => void
     this.onPathSegmentClick = null;  // (index:number) => void
     this._installInteractiveHandlers();
   }
 
-  /* -------- session 037: interactive display event wiring --------
+  /* -------- interactive display event wiring --------
      The Display owns the DOM for the LCD and is the cheapest place
      to attach click / hover listeners.  We use event delegation so
      the handlers survive re-renders of stack rows and annunciators.
@@ -111,8 +111,8 @@ export class Display {
       // a DOM walk, and anchors CSS :hover and .selected styling.
       row.dataset.level = String(level);
       if (this.selectedLevel === level) row.classList.add('selected');
-      // Tooltip: session 037 — hover reveals the level number and a
-      // hint that clicking echoes the value to the entry line.
+      // Tooltip: hover reveals the level number and a hint that
+      // clicking echoes the value to the entry line.
       row.title = `Stack level ${level} — click to copy to the command line`;
       // `.value` is a flex container that right-aligns its inner
       // `.value-text` span.  The inner span owns overflow / ellipsis,
@@ -128,9 +128,9 @@ export class Display {
       // (no stack context) is still used from inside the formatter
       // for nested program / list / vector / matrix / tagged cells.
       //
-      // Textbook mode (session 019): when calcState.textbookMode is on
-      // AND the value is a Symbolic, swap the flat-text rendering for
-      // the SVG pretty-print from src/rpl/pretty.js.  Everything else
+      // Textbook mode: when calcState.textbookMode is on AND the
+      // value is a Symbolic, swap the flat-text rendering for the
+      // SVG pretty-print from src/rpl/pretty.js.  Everything else
       // (Real, Integer, BinInt, Complex, List, …) keeps flat text —
       // textbook only affects algebraic expressions.
       const cell = row.querySelector('.value');
@@ -202,8 +202,8 @@ export class Display {
     const el = this.statusLine.querySelector(`#ann-${id}`);
     if (!el) return;
     el.classList.toggle('on', !!on);
-    // Session 037: attach a helpful tooltip on first use.  The map below
-    // keeps copy in one place so every annunciator has a short hint the
+    // Attach a helpful tooltip on first use.  The map below keeps
+    // copy in one place so every annunciator has a short hint the
     // user sees on hover (and the App layer can still click to act).
     if (!el.title) {
       const hints = {
@@ -219,7 +219,7 @@ export class Display {
 
   /** Update the angle-mode annunciator (DEG/RAD/GRD).  The annunciator
    *  stays visible — HP50 always shows the active angle mode.
-   *  Session 037: tooltip advertises the click-to-cycle behavior. */
+   *  Tooltip advertises the click-to-cycle behavior. */
   setAngleMode(mode) {
     const el = this.statusLine.querySelector('#ann-angle');
     if (!el) return;
@@ -233,10 +233,9 @@ export class Display {
    *  an `=` glyph; when SET ("APPROX") results fold to decimals and the
    *  annunciator flips to `~`.  Always lit — the user should be able
    *  to glance at the LCD and tell which mode they're in without
-   *  opening the MODES menu.  Added session 035 to kill the class of
-   *  confusion where the `=` glyph on the keypad made users believe
-   *  EXACT was active when in fact the calculator was booting in
-   *  APPROX. */
+   *  opening the MODES menu.  The annunciator disambiguates the `=`
+   *  glyph on the keypad so users don't confuse it with EXACT when
+   *  the calculator is booting in APPROX. */
   setApproxAnnunciator(approx) {
     const el = this.statusLine?.querySelector('#ann-approx');
     if (!el) return;
@@ -287,7 +286,7 @@ export class Display {
   /** Update the directory-path annunciator — `{ HOME }` at startup;
    *  `{ HOME A }` once subdirs land.  Accepts an array of segments.
    *
-   *  Session 037: each segment is wrapped in a clickable
+   *  Each segment is wrapped in a clickable
    *  `<span class="path-segment" data-index="N" title="…">NAME</span>`
    *  so the user can jump straight back to an ancestor directory by
    *  clicking on its name in the path annunciator.  The App layer wires

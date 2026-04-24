@@ -18,7 +18,7 @@ import {
   setApproxMode,
 } from '../src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Vector / Matrix ops — SIZE / TRN / DET / INV / DOT / CROSS / NORM / IDN. */
 
@@ -72,9 +72,7 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Real(42));
-    let threw = false;
-    try { lookup('SIZE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'SIZE on Real throws Bad argument type');
+    assertThrows(() => lookup('SIZE').fn(s), /Bad argument/, 'SIZE on Real throws Bad argument type');
   }
 
   // TRN transposes a 2x3 → 3x2 matrix, preserving element values.
@@ -105,9 +103,7 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
-    let threw = false;
-    try { lookup('TRN').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'TRN on Vector throws Bad argument type');
+    assertThrows(() => lookup('TRN').fn(s), /Bad argument/, 'TRN on Vector throws Bad argument type');
   }
 
   // Element-wise Vector + Vector of equal length.
@@ -148,10 +144,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     s.push(Vector([Real(1), Real(2), Real(3)]));
-    let threw = false;
-    try { lookup('+').fn(s); }
-    catch (e) { threw = /dimension/i.test(e.message); }
-    assert(threw, 'Vector + Vector with mismatched length throws Invalid dimension');
+    assertThrows(() => lookup('+').fn(s), /dimension/i, 'Vector + Vector with mismatched length throws Invalid dimension');
   }
   // Vector * Vector: dot product (HP50 semantics).
   {
@@ -253,9 +246,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)]]));            // 1x2
     s.push(Matrix([[Real(3)], [Real(4)], [Real(5)]])); // 3x1
-    let threw = false;
-    try { lookup('*').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-    assert(threw, 'Matrix * Matrix with bad shapes throws Invalid dimension');
+    assertThrows(() => lookup('*').fn(s), /dimension/i, 'Matrix * Matrix with bad shapes throws Invalid dimension');
   }
 }
 
@@ -281,18 +272,14 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     s.push(Vector([Real(3), Real(4), Real(5)]));
-    let threw = false;
-    try { lookup('DOT').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-    assert(threw, 'DOT with mismatched length throws Invalid dimension');
+    assertThrows(() => lookup('DOT').fn(s), /dimension/i, 'DOT with mismatched length throws Invalid dimension');
   }
   {
     // DOT on non-Vector → Bad argument type.
     const s = new Stack();
     s.push(Real(1));
     s.push(Vector([Real(2), Real(3)]));
-    let threw = false;
-    try { lookup('DOT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'DOT on scalar,Vector throws Bad argument type');
+    assertThrows(() => lookup('DOT').fn(s), /Bad argument/, 'DOT on scalar,Vector throws Bad argument type');
   }
 
   // --- CROSS -----------------------------------------------------
@@ -324,9 +311,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     s.push(Vector([Real(3), Real(4)]));
-    let threw = false;
-    try { lookup('CROSS').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-    assert(threw, 'CROSS on length-2 vectors throws Invalid dimension');
+    assertThrows(() => lookup('CROSS').fn(s), /dimension/i, 'CROSS on length-2 vectors throws Invalid dimension');
   }
 
   // --- IDN -------------------------------------------------------
@@ -356,17 +341,13 @@ import { assert } from './helpers.mjs';
     // Non-integer Real → Bad argument value.
     const s = new Stack();
     s.push(Real(2.5));
-    let threw = false;
-    try { lookup('IDN').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-    assert(threw, 'IDN of non-integral Real throws Bad argument value');
+    assertThrows(() => lookup('IDN').fn(s), /Bad argument value/, 'IDN of non-integral Real throws Bad argument value');
   }
   {
     // n ≤ 0 → Bad argument value.
     const s = new Stack();
     s.push(Integer(0n));
-    let threw = false;
-    try { lookup('IDN').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-    assert(threw, 'IDN 0 throws Bad argument value');
+    assertThrows(() => lookup('IDN').fn(s), /Bad argument value/, 'IDN 0 throws Bad argument value');
   }
 
   // --- NORM ------------------------------------------------------
@@ -437,9 +418,7 @@ import { assert } from './helpers.mjs';
     // Non-square → Invalid dimension.
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2), Real(3)], [Real(4), Real(5), Real(6)]]));
-    let threw = false;
-    try { lookup('DET').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-    assert(threw, 'DET on non-square matrix throws Invalid dimension');
+    assertThrows(() => lookup('DET').fn(s), /dimension/i, 'DET on non-square matrix throws Invalid dimension');
   }
 
   // --- INV (matrix) ---------------------------------------------
@@ -482,25 +461,19 @@ import { assert } from './helpers.mjs';
     // Singular matrix → Infinite result.
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)], [Real(2), Real(4)]]));
-    let threw = false;
-    try { lookup('INV').fn(s); } catch (e) { threw = /Infinite result/.test(e.message); }
-    assert(threw, 'INV singular throws Infinite result');
+    assertThrows(() => lookup('INV').fn(s), /Infinite result/, 'INV singular throws Infinite result');
   }
   {
     // Non-square → Invalid dimension.
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2), Real(3)], [Real(4), Real(5), Real(6)]]));
-    let threw = false;
-    try { lookup('INV').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-    assert(threw, 'INV non-square throws Invalid dimension');
+    assertThrows(() => lookup('INV').fn(s), /dimension/i, 'INV non-square throws Invalid dimension');
   }
   {
     // Symbolic entry → Bad argument type (explicit scope limit).
     const s = new Stack();
     s.push(Matrix([[Name('a'), Real(1)], [Real(2), Name('b')]]));
-    let threw = false;
-    try { lookup('INV').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'INV on symbolic-entry matrix throws Bad argument type');
+    assertThrows(() => lookup('INV').fn(s), /Bad argument/, 'INV on symbolic-entry matrix throws Bad argument type');
   }
 
   // --- SIZE alignment (session 036) -----------------------------
@@ -583,17 +556,13 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2), Real(3)], [Real(4), Real(5), Real(6)]]));
-    let threw = false;
-    try { lookup('TRACE').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-    assert(threw, 'TRACE on non-square matrix throws Invalid dimension');
+    assertThrows(() => lookup('TRACE').fn(s), /dimension/i, 'TRACE on non-square matrix throws Invalid dimension');
   }
   // TRACE on a Vector → Bad argument type (only Matrix is valid).
   {
     const s = new Stack();
     s.push(Vector([Real(1), Real(2), Real(3)]));
-    let threw = false;
-    try { lookup('TRACE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'TRACE on Vector throws Bad argument type');
+    assertThrows(() => lookup('TRACE').fn(s), /Bad argument/, 'TRACE on Vector throws Bad argument type');
   }
   // TRACE of a matrix with a symbolic diagonal entry lifts to Symbolic.
   {
@@ -671,18 +640,14 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
-    let threw = false;
-    try { lookup('RREF').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session048: RREF on Vector throws Bad argument type');
+    assertThrows(() => lookup('RREF').fn(s), /Bad argument/, 'session048: RREF on Vector throws Bad argument type');
   }
 
   // RREF on Complex entry throws (numeric pivot path rejects Complex).
   {
     const s = new Stack();
     s.push(Matrix([[Complex(1, 1), Real(1)], [Real(0), Real(1)]]));
-    let threw = false;
-    try { lookup('RREF').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session048: RREF on Complex-entry matrix throws');
+    assertThrows(() => lookup('RREF').fn(s), /Bad argument/, 'session048: RREF on Complex-entry matrix throws');
   }
 
   // RANK: full-rank 2×2 → 2.
@@ -807,9 +772,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Integer(0));
     s.push(Real(1));
-    let threw = false;
-    try { lookup('CON').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-    assert(threw, 'session048: CON 0 n throws Bad argument value');
+    assertThrows(() => lookup('CON').fn(s), /Bad argument value/, 'session048: CON 0 n throws Bad argument value');
   }
 
   // CON — non-scalar fill (a Vector) throws.
@@ -817,9 +780,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Integer(3));
     s.push(Vector([Real(1)]));
-    let threw = false;
-    try { lookup('CON').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-    assert(threw, 'session048: CON with nested container fill throws');
+    assertThrows(() => lookup('CON').fn(s), /Bad argument type/, 'session048: CON with nested container fill throws');
   }
 
   // CON — 3-element shape list throws Invalid dimension.
@@ -827,9 +788,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(RList([Integer(1), Integer(2), Integer(3)]));
     s.push(Real(0));
-    let threw = false;
-    try { lookup('CON').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session048: CON {1 2 3} throws Invalid dimension');
+    assertThrows(() => lookup('CON').fn(s), /Invalid dimension/, 'session048: CON {1 2 3} throws Invalid dimension');
   }
 }
 
@@ -937,18 +896,14 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
-    let threw = false;
-    try { lookup('REF').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session049: REF on Vector throws Bad argument type');
+    assertThrows(() => lookup('REF').fn(s), /Bad argument/, 'session049: REF on Vector throws Bad argument type');
   }
 
   // REF on Complex-entry matrix throws.
   {
     const s = new Stack();
     s.push(Matrix([[Complex(1, 1), Real(1)], [Real(0), Real(1)]]));
-    let threw = false;
-    try { lookup('REF').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session049: REF on Complex-entry matrix throws');
+    assertThrows(() => lookup('REF').fn(s), /Bad argument/, 'session049: REF on Complex-entry matrix throws');
   }
 
   /* ---- HADAMARD — element-wise matrix/vector product ----- */
@@ -1003,9 +958,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Matrix([[Real(5), Real(6), Real(7)], [Real(8), Real(9), Real(10)]]));
-    let threw = false;
-    try { lookup('HADAMARD').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session049: HADAMARD with mismatched dims throws');
+    assertThrows(() => lookup('HADAMARD').fn(s), /Invalid dimension/, 'session049: HADAMARD with mismatched dims throws');
   }
 
   // HADAMARD with mismatched types (Vector + Matrix) throws.
@@ -1013,9 +966,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     s.push(Matrix([[Real(3), Real(4)]]));
-    let threw = false;
-    try { lookup('HADAMARD').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session049: HADAMARD Vector×Matrix throws Bad argument type');
+    assertThrows(() => lookup('HADAMARD').fn(s), /Bad argument/, 'session049: HADAMARD Vector×Matrix throws Bad argument type');
   }
 
   // HADAMARD with unequal-length vectors throws.
@@ -1023,9 +974,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2), Real(3)]));
     s.push(Vector([Real(4), Real(5)]));
-    let threw = false;
-    try { lookup('HADAMARD').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session049: HADAMARD unequal vectors throws Invalid dimension');
+    assertThrows(() => lookup('HADAMARD').fn(s), /Invalid dimension/, 'session049: HADAMARD unequal vectors throws Invalid dimension');
   }
 
   /* ---- RANM — random-integer matrix/vector ----- */
@@ -1090,18 +1039,14 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Integer(0));
-    let threw = false;
-    try { lookup('RANM').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-    assert(threw, 'session049: RANM 0 throws Bad argument value');
+    assertThrows(() => lookup('RANM').fn(s), /Bad argument value/, 'session049: RANM 0 throws Bad argument value');
   }
 
   // RANM with bad shape (String) throws.
   {
     const s = new Stack();
     s.push(Str("hi"));
-    let threw = false;
-    try { lookup('RANM').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session049: RANM on String throws');
+    assertThrows(() => lookup('RANM').fn(s), /Bad argument/, 'session049: RANM on String throws');
   }
 
   /* ---- LSQ — least-squares solver ----- */
@@ -1174,9 +1119,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     s.push(Matrix([[Real(1), Real(2)], [Real(2), Real(4)]]));
-    let threw = false;
-    try { lookup('LSQ').fn(s); } catch (e) { threw = /Infinite/.test(e.message); }
-    assert(threw, 'session049: LSQ on singular A throws Infinite result');
+    assertThrows(() => lookup('LSQ').fn(s), /Infinite/, 'session049: LSQ on singular A throws Infinite result');
   }
 
   // LSQ with mismatched b-length throws.
@@ -1184,9 +1127,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2), Real(3)]));
     s.push(Matrix([[Real(1), Real(0)], [Real(0), Real(1)]]));
-    let threw = false;
-    try { lookup('LSQ').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session049: LSQ with wrong b-length throws');
+    assertThrows(() => lookup('LSQ').fn(s), /Invalid dimension/, 'session049: LSQ with wrong b-length throws');
   }
 
   // LSQ with non-Matrix A throws.
@@ -1194,9 +1135,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1)]));
     s.push(Vector([Real(1)]));
-    let threw = false;
-    try { lookup('LSQ').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session049: LSQ with non-Matrix A throws');
+    assertThrows(() => lookup('LSQ').fn(s), /Bad argument/, 'session049: LSQ with non-Matrix A throws');
   }
 
   // LSQ with Complex-entry A throws.
@@ -1204,9 +1143,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     s.push(Matrix([[Complex(1, 1), Real(0)], [Real(0), Real(1)]]));
-    let threw = false;
-    try { lookup('LSQ').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session049: LSQ on Complex-entry A throws');
+    assertThrows(() => lookup('LSQ').fn(s), /Bad argument/, 'session049: LSQ on Complex-entry A throws');
   }
 
   // LSQ with Matrix b (multiple RHS).
@@ -1301,9 +1238,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Vector([Real(5), Real(6), Real(7)]));    // 3-vec for 2-col matrix
     s.push(Integer(1));
-    let threw = false;
-    try { lookup('ROW+').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session050: ROW+ wrong-length vector throws');
+    assertThrows(() => lookup('ROW+').fn(s), /Invalid dimension/, 'session050: ROW+ wrong-length vector throws');
   }
 
   // ROW+ out-of-range index (too large) throws.
@@ -1312,9 +1247,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Vector([Real(5), Real(6)]));
     s.push(Integer(5));
-    let threw = false;
-    try { lookup('ROW+').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session050: ROW+ OOB index (too large) throws');
+    assertThrows(() => lookup('ROW+').fn(s), /Invalid dimension/, 'session050: ROW+ OOB index (too large) throws');
   }
 
   // ROW+ index 0 throws.
@@ -1323,9 +1256,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Vector([Real(5), Real(6)]));
     s.push(Integer(0));
-    let threw = false;
-    try { lookup('ROW+').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session050: ROW+ index 0 throws');
+    assertThrows(() => lookup('ROW+').fn(s), /Invalid dimension/, 'session050: ROW+ index 0 throws');
   }
 
   // ROW+ on non-Matrix throws.
@@ -1334,9 +1265,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Vector([Real(1), Real(2)]));
     s.push(Vector([Real(3)]));
     s.push(Integer(1));
-    let threw = false;
-    try { lookup('ROW+').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session050: ROW+ on non-Matrix throws');
+    assertThrows(() => lookup('ROW+').fn(s), /Bad argument/, 'session050: ROW+ on non-Matrix throws');
   }
 
   /* ---- ROW- — remove row from matrix ---- */
@@ -1378,9 +1307,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Integer(5));
-    let threw = false;
-    try { lookup('ROW-').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session050: ROW- OOB index throws');
+    assertThrows(() => lookup('ROW-').fn(s), /Invalid dimension/, 'session050: ROW- OOB index throws');
   }
 
   /* ---- COL+ — insert column into matrix ---- */
@@ -1415,9 +1342,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Vector([Real(5), Real(6), Real(7)]));
     s.push(Integer(1));
-    let threw = false;
-    try { lookup('COL+').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session050: COL+ wrong-length vector throws');
+    assertThrows(() => lookup('COL+').fn(s), /Invalid dimension/, 'session050: COL+ wrong-length vector throws');
   }
 
   /* ---- COL- — remove column from matrix ---- */
@@ -1445,9 +1370,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Integer(3));
-    let threw = false;
-    try { lookup('COL-').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session050: COL- OOB index throws');
+    assertThrows(() => lookup('COL-').fn(s), /Invalid dimension/, 'session050: COL- OOB index throws');
   }
 
   /* ---- CNRM — column norm ---- */
@@ -1501,9 +1424,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Matrix([[Symbolic({kind:'var',name:'x'}), Real(0)]]));
-    let threw = false;
-    try { lookup('CNRM').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session050: CNRM on Symbolic-entry throws');
+    assertThrows(() => lookup('CNRM').fn(s), /Bad argument/, 'session050: CNRM on Symbolic-entry throws');
   }
 
   /* ---- RNRM — row norm ---- */
@@ -1539,9 +1460,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Str('not a matrix'));
-    let threw = false;
-    try { lookup('RNRM').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session050: RNRM on String throws');
+    assertThrows(() => lookup('RNRM').fn(s), /Bad argument/, 'session050: RNRM on String throws');
   }
 
   /* ---- AUGMENT — horizontal concat ---- */
@@ -1595,9 +1514,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Real(1)], [Real(2)]]));
     s.push(Matrix([[Real(3)], [Real(4)], [Real(5)]]));
-    let threw = false;
-    try { lookup('AUGMENT').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session050: AUGMENT row-count mismatch throws');
+    assertThrows(() => lookup('AUGMENT').fn(s), /Invalid dimension/, 'session050: AUGMENT row-count mismatch throws');
   }
 
   // Non-matrix/vector (e.g. Real) throws.
@@ -1605,9 +1522,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     const s = new Stack();
     s.push(Real(1));
     s.push(Real(2));
-    let threw = false;
-    try { lookup('AUGMENT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session050: AUGMENT Real+Real throws Bad argument');
+    assertThrows(() => lookup('AUGMENT').fn(s), /Bad argument/, 'session050: AUGMENT Real+Real throws Bad argument');
   }
 
   /* ---- RAND — seeded PRNG ---- */
@@ -1685,18 +1600,14 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Real(3.14));
-    let threw = false;
-    try { lookup('RDZ').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-    assert(threw, 'session050: RDZ with non-integer Real throws');
+    assertThrows(() => lookup('RDZ').fn(s), /Bad argument value/, 'session050: RDZ with non-integer Real throws');
   }
 
   // RDZ with Complex throws.
   {
     const s = new Stack();
     s.push(Complex(1, 2));
-    let threw = false;
-    try { lookup('RDZ').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session050: RDZ on Complex throws Bad argument');
+    assertThrows(() => lookup('RDZ').fn(s), /Bad argument/, 'session050: RDZ on Complex throws Bad argument');
   }
 
   /* ---- RANM — seeded determinism retrofit ---- */
@@ -1813,9 +1724,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
-    let threw = false;
-    try { lookup('ROW→').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session051: ROW→ on Vector throws');
+    assertThrows(() => lookup('ROW→').fn(s), /Bad argument/, 'session051: ROW→ on Vector throws');
   }
 
   // ASCII alias ROW->.
@@ -1857,9 +1766,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     s.push(Real(1.5));
-    let threw = false;
-    try { lookup('→ROW').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session051: →ROW with non-integer Real count throws');
+    assertThrows(() => lookup('→ROW').fn(s), /Bad argument/, 'session051: →ROW with non-integer Real count throws');
   }
 
   // Mismatched row length throws.
@@ -1868,9 +1775,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Vector([Real(1), Real(2), Real(3)]));
     s.push(Vector([Real(4), Real(5)]));                 // shorter
     s.push(Integer(2));
-    let threw = false;
-    try { lookup('→ROW').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session051: →ROW mismatched row lengths throws');
+    assertThrows(() => lookup('→ROW').fn(s), /Invalid dimension/, 'session051: →ROW mismatched row lengths throws');
   }
 
   // Non-Vector argument throws.
@@ -1879,9 +1784,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Real(1));
     s.push(Real(2));
     s.push(Integer(2));
-    let threw = false;
-    try { lookup('→ROW').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session051: →ROW on non-vector args throws');
+    assertThrows(() => lookup('→ROW').fn(s), /Bad argument/, 'session051: →ROW on non-vector args throws');
   }
 
   // ASCII alias ->ROW.
@@ -1899,9 +1802,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Integer(0));
-    let threw = false;
-    try { lookup('→ROW').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-    assert(threw, 'session051: →ROW count 0 throws');
+    assertThrows(() => lookup('→ROW').fn(s), /Bad argument value/, 'session051: →ROW count 0 throws');
   }
 
   /* ---- COL→ — decompose a Matrix into its columns + count ---- */
@@ -1934,9 +1835,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Real(3));
-    let threw = false;
-    try { lookup('COL→').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session051: COL→ on Real throws');
+    assertThrows(() => lookup('COL→').fn(s), /Bad argument/, 'session051: COL→ on Real throws');
   }
 
   /* ---- →COL — compose a Matrix from column Vectors ---- */
@@ -1968,9 +1867,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Vector([Real(1), Real(2)]));
     s.push(Vector([Real(3), Real(4), Real(5)]));
     s.push(Integer(2));
-    let threw = false;
-    try { lookup('→COL').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session051: →COL mismatched column heights throws');
+    assertThrows(() => lookup('→COL').fn(s), /Invalid dimension/, 'session051: →COL mismatched column heights throws');
   }
 
   // ASCII alias ->COL.
@@ -2014,9 +1911,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Integer(1));
     s.push(Integer(5));
-    let threw = false;
-    try { lookup('RSWP').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session051: RSWP OOB row index throws');
+    assertThrows(() => lookup('RSWP').fn(s), /Invalid dimension/, 'session051: RSWP OOB row index throws');
   }
 
   // Non-Matrix throws.
@@ -2025,9 +1920,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Vector([Real(1), Real(2)]));
     s.push(Integer(1));
     s.push(Integer(2));
-    let threw = false;
-    try { lookup('RSWP').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session051: RSWP on Vector throws');
+    assertThrows(() => lookup('RSWP').fn(s), /Bad argument/, 'session051: RSWP on Vector throws');
   }
 
   /* ---- CSWP — swap columns ---- */
@@ -2049,9 +1942,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Integer(1));
     s.push(Integer(3));
-    let threw = false;
-    try { lookup('CSWP').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session051: CSWP OOB col index throws');
+    assertThrows(() => lookup('CSWP').fn(s), /Invalid dimension/, 'session051: CSWP OOB col index throws');
   }
 
   /* ---- RCI — multiply row i by scalar c ---- */
@@ -2108,9 +1999,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1)], [Real(2)]]));
     s.push(Real(2));
     s.push(Integer(9));
-    let threw = false;
-    try { lookup('RCI').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session051: RCI OOB row index throws');
+    assertThrows(() => lookup('RCI').fn(s), /Invalid dimension/, 'session051: RCI OOB row index throws');
   }
 
   // RCI with non-scalar c (Matrix) throws.
@@ -2119,9 +2008,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(Matrix([[Real(1)]]));                // bad c
     s.push(Integer(1));
-    let threw = false;
-    try { lookup('RCI').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session051: RCI with non-scalar c throws');
+    assertThrows(() => lookup('RCI').fn(s), /Bad argument/, 'session051: RCI with non-scalar c throws');
   }
 
   /* ---- RCIJ — row_j += c * row_i ---- */
@@ -2170,9 +2057,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Real(1));
     s.push(Integer(1));
     s.push(Integer(5));
-    let threw = false;
-    try { lookup('RCIJ').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-    assert(threw, 'session051: RCIJ OOB row index throws');
+    assertThrows(() => lookup('RCIJ').fn(s), /Invalid dimension/, 'session051: RCIJ OOB row index throws');
   }
 
   // RCIJ with Complex scalar lifts the result row to Complex.  Every
@@ -2201,9 +2086,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     s.push(Real(1));
     s.push(Integer(1));
     s.push(Integer(2));
-    let threw = false;
-    try { lookup('RCIJ').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session051: RCIJ on Vector throws');
+    assertThrows(() => lookup('RCIJ').fn(s), /Bad argument/, 'session051: RCIJ on Vector throws');
   }
 }
 
@@ -2282,17 +2165,13 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Vector([]));
-    let threw = false;
-    try { lookup('TOT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: TOT of empty Vector throws');
+    assertThrows(() => lookup('TOT').fn(s), /Bad argument/, 'session052: TOT of empty Vector throws');
   }
   // TOT on a scalar throws Bad argument type.
   {
     const s = new Stack();
     s.push(Real(42));
-    let threw = false;
-    try { lookup('TOT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: TOT on Real throws');
+    assertThrows(() => lookup('TOT').fn(s), /Bad argument/, 'session052: TOT on Real throws');
   }
 
   /* ---- MEAN — arithmetic mean ---- */
@@ -2338,9 +2217,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Vector([Real(1), Name('x')]));
-    let threw = false;
-    try { lookup('MEAN').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: MEAN of Vector with Name throws');
+    assertThrows(() => lookup('MEAN').fn(s), /Bad argument/, 'session052: MEAN of Vector with Name throws');
   }
 
   /* ---- VAR — sample variance with Bessel n-1 denominator ---- */
@@ -2379,17 +2256,13 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Vector([Real(1), Complex(2, 3)]));
-    let threw = false;
-    try { lookup('VAR').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: VAR of Complex-containing Vector throws');
+    assertThrows(() => lookup('VAR').fn(s), /Bad argument/, 'session052: VAR of Complex-containing Vector throws');
   }
   // Empty Vector still rejected.
   {
     const s = new Stack();
     s.push(Vector([]));
-    let threw = false;
-    try { lookup('VAR').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: VAR of empty Vector throws');
+    assertThrows(() => lookup('VAR').fn(s), /Bad argument/, 'session052: VAR of empty Vector throws');
   }
 
   /* ---- SDEV — sqrt of VAR ---- */
@@ -2434,9 +2307,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Real(1));
-    let threw = false;
-    try { lookup('SDEV').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: SDEV on Real throws');
+    assertThrows(() => lookup('SDEV').fn(s), /Bad argument/, 'session052: SDEV on Real throws');
   }
 
   /* ---- VANDERMONDE — ({ v_i } → [v_i^(j-1)]) ---- */
@@ -2484,17 +2355,13 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(RList([]));
-    let threw = false;
-    try { lookup('VANDERMONDE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: VANDERMONDE on empty list throws');
+    assertThrows(() => lookup('VANDERMONDE').fn(s), /Bad argument/, 'session052: VANDERMONDE on empty list throws');
   }
   // Bad-entry type (String) rejected up-front.
   {
     const s = new Stack();
     s.push(RList([Real(1), Str('boom')]));
-    let threw = false;
-    try { lookup('VANDERMONDE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: VANDERMONDE on list with String throws');
+    assertThrows(() => lookup('VANDERMONDE').fn(s), /Bad argument/, 'session052: VANDERMONDE on list with String throws');
   }
 
   /* ---- HILBERT — H[i][j] = 1/(i+j-1), 1-based ---- */
@@ -2530,25 +2397,19 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
   {
     const s = new Stack();
     s.push(Integer(0));
-    let threw = false;
-    try { lookup('HILBERT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: HILBERT 0 throws');
+    assertThrows(() => lookup('HILBERT').fn(s), /Bad argument/, 'session052: HILBERT 0 throws');
   }
   // Non-integer Real rejected.
   {
     const s = new Stack();
     s.push(Real(2.5));
-    let threw = false;
-    try { lookup('HILBERT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: HILBERT 2.5 throws');
+    assertThrows(() => lookup('HILBERT').fn(s), /Bad argument/, 'session052: HILBERT 2.5 throws');
   }
   // Wrong type rejected.
   {
     const s = new Stack();
     s.push(Str('3'));
-    let threw = false;
-    try { lookup('HILBERT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-    assert(threw, 'session052: HILBERT on String throws');
+    assertThrows(() => lookup('HILBERT').fn(s), /Bad argument/, 'session052: HILBERT on String throws');
   }
 }
 // ------------------------------------------------------------------
@@ -2596,18 +2457,14 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 {
   const s = new Stack();
   s.push(Vector([]));
-  let threw = false;
-  try { lookup('MEDIAN').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: MEDIAN [] throws');
+  assertThrows(() => lookup('MEDIAN').fn(s), /Bad argument/, 'session053: MEDIAN [] throws');
 }
 
 /* ---- MEDIAN on non-numeric throws ---- */
 {
   const s = new Stack();
   s.push(Vector([Complex(1, 2)]));
-  let threw = false;
-  try { lookup('MEDIAN').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: MEDIAN on Complex entry throws');
+  assertThrows(() => lookup('MEDIAN').fn(s), /Bad argument/, 'session053: MEDIAN on Complex entry throws');
 }
 
 /* ---- COV of a perfectly linear Y = 2X ---- */
@@ -2657,18 +2514,14 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     [Real(1), Real(7)],
     [Real(1), Real(9)],
   ]));
-  let threw = false;
-  try { lookup('CORR').fn(s); } catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session053: CORR zero-var throws Infinite result');
+  assertThrows(() => lookup('CORR').fn(s), /Infinite result/, 'session053: CORR zero-var throws Infinite result');
 }
 
 /* ---- COV with 1 row throws ---- */
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2)]]));
-  let threw = false;
-  try { lookup('COV').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: COV 1-row matrix throws');
+  assertThrows(() => lookup('COV').fn(s), /Bad argument/, 'session053: COV 1-row matrix throws');
 }
 
 /* ---- COV on 3-col matrix throws (must be m×2) ---- */
@@ -2678,18 +2531,14 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
     [Real(1), Real(2), Real(3)],
     [Real(4), Real(5), Real(6)],
   ]));
-  let threw = false;
-  try { lookup('COV').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-  assert(threw, 'session053: COV 3-col matrix throws Invalid dimension');
+  assertThrows(() => lookup('COV').fn(s), /dimension/i, 'session053: COV 3-col matrix throws Invalid dimension');
 }
 
 /* ---- COV on Vector (not Matrix) throws ---- */
 {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2), Real(3)]));
-  let threw = false;
-  try { lookup('COV').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: COV on Vector throws Bad argument type');
+  assertThrows(() => lookup('COV').fn(s), /Bad argument/, 'session053: COV on Vector throws Bad argument type');
 }
 
 /* =================================================================
@@ -2743,18 +2592,14 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2)], [Real(2), Real(4)]]));
-  let threw = false;
-  try { lookup('LU').fn(s); } catch (e) { threw = /Infinite/.test(e.message); }
-  assert(threw, 'session054: LU singular matrix throws');
+  assertThrows(() => lookup('LU').fn(s), /Infinite/, 'session054: LU singular matrix throws');
 }
 
 /* ---- LU: non-square throws ---- */
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2), Real(3)], [Real(4), Real(5), Real(6)]]));
-  let threw = false;
-  try { lookup('LU').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-  assert(threw, 'session054: LU non-square throws');
+  assertThrows(() => lookup('LU').fn(s), /dimension/i, 'session054: LU non-square throws');
 }
 
 /* ---- Stats aggregates on a 3×2 matrix ---- */
@@ -2806,9 +2651,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 {
   const s = new Stack();
   s.push(Matrix([[Real(1)], [Real(2)]]));
-  let threw = false;
-  try { lookup('ΣY').fn(s); } catch (e) { threw = /dimension/i.test(e.message); }
-  assert(threw, 'session054: ΣY 1-col matrix throws dimension');
+  assertThrows(() => lookup('ΣY').fn(s), /dimension/i, 'session054: ΣY 1-col matrix throws dimension');
 }
 
 /* ---- LINFIT: perfect y = 2x line → r = 1, model = 0 + 2*X ---- */
@@ -2873,9 +2716,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../src/rpl/state.js';
 {
   const s = new Stack();
   s.push(Matrix([[Real(-1), Real(2)], [Real(1), Real(4)]]));
-  let threw = false;
-  try { lookup('LOGFIT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session054: LOGFIT negative X throws');
+  assertThrows(() => lookup('LOGFIT').fn(s), /Bad argument/, 'session054: LOGFIT negative X throws');
 }
 
 /* ---- BESTFIT: linear data → "LIN" ---- */
@@ -2999,20 +2840,14 @@ function _approxMatEqual(A, B, tol) {
     [Real(2), Real(4)],
     [Real(3), Real(6)],
   ]));
-  let threw = false;
-  try { lookup('GRAMSCHMIDT').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session055: GRAMSCHMIDT dependent columns throws Infinite');
+  assertThrows(() => lookup('GRAMSCHMIDT').fn(s), /Infinite result/, 'session055: GRAMSCHMIDT dependent columns throws Infinite');
 }
 
 /* ---- GRAMSCHMIDT: non-Matrix input rejected ---- */
 {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2), Real(3)]));
-  let threw = false;
-  try { lookup('GRAMSCHMIDT').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session055: GRAMSCHMIDT non-Matrix rejected');
+  assertThrows(() => lookup('GRAMSCHMIDT').fn(s), /Bad argument type/, 'session055: GRAMSCHMIDT non-Matrix rejected');
 }
 
 /* ---- QR: 3×2 A = Q·R, Qᵀ·Q = I, R upper-triangular, P = I ---- */
@@ -3052,10 +2887,7 @@ function _approxMatEqual(A, B, tol) {
     [Real(1), Real(2), Real(3)],
     [Real(4), Real(5), Real(6)],
   ]));
-  let threw = false;
-  try { lookup('QR').fn(s); }
-  catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session055: QR rejects m<n (wide) matrix');
+  assertThrows(() => lookup('QR').fn(s), /Invalid dimension/, 'session055: QR rejects m<n (wide) matrix');
 }
 
 /* ---- CHOLESKY: 2×2 SPD matrix → L·Lᵀ = A ---- */
@@ -3102,10 +2934,7 @@ function _approxMatEqual(A, B, tol) {
 {
   const s = new Stack();
   s.push(Matrix([[Real(4), Real(2)], [Real(1), Real(3)]]));
-  let threw = false;
-  try { lookup('CHOLESKY').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session055: CHOLESKY non-symmetric throws');
+  assertThrows(() => lookup('CHOLESKY').fn(s), /Bad argument value/, 'session055: CHOLESKY non-symmetric throws');
 }
 
 /* ---- CHOLESKY: non-positive-definite throws Infinite result ---- */
@@ -3113,20 +2942,14 @@ function _approxMatEqual(A, B, tol) {
   const s = new Stack();
   // Symmetric, but negative leading minor (eigenvalues include 0).
   s.push(Matrix([[Real(1), Real(1)], [Real(1), Real(1)]]));
-  let threw = false;
-  try { lookup('CHOLESKY').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session055: CHOLESKY non-PD throws Infinite result');
+  assertThrows(() => lookup('CHOLESKY').fn(s), /Infinite result/, 'session055: CHOLESKY non-PD throws Infinite result');
 }
 
 /* ---- CHOLESKY: non-square throws Invalid dimension ---- */
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2), Real(3)], [Real(2), Real(4), Real(5)]]));
-  let threw = false;
-  try { lookup('CHOLESKY').fn(s); }
-  catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session055: CHOLESKY non-square throws');
+  assertThrows(() => lookup('CHOLESKY').fn(s), /Invalid dimension/, 'session055: CHOLESKY non-square throws');
 }
 
 /* ---- RDM: Vector → 2×3 Matrix ---- */
@@ -3173,10 +2996,7 @@ function _approxMatEqual(A, B, tol) {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2), Real(3)]));
   s.push(RList([Real(2), Real(2)]));
-  let threw = false;
-  try { lookup('RDM').fn(s); }
-  catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session055: RDM count mismatch throws');
+  assertThrows(() => lookup('RDM').fn(s), /Invalid dimension/, 'session055: RDM count mismatch throws');
 }
 
 /* ---- RDM: zero / negative dimension throws Bad argument value ---- */
@@ -3184,10 +3004,7 @@ function _approxMatEqual(A, B, tol) {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)]));
   s.push(RList([Real(0), Real(2)]));
-  let threw = false;
-  try { lookup('RDM').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session055: RDM zero dimension throws');
+  assertThrows(() => lookup('RDM').fn(s), /Bad argument value/, 'session055: RDM zero dimension throws');
 }
 
 /* ---- RDM: heterogeneous entries preserved (Real + Complex + Integer mix) ---- */
@@ -3265,10 +3082,7 @@ function _approxMatEqual(A, B, tol) {
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)], [Real(5), Real(6)]]));
-  let threw = false;
-  try { lookup('LQ').fn(s); }
-  catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session056: LQ m > n throws Invalid dimension');
+  assertThrows(() => lookup('LQ').fn(s), /Invalid dimension/, 'session056: LQ m > n throws Invalid dimension');
 }
 
 /* ---- LQ: rank-deficient row triggers Infinite result ---- */
@@ -3277,20 +3091,14 @@ function _approxMatEqual(A, B, tol) {
   // Two identical rows (row 2 = row 1) → Aᵀ has only 1 independent
   // column out of 2 → Gram-Schmidt produces a zero residual column.
   s.push(Matrix([[Real(1), Real(2), Real(3)], [Real(1), Real(2), Real(3)]]));
-  let threw = false;
-  try { lookup('LQ').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session056: LQ rank-deficient rows throw Infinite result');
+  assertThrows(() => lookup('LQ').fn(s), /Infinite result/, 'session056: LQ rank-deficient rows throw Infinite result');
 }
 
 /* ---- LQ: non-Matrix input throws Bad argument type ---- */
 {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)]));
-  let threw = false;
-  try { lookup('LQ').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session056: LQ non-Matrix throws Bad argument type');
+  assertThrows(() => lookup('LQ').fn(s), /Bad argument type/, 'session056: LQ non-Matrix throws Bad argument type');
 }
 
 /* ---- COND: identity → 1 ---- */
@@ -3334,20 +3142,14 @@ function _approxMatEqual(A, B, tol) {
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2)], [Real(2), Real(4)]]));    // det = 0
-  let threw = false;
-  try { lookup('COND').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session056: COND singular throws Infinite result');
+  assertThrows(() => lookup('COND').fn(s), /Infinite result/, 'session056: COND singular throws Infinite result');
 }
 
 /* ---- COND: non-square throws Invalid dimension ---- */
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2), Real(3)], [Real(4), Real(5), Real(6)]]));
-  let threw = false;
-  try { lookup('COND').fn(s); }
-  catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session056: COND non-square throws Invalid dimension');
+  assertThrows(() => lookup('COND').fn(s), /Invalid dimension/, 'session056: COND non-square throws Invalid dimension');
 }
 
 /* ---- COND: Integer entries work (Integer ↔ Real boundary) ---- */
@@ -3365,10 +3167,7 @@ function _approxMatEqual(A, B, tol) {
 {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2)]));
-  let threw = false;
-  try { lookup('COND').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session056: COND non-Matrix throws Bad argument type');
+  assertThrows(() => lookup('COND').fn(s), /Bad argument type/, 'session056: COND non-Matrix throws Bad argument type');
 }
 
 /* ================================================================
@@ -3415,10 +3214,7 @@ function _approxMatEqual(A, B, tol) {
 {
   const s = new Stack();
   s.push(Vector([]));
-  let threw = false;
-  try { lookup('MAD').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session057: MAD on empty Vector throws');
+  assertThrows(() => lookup('MAD').fn(s), /Bad argument value/, 'session057: MAD on empty Vector throws');
 }
 
 /* ---- MAD column-wise on Matrix ---- */
@@ -3441,20 +3237,14 @@ function _approxMatEqual(A, B, tol) {
 {
   const s = new Stack();
   s.push(Real(5));
-  let threw = false;
-  try { lookup('MAD').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session057: MAD on Real throws Bad argument type');
+  assertThrows(() => lookup('MAD').fn(s), /Bad argument type/, 'session057: MAD on Real throws Bad argument type');
 }
 
 /* ---- MAD rejects Complex entries (same policy as VAR / SDEV) ---- */
 {
   const s = new Stack();
   s.push(Vector([Complex(1, 2), Complex(3, 4)]));
-  let threw = false;
-  try { lookup('MAD').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session057: MAD rejects Complex entries');
+  assertThrows(() => lookup('MAD').fn(s), /Bad argument type/, 'session057: MAD rejects Complex entries');
 }
 
 /* ---- AXL: Vector → List of same items ---- */
@@ -3528,20 +3318,14 @@ function _approxMatEqual(A, B, tol) {
     RList([Real(1), Real(2)]),
     RList([Real(3), Real(4), Real(5)]),
   ]));
-  let threw = false;
-  try { lookup('AXM').fn(s); }
-  catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session057: AXM on ragged nested list throws');
+  assertThrows(() => lookup('AXM').fn(s), /Invalid dimension/, 'session057: AXM on ragged nested list throws');
 }
 
 /* ---- AXM: empty List throws Bad argument value ---- */
 {
   const s = new Stack();
   s.push(RList([]));
-  let threw = false;
-  try { lookup('AXM').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session057: AXM empty List throws');
+  assertThrows(() => lookup('AXM').fn(s), /Bad argument value/, 'session057: AXM empty List throws');
 }
 
 /* ---- AXM: Vector / Matrix no-ops (HP50 idempotency) ---- */
@@ -3582,20 +3366,14 @@ function _approxMatEqual(A, B, tol) {
 {
   const s = new Stack();
   s.push(Real(5));
-  let threw = false;
-  try { lookup('AXM').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session057: AXM on Real throws Bad argument type');
+  assertThrows(() => lookup('AXM').fn(s), /Bad argument type/, 'session057: AXM on Real throws Bad argument type');
 }
 
 /* ---- AXL on non-list / non-matrix rejects ---- */
 {
   const s = new Stack();
   s.push(Real(5));
-  let threw = false;
-  try { lookup('AXL').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session057: AXL on Real throws Bad argument type');
+  assertThrows(() => lookup('AXL').fn(s), /Bad argument type/, 'session057: AXL on Real throws Bad argument type');
 }
 
 /* ================================================================
@@ -3755,10 +3533,7 @@ function _approxMatEqual(A, B, tol) {
   calcState.lastFitModel = null;
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('PREDV').fn(s); }
-  catch (e) { threw = /Undefined name/.test(e.message); }
-  assert(threw, 'session058: PREDV with no fit throws Undefined name');
+  assertThrows(() => lookup('PREDV').fn(s), /Undefined name/, 'session058: PREDV with no fit throws Undefined name');
 }
 
 /* ---- PREDX with no fit run throws Undefined name ---- */
@@ -3766,10 +3541,7 @@ function _approxMatEqual(A, B, tol) {
   calcState.lastFitModel = null;
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('PREDX').fn(s); }
-  catch (e) { threw = /Undefined name/.test(e.message); }
-  assert(threw, 'session058: PREDX with no fit throws Undefined name');
+  assertThrows(() => lookup('PREDX').fn(s), /Undefined name/, 'session058: PREDX with no fit throws Undefined name');
 }
 
 /* ---- PREDV on Complex throws Bad argument type ---- */
@@ -3779,10 +3551,7 @@ function _approxMatEqual(A, B, tol) {
   lookup('LINFIT').fn(s);
   s.pop(); s.pop();
   s.push(Complex(1, 2));
-  let threw = false;
-  try { lookup('PREDV').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session058: PREDV on Complex throws');
+  assertThrows(() => lookup('PREDV').fn(s), /Bad argument type/, 'session058: PREDV on Complex throws');
 }
 
 /* ---- PREDV after LOGFIT with x≤0 throws Infinite result ---- */
@@ -3795,10 +3564,7 @@ function _approxMatEqual(A, B, tol) {
   lookup('LOGFIT').fn(s);
   s.pop(); s.pop();
   s.push(Real(-1));
-  let threw = false;
-  try { lookup('PREDV').fn(s); }
-  catch (e) { threw = /Infinite result/.test(e.message); }
-  assert(threw, 'session058: PREDV(-1) after LOGFIT → Infinite result');
+  assertThrows(() => lookup('PREDV').fn(s), /Infinite result/, 'session058: PREDV(-1) after LOGFIT → Infinite result');
 }
 
 /* ---- BESTFIT does NOT publish a model slot (HP50 rule) ---- */

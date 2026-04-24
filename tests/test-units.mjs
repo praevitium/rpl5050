@@ -10,7 +10,7 @@ import {
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
 } from '../src/rpl/units.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* ================================================================
    Unit parser — canonicalisation, sign propagation
@@ -42,9 +42,8 @@ import { assert } from './helpers.mjs';
 }
 {
   // Unknown symbol → Error.
-  let threw = false;
-  try { parseUnitExpr('foobar'); } catch { threw = true; }
-  assert(threw, `parseUnitExpr rejects unknown symbol`);
+  assertThrows(() => parseUnitExpr('foobar'), null,
+    `parseUnitExpr rejects unknown symbol`);
 }
 
 /* ================================================================
@@ -94,9 +93,8 @@ import { assert } from './helpers.mjs';
 }
 {
   // Bogus unit → RPL parse error propagates.
-  let threw = false;
-  try { parseEntry('1_zzz'); } catch { threw = true; }
-  assert(threw, `'1_zzz' (unknown unit) throws`);
+  assertThrows(() => parseEntry('1_zzz'), null,
+    `'1_zzz' (unknown unit) throws`);
 }
 
 /* ================================================================
@@ -143,9 +141,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(parseEntry('1_m')[0]);
   s.push(parseEntry('1_s')[0]);
-  let threw = false;
-  try { lookup('+').fn(s); } catch { threw = true; }
-  assert(threw, `1_m + 1_s throws Inconsistent units`);
+  assertThrows(() => lookup('+').fn(s), null,
+    `1_m + 1_s throws Inconsistent units`);
 }
 {
   // Unit * Real → Unit with same uexpr.
@@ -273,9 +270,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(parseEntry('1_m')[0]);
   s.push(parseEntry('1_s')[0]);
-  let threw = false;
-  try { lookup('CONVERT').fn(s); } catch { threw = true; }
-  assert(threw, `CONVERT m → s throws`);
+  assertThrows(() => lookup('CONVERT').fn(s), null,
+    `CONVERT m → s throws`);
 }
 {
   // →UNIT: 5 and 1_kg → 5_kg (the unit's value is ignored).

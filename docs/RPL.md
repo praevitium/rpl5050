@@ -6,8 +6,8 @@ flow, the suspended-execution substrate (HALT/CONT/KILL/ABORT/SST/DBUG/RUN),
 program decomposition / composition, program persistence round-tripping.
 Out of scope: arithmetic / CAS / unit / matrix / plot / string ops
 (those belong to `rpl5050-command-support`), type widening
-(`rpl5050-data-types`), UI (`rpl5050-ui-development`), the test harness
-(`rpl5050-tests`).
+(`rpl5050-data-type-support`), UI (`rpl5050-ui-development`), the test harness
+(`rpl5050-unit-tests`).
 
 This file is the authoritative lane-local notes file. Read it at the start
 of every run; update it at the end of every run with what shipped, what's
@@ -15,7 +15,8 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 074)
+## Current implementation status (as of session 083)
+
 
 ### Program value — parser & round-trip
 - Parser: `<<` / `>>` (ASCII) and `«` / `»` (Unicode) both tokenize to
@@ -45,8 +46,8 @@ open, and the next-session queue.
 ### Structured control flow
 | Construct | Status | Implementation |
 |-----------|--------|----------------|
-| `IF…THEN…ELSE…END`           | ✓ green | `runIf` in ops.js |
-| `IFERR…THEN…ELSE…END`         | ✓ green | `runIfErr` (last-error slot, save/restore of outer) |
+| `IF…THEN…ELSE…END`           | ✓ green (**session 083: auto-close on missing END**) | `runIf` in ops.js |
+| `IFERR…THEN…ELSE…END`         | ✓ green (**session 078: auto-close on missing END**) | `runIfErr` (last-error slot, save/restore of outer) |
 | `WHILE…REPEAT…END`            | ✓ green | `runWhile` |
 | `DO…UNTIL…END`                | ✓ green | `runDo` |
 | `START…NEXT`/`…STEP`          | ✓ green | `runStart` (Integer-mode preserving) |
@@ -71,43 +72,53 @@ open, and the next-session queue.
   tool — prefer `→` for anything that looks lexical.
 
 ### Suspended-execution substrate
-- Status: **pilot landed (session 074).** `HALT` / `CONT` / `KILL` work
-  for programs suspended at the *top level of a Program body* — depth
-  0 in `evalRange`, no compiled-local frames active. The general-case
-  RunState refactor is still open (see queue item 1).
+- Status: **pilot landed (session 074); widened session 083 —
+  multi-slot halted LIFO + `RUN`.** `HALT` / `CONT` / `KILL` / `RUN`
+  work for programs suspended at the *top level of a Program body* —
+  depth 0 in `evalRange`, no compiled-local frames active. The
+  general-case RunState refactor is still open (queue item 1).
 - HP50 ops in this family:
   - `HALT` — ✓ **session 074 pilot**. Inside a top-level program body:
-    captures `{ tokens, ip: i+1, length }` in `state.halted` and throws
-    `RPLHalt`. Inside control flow / `→` body: raises
-    `HALT: cannot suspend inside control structure or → (pilot)`.
-    Called bare outside a running program: raises
-    `HALT: not inside a running program`. `RPLHalt` is **not** an
-    `RPLError` subclass, so `IFERR` cannot trap it.
-  - `CONT` — ✓ **session 074 pilot**. Resumes `state.halted.tokens`
-    from `state.halted.ip`. Clears the slot before resuming so a fresh
-    HALT can re-populate it. Raises `No halted program` if the slot
-    is empty.
-  - `KILL` — ✓ **session 074 pilot**. No-op that clears `state.halted`.
-    Valid even when the slot is empty (matches AUR p.2-140 "terminates
-    any currently-halted program, or does nothing").
+    pushes `{ tokens, ip: i+1, length }` onto the `state.haltedStack`
+    LIFO (session 083) and throws `RPLHalt`. Inside control flow / `→`
+    body: raises `HALT: cannot suspend inside control structure or →
+    (pilot)`. Called bare outside a running program: raises `HALT: not
+    inside a running program`. `RPLHalt` is **not** an `RPLError`
+    subclass, so `IFERR` cannot trap it.
+  - `CONT` — ✓ **session 074 pilot, session 083 LIFO-aware**. Pops the
+    TOP of `state.haltedStack` (the most-recent suspension) before
+    resuming so a fresh HALT can push a new slot cleanly. Older halts
+    remain on the stack to be CONT'd next. Raises `No halted program`
+    when the LIFO is empty.
+  - `KILL` — ✓ **session 074 pilot, session 083 LIFO-aware**. Pops ONE
+    slot off the halted LIFO without resuming. Valid on an empty stack
+    (matches AUR p.2-140 "terminates any currently-halted program, or
+    does nothing"). Users who want to drain every suspension can
+    `KILL` repeatedly or rely on `resetHome`.
+  - `RUN` — ✓ **session 083 new**. AUR p.2-177 resume op. Without DBUG
+    active, behaves identically to `CONT` (same resume semantics, same
+    error when the halted LIFO is empty). DBUG-aware branching will
+    land with the DBUG substrate (queue item 2).
   - `ABORT` — ✓ green (session 067). Unwinds the current evaluation
     via `RPLAbort`; not catchable by IFERR.
   - `SST` / `SST↓` — **not started.** Needs the RunState refactor
     below.
   - `DBUG` — **not started.** Also blocked on RunState.
-  - `RUN` — **not started.** AUR sometimes treats RUN as a synonym
-    for CONT; breakpoint semantics need care.
 - Pilot limitations (to lift in the full RunState work):
-  - Single-slot `state.halted` (no stack of halted programs).
-  - HALT rejects from inside `IF` / `FOR` / `WHILE` / `→` / any nested
-    structural scope — the `ip` to resume wouldn't be meaningful
-    without reconstructing the structural context.
+  - **[LIFTED session 083]** ~~Single-slot `state.halted`~~ — now a
+    LIFO stack in `state.haltedStack`, with `state.halted` aliased to
+    the top for back-compat. `haltedDepth()` exposed for tests.
+  - HALT still rejects from inside `IF` / `FOR` / `WHILE` / `→` / any
+    nested structural scope — the `ip` to resume wouldn't be
+    meaningful without reconstructing the structural context.
   - No serialisation across `persist.js`; a refresh drops the halted
-    slot (clearHalted fires on resetHome).
+    LIFO (`clearAllHalted` fires on resetHome).
 - First-principles note for the full refactor: `evalRange` still has
   to become an iterator / generator / explicit-state step fn to
   support SST and nested HALT. The RunState class plan in queue
-  item 1 is still the design we're aiming at.
+  item 1 is still the design we're aiming at. Multi-slot halted is
+  a first sub-component: each RunState carries its own suspension
+  record, and the halted LIFO becomes the natural parent-link stack.
 
 ### Program decomposition / composition
 - `OBJ→` on Program: **session 067: new**. Pushes each token then an
@@ -140,7 +151,119 @@ open, and the next-session queue.
 
 ---
 
-## Session 074 (this run) — what shipped
+## Session 083 (this run) — what shipped
+
+1. **Multi-slot halted-program LIFO** — queue item 1's first concrete
+   sub-component. `state.halted` flipped from a single scalar slot to
+   the top of a LIFO stack (`state.haltedStack`) without changing the
+   single-slot observable surface. Added `clearAllHalted()` and
+   `haltedDepth()` exports; `setHalted` pushes, `clearHalted` pops
+   one, `resetHome` drains everything. Scenario now supported:
+   user runs program A which halts, then runs program B which also
+   halts — previously B's halt overwrote A's; now CONT resumes B and
+   A remains on the LIFO to be CONT'd next. Matches HP50 AUR p.2-135's
+   stack-of-halted-programs behaviour.
+
+2. **`RUN` op (AUR p.2-177)** — registered as a CONT synonym for the
+   no-DBUG case. One-line delegation (`OPS.get('CONT').fn(s)`) so
+   future DBUG work can graft the single-step/breakpoint branch on
+   top without re-plumbing. Closes a small HP50 keyword gap —
+   users typing `RUN` from the keypad get the same resume semantics
+   they'd get from `CONT`.
+
+3. **IF auto-close on missing END** — queue item 6. `runIf` now
+   treats the end of the enclosing program body as the implicit
+   closer for an `IF…THEN…` or `IF…THEN…ELSE…` that never sees its
+   `END`. Mirrors the CASE auto-close (session 074) and the IFERR
+   auto-close (session 077). "IF without THEN" stays a hard error —
+   no default-clause semantics for IF (unlike CASE where the whole
+   body becomes the default). Specifically un-blocks the
+   queue-item-6 case: a CASE nested inside an IF whose own END is
+   also missing previously threw "IF without END" because
+   `_skipPastCaseEnd` returned `toks.length` and the outer
+   `scanAtDepth0` fell off the end; both auto-close now and the
+   combined `« IF 1 THEN CASE 1 THEN 101 END END »` (outer CASE
+   END and outer IF END both missing) evaluates cleanly.
+
+Totals: **49 new session083-labelled assertions** in this lane
+(all in `test-control-flow.mjs`: 9 IF auto-close + 3 RUN + 3 RUN
+chain + 23 multi-slot LIFO + 11 back-compat / drain / RUN-LIFO).
+`test-all.mjs` at **3864 passing / 0 failing** (baseline 3815 at
+end of session 082, Δ+49 — all from this lane this run).
+`test-persist.mjs` unchanged (34 passing). `flake-scan.mjs 10 --quiet`:
+3800 assertions stable-ok across 10 runs, zero flakes.
+
+---
+
+## Session 077 — what shipped
+
+1. **HALT / CONT flake-hardening** — session 075 filed a flaky
+   assertion in `tests/test-control-flow.mjs` L1830 (the
+   `session073: first CONT runs 2 + → 3, re-hits HALT` block)
+   where a first full-suite run occasionally threw `RPLHalt` out
+   of `EVAL`. Root-cause scan found two real hygiene gaps rather
+   than a single smoking gun:
+     1. `resetHome()` did **not** clear `state.halted`, despite
+        RPL.md's session-074 claim that "clearHalted fires on
+        resetHome." Fixed: `resetHome()` now directly resets
+        `state.halted = null` alongside the `_home.entries.clear()`
+        call (single emit at the end).
+     2. `_localFrames` had no defensive reset for abnormal
+        unwinds through `EVAL` and `CONT`. Both handlers now
+        snapshot `_localFrames.length` at entry and truncate back
+        to that depth in `finally` via a new
+        `_truncateLocalFrames(toLength)` helper. Legal nested
+        `→NUM` / recursive EVAL is untouched (snap restores to
+        *entry* depth, not zero). New exported
+        `localFramesDepth()` lets tests pin the invariant.
+   Regression guard: 19 new session077-labelled assertions in
+   `tests/test-control-flow.mjs` cover localFramesDepth invariants
+   around `→` normal-exit / error-exit, post-arrow HALT cycles,
+   resetHome clearing `halted`, and two HALT/CONT cycles in the
+   same stack. `flake-scan.mjs 10` clean across 10 runs, full
+   determinism.
+
+2. **Auto-close of unterminated `IFERR`** — queue item 4.
+   Mirrors the CASE auto-close that shipped in 074: `runIfErr`
+   now treats the end of the enclosing program body as the
+   implicit closer for an `IFERR…THEN…` or
+   `IFERR…THEN…ELSE…` that never sees its `END`. `branchScan`
+   null → `endIdx = bound; autoClosed = true`; ELSE-present-but-
+   no-END → same. "IFERR without THEN" stays a hard error —
+   there's no default clause semantics to fall back on (unlike
+   CASE). 8 new session077-labelled assertions in
+   `tests/test-control-flow.mjs`: THEN-only on throw/no-throw,
+   THEN/ELSE on both paths, preserved "IFERR without THEN" error,
+   trailing-token absorption, source-parse, lastError nesting
+   through an auto-closed outer IFERR.
+
+3. **`→LIST` / `LIST→` / `→PRG` / `OBJ→` / `→ARRY` / `ARRY→`
+   parity audit** — queue item 3. The three decomposition ops
+   were not consistently accepting `BinaryInteger` counts and
+   `→ARRY`'s dim-spec branch silently coerced Reals but refused
+   BinInts. Widened the three coercion helpers
+   (`_toIntIdx`, `_toCountN`, `_toDimSpec`) to accept BinInt
+   uniformly and re-ran parity across all three construct/destruct
+   pairs. 24 new session077-labelled assertions in
+   `tests/test-reflection.mjs`: BinInt count for all three ops
+   (`→LIST`, `→PRG`, `→ARRY`), negative-count rejection, String-
+   count rejection, zero-count behaviour (documented `→ARRY 0`
+   asymmetry — see new queue item 7), `OBJ→` integer-count
+   parity across Program/List, round-trips, `ARRY→` size-list
+   asymmetry note.
+
+Totals: **51 new session077-labelled assertions** in this lane
+(27 in `test-control-flow.mjs`, 24 in `test-reflection.mjs` — the
+latter file's labels cover 20 discrete blocks, some with multiple
+`assert` calls).
+`test-all.mjs` at **3732 passing / 0 failing** (baseline 3681 at
+end of session 076, Δ+51 — all from this lane this run).
+`test-persist.mjs` unchanged (34 passing). `flake-scan.mjs 10`:
+3668 assertions stable-ok, zero flakes.
+
+---
+
+## Session 074 — what shipped
 
 1. **HALT / CONT / KILL pilot** — suspended-execution substrate at the
    top-level-program-body scope. New class `RPLHalt` in
@@ -231,8 +354,9 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
 ### High priority (substrate — continue the RunState work)
 1. **Full RunState refactor for HALT / CONT inside structured flow.**
    Session 074 shipped the top-level pilot (HALT at depth 0, no local
-   frames). Lifting the pilot limitation requires the explicit-state
-   driver we've been punting on:
+   frames). Session 083 lifted one pilot limitation — the halted LIFO
+   is now multi-slot. Lifting the remaining structural-scope
+   limitation requires the explicit-state driver we've been punting on:
      1. Introduce `RunState` in `src/rpl/ops.js`: fields `tokens`,
         `ip`, `localFrames`, `parentRunState`, `suspended`.
      2. Refactor `evalRange` + `runControl` / `runIf` / `runFor` /
@@ -243,37 +367,61 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
         HALT inside `→` captures the frame correctly.
      4. Upgrade `RPLHalt` → carry the captured RunState; `CONT`
         restores the full chain instead of re-entering `evalRange`.
-     5. Multi-slot halted stack in `state.halted` (HP50 convention).
+     5. **[shipped session 083]** Multi-slot halted LIFO
+        (`state.haltedStack`). When RunState lands, each RunState
+        carries its own suspension record and the halted LIFO
+        becomes the natural parent-link stack.
      6. Persistence hook so a page refresh can survive a halted
         program (wire through `persist.js`).
-   Until this lands, the pilot's pilot-limit rejection stays — which
-   is fine because the current `evalRange` simply can't capture the
-   right `ip` for a resume inside a control construct.
+   Until the structural-scope piece lands, HALT inside IF/WHILE/→
+   still rejects with the pilot-limit RPLError — the current
+   `evalRange` simply can't capture the right `ip` for a resume
+   inside a control construct.
 
-2. **`SST` / `SST↓` / `DBUG`** — blocked on item 1.
+2. **`SST` / `SST↓` / `DBUG`** — still blocked on the RunState
+   refactor above. `RUN` shipped as a CONT alias in session 083 so
+   at least the keyword gap is closed; full DBUG-aware resume is
+   the piece remaining.
 
 ### Medium priority
-3. **`→LIST` / `LIST→` parity pass on Program decomposition.** Now
-   that `→PRG`, OBJ→ on Program, and OBJ→ on Symbolic all work, the
-   symmetry with `→LIST` / `LIST→` on lists is close but not perfect.
-   Audit `→ARRY` too.
+3. **[shipped session 078] `→LIST` / `LIST→` parity pass on
+   Program decomposition.** BinInt counts now accepted by
+   `→LIST`, `→PRG`, `→ARRY`; `_toIntIdx` / `_toCountN` /
+   `_toDimSpec` widened. Residual asymmetry tracked as queue
+   item 7 below.
 
-4. **Auto-close of unterminated `IFERR`.** Analogous to the CASE
-   auto-close that shipped in 074; right now `IFERR…THEN…` without an
-   `END` still throws. Cheap follow-up.
+4. **[shipped session 078] Auto-close of unterminated `IFERR`.**
+   `runIfErr` now treats the end of the program body as the
+   implicit closer, mirroring session 074's CASE auto-close.
+   "IFERR without THEN" intentionally preserved as a hard error.
 
-5. **`CONT` across a `resetHome`.** Currently `resetHome` clears the
-   halted slot (correct), but there's no UI signal to tell the user
-   their halted program was dropped. Medium priority once we have a
-   status-line affordance.
+5. **`CONT` across a `resetHome`.** Session 077 confirmed that
+   `resetHome` now directly clears `state.halted` (previously
+   undocumented / only via emit side-effect). Follow-up remains:
+   there's no UI signal to tell the user their halted program
+   was dropped. Medium priority once we have a status-line
+   affordance — this is a **UI lane** item (`rpl5050-ui-development`),
+   not this lane.
 
 ### Low priority / opportunistic
-6. **CASE auto-close across a deeply nested IF whose own END is also
-   missing.** Today's auto-close only reaches the outermost program
-   body; a truncated CASE inside an IF whose END is missing still
-   errors because `scanAtDepth0`'s _skipPastCaseEnd returns
-   `toks.length` and the outer IF can't find its matching END.
-   Nice-to-have; no known user report.
+6. **[shipped session 083]** CASE auto-close across a deeply nested
+   IF whose own END is also missing. Fixed by widening `runIf` with
+   the same auto-close policy `runCase` / `runIfErr` already had —
+   any forward scan that falls off the end of the program body is
+   treated as an implicit END. "IF without THEN" still a hard error
+   (no default-clause semantics for IF, unlike CASE).
+
+7. **`→ARRY 0` rejection is a documented asymmetry.** `→LIST 0`
+   produces `{}` and `→PRG 0` produces `« »`, but `→ARRY 0`
+   throws "Bad argument value" because `_toIntIdx` rejects 0.
+   There is dead code in `_toArrayOp` (`if (n === 0) push
+   Vector([])`) that anticipated the empty case but can't be
+   reached. Low-priority: HP50's own behaviour on `→ARRY 0` is
+   not clearly specified in AUR; empty-vector support would
+   need a downstream audit of every op that consumes Vector to
+   see which ones assume `dim ≥ 1`. Leave the rejection in
+   place and the dead code annotated until someone needs empty
+   vectors.
 
 ---
 
@@ -311,11 +459,19 @@ Each run leaves a numbered log in `logs/session-NNN.md` with a
 entry after the bootstrap; session 068 went to the data-types lane
 (Tagged transparency widening); session 069 was this lane (compiled
 locals + DECOMP + OBJ→ on Symbolic); sessions 070–073 went to sibling
-lanes; session 074 is this run (HALT/CONT/KILL pilot + CASE auto-close
-+ DECOMP round-trip + closure pin).
+lanes; session 074 was this lane (HALT/CONT/KILL pilot + CASE auto-close
++ DECOMP round-trip + closure pin); sessions 075–077 went to sibling
+lanes; session 078 is this run (HALT/CONT flake-hardening + IFERR
+auto-close + →LIST/→PRG/→ARRY BinInt-count parity).
 
-Note on cohort labels: in-file assertion names from this run carry the
-`session073:` prefix (chosen when the work was drafted alongside the
-sibling lane's 073 log). The session log file itself is `session-074.md`
-because 073 was already claimed by the sibling lane before this run
-committed.
+Note on cohort labels: session 074's assertions carry the `session073:`
+in-file prefix (chosen when the work was drafted alongside the sibling
+lane's 073 log). Session 078's assertions carry a `session077:` prefix
+(chosen when the work was drafted alongside the calendar-day cohort on
+2026-04-23). The log file lands at **078** because the data-types lane
+already claimed `logs/session-077.md` earlier today with its own
+`session074:`-cohort labels. Session 083's assertions carry the
+`session083:` prefix directly — the log file is `logs/session-083.md`;
+session numbering is back in sync with the actual log name for this
+run because sessions 079 (unit-tests) and 080 (code-review) already
+landed on disk with matching log numbers.

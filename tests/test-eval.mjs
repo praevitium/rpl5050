@@ -206,9 +206,9 @@ import { assert } from './helpers.mjs';
          'parsed << 1 2 + >> EVAL produces 3');
 }
 
-// Session 033 — Unicode guillemets `«  »` parse as program markers
-// equivalent to ASCII `<< >>`, so SHIFT-R + (which types the Unicode
-// glyphs the HP50 key is printed with) produces a parse-able program.
+// Unicode guillemets `«  »` parse as program markers equivalent to
+// ASCII `<< >>`, so SHIFT-R + (which types the Unicode glyphs the
+// HP50 key is printed with) produces a parse-able program.
 {
   resetHome();
   const s = new Stack();
@@ -440,8 +440,8 @@ import { assert } from './helpers.mjs';
          'formatStackTop(Real) unchanged');
   assert(formatStackTop(Integer(42)) === '42',
          'formatStackTop(Integer) unchanged');
-  // Session 041: EXACT + STD renders integer-valued Complex components
-  // without trailing dots — `(1., 2.)` becomes `(1, 2)`.
+  // EXACT + STD renders integer-valued Complex components without
+  // trailing dots — `(1., 2.)` becomes `(1, 2)`.
   assert(formatStackTop(Complex(1, 2)) === '(1, 2)',
          'formatStackTop(Complex) unchanged');
   assert(formatStackTop(Str('hi')) === '"hi"',

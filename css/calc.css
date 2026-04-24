@@ -250,12 +250,11 @@ body {
   white-space: nowrap;
 }
 
-/* Textbook mode (session 019): Symbolic rows render as SVG via
-   pretty.js.  The SVG already carries its own intrinsic size from
-   astToSvg; right-align it and let it breathe a little beyond the
-   flat-text line-height when it holds a fraction.  `color: inherit`
-   threads the LCD's foreground color into `fill="currentColor"` on
-   the SVG. */
+/* Textbook mode: Symbolic rows render as SVG via pretty.js.  The SVG
+   already carries its own intrinsic size from astToSvg; right-align
+   it and let it breathe a little beyond the flat-text line-height
+   when it holds a fraction.  `color: inherit` threads the LCD's
+   foreground color into `fill="currentColor"` on the SVG. */
 .stack-row .value.textbook {
   display: flex;
   justify-content: flex-end;
@@ -271,10 +270,10 @@ body {
    scrolled up with ▲.  Same height as a normal row; visually empty. */
 .stack-row.scroll-pad { visibility: hidden; }
 
-/* Session 037 — interactive stack visual cursor and mouse hover.
-   Each stack row is clickable (echo to cmdline) and shows a highlight
-   on hover.  `.selected` marks the cursor in interactive-stack mode —
-   heavier inversion so the user can tell at a glance which level the
+/* Interactive stack visual cursor and mouse hover.  Each stack row is
+   clickable (echo to cmdline) and shows a highlight on hover.
+   `.selected` marks the cursor in interactive-stack mode — heavier
+   inversion so the user can tell at a glance which level the
    ECHO/PICK/ROLL soft-keys will operate on.  `.hover` is lighter and
    purely visual feedback for pointer targeting. */
 .stack-row { cursor: pointer; }
@@ -427,10 +426,9 @@ body {
 .arrow-cluster .arrow-left  { grid-area: 2 / 1 / 3 / 2; }
 .arrow-cluster .arrow-down  { grid-area: 2 / 2 / 3 / 3; }
 .arrow-cluster .arrow-right { grid-area: 2 / 3 / 3 / 4; }
-/* 📖 catalog button — session 038.  Parked to the right of ▲ in the
-   top row of the cluster (row 1, col 3).  Uses the same row-1 slot
-   the old layout left empty.  The open-book emoji reads as "browse
-   the catalog". */
+/* 📖 catalog button.  Parked to the right of ▲ in the top row of the
+   cluster (row 1, col 3).  The open-book emoji reads as "browse the
+   catalog". */
 .arrow-cluster .cat-key {
   grid-area: 1 / 3 / 2 / 4;
 }
@@ -438,8 +436,8 @@ body {
   font-size: 15px;
   line-height: 1;
 }
-/* 🔧 — HP50 Custom menu key.  Fills the previously-empty row-1 col-1
-   slot, so row 1 reads [🔧][▲][📖] and row 2 still reads [◀][▼][▶]. */
+/* 🔧 — HP50 Custom menu key.  Fills the row-1 col-1 slot, so row 1
+   reads [🔧][▲][📖] and row 2 reads [◀][▼][▶]. */
 .arrow-cluster .cst-key {
   grid-area: 1 / 1 / 2 / 2;
 }
@@ -456,7 +454,7 @@ body {
   color: var(--key-text);
   font-family: var(--font-ui);
   font-weight: 600;
-  font-size: 15.75px;                /* session 013: bigger key fonts */
+  font-size: 15.75px;
   padding: 3px;
   /* Fix every non-arrow key to the same height so rows across the
      soft-row, nav-row, and 5×7 keypad visually align regardless of
@@ -484,7 +482,7 @@ body {
 
 .key .primary {
   display: block;
-  font-size: 16.875px;               /* session 013: was 15px */
+  font-size: 16.875px;
   line-height: 1.1;
 }
 /* Dynamic soft-menu label (F1..F6 filled from the active menu).
@@ -498,7 +496,7 @@ body {
 }
 .key .shift-l, .key .shift-r, .key .alpha {
   position: absolute;
-  font-size: 11.25px;                /* session 013: was 9px */
+  font-size: 11.25px;
   font-weight: 700;
   letter-spacing: .4px;
   line-height: 1;
@@ -522,7 +520,7 @@ body {
 .key.shift-l-key, .key.shift-r-key, .key.alpha-key { color: #fff; }
 
 /* Digits row a bit bigger */
-.key.digit .primary { font-size: 20.25px; } /* session 013: was 17px */
+.key.digit .primary { font-size: 20.25px; }
 
 /* Pressed shift indicator pulse */
 .key.sticky {
@@ -566,11 +564,11 @@ body {
 .sp-io-btn:active { background: #151820; }
 
 /* =================================================================
-   Side panel (session 038) — Commands / History / Characters catalog.
-   Slides in from the right edge of the viewport; sits above the
-   calculator bezel via fixed positioning so it's never clipped by the
-   LCD's overflow: hidden.  Closed (`.hidden`) → translated off-screen
-   to preserve the transition; open → pinned at right: 0.
+   Side panel — Commands / History / Characters catalog.  Slides in
+   from the right edge of the viewport; sits above the calculator
+   bezel via fixed positioning so it's never clipped by the LCD's
+   overflow: hidden.  Closed (`.hidden`) → translated off-screen to
+   preserve the transition; open → pinned at right: 0.
    ================================================================= */
 .side-panel {
   position: relative;

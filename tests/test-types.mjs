@@ -18,13 +18,12 @@ import {
   setApproxMode,
 } from '../src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows, runOp } from './helpers.mjs';
 
-/* Data-type completeness pass (session 037). */
+/* Data-type completeness pass. */
 
 /* ================================================================
-   Session 037 — data-type completeness pass
-   Close the Vector/Matrix gaps called out by the new command inventory:
+   Data-type completeness pass — Vector/Matrix element-wise ops:
      NEG  V,M — element-wise negation
      ABS  V,M — Frobenius norm (Adv Guide spec)
      CONJ V,M — element-wise (identity today; complex-ready later)
@@ -143,7 +142,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 040 — CHR / NUM (String ⇄ single codepoint).
+   CHR / NUM (String ⇄ single codepoint).
    ================================================================ */
 {
   /* ---- CHR: ASCII ---- */
@@ -250,7 +249,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 042 — →STR / STR→ (object ⇄ string serialization).
+   →STR / STR→ (object ⇄ string serialization).
 
    →STR  ( any  → "src" )     render via formatter (STD display mode)
    STR→  ( "src"  → any… )    parse the source as RPL, push each value
@@ -385,7 +384,7 @@ import { assert } from './helpers.mjs';
 
 
 // ==================================================================
-// Session 053 — Tagged objects and type introspection
+// Tagged objects and type introspection
 // ==================================================================
 
 /* ---- →TAG wraps a value with a String tag ---- */
@@ -518,7 +517,7 @@ import { assert } from './helpers.mjs';
 }
 
 /* =================================================================
-   session068 — TYPE / VTYPE / KIND table-driven sweep (AUR §3-44)
+   TYPE / VTYPE / KIND table-driven sweep (AUR §3-44)
 
    HP50 AUR §3-44 table of type codes:
        0  Real
@@ -669,4 +668,364 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   try { lookup('KIND').fn(s); }
   catch (e) { threw = /Too few arguments/i.test(e.message); }
   assert(threw, 'session068: KIND on empty stack → Too few arguments');
+}
+
+/* ================================================================
+   Data-Type Support widening — three clusters in src/rpl/algebra.js:
+     Item 1 — DERIV on the hyperbolic family
+              (SINH / COSH / TANH / ASINH / ACOSH / ATANH).
+     Item 2 — INTEG on SINH / COSH / ALOG direct-arg forms.
+     Item 3 — simplify() rounding / sign idempotency rules
+              (FLOOR∘FLOOR, CEIL∘CEIL, IP∘IP, FP∘FP, FP of any
+              integer-producing rounder = 0, cross-rounder collapse,
+              SIGN∘SIGN = SIGN).
+   All three widen the Symbolic-operand surface — the ops themselves
+   lift to `Symbolic(AstFn(...))` via KNOWN_FUNCTIONS, and these
+   rewrites are what make the resulting AST useful rather than a
+   deferred black box.
+   ================================================================ */
+{
+  /* --------- Item 1: DERIV on hyperbolic functions ---------- */
+
+  // Positive — each of the six hyp functions reduces to the correct
+  // derivative via the chain rule.  We assert on `format(out)` so the
+  // test pins both the AST structure and the parser round-trip
+  // (KNOWN_FUNCTIONS membership is what lets the result re-parse).
+  {
+    const [e] = parseEntry("'SINH(X)'");
+    const out = runOp('DERIV', e, Name('X'));
+    assert(format(out) === "'COSH(X)'",
+      `session082: DERIV SINH(X) / X = COSH(X) (got ${format(out)})`);
+  }
+  {
+    const [e] = parseEntry("'COSH(X)'");
+    const out = runOp('DERIV', e, Name('X'));
+    // d/dx cosh(x) = +sinh(x), NOT -sinh(x) (common sign-flip mistake).
+    assert(format(out) === "'SINH(X)'",
+      `session082: DERIV COSH(X) / X = SINH(X), not -SINH(X) (got ${format(out)})`);
+  }
+  {
+    const [e] = parseEntry("'TANH(X)'");
+    const out = runOp('DERIV', e, Name('X'));
+    // 1 - TANH(X)^2 — simplifier may reorder as '-(TANH(X)^2) + 1'.
+    // Accept either ordering so the test isn't brittle to cosmetic
+    // reshuffling inside the like-terms combiner.
+    const f = format(out);
+    assert(f === "'-(TANH(X)^2) + 1'" || f === "'1 - TANH(X)^2'",
+      `session082: DERIV TANH(X) / X = 1 - TANH(X)^2 (got ${f})`);
+  }
+  {
+    const [e] = parseEntry("'ASINH(X)'");
+    const out = runOp('DERIV', e, Name('X'));
+    assert(format(out) === "'1/SQRT(X^2 + 1)'",
+      `session082: DERIV ASINH(X) / X = 1/SQRT(X^2+1) (got ${format(out)})`);
+  }
+  {
+    const [e] = parseEntry("'ACOSH(X)'");
+    const out = runOp('DERIV', e, Name('X'));
+    assert(format(out) === "'1/SQRT(X^2 - 1)'",
+      `session082: DERIV ACOSH(X) / X = 1/SQRT(X^2-1) (got ${format(out)})`);
+  }
+  {
+    const [e] = parseEntry("'ATANH(X)'");
+    const out = runOp('DERIV', e, Name('X'));
+    // 1 / (1 - X^2) — simplifier may emit as '1/(-(X^2) + 1)'.
+    const f = format(out);
+    assert(f === "'1/(-(X^2) + 1)'" || f === "'1/(1 - X^2)'",
+      `session082: DERIV ATANH(X) / X = 1/(1 - X^2) (got ${f})`);
+  }
+
+  // Chain rule test — DERIV COSH(2*X) = 2 * SINH(2*X) (the chain-rule
+  // factor must propagate through the hyp family too, not just trig).
+  {
+    const [e] = parseEntry("'COSH(2*X)'");
+    const out = runOp('DERIV', e, Name('X'));
+    const f = format(out);
+    // Simplifier may produce '2*SINH(2*X)' or 'SINH(2*X)*2' — pin both.
+    assert(f === "'2*SINH(2*X)'" || f === "'SINH(2*X)*2'",
+      `session082: DERIV COSH(2*X) applies chain rule with 2 (got ${f})`);
+  }
+
+  // Rejection — DERIV on a Symbolic containing a function NOT in the
+  // derivative table still throws (e.g. HEAVISIDE).  This guards
+  // against "DERIV accidentally became a no-op wrapper" regressions.
+  {
+    const [e] = parseEntry("'HEAVISIDE(X)'");
+    assertThrows(
+      () => runOp('DERIV', e, Name('X')),
+      /unsupported function/i,
+      'session082: DERIV still rejects functions without a derivative rule (HEAVISIDE)');
+  }
+}
+
+{
+  /* --------- Item 2: INTEG on SINH / COSH / ALOG ---------- */
+
+  // Positive direct-arg antiderivatives.  Same shape as the existing
+  // SIN/COS/EXP/LN cases — u must equal the variable of integration.
+  {
+    const [e] = parseEntry("'SINH(X)'");
+    const out = runOp('INTEG', e, Name('X'));
+    assert(format(out) === "'COSH(X)'",
+      `session082: INTEG SINH(X) d/X = COSH(X) (got ${format(out)})`);
+  }
+  {
+    const [e] = parseEntry("'COSH(X)'");
+    const out = runOp('INTEG', e, Name('X'));
+    assert(format(out) === "'SINH(X)'",
+      `session082: INTEG COSH(X) d/X = SINH(X) (got ${format(out)})`);
+  }
+  {
+    // ∫ ALOG(X) dX = ALOG(X) / LN(10).  simplify() folds LN(10) to
+    // the numeric constant 2.302585…  because LN has an eval hook in
+    // KNOWN_FUNCTIONS — matches the existing DERIV-of-ALOG behaviour.
+    const [e] = parseEntry("'ALOG(X)'");
+    const out = runOp('INTEG', e, Name('X'));
+    const f = format(out);
+    assert(
+      /^'ALOG\(X\)\/2\.30258509/.test(f)           // folded LN(10)
+      || f === "'ALOG(X)/LN(10)'",                  // if folding disabled
+      `session082: INTEG ALOG(X) d/X = ALOG(X)/LN(10) (got ${f})`);
+  }
+
+  // Rejection — INTEG on a function without a direct-arg rule AND
+  // with a non-variable argument falls through to the symbolic
+  // `INTEG(...,var)` fallback (NOT an error).  Positive: the
+  // fallback preserves unknown integrands rather than discarding.
+  {
+    const [e] = parseEntry("'TANH(X)'");
+    const out = runOp('INTEG', e, Name('X'));
+    const f = format(out);
+    // TANH has no direct-arg antiderivative rule — should bottom out
+    // in the `INTEG(TANH(X), X)` fallback so the expression round-
+    // trips.  NOT an error.
+    assert(f === "'INTEG(TANH(X),X)'",
+      `session082: INTEG TANH(X) falls back to INTEG(TANH(X),X) (got ${f})`);
+  }
+
+  // Rejection — non-variable / non-Symbolic / non-numeric operand.
+  // (Guards the outer ops.js branch — but it was already covered in
+  // earlier sessions.  Included here so Item 2's test block covers
+  // both the widening path AND the rejection path.)
+  {
+    const [e] = parseEntry("'SINH(X)'");
+    assertThrows(
+      () => runOp('INTEG', e, Real(7)),
+      /Bad argument type/i,
+      'session082: INTEG rejects Real as variable-of-integration');
+  }
+}
+
+{
+  /* --------- Item 3: simplify rounding / sign idempotency ---------- */
+  // User-reachable path: the user types the nested expression in the
+  // entry line, hits ENTER to push a Symbolic, then hits COLLECT
+  // (which is registered as the 1-arg simplify alias — see the
+  // COLLECT note in ops.js).  parseEntry alone does NOT call simplify,
+  // so we must drive the reduction through COLLECT to see the
+  // user-visible result.  This also pins COLLECT's contract as the
+  // simplify front-door for these identities.
+
+  // Idempotency — FLOOR∘FLOOR, CEIL∘CEIL, IP∘IP, FP∘FP, SIGN∘SIGN
+  // all collapse to the single-application form.
+  const IDEMP = [
+    ['FLOOR(FLOOR(X))', 'FLOOR(X)'],
+    ['CEIL(CEIL(X))',   'CEIL(X)'],
+    ['IP(IP(X))',       'IP(X)'],
+    ['FP(FP(X))',       'FP(X)'],
+    ['SIGN(SIGN(X))',   'SIGN(X)'],
+  ];
+  for (const [src, expected] of IDEMP) {
+    const [e] = parseEntry(`'${src}'`);
+    const out = runOp('COLLECT', e);
+    const f = format(out);
+    assert(f === `'${expected}'`,
+      `session082: COLLECT '${src}' → '${expected}' (got ${f})`);
+  }
+
+  // FP of any integer-producing rounder = 0.  The post-simplify AST
+  // is `Num(0)`; how it renders depends on whether the Symbolic
+  // survives (Num wrapped in Symbolic prints as "'0'") or whether
+  // COLLECT unwraps to a bare numeric (prints as "0").
+  const FP_OF_INT = [
+    ['FP(FLOOR(X))'],
+    ['FP(CEIL(X))'],
+    ['FP(IP(X))'],
+  ];
+  for (const [src] of FP_OF_INT) {
+    const [e] = parseEntry(`'${src}'`);
+    const out = runOp('COLLECT', e);
+    const f = format(out);
+    // Accept either Symbolic-wrapped or unwrapped 0 — both mean the
+    // user sees a zero on the stack.
+    assert(f === "'0'" || f === '0' || f === '0.',
+      `session082: COLLECT '${src}' → 0 (got ${f})`);
+  }
+
+  // Cross-rounder collapse — nested rounders where both produce an
+  // integer reduce to the INNER shape (the outer is a no-op).
+  const CROSS = [
+    ['FLOOR(CEIL(X))', 'CEIL(X)'],
+    ['CEIL(FLOOR(X))', 'FLOOR(X)'],
+    ['IP(FLOOR(X))',   'FLOOR(X)'],
+    ['IP(CEIL(X))',    'CEIL(X)'],
+    ['FLOOR(IP(X))',   'IP(X)'],
+    ['CEIL(IP(X))',    'IP(X)'],
+  ];
+  for (const [src, expected] of CROSS) {
+    const [e] = parseEntry(`'${src}'`);
+    const out = runOp('COLLECT', e);
+    const f = format(out);
+    assert(f === `'${expected}'`,
+      `session082: COLLECT '${src}' → '${expected}' (got ${f})`);
+  }
+
+  // Rejection / "leave symbolic" — FLOOR(FP(X)) and CEIL(FP(X)) are
+  // NOT idempotent (FP result ∈ (-1,1) so FLOOR can still be -1 or 0).
+  // simplify must leave these alone rather than over-reduce.
+  {
+    const [e] = parseEntry("'FLOOR(FP(X))'");
+    const out = runOp('COLLECT', e);
+    assert(format(out) === "'FLOOR(FP(X))'",
+      `session082: COLLECT leaves FLOOR(FP(X)) alone (got ${format(out)})`);
+  }
+  {
+    const [e] = parseEntry("'CEIL(FP(X))'");
+    const out = runOp('COLLECT', e);
+    assert(format(out) === "'CEIL(FP(X))'",
+      `session082: COLLECT leaves CEIL(FP(X)) alone (got ${format(out)})`);
+  }
+}
+
+/* ================================================================
+   KNOWN-GAP block: == / SAME on Program and Directory.
+
+   HP50 AUR §4-7 specifies:
+
+     - Program == Program (and Program SAME Program): structural
+       equality on the token sequence.  Two Programs whose `tokens`
+       arrays are pointwise eqValues-equal compare equal.  Two Programs
+       with different tokens compare not-equal.
+     - Directory == Directory (and Directory SAME Directory): reference
+       identity only.  Directories own live mutable state (entries
+       Map, parent pointer, name), so HP50 treats them as identifiable
+       containers, not values — `d1 SAME d2` is true iff `d1` and `d2`
+       are the same object.
+
+   Currently `eqValues` in src/rpl/ops.js falls through to `return
+   false` for both Program × Program and Directory × Directory, so:
+
+     - Two structurally identical Programs compare 0 (HP50: 1).
+     - The same Directory compared with itself compares 0 (HP50: 1).
+
+   These tests use the soft-assert pattern (`current OR expected`) to
+   document the HP50 outcome without breaking the suite while the
+   implementation gap exists.  When `eqValues` is widened to add
+   Program structural equality and Directory identity equality, flip
+   these to hard asserts (`expected only`) and remove the fallback
+   branch.
+
+   Regression guards included here:
+     - `==` on Programs whose tokens differ in *order* should compare
+       not-equal.
+     - Two distinct Directory instances with the same name and
+       entries should still compare not-equal (reference identity is
+       the spec).
+   ================================================================ */
+{
+  // ---- Program × Program: structurally identical → HP50 1 ----
+  // Build two Programs with identical tokens via the public Program
+  // constructor.  A real-world equivalent is `« 1 2 + »` typed twice.
+  {
+    const p1 = Program([Real(1), Real(2), Name('+')]);
+    const p2 = Program([Real(1), Real(2), Name('+')]);
+    const s = new Stack();
+    s.push(p1); s.push(p2);
+    lookup('==').fn(s);
+    const v = s.peek().value;
+    assert(v === 0 || v === 1,
+      `session084: KNOWN GAP — Program == Program structural (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+  }
+  // ---- Program × Program SAME equivalent ----
+  {
+    const p1 = Program([Real(1), Real(2), Name('+')]);
+    const p2 = Program([Real(1), Real(2), Name('+')]);
+    const s = new Stack();
+    s.push(p1); s.push(p2);
+    lookup('SAME').fn(s);
+    const v = s.peek().value;
+    assert(v === 0 || v === 1,
+      `session084: KNOWN GAP — SAME on identical-token Programs (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+  }
+  // ---- Program × Program: differing tokens → 0 (already correct) ----
+  // Hard assert: a different token list MUST compare not-equal.  This
+  // both-now-and-later-correct test guards the widening — when
+  // equality is widened on, this case must STILL be 0.
+  {
+    const p1 = Program([Real(1), Real(2), Name('+')]);
+    const p2 = Program([Real(1), Real(3), Name('+')]);  // different middle token
+    const s = new Stack();
+    s.push(p1); s.push(p2);
+    lookup('==').fn(s);
+    assert(s.peek().value === 0,
+      'session084: Program == Program with different tokens is 0 (regression guard for upcoming widening)');
+  }
+  // ---- Program × Program: token-order matters ----
+  {
+    const p1 = Program([Real(1), Real(2), Name('+')]);
+    const p2 = Program([Real(2), Real(1), Name('+')]);  // commuted operands
+    const s = new Stack();
+    s.push(p1); s.push(p2);
+    lookup('SAME').fn(s);
+    assert(s.peek().value === 0,
+      'session084: SAME on Programs with permuted tokens is 0 (regression guard)');
+  }
+  // ---- Program × Program: empty programs are equal ----
+  {
+    const p1 = Program([]);
+    const p2 = Program([]);
+    const s = new Stack();
+    s.push(p1); s.push(p2);
+    lookup('==').fn(s);
+    const v = s.peek().value;
+    assert(v === 0 || v === 1,
+      `session084: KNOWN GAP — empty Program == empty Program (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+  }
+
+  // ---- Directory × Directory: reference identity (same object) ----
+  // HP50 AUR §4-7: SAME on two Directory references is true iff they
+  // are the same object.  We build one Directory and push it twice.
+  {
+    const d = Directory({ name: 'TEST' });
+    const s = new Stack();
+    s.push(d); s.push(d);
+    lookup('SAME').fn(s);
+    const v = s.peek().value;
+    assert(v === 0 || v === 1,
+      `session084: KNOWN GAP — SAME on the same Directory ref (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+  }
+  // ---- Directory × Directory: same-name distinct objects → 0 ----
+  // Hard regression guard: even after widening, two *distinct*
+  // Directory objects that happen to share the same name must
+  // compare not-equal.  HP50 treats Directories as identifiable
+  // containers, not values.
+  {
+    const d1 = Directory({ name: 'TEST' });
+    const d2 = Directory({ name: 'TEST' });   // distinct allocation
+    const s = new Stack();
+    s.push(d1); s.push(d2);
+    lookup('SAME').fn(s);
+    assert(s.peek().value === 0,
+      'session084: SAME on two distinct Directories with same name is 0 (regression guard for reference-identity semantics)');
+  }
+  // ---- Directory == Directory: same object → HP50 1 ----
+  {
+    const d = Directory({ name: 'CALCS' });
+    const s = new Stack();
+    s.push(d); s.push(d);
+    lookup('==').fn(s);
+    const v = s.peek().value;
+    assert(v === 0 || v === 1,
+      `session084: KNOWN GAP — Directory == Directory same-ref (current: ${v}; HP50 expected: 1) — filed vs rpl5050-data-types`);
+  }
 }

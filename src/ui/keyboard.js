@@ -42,10 +42,10 @@ function mk(primary, opts = {}) {
 const type   = text =>              (e) => e.type(text);
 const exec   = op   =>              (e) => e.execOp(op);
 // Route ENTER and cancel through the App so the "edit level 1"
-// (session 037) shadow gets committed or restored correctly — on ESC
-// / ON, a pending edit pushes its value back on the stack instead of
-// losing it.  Other dispatchers keep using the Entry directly: they
-// don't interact with the edit shadow.
+// shadow gets committed or restored correctly — on ESC / ON, a
+// pending edit pushes its value back on the stack instead of losing
+// it.  Other dispatchers keep using the Entry directly: they don't
+// interact with the edit shadow.
 const enter  =                  (_e, _s, app) => app.commitEntry();
 const back   =                      (e) => e.backspace();
 const chs    =                      (e) => e.toggleSign();
@@ -63,9 +63,9 @@ const cancel =                  (_e, _s, app) => app.cancelEntry();
      typeExecFn('SIN')      — type `SIN(` while editing, else run SIN
      typeExecName('UNDO')   — type `UNDO ` while editing, else run UNDO
 
-   Session 029 introduced this for the algebraic-entry case (`'…'`
-   only); later broadened to "any in-progress buffer" so starting to
-   type never silently commits + executes a half-finished line. */
+   Covers both the algebraic-entry case (`'…'`) and any in-progress
+   buffer, so starting to type never silently commits + executes a
+   half-finished line. */
 const typeExec     = (ch, op) =>    (e) => e.typeOrExec(ch, op);
 const typeExecFn   = fn =>          (e) => e.typeOrExecFn(fn);
 const typeExecName = op =>          (e) => e.typeOrExecName(op);
@@ -128,10 +128,9 @@ export const ARROW_KEYS = [
               else e.cursorUp();            // editor active → cursor only
             } }),
   // 📖 opens the side-panel (Commands tab).  Lives to the right of ▲
-  // so the catalog is a single click from the top of the keypad — users
-  // ran into the old CAT-on-shifted-SYMB label multiple times per
-  // session and never found it.  An open-book glyph reads as "browse
-  // the catalog" without needing the older "CAT▶" abbreviation.
+  // so the catalog is a single click from the top of the keypad.  An
+  // open-book glyph reads as "browse the catalog" without needing the
+  // older "CAT▶" abbreviation.
   mk('📖', { kind: 'cat', className: 'cat-key',
              action: (_e, _s, app) => app.toggleSidePanel('commands') }),
   mk('◀', { kind: 'arrow', className: 'arrow-left',
@@ -173,9 +172,8 @@ export const MAIN_KEYS = [
   //                              so the reverse is right there too.)
   //   ⌫:     DEL   / CLEAR      (delete / clear stack)
   mk('LASTARG', { alpha: 'M', action: typeExecName('LASTARG') }),
-  // EVAL SHIFT-L/R removed (session 038) — PRG keywords and the char
-  // palette both live in the side panel now.  Unshifted EVAL still runs
-  // the EVAL op.
+  // EVAL has no shift-L/R actions — PRG keywords and the char palette
+  // both live in the side panel.  Unshifted EVAL runs the EVAL op.
   mk('EVAL',  { alpha: 'N', action: typeExecName('EVAL') }),
   // ' key — tick quote (primary) plus the two complex / CAS affordances
   // HP50 prints on the bezel above this key:
@@ -205,8 +203,7 @@ export const MAIN_KEYS = [
                 } }),
   // ⌫ unshifted = backspace char (or DROP on empty buffer — see
   // Entry.backspace).  Shift-L DEL clears the entire command line
-  // (HP50 "delete all entry"); Shift-R CLEAR clears the whole stack
-  // (session 030).
+  // (HP50 "delete all entry"); Shift-R CLEAR clears the whole stack.
   mk('⌫',     { kind: 'back', shiftL: 'DEL', shiftR: 'CLEAR',
                 action:       back,
                 shiftLAction: cancel,
@@ -224,9 +221,9 @@ export const MAIN_KEYS = [
               action: typeExec('^', '^'),
               shiftLAction: typeExecFn('EXP'),
               shiftRAction: typeExecFn('LN') }),
-  // √x shift-R ⁿ√y (session 030): run XROOT on the stack.  No algebraic
-  // typing path yet — ⁿ√y has no textual glyph in our parser, so the
-  // key only makes sense on two stack numbers.  User presses `y ENTER
+  // √x shift-R ⁿ√y runs XROOT on the stack.  No algebraic typing
+  // path yet — ⁿ√y has no textual glyph in our parser, so the key
+  // only makes sense on two stack numbers.  User presses `y ENTER
   // x ⁿ√y` to get the x-th root of y.
   mk('√x',  { alpha: 'R', shiftL: 'x²',   shiftR: 'ⁿ√y',
               action:       typeExecFn('SQRT'),
@@ -253,16 +250,16 @@ export const MAIN_KEYS = [
               action: eex, shiftLAction: typeExecFn('ALOG'),
               shiftRAction: typeExecFn('LOG') }),
   // +/- shift-L ≠ types '≠' inside '…' or runs the ≠ op on the
-  // stack (session 030).  Same typeExec pattern that +,−,×,÷ already
-  // use for algebraic reroute.
+  // stack.  Same typeExec pattern that +,−,×,÷ already use for
+  // algebraic reroute.
   mk('+/-', { alpha: 'W', shiftL: '≠',   shiftR: '=',
               action:       chs,
               shiftLAction: typeExec('≠', '≠'),
               shiftRAction: type(' = ') }),
   // X key: unshifted types the letter X; shift-L ≤ and shift-R <
-  // route through typeExec (session 030) so they either type the
-  // character into an algebraic entry or run the comparison on the
-  // stack.  Same for 1/x on the next row (≥ / >).
+  // route through typeExec so they either type the character into an
+  // algebraic entry or run the comparison on the stack.  Same for
+  // 1/x on the next row (≥ / >).
   mk('X',   { alpha: 'X', shiftL: '≤',   shiftR: '<',
               action:       type('X'),
               shiftLAction: typeExec('≤', '≤'),
@@ -286,9 +283,9 @@ export const MAIN_KEYS = [
   mk('α',   { className: 'alpha-key', kind: 'alpha' }),
   mk('7',   { kind: 'digit', shiftL: '', shiftR: '',
               action: type('7') }),
-  // 8 shift-L / shift-R cleared session 038 — EXP&LN and TRIG menus
-  // were flattened into the side-panel Commands tab (Trig / Exp / Log
-  // categories).  Physical key still types '8'.
+  // 8 has no shift-L / shift-R — EXP&LN and TRIG menus live in the
+  // side-panel Commands tab (Trig / Exp / Log categories).  Physical
+  // key types '8'.
   mk('8',   { kind: 'digit', action: type('8') }),
   mk('9',   { kind: 'digit', shiftL: '', shiftR: '',
               action: type('9') }),
@@ -307,9 +304,9 @@ export const MAIN_KEYS = [
   // ↖️ is U+2196 + U+FE0F variation selector to force emoji presentation,
   // pointing toward the upper-left where orange labels sit on every key.
   mk('↖️', { className: 'shift-l-key', kind: 'shiftL' }),
-  // 4/5/6 shift labels removed session 038 — CALC/ALG/MATRICES/STAT/
-  // CONVERT/UNITS all reachable via the side-panel Commands tab under
-  // CAS / Vectors&Matrices / (Units - pending) categories.
+  // 4/5/6 have no shift labels — CALC/ALG/MATRICES/STAT/CONVERT/UNITS
+  // all reachable via the side-panel Commands tab under CAS /
+  // Vectors&Matrices / (Units - pending) categories.
   mk('4',  { kind: 'digit', action: type('4') }),
   mk('5',  { kind: 'digit', action: type('5') }),
   mk('6',  { kind: 'digit', action: type('6') }),
@@ -326,8 +323,8 @@ export const MAIN_KEYS = [
   //   +:  { }    / « »          (list braces / program delimiters)
   // ↗️ same idea as ↖️ but mirrored to red corner.
   mk('↗️', { className: 'shift-r-key', kind: 'shiftR' }),
-  // 1 shift labels removed session 038 — ARITH (MOD/GCD/LCM) and CMPLX
-  // (RE/IM/CONJ/ARG/ABS) both in the side-panel Commands tab.
+  // 1 has no shift labels — ARITH (MOD/GCD/LCM) and CMPLX
+  // (RE/IM/CONJ/ARG/ABS) both live in the side-panel Commands tab.
   mk('1',  { kind: 'digit', action: type('1') }),
   mk('2',  { kind: 'digit', shiftL: '', shiftR: '',
              action: type('2') }),
@@ -357,13 +354,13 @@ export const MAIN_KEYS = [
   // numeric literal in our parser — typing it is useful inside a
   // symbolic expression (LIMIT when we get there, for example) or
   // just to visually note the value.  → is the local-variable store
-  // marker used in programs like « → A B 'A+B' ».  (Session 030.)
+  // marker used in programs like « → A B 'A+B' ».
   mk('0',     { kind: 'digit', shiftL: '∞',   shiftR: '→',
                 action:       type('0'),
                 shiftLAction: type('∞'),
                 shiftRAction: type('→') }),
   // . shift-L :: types the tagged-object path delimiter; shift-R ↵
-  // types a newline so program text can be multiline (session 030).
+  // types a newline so program text can be multiline.
   mk('.',     { kind: 'digit', shiftL: '::',  shiftR: '↵',
                 action:       type('.'),
                 shiftLAction: type('::'),
@@ -372,11 +369,11 @@ export const MAIN_KEYS = [
                 action: type(' '),
                 shiftLAction: type('π'),
                 shiftRAction: type(', ') }),
-  // ENTER shift-R →NUM forces APPROX mode for one EVAL (session 032).
-  // In EXACT mode `SQRT(2)` stays symbolic on EVAL; →NUM temporarily
-  // flips the flag so the user gets the decimal, then the flag is
-  // restored to whatever they had set.  Wired through the op registry
-  // so hitting SHIFT-R ENTER is the same thing as typing `→NUM` on the
+  // ENTER shift-R →NUM forces APPROX mode for one EVAL.  In EXACT
+  // mode `SQRT(2)` stays symbolic on EVAL; →NUM temporarily flips
+  // the flag so the user gets the decimal, then the flag is restored
+  // to whatever they had set.  Wired through the op registry so
+  // hitting SHIFT-R ENTER is the same thing as typing `→NUM` on the
   // command line.
   mk('ENTER', { className: 'enter', shiftR: '→NUM',
                 action:       enter,

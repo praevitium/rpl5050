@@ -1,11 +1,14 @@
 # DATA_TYPES — RPL5050 argument-type coverage matrix
 
-**Scope.** This file tracks the per-op argument-type surface the `hp50-type-support`
+**Scope.** This file tracks the per-op argument-type surface the `rpl5050-data-type-support`
 lane is widening.  It does not track whether an op is implemented at all — that
-lives in `docs/COMMANDS.md` (or its predecessor, `docs/COMMANDS_INVENTORY.md`).
+lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 076 (2026-04-23).
+**Last updated.** Session 082 (2026-04-23) — last substantive change.
+Sessions 075 / 076 / 078 / 079 / 080 / 081 did not touch the
+type-acceptance matrix itself (they were unit-tests / review /
+command-support work).  See "Resolved this session (082)" below.
 
 ---
 
@@ -193,6 +196,39 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    `isReal(v) || isInteger(v) || isUnit(v)`.  For BinInts rounding is
    a no-op — they are already integers — but the type should still be
    accepted rather than rejected (HP50 AUR §3).  Quick widening.
+
+### Resolved this session (082)
+
+- **DERIV — hyperbolic function coverage.**  `derivFn()` in
+  `src/rpl/algebra.js` now handles the full hyperbolic family
+  (`SINH`, `COSH`, `TANH`, `ASINH`, `ACOSH`, `ATANH`) in addition
+  to the existing trig / log / exp / sqrt / abs rules.  Previously
+  `DERIV('SINH(X)', 'X')` threw *"DERIV: unsupported function
+  'SINH'"*.  All six identities are textbook
+  (`d/dx cosh = +sinh`, NOT `-sinh` — common sign-flip mistake guarded
+  by an explicit test).  This is a widening of DERIV's Symbolic-
+  payload surface — the `Sy` cell on a hypothetical DERIV row was
+  already ✓, but the set of function-bodies it actually accepts is
+  what got wider.
+
+- **INTEG — direct-arg antiderivatives for `SINH` / `COSH` / `ALOG`.**
+  `integRaw()` now folds `∫SINH(x) dx = COSH(x)`,
+  `∫COSH(x) dx = SINH(x)`, `∫ALOG(x) dx = ALOG(x)/LN(10)` when the
+  argument is exactly the variable of integration (same shape as the
+  existing SIN/COS/EXP/LN cases — chain-rule cases still fall back to
+  a symbolic `INTEG(...)` wrapper, matching HP50 AUR §5-30).
+
+- **simplify — rounding / sign idempotency.**  Added eight
+  angle-mode-independent rewrites to `simplifyFn()`:
+    - `FLOOR∘FLOOR = FLOOR`, `CEIL∘CEIL = CEIL`, `IP∘IP = IP`,
+      `FP∘FP = FP`, `SIGN∘SIGN = SIGN`
+    - `FP(FLOOR(x)) = FP(CEIL(x)) = FP(IP(x)) = 0`
+    - cross-rounder collapse: outer and inner both in {FLOOR, CEIL, IP}
+      reduces to the inner shape
+  `FLOOR(FP(x))` and `CEIL(FP(x))` are deliberately left symbolic —
+  FP's image `(−1, 1)` is not integer-valued so the outer rounder
+  still has work to do.  User-reachable through `COLLECT` (1-arg
+  simplify alias).
 
 ### Resolved this session (074)
 

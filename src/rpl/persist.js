@@ -33,11 +33,10 @@ import {
 } from './state.js';
 import { TYPES } from './types.js';
 
-/* Session 051: PRNG seed survives page reload.
-   `seedPrng(n)` does the zero-avoidance + reduction to [1, PRNG_MOD-1].
-   Imported here to apply a decoded snapshot's prngSeed through the
-   canonical coerce + emit path so listeners see exactly one state
-   event when rehydrate runs. */
+/* PRNG seed survives page reload.  `seedPrng(n)` does the zero-
+   avoidance + reduction to [1, PRNG_MOD-1].  Imported here to apply a
+   decoded snapshot's prngSeed through the canonical coerce + emit path
+   so listeners see exactly one state event when rehydrate runs. */
 import { seedPrng } from './state.js';
 
 export const STORAGE_KEY = 'hp50.state';
@@ -100,15 +99,15 @@ export function snapshot(stack) {
     home:    encode(state.home),
     path:    currentPath(),                 // ['HOME', ...] segments
     stack:   stack._items.map(encode),      // level-1-last order
-    // Session 051: PRNG seed survives a page reload so seeded sequences
-    // resume where they left off.  BigInt is encoded via `encode()` as
+    // PRNG seed survives a page reload so seeded sequences resume
+    // where they left off.  BigInt is encoded via `encode()` as
     // { __t: 'bigint', v: '<digits>' }.  Older snapshots that omit this
     // key rehydrate with the current module seed untouched (see below).
     prngSeed: encode(state.prngSeed),
-    // Session 076: CAS main variable (VX / SVX) survives a page reload.
-    // Plain string — no encoding helper needed.  Optional on decode
-    // (see rehydrate below) so older snapshots predating this field
-    // still load cleanly and reset VX to the default `'X'`.
+    // CAS main variable (VX / SVX) survives a page reload.  Plain
+    // string — no encoding helper needed.  Optional on decode (see
+    // rehydrate below) so older snapshots predating this field still
+    // load cleanly and reset VX to the default `'X'`.
     casVx: state.casVx,
   };
 }
@@ -152,12 +151,11 @@ export function rehydrate(snap, stack) {
   state.angle = snap.angle === 'DEG' || snap.angle === 'RAD' || snap.angle === 'GRD'
     ? snap.angle : 'RAD';
 
-  // Session 051: restore the PRNG seed if the snapshot carries one.
-  // Older v1 snapshots that predate this field rehydrate without
-  // touching the seed — the module-local default (or whatever was set
-  // by the current session) stays in place.  `seedPrng` handles the
-  // zero-avoidance and range reduction so bogus values can't pin the
-  // LCG to a fixed point.
+  // Restore the PRNG seed if the snapshot carries one.  Older v1
+  // snapshots that predate this field rehydrate without touching the
+  // seed — the module-local default (or whatever was set at run time)
+  // stays in place.  `seedPrng` handles the zero-avoidance and range
+  // reduction so bogus values can't pin the LCG to a fixed point.
   if (snap.prngSeed !== undefined && snap.prngSeed !== null) {
     try {
       const decoded = decode(snap.prngSeed);
@@ -173,10 +171,10 @@ export function rehydrate(snap, stack) {
     }
   }
 
-  // Session 076: optional CAS main variable (VX).  Older snapshots
-  // that lack this field reset VX to the default — matching what a
-  // fresh boot would do.  Non-string / empty values are treated as
-  // "not present" so a bad payload can't stash garbage into the slot.
+  // Optional CAS main variable (VX).  Older snapshots that lack this
+  // field reset VX to the default — matching what a fresh boot would
+  // do.  Non-string / empty values are treated as "not present" so a
+  // bad payload can't stash garbage into the slot.
   if (typeof snap.casVx === 'string' && snap.casVx.length > 0) {
     try { setCasVx(snap.casVx); }
     catch (e) { console.warn('hp50 persist: bad casVx, ignoring', e); resetCasVx(); }

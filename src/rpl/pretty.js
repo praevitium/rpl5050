@@ -1,7 +1,7 @@
 /* =================================================================
    Pretty-print (textbook-mode 2D rendering) of algebra AST nodes.
 
-   First delivered in session 018 as an MVP that:
+   Features:
      - Renders fractions with a horizontal bar and stacked
        numerator/denominator.
      - Renders exponents as superscripts (smaller, raised text).
@@ -96,8 +96,7 @@ function textBox(s, size = DEFAULT_SIZE) {
 
 /** Blank horizontal spacer — occupies `w` user units of width, draws
  *  nothing.  Used by opSepBox to give `+`, `-`, `=` a small breathing
- *  gap without the full-character-width padding of `textBox(' ${op} ')`.
- *  Session 041. */
+ *  gap without the full-character-width padding of `textBox(' ${op} ')`. */
 function gapBox(w) {
   return {
     width: Math.max(0, w),
@@ -109,8 +108,8 @@ function gapBox(w) {
 
 /** Operator separator box — tighter spacing than `textBox(\` ${op} \`)`.
  *  Each side gets ~0.3 char-width padding instead of a full space, so
- *  `X+1` in pretty-print is no longer rendered as `X + 1` with three
- *  whole character widths of gap.  Session 041.  */
+ *  `X+1` in pretty-print doesn't get three whole character widths of
+ *  gap.  */
 function opSepBox(op, size = DEFAULT_SIZE) {
   const pad = CHAR_W * size * 0.3;
   const inner = textBox(op, size);
@@ -330,7 +329,6 @@ function fmt(n) {
 // Precedence mirrors algebra.js's fmt():
 //   =,≠,<,>,≤,≥ → 0 (outermost only)
 //   +,-  → 1    *,/  → 2    ^  → 3    neg  → 4 (unary)
-// Session 034: added comparison operators alongside `=` at precedence 0.
 const PREC = {
   '=': 0, '≠': 0, '<': 0, '>': 0, '≤': 0, '≥': 0,
   '+': 1, '-': 1, '*': 2, '/': 2, '^': 3,
@@ -364,7 +362,7 @@ function lay(ast, parentPrec, size) {
     // instead of the literal text `SQRT(x)`.  The shape composes with
     // fractions, exponents, etc. — SQRT((X+1)/2) correctly draws the
     // vinculum over a stacked fraction, and SQRT(X)^2 superscripts the
-    // whole √-box.  Session 026.
+    // whole √-box.
     if (ast.name === 'SQRT' && ast.args.length === 1) {
       const inner = lay(ast.args[0], 0, size);
       return radicalBox(inner, size);
@@ -374,7 +372,6 @@ function lay(ast, parentPrec, size) {
     // and the second is the degree (XROOT(2, 3) means ∛2).  We draw the
     // index at SUP_SCALE of base size to match exponent typography, so
     // ∛2 visually composes with 2^(1/3) the way a mathematician expects.
-    // Session 033.
     if (ast.name === 'XROOT' && ast.args.length === 2) {
       const radicand = lay(ast.args[0], 0, size);
       const indexSize = size * SUP_SCALE;
@@ -428,9 +425,9 @@ function lay(ast, parentPrec, size) {
     const lBox = lay(l, lPrec, size);
     const rBox = lay(r, rPrec, size);
 
-    // Textbook juxtaposition (session 024).  `2*X` should render as
-    // `2X`, `2*X^2` as `2X²`, `2*(X+1)` as `2(X+1)`, `2*SIN(X)` as
-    // `2 SIN(X)`.  We apply it when the left operand is a Num AND the
+    // Textbook juxtaposition.  `2*X` renders as `2X`, `2*X^2` as
+    // `2X²`, `2*(X+1)` as `2(X+1)`, `2*SIN(X)` as `2 SIN(X)`.  We
+    // apply it when the left operand is a Num AND the
     // right operand is NOT a Num — that's sufficient to cover all
     // textbook "coefficient meets variable/power/fn/paren" shapes while
     // avoiding `2*3 → 23` (which would read as twenty-three).

@@ -1,4 +1,4 @@
-/* Session 064 — arrow-op alias coverage.
+/* Arrow-op alias coverage.
 
    HP50 has many ops whose canonical name uses a Unicode arrow (→ or
    its reverse), e.g. `→STR`, `R→D`, `C→R`, `→LIST`, `→UNIT`, etc.

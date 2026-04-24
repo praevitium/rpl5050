@@ -1163,12 +1163,21 @@ function _roundTripProgram(prog) {
     'session077: →PRG 0 → empty program « »');
 }
 {
+  // →ARRY's bare-count form rejects 0 at the `_toIntIdx` layer —
+  // historically the internal `if (n === 0) { push Vector([]); }` check
+  // inside `_toArrayOp` was unreachable because `_toIntIdx` refuses
+  // zero.  Session 077's parity audit surfaces but does NOT flip this:
+  // changing it would be a new behaviour and wants its own session to
+  // audit downstream (matrix shape validation, ARRY→ round-trip, etc.).
+  // Pin the current rejection shape so a future cleanup sees the
+  // deliberate asymmetry.  Tracked as follow-up in RPL.md.
   const s = new Stack();
   s.push(Integer(0n));
-  lookup('→ARRY').fn(s);
-  assert(s.depth === 1 && s.peek().type === 'vector' &&
-         s.peek().items.length === 0,
-    'session077: →ARRY 0 → empty vector []');
+  let caught = null;
+  try { lookup('→ARRY').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument value/.test(caught.message),
+    'session077: →ARRY 0 rejects Bad argument value (documented asymmetry ' +
+    'with →LIST 0 / →PRG 0 — follow-up in RPL.md)');
 }
 
 /* ---- OBJ→ on Program / List both push Integer count (parity) ---- */

@@ -98,7 +98,6 @@ export function formatStackTop(v, display = DEFAULT_DISPLAY) {
  * valued components render without a trailing dot — so `(1, 1)` stays
  * `(1, 1)` rather than `(1., 1.)`, matching HP50 EXACT display.  In
  * APPROX or any non-STD mode we delegate to `formatReal` unchanged.
- * Session 041.
  */
 /** Render a Complex in the active coordinate display mode.
  *
@@ -237,16 +236,16 @@ export function formatBinaryInteger(v) {
 }
 
 function formatSymbolic(expr) {
-  // Primary shape after session 016: AST nodes from src/rpl/algebra.js
-  // with a `kind` field (num / var / neg / bin).  Delegate to the
-  // algebra printer so expressions render with minimal parens and
-  // HP50-ish spacing:  'X^2 + 3*X + 1'.
+  // Primary shape: AST nodes from src/rpl/algebra.js with a `kind`
+  // field (num / var / neg / bin).  Delegate to the algebra printer
+  // so expressions render with minimal parens and HP50-ish spacing:
+  // 'X^2 + 3*X + 1'.
   if (expr && typeof expr === 'object' && typeof expr.kind === 'string') {
     return formatAlgebra(expr);
   }
   // Legacy fallback — older tests/stubs stored { op, args: [...] } or
-  // raw strings / numbers.  Keep rendering them so nothing that was
-  // previously on the stack becomes unreadable.
+  // raw strings / numbers.  Keep rendering them so nothing already
+  // on the stack becomes unreadable.
   if (expr == null) return '';
   if (typeof expr === 'string') return expr;
   if (typeof expr === 'number') return String(expr);

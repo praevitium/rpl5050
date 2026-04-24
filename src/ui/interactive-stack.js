@@ -1,5 +1,5 @@
 /* =================================================================
-   Interactive stack controller (session 037).
+   Interactive stack controller.
 
    HP50 keystroke G-2: "25.1 — If no command line, interactive stack".
    Pressing ▲ from an empty command line opens a browse mode in which:
@@ -106,7 +106,7 @@ export function rollDownToLevel(stack, level) {
   // After pop, the new depth is depth-1; the insertion target is
   // the same index we'd splice level N to in the old depth.  We want
   // the old level-N value to shift "up" by one so the new top sits
-  // where level N used to be → insert at index (length - (level-1)).
+  // at the pre-pop level-N slot → insert at index (length - (level-1)).
   const insertIdx = stack._items.length - (level - 1);
   stack._items.splice(insertIdx, 0, top);
   stack._emit();

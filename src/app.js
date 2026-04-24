@@ -77,10 +77,9 @@ class App {
       keypad:  document.getElementById('keypad'),
     });
 
-    // Session 038 — side panel (Commands / History / Characters).  Mounts
-    // itself into #sidePanelRoot and starts hidden.  Replaces several
-    // shifted soft-menus (CMD / PRG / CHARS / MTH / CAT / EXP&LN / TRIG /
-    // CALC / ALG / MATRICES / STAT / ARITH / CMPLX).
+    // Side panel (Commands / History / Characters / Files).  Mounts
+    // itself into #sidePanelRoot and starts hidden.  Browsable catalog
+    // of every registered op in place of a dozen small shifted soft-menus.
     const sidePanelRoot = document.getElementById('sidePanelRoot');
     if (sidePanelRoot) {
       this.sidePanel = new SidePanel({ root: sidePanelRoot, app: this });
@@ -88,23 +87,23 @@ class App {
 
     this._installChromeToggles();
 
-    // Session 037 — interactive-stack state (set by enterInteractiveStack,
-    // read by the arrow-key dispatch below).  null means "not active";
+    // Interactive-stack state (set by enterInteractiveStack, read by
+    // the arrow-key dispatch below).  null means "not active";
     // otherwise { savedMenuAll, savedMenuPage, savedMenuKind } holds the
     // pre-existing soft menu so we can restore it on exit.
     this._interactive = null;
 
-    // Session 037 — "editing level 1" shadow.  When editLevel1() pops
-    // level 1 onto the command line, it stashes the popped value here.
-    // cancelEntry() restores it if the user escapes out; commitEntry()
-    // clears it if the user presses ENTER.  See editLevel1 for the full
-    // lifecycle explanation.
+    // "Editing level 1" shadow.  When editLevel1() pops level 1 onto
+    // the command line, it stashes the popped value here.  cancelEntry()
+    // restores it if the user escapes out; commitEntry() clears it if
+    // the user presses ENTER.  See editLevel1 for the full lifecycle
+    // explanation.
     this._pendingEditValue = null;
 
-    // Session 037 — plumb the Display's click-delegate callbacks into
-    // App-level handlers.  Stack-row click echoes the value into the
-    // command line; indicator click cycles the underlying mode; path
-    // segment click jumps to that directory.
+    // Plumb the Display's click-delegate callbacks into App-level
+    // handlers.  Stack-row click echoes the value into the command
+    // line; indicator click cycles the underlying mode; path segment
+    // click jumps to that directory.
     this.display.onStackRowClick    = (level) => this.echoStackLevel(level);
     this.display.onIndicatorClick   = (id)    => this.cycleIndicator(id);
     this.display.onPathSegmentClick = (index) => this.navigateToPathSegment(index);
@@ -121,11 +120,11 @@ class App {
       this.display.setStackScroll(0);
       this.display.renderStack(this.stack);
     });
-    // Session 037 — any stack mutation invalidates a pending edit
-    // shadow.  Covers the operator-auto-commit path (pressing e.g. +
-    // with a non-empty buffer commits the buffer via Entry.enter() and
-    // then runs the op) so we never end up with a stale shadow that a
-    // later ESC would mistakenly restore.
+    // Any stack mutation invalidates a pending edit shadow.  Covers
+    // the operator-auto-commit path (pressing e.g. + with a non-empty
+    // buffer commits the buffer via Entry.enter() and then runs the
+    // op) so we never end up with a stale shadow that a later ESC
+    // would mistakenly restore.
     this.stack.subscribe(() => { this._pendingEditValue = null; });
     this.entry.subscribe(() => this.display.renderCmdline(this.entry));
 
@@ -140,11 +139,11 @@ class App {
       this.display.setCoordMode(st.coordMode);
       if (this.menuKind === 'VARS')  this.showVarsMenu({ preservePage: true });
       if (this.menuKind === 'MODES') this.showModesMenu({ preservePage: true });
-      // Textbook mode toggling (session 019): re-render the stack so
-      // Symbolic rows swap between pretty-printed SVG and flat text
-      // at the moment the flag flips.  We re-render unconditionally
-      // on every state event because renderStack is cheap for the
-      // handful of rows on the LCD and reliably picks up the flag.
+      // Re-render the stack so Symbolic rows swap between pretty-printed
+      // SVG and flat text at the moment textbookMode flips.  Done
+      // unconditionally on every state event because renderStack is
+      // cheap for the handful of rows on the LCD and reliably picks up
+      // the flag.
       this.display.renderStack(this.stack);
     });
 
@@ -229,13 +228,12 @@ class App {
     catch (e) { this.entry.flashError({ message: `Import failed: ${e.message}` }); }
   }
 
-  /** Called by the MODE meta-key.  For now, a single press cycles the
-   *  angle mode; a full MODE dialog is future work. */
+  /** Called by the MODE meta-key.  A single press cycles the angle
+   *  mode; a full MODE dialog is future work. */
   cycleAngleMode() { cycleAngle(); }
 
-  /** Session 038 — open / close the side panel on the chosen tab.  Used
-   *  by the 📖 button (→ 'commands').  History is still reachable as a
-   *  tab inside the panel; pressing the same tab again closes the
+  /** Open / close the side panel on the chosen tab.  Used by the 📖
+   *  button (→ 'commands').  Pressing the same tab again closes the
    *  panel, matching what you'd expect from a toggle. */
   toggleSidePanel(tab = 'commands') {
     if (!this.sidePanel) return;
@@ -243,7 +241,7 @@ class App {
   }
 
   /* ================================================================
-     MODES soft-menu (session 020)
+     MODES soft-menu.
 
      Presents display / angle mode toggles on F1..F6 when MODE is
      pressed.  On a real HP50 this lives inside a full-screen MODE
@@ -258,24 +256,21 @@ class App {
      F4  DEC     set binary display base to decimal
      F5  OCT     set binary display base to octal
      F6  BIN     set binary display base to binary
+     F7  EXA/APX toggle EXACT ↔ APPROX numeric-eval mode
 
      The menu labels refresh whenever state changes (angle mode,
      textbook mode) so the user always sees the current mode without
      having to look at the annunciator.  Labels rebuild on each
      render because `showModesMenu` re-captures the live state values
      when called.
-
-     Added session 020 — closes the "keypad-reachable end-to-end"
-     checkbox for TEXTBOOK / FLAT, which session 019 shipped as ops
-     without any physical key or soft-menu binding.
      ================================================================ */
   showModesMenu(opts = {}) {
     // Re-read current state each call so the labels stay live.  When
     // the user presses ANGL or TXT, the follow-up state event is also
     // caught by the subscribeState hook below which rebuilds the
     // MODES menu — so the user sees the updated label even if they
-    // triggered the toggle via other means (e.g., typing ANGL in an
-    // alpha session).
+    // triggered the toggle via other means (e.g., typing ANGL in
+    // alpha mode).
     //
     // `preservePage`: keep the current page index on rebuild so a
     // user who clicks the EXA→APX slot on page 2 doesn't get kicked
@@ -301,9 +296,9 @@ class App {
         onPress: () => this.entry.safeRun(() => lookup('OCT').fn(this.stack, this.entry)) },
       { label: 'BIN',
         onPress: () => this.entry.safeRun(() => lookup('BIN').fn(this.stack, this.entry)) },
-      // Session 035: EXACT/APPROX toggle.  Label shows the target mode
-      // the user would switch INTO if they pressed the key, matching
-      // the TXT→FLT / FLT→TXT pattern above.
+      // EXACT/APPROX toggle.  Label shows the target mode the user
+      // would switch INTO if they pressed the key, matching the
+      // TXT→FLT / FLT→TXT pattern above.
       { label: calcState.approxMode ? 'APX→EXA' : 'EXA→APX',
         onPress: () => {
           this.entry.safeRun(() =>
@@ -318,7 +313,7 @@ class App {
   }
 
   /* ================================================================
-     Menu helper (session 030)
+     Menu helper
 
      A single "commit-and-run" factory shared by every soft-menu whose
      F-keys just dispatch to a registered op.  Keeps each menu
@@ -330,17 +325,6 @@ class App {
       this.entry.safeRun(() => lookup(opName).fn(this.stack, this.entry));
     };
   }
-
-  /* ================================================================
-     Session 038 — the additional soft-menus (showMathMenu, showTrigMenu,
-     showExpLnMenu, showCalcMenu, showAlgMenu, showArithMenu,
-     showCmplxMenu, showMatricesMenu, showCMDMenu, showPRGMenu) that
-     formerly lived here have been removed.  Their contents are all
-     reachable from the side-panel Commands tab (📖 on the nav row),
-     which provides a single browsable catalog instead of a dozen
-     small menus spread across shifted keys.  _pushReal is still useful
-     for other soft-menu slots, so it stays.
-     ================================================================ */
 
   /** Push a raw number onto the stack.  Used by menu slots that
    *  produce a constant (e, π, etc.). */
@@ -557,7 +541,7 @@ class App {
   }
 
   /* ================================================================
-     HP50 arrow-key / direct-manipulation actions (session 037)
+     HP50 arrow-key / direct-manipulation actions
 
      Three HP50 keystroke sequences from the Advanced Guide live here:
        25.1  ▲ from empty cmdline      → interactive stack
@@ -588,9 +572,8 @@ class App {
    *  If the user commits with ENTER, the edited buffer is parsed and
    *  pushed normally (commitEntry discards the stash).  If the user
    *  cancels with ESC (or the ON key), cancelEntry() pushes the stashed
-   *  value back so nothing is lost — this matches the behaviour you'd
-   *  expect from any "edit in place" affordance and is what the user
-   *  asked for in session 037. */
+   *  value back so nothing is lost — matching the behaviour you'd
+   *  expect from any "edit in place" affordance. */
   editLevel1() {
     if (this.stack.depth < 1) {
       this.entry.flashError({ message: 'Too few arguments' });
@@ -678,7 +661,7 @@ class App {
         setBinaryBase(order[((i < 0 ? -1 : i) + 1) % order.length]);
         return;
       }
-      // Session 037: clicking the α annunciator runs the same
+      // Clicking the α annunciator runs the same
       // null → alpha → alphaLock → null cycle as the α key on the
       // keypad.  Mirrors what the user expects: the LCD marker they
       // can see is the same affordance as the physical button for
@@ -709,7 +692,7 @@ class App {
     for (let i = 0; i < stepsUp; i++) goUp();
   }
 
-  /* ---------------- Interactive stack (session 037) ----------------
+  /* ---------------- Interactive stack ----------------
      The HP50 interactive stack is a "browse" mode entered by pressing
      ▲ from an empty command line.  A visual cursor highlights a stack
      level (starting at level 1); ▲ / ▼ move the cursor; ENTER runs the

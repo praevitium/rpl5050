@@ -19,11 +19,11 @@ import {
   hasVarRedo, clearVarUndo,
 } from '../rpl/state.js';
 
-// Maximum length of the command-line history ring buffer (session 033).
+// Maximum length of the command-line history ring buffer.
 // 20 is the HP50 default for CMD — a balance between "enough to scroll
-// back through a typical session" and "doesn't saturate the LCD menu
-// pager" (20 entries = 4 soft-menu pages at 6 slots per page, with the
-// tail padded).  Parameterised here so tests can reset it if needed.
+// back through typical use" and "doesn't saturate the LCD menu pager"
+// (20 entries = 4 soft-menu pages at 6 slots per page, with the tail
+// padded).  Parameterised here so tests can reset it if needed.
 const HISTORY_MAX = 20;
 
 export class Entry {
@@ -36,10 +36,10 @@ export class Entry {
     this.error = '';                       // last error message (for LCD)
     this._listeners = new Set();
     this.onError = options.onError || ((msg) => { this.error = msg; this._emit(); });
-    // Command history (session 033).  Ring buffer of committed command-
-    // line entries, newest-last.  Feeding the CMD soft-menu (HIST
-    // SHIFT-L) on the keyboard; capped at HISTORY_MAX entries so long
-    // sessions don't unbounded-grow.
+    // Command history.  Ring buffer of committed command-line
+    // entries, newest-last.  Feeds the CMD soft-menu (HIST SHIFT-L)
+    // on the keyboard; capped at HISTORY_MAX entries so long runs
+    // don't unbounded-grow.
     //
     // Entries are recorded by _recordHistory() only when a commit
     // actually happened (non-empty buffer, parsed successfully).  We
@@ -60,9 +60,9 @@ export class Entry {
   }
 
   /** True when the buffer has an unclosed tick-quote — i.e. the cursor
-   *  is inside an algebraic expression.  Session 029 uses this to route
-   *  operator keys (+, -, *, /, ^) through type() instead of execOp()
-   *  so the user can actually spell out `'X^2 + 2*X + 1'` on the keypad.
+   *  is inside an algebraic expression.  Used to route operator keys
+   *  (+, -, *, /, ^) through type() instead of execOp() so the user
+   *  can actually spell out `'X^2 + 2*X + 1'` on the keypad.
    *
    *  Counts apostrophes literally; there's no tick-escaping syntax
    *  (parseEntry uses balanced ticks).  Odd count → we're inside a
@@ -154,8 +154,8 @@ export class Entry {
 
   /** Snapshot stack AND variable/directory state together so HIST
    *  SHIFT-R UNDO reverts the whole keypress — not just the stack.
-   *  Session 032 added the var-state half so `'X' 5 STO [UNDO]`
-   *  actually removes X from the current directory. */
+   *  The var-state half ensures `'X' 5 STO [UNDO]` actually removes
+   *  X from the current directory. */
   _snapForUndo() {
     this.stack.saveForUndo();
     saveVarStateForUndo();
@@ -168,8 +168,8 @@ export class Entry {
    *  'No undo available' when no snapshot exists; the keyboard
    *  handler turns that into a flashed status-line error.
    *
-   *  Session 037: multi-level.  Repeated calls walk back through
-   *  history one step at a time (not swap — see Stack.undo). */
+   *  Multi-level: repeated calls walk back through history one
+   *  step at a time (not swap — see Stack.undo). */
   performUndo() {
     if (!this.stack.hasUndo()) throw new RPLError('No undo available');
     // Var-state first so the stack-undo event arrives AFTER the
@@ -179,8 +179,8 @@ export class Entry {
     this.stack.undo();
   }
 
-  /** Composite REDO: re-apply the most recently undone step.  New in
-   *  session 037 as the companion to multi-level performUndo.  Throws
+  /** Composite REDO: re-apply the most recently undone step.
+   *  Companion to multi-level performUndo.  Throws
    *  'No redo available' when there's nothing to redo. */
   performRedo() {
     if (!this.stack.hasRedo()) throw new RPLError('No redo available');
@@ -188,11 +188,11 @@ export class Entry {
     this.stack.redo();
   }
 
-  /** Record a committed entry in the command-line history ring buffer
-   *  (session 033).  Consecutive identical entries are collapsed to
-   *  one — otherwise spamming ENTER would saturate the buffer with
-   *  duplicates.  Only `enter()` / `execOp()` call this on a successful
-   *  commit path so failed parses don't pollute the history. */
+  /** Record a committed entry in the command-line history ring buffer.
+   *  Consecutive identical entries are collapsed to one — otherwise
+   *  spamming ENTER would saturate the buffer with duplicates.  Only
+   *  `enter()` / `execOp()` call this on a successful commit path so
+   *  failed parses don't pollute the history. */
   _recordHistory(text) {
     const s = String(text ?? '').trim();
     if (s.length === 0) return;
@@ -306,8 +306,7 @@ export class Entry {
    *
    *  HP50 behavior — if the current number has an exponent marker (E),
    *  +/- flips the EXPONENT's sign, not the mantissa.  Only a number
-   *  without an E gets its mantissa sign flipped.  Fixed in session 041
-   *  (prior behavior negated the mantissa in every case). */
+   *  without an E gets its mantissa sign flipped. */
   toggleSign() {
     this.error = '';
     if (this.buffer.length === 0) {
@@ -399,13 +398,13 @@ export class Entry {
     catch (e) {
       this.stack.restore(rollback);
       this.stack.clearUndo();
-      // Session 032: also nuke the var-state UNDO slot.  Since
-      // `body()` may have succeeded a variable STO/PURGE before the
-      // throw (and we intentionally DON'T roll var state back — RPL
-      // side effects on variables are persistent), keeping the
-      // var-undo slot would let a subsequent UNDO revert to a state
-      // where the stack matches the current live one but vars
-      // don't.  Clearing both keeps the two halves in lock-step.
+      // Also nuke the var-state UNDO slot.  Since `body()` may have
+      // succeeded a variable STO/PURGE before the throw (and we
+      // intentionally DON'T roll var state back — RPL side effects on
+      // variables are persistent), keeping the var-undo slot would let
+      // a subsequent UNDO revert to a state where the stack matches
+      // the current live one but vars don't.  Clearing both keeps the
+      // two halves in lock-step.
       clearVarUndo();
       this.flashError(e);
     }
@@ -431,9 +430,9 @@ export class Entry {
       // If a *bare* (unquoted) identifier resolves to an op, run it rather
       // than pushing.  Quoted identifiers (`'+'`) are literal references
       // and always push — this is what makes `'+' 'X' STO` work.
-      // Session 046: wrap each op invocation in `stack.runOp` so
-      // LAST/LASTARG sees the most recently executed user-facing
-      // command's argument list.
+      // Wrap each op invocation in `stack.runOp` so LAST/LASTARG
+      // sees the most recently executed user-facing command's
+      // argument list.
       for (const v of values) {
         if (v?.type === 'name' && !v.quoted) {
           const op = lookup(v.id);

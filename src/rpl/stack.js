@@ -150,10 +150,8 @@ export class Stack {
     this._emit();
   }
 
-  /* --------------- multi-level UNDO (session 037 upgrade) -----
-     Session 031 introduced a one-slot shadow.  Session 037 promotes
-     it to a full history stack with a companion redo stack, per the
-     user's "UNDO should be multi-level" ask.
+  /* --------------- multi-level UNDO -----
+     Full history stack with a companion redo stack.
 
      Invariants:
        `_undoStack` — older snapshots older-first, newest last.
@@ -167,8 +165,8 @@ export class Stack {
                       kills redo history" semantics).
 
      Bound: UNDO_MAX caps the history to prevent unbounded growth
-     during long sessions.  100 gives plenty of runway for "oops"
-     recovery without ever holding the whole session in memory.
+     during long use.  100 gives plenty of runway for "oops"
+     recovery without ever holding the whole history in memory.
 
      Deviation from real HP50: HP50 LASTSTACK is single-slot / swap.
      GOALS.md explicitly allows deviations where HP50 limitations
@@ -224,7 +222,7 @@ export class Stack {
     this._redoStack = [];
   }
 
-  /* --------------- LAST / LASTARG (session 046) ---------------
+  /* --------------- LAST / LASTARG ---------------
      HP50 LASTARG pushes back the arguments consumed by the most
      recent user-facing command.  `runOp(fn)` wraps a single op
      invocation: snapshot items before `fn()` runs, let it execute,
@@ -288,7 +286,7 @@ export class Stack {
 }
 
 /** Cap on undo history depth.  100 keeps "oops" recovery generous
- *  without ever holding the whole session in memory. */
+ *  without ever holding the whole history in memory. */
 Stack.UNDO_MAX = 100;
 
 /* =================================================================
@@ -312,9 +310,9 @@ export class RPLAbort extends Error {
  * IFERR cannot trap it.  The top-level EVAL wrapper treats it as a
  * clean program suspension (no flashError, stack preserved at the
  * point of the halt).  `state.halted` is populated before the throw
- * so `CONT` can resume where HALT left off.  Session 073 — pilot
- * restricted to the top level of a Program body (no structured
- * control flow, no compiled-local frame active). */
+ * so `CONT` can resume where HALT left off.  HALT fires only at the
+ * top level of a Program body (no structured control flow, no
+ * compiled-local frame active). */
 export class RPLHalt extends Error {
   constructor(msg = 'Halt') { super(msg); this.name = 'RPLHalt'; }
 }

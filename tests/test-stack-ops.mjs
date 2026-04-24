@@ -1,6 +1,5 @@
-/* Session 064 — coverage for HP50 stack-manipulation commands whose
-   behavior previously lived only in stack.js and ops.js but had zero
-   direct test coverage.
+/* Coverage for HP50 stack-manipulation commands implemented in
+   stack.js and ops.js.
 
    Ops covered (HP50 User Guide §C / AUR §2):
 
@@ -167,8 +166,7 @@ function vals(s) {
     'session064: 0 DUPN removes count only');
 }
 
-/* ---- DUPDUP — session 043 covered the positive path; add the
-     error path since it asserts "Too few arguments" semantics. ---- */
+/* ---- DUPDUP — error path: asserts "Too few arguments" semantics. ---- */
 {
   const s = new Stack();
   let threw = false;
@@ -291,7 +289,7 @@ function vals(s) {
     'session064: 99 2 UNPICK writes 99 at level 2: (10 20 30 99 2 → 10 99 30)');
 }
 
-/* ---- NDUPN — dup x n times, leaves n on top (session 045 variant) ---- */
+/* ---- NDUPN — dup x n times, leaves n on top ---- */
 {
   const s = new Stack();
   s.push(Integer(7n));                      // x

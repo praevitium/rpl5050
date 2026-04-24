@@ -5,7 +5,7 @@
    { type: <string>, ...payload }.  Constructors below enforce that
    shape and provide type predicates.
 
-   Types implemented in this session:
+   Types implemented:
      Real      — JS number (IEEE-754, upgrade later to 12-digit BCD)
      Integer   — arbitrary precision via BigInt
      Complex   — { re, im } real pair

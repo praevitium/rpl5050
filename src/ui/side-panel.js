@@ -1,5 +1,5 @@
 /* =================================================================
-   Side-panel: Commands / History / Characters (session 038)
+   Side-panel: Commands / History / Characters / Files
 
    A slide-in overlay on the right edge of the bezel that replaces
    several shift-layer soft menus (CMD, PRG, CHARS, MTH, CAT, EXP&LN,
@@ -10,7 +10,7 @@
    Three tabs:
 
      1. Commands  —  Every registered op, grouped by the same categories
-                     used in docs/COMMANDS_INVENTORY.md.  Click behavior
+                     used in docs/COMMANDS.md.  Click behavior
                      mirrors a keypad button press: if the command line
                      has content, the op commits the buffer first, then
                      runs.  Inside algebraic entry (unclosed tick), text
@@ -41,7 +41,7 @@ import { UNIT_CATALOG } from '../rpl/units.js';
    of op names (must match the registered op names from ops.js).  Ops
    not in this map fall into "Other".  Missing-from-registry names are
    rendered but disabled — lets the catalog double as a roadmap.
-   Kept roughly aligned with docs/COMMANDS_INVENTORY.md so the two
+   Kept roughly aligned with docs/COMMANDS.md so the two
    stay in sync.
    ----------------------------------------------------------------- */
 export const CATEGORIES = {
@@ -579,10 +579,10 @@ export class SidePanel {
     wrap.className = 'sp-files';
 
     // IO toolbar: Export downloads the full HOME tree + stack as JSON;
-    // Import replaces them from a JSON file the user picks.  Moved
-    // here (session: Files tab polish) from a spot in the page header
-    // so the calculator bezel stays purely keypad.  Click delegation
-    // goes through _handleAction('export' | 'import').
+    // Import replaces them from a JSON file the user picks.  Lives
+    // here rather than in the page header so the calculator bezel
+    // stays purely keypad.  Click delegation goes through
+    // _handleAction('export' | 'import').
     const io = document.createElement('div');
     io.className = 'sp-io';
     const exportBtn = document.createElement('button');

@@ -42,8 +42,7 @@ export function tokenize(src) {
 
     // String literal.  An unterminated string at end-of-buffer is
     // auto-closed so the user's in-progress `"hello` still parses
-    // as the string "hello" — matches the common convenience the
-    // user asked for over strict-parser errors.
+    // as the string "hello" — convenience over strict-parser errors.
     if (c === '"') {
       let j = i + 1, str = '';
       while (j < n && src[j] !== '"') {
@@ -64,9 +63,8 @@ export function tokenize(src) {
     // user types when there's no direct way to produce the guillemets)
     // and the Unicode U+00AB / U+00BB guillemets (what SHIFT-R + types
     // on our keypad — matching the glyph the HP50 prints on the key).
-    // Session 033 added the Unicode variants so the keypad emission
-    // actually parses.  The two forms normalise to the same delim token
-    // so the downstream parseProgram path is unchanged.
+    // The two forms normalise to the same delim token so the
+    // downstream parseProgram path is unchanged.
     if (c === '<' && src[i + 1] === '<') {
       tokens.push({ kind: 'delim', text: '<<' }); i += 2; continue;
     }
@@ -256,12 +254,11 @@ export function parseEntry(src) {
         const body = t.text;
         // Include comparison operators (≠, <, >, ≤, ≥) so `'x<y'` and
         // friends are parsed as symbolic inequalities rather than falling
-        // through to Name.  Session 034.
-        // Session 041: dropped the letter requirement so purely numeric
-        // algebra — '1/3', '2^0.5' — becomes Symbolic rather than a
-        // Name.  This is what makes `'1/3' →NUM` fold under APPROX and
-        // stay exact under EXACT.  Bare operator atoms like `'+'` fall
-        // through to Name via the parseAlgebra try/catch.
+        // through to Name.  Purely numeric algebra — '1/3', '2^0.5' —
+        // also becomes Symbolic rather than a Name.  This is what makes
+        // `'1/3' →NUM` fold under APPROX and stay exact under EXACT.
+        // Bare operator atoms like `'+'` fall through to Name via the
+        // parseAlgebra try/catch.
         const looksAlgebraic =
           /[+\-*/^()=≠<>≤≥]/.test(body);
         if (looksAlgebraic) {
