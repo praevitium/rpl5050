@@ -42,15 +42,9 @@ import {
 } from './units.js';
 import { RPLError, RPLAbort, RPLHalt } from './stack.js';
 import {
-  deriv as algebraDeriv, integ as algebraInteg,
   Var as AstVar, Num as AstNum,
   Bin as AstBin, Fn as AstFn, Neg as AstNeg,
   evalAst as algebraEvalAst, defaultFnEval as algebraDefaultFnEval,
-  expand as algebraExpand,
-  simplify as algebraSimplify,
-  subst as algebraSubst,
-  collectByVar as algebraCollectByVar,
-  solve as algebraSolve,
   isNum as astIsNum, KNOWN_FUNCTIONS,
   formatAlgebra,
   freeVars as algebraFreeVars,
@@ -12699,7 +12693,12 @@ register('AXM', (s) => {
    plain JS Real number (no Complex).  Throws `Bad argument value`
    on anything that isn't a polynomial with numeric coefficients. */
 function _symbolicPolyToNumCoefs(ast, varName) {
-  const expanded = algebraExpand(ast);
+  // Expand the polynomial via Giac so `(X-1)^3` etc. come back as a
+  // flat sum-of-monomials the walker below can read.  Giac is main-
+  // thread synchronous; no async threading needed.
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const expanded = giacToAst(
+    giac.caseval(buildGiacCmd(ast, (e) => `expand(${e})`, [varName])));
   // Walk the top-level +/- structure, emit terms with a ± sign.
   const terms = [];
   (function walk(node, sign) {
@@ -13340,9 +13339,24 @@ register('PREVAL', (s) => {
   };
   const aAst = endpointToAst(aVal);
   const bAst = endpointToAst(bVal);
-  const Fb = algebraSubst(fVal.expr, varName, bAst);
-  const Fa = algebraSubst(fVal.expr, varName, aAst);
-  const diff = algebraSimplify(AstBin('-', Fb, Fa));
+  // Route through Giac.  One `subst` call per endpoint, followed by
+  // Giac's own `simplify` to fold the difference.  All free-variable
+  // names (of F, `a`, `b`) get purged so Xcas built-ins can't shadow
+  // user variables.
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const aG = astToGiac(aAst);
+  const bG = astToGiac(bAst);
+  const extra = [
+    varName,
+    ...algebraFreeVars(aAst),
+    ...algebraFreeVars(bAst),
+  ];
+  const cmd = buildGiacCmd(
+    fVal.expr,
+    (e) => `simplify(subst(${e},${varName}=${bG})-subst(${e},${varName}=${aG}))`,
+    extra,
+  );
+  const diff = giacToAst(giac.caseval(cmd));
   if (diff && diff.kind === 'num') { s.push(Real(diff.value)); return; }
   s.push(Symbolic(diff));
 });
@@ -13468,312 +13482,34 @@ function _lapVarName(ast) {
 /** Is `ast` a Num node? */
 function _isNumNode(ast) { return ast && ast.kind === 'num'; }
 
-/** True when `ast` does NOT contain `varName` as a free variable —
- *  i.e. is a constant with respect to varName.  Used to pull constants
- *  out in front of the LAPLACE / ILAP rewrites. */
-function _isConstIn(ast, varName) {
-  const v = algebraFreeVars(ast);
-  return !v.has(varName);
-}
-
-/** Try to match `α · X` (or just `X` ≡ 1·X) — returns α as an AST,
- *  or `null` on no match.  α is required to be a constant in X. */
-function _matchAlphaX(ast, varName) {
-  if (ast && ast.kind === 'var' && ast.name === varName) {
-    return AstNum(1);
-  }
-  if (ast && ast.kind === 'bin' && ast.op === '*') {
-    if (ast.l && ast.l.kind === 'var' && ast.l.name === varName
-        && _isConstIn(ast.r, varName)) return ast.r;
-    if (ast.r && ast.r.kind === 'var' && ast.r.name === varName
-        && _isConstIn(ast.l, varName)) return ast.l;
-  }
-  if (ast && ast.kind === 'neg') {
-    const sub = _matchAlphaX(ast.arg, varName);
-    if (sub) return AstNeg(sub);
-  }
-  return null;
-}
-
-/** Integer factorial as an AST Num.  Caps at 12! (a practical
- *  Laplace-transform limit) and throws Bad argument value above. */
-function _factAst(n) {
-  if (n < 0) throw new RPLError('Bad argument value');
-  if (n > 12) throw new RPLError('Bad argument value');
-  let f = 1;
-  for (let i = 2; i <= n; i++) f *= i;
-  return AstNum(f);
-}
-
-function _laplaceTransform(ast, varName) {
-  // LAPLACE over the variable `varName`.  Returns an AST in the same
-  // variable; HP50 does NOT rename X → S (that's a textbook convention,
-  // not an HP50 one — it keeps the main variable stable).
-  if (!ast) return ast;
-  // Constant ⇒ c/X
-  if (_isConstIn(ast, varName)) {
-    return AstBin('/', ast, AstVar(varName));
-  }
-  // X itself ⇒ 1/X^2
-  if (ast.kind === 'var' && ast.name === varName) {
-    return AstBin('/', AstNum(1), AstBin('^', AstVar(varName), AstNum(2)));
-  }
-  // X^n (n a non-negative integer) ⇒ n! / X^(n+1)
-  if (ast.kind === 'bin' && ast.op === '^'
-      && ast.l && ast.l.kind === 'var' && ast.l.name === varName
-      && _isNumNode(ast.r) && Number.isInteger(ast.r.value) && ast.r.value >= 0) {
-    const n = ast.r.value;
-    return AstBin('/',
-      _factAst(n),
-      AstBin('^', AstVar(varName), AstNum(n + 1)));
-  }
-  // Sum / difference: distribute through.
-  if (ast.kind === 'bin' && (ast.op === '+' || ast.op === '-')) {
-    return AstBin(ast.op,
-      _laplaceTransform(ast.l, varName),
-      _laplaceTransform(ast.r, varName));
-  }
-  // Negation: pull the minus sign through.
-  if (ast.kind === 'neg') {
-    return AstNeg(_laplaceTransform(ast.arg, varName));
-  }
-  // c·f(X) where c is a constant in X.
-  if (ast.kind === 'bin' && ast.op === '*') {
-    if (_isConstIn(ast.l, varName)) {
-      return AstBin('*', ast.l, _laplaceTransform(ast.r, varName));
-    }
-    if (_isConstIn(ast.r, varName)) {
-      return AstBin('*', ast.r, _laplaceTransform(ast.l, varName));
-    }
-    // Frequency-shift theorem: L{e^(αX)·f(X)} = F(X − α).  Find one
-    // EXP(αX) factor, compute LAPLACE of the other factor, substitute
-    // X → X − α in the result.
-    let expFactor = null, other = null;
-    if (ast.l && ast.l.kind === 'fn' && ast.l.name === 'EXP'
-        && ast.l.args && ast.l.args.length === 1) {
-      expFactor = ast.l; other = ast.r;
-    } else if (ast.r && ast.r.kind === 'fn' && ast.r.name === 'EXP'
-        && ast.r.args && ast.r.args.length === 1) {
-      expFactor = ast.r; other = ast.l;
-    }
-    if (expFactor) {
-      const alphaX = _matchAlphaX(expFactor.args[0], varName);
-      if (alphaX) {
-        const otherLap = _laplaceTransform(other, varName);
-        return _astSubstVar(otherLap, varName,
-          AstBin('-', AstVar(varName), alphaX));
-      }
-    }
-  }
-  // Fn(arg) family.
-  if (ast.kind === 'fn' && ast.args.length === 1) {
-    const arg = ast.args[0];
-    // HEAVISIDE / DIRAC transforms.
-    //   L{H(X)}        = 1/X
-    //   L{H(X - a)}    = e^(-aX) / X
-    //   L{δ(X)}        = 1
-    //   L{δ(X - a)}    = e^(-aX)
-    if (ast.name === 'HEAVISIDE') {
-      const aShift = _matchVarShift(arg, varName);
-      if (aShift !== null) {
-        const X = AstVar(varName);
-        if (_isNumNode(aShift) && aShift.value === 0) {
-          return AstBin('/', AstNum(1), X);
-        }
-        const expPart = AstFn('EXP',
-          [AstNeg(AstBin('*', aShift, X))]);
-        return AstBin('/', expPart, X);
-      }
-    }
-    if (ast.name === 'DIRAC') {
-      const aShift = _matchVarShift(arg, varName);
-      if (aShift !== null) {
-        if (_isNumNode(aShift) && aShift.value === 0) return AstNum(1);
-        const X = AstVar(varName);
-        return AstFn('EXP', [AstNeg(AstBin('*', aShift, X))]);
-      }
-    }
-    const alpha = _matchAlphaX(arg, varName);
-    if (alpha) {
-      const X = AstVar(varName);
-      const X2 = AstBin('^', X, AstNum(2));
-      const alpha2 = AstBin('^', alpha, AstNum(2));
-      switch (ast.name) {
-        case 'EXP':
-          // L{e^(αX)} = 1 / (X - α)
-          return AstBin('/', AstNum(1), AstBin('-', X, alpha));
-        case 'SIN':
-          return AstBin('/', alpha, AstBin('+', X2, alpha2));
-        case 'COS':
-          return AstBin('/', X, AstBin('+', X2, alpha2));
-        case 'SINH':
-          return AstBin('/', alpha, AstBin('-', X2, alpha2));
-        case 'COSH':
-          return AstBin('/', X, AstBin('-', X2, alpha2));
-      }
-    }
-  }
-  // Fall-through: wrap in a sentinel LAP(...) so the user sees which
-  // sub-expression tripped the rule engine.
-  return AstFn('LAP', [ast]);
-}
-
-function _inverseLaplace(ast, varName) {
-  // Pure rule-based inverse.  Symmetric to _laplaceTransform; tries
-  // each shape of the transform table in reverse.
-  if (!ast) return ast;
-  // Constant in X ⇒ c · δ(X).  Matches L{c·δ(X)} = c.  A literal `1`
-  // collapses to `δ(X)` without the coefficient.
-  if (_isConstIn(ast, varName)) {
-    if (_isNumNode(ast) && ast.value === 1) {
-      return AstFn('DIRAC', [AstVar(varName)]);
-    }
-    return AstBin('*', ast, AstFn('DIRAC', [AstVar(varName)]));
-  }
-  // Sum / difference: distribute through.
-  if (ast.kind === 'bin' && (ast.op === '+' || ast.op === '-')) {
-    return AstBin(ast.op,
-      _inverseLaplace(ast.l, varName),
-      _inverseLaplace(ast.r, varName));
-  }
-  if (ast.kind === 'neg') {
-    return AstNeg(_inverseLaplace(ast.arg, varName));
-  }
-  // Top-level EXP(β·X) ⇒ DIRAC(X + β).  For β = -a, this gives
-  // δ(X - a), matching L{δ(X - a)} = e^(-aX).
-  if (ast.kind === 'fn' && ast.name === 'EXP' && ast.args.length === 1) {
-    const beta = _matchAlphaX(ast.args[0], varName);
-    if (beta) {
-      return AstFn('DIRAC', [AstBin('+', AstVar(varName), beta)]);
-    }
-  }
-  // c · f(X)
-  if (ast.kind === 'bin' && ast.op === '*') {
-    if (_isConstIn(ast.l, varName)) {
-      return AstBin('*', ast.l, _inverseLaplace(ast.r, varName));
-    }
-    if (_isConstIn(ast.r, varName)) {
-      return AstBin('*', ast.r, _inverseLaplace(ast.l, varName));
-    }
-  }
-  // c / X^n ⇒ c · X^(n-1) / (n-1)!    (for n ≥ 1, integer)
-  // Also c / X ⇒ c.
-  if (ast.kind === 'bin' && ast.op === '/') {
-    const num = ast.l, den = ast.r;
-    // EXP(β·X) / X ⇒ HEAVISIDE(X + β).  For β = -a this gives
-    // H(X - a), matching L{H(X - a)} = e^(-aX) / X.
-    if (den.kind === 'var' && den.name === varName
-        && num.kind === 'fn' && num.name === 'EXP' && num.args.length === 1) {
-      const beta = _matchAlphaX(num.args[0], varName);
-      if (beta) {
-        return AstFn('HEAVISIDE', [AstBin('+', AstVar(varName), beta)]);
-      }
-    }
-    // c / X ⇒ c
-    if (den.kind === 'var' && den.name === varName) {
-      if (_isNumNode(num) && num.value === 1) return AstNum(1);
-      if (_isConstIn(num, varName)) return num;
-    }
-    // c / X^n ⇒ c · X^(n-1) / (n-1)!
-    if (den.kind === 'bin' && den.op === '^'
-        && den.l.kind === 'var' && den.l.name === varName
-        && _isNumNode(den.r) && Number.isInteger(den.r.value) && den.r.value >= 1) {
-      const n = den.r.value;
-      const X = AstVar(varName);
-      const tRaised = n - 1 === 0 ? AstNum(1)
-                    : n - 1 === 1 ? X
-                    : AstBin('^', X, AstNum(n - 1));
-      const factNm1 = _factAst(n - 1);
-      const tPart = (n - 1 === 0) ? AstNum(1)
-                  : AstBin('/', tRaised, factNm1);
-      if (_isConstIn(num, varName) && _isNumNode(num) && num.value === 1) {
-        return tPart;
-      }
-      if (_isConstIn(num, varName)) {
-        return AstBin('*', num, tPart);
-      }
-    }
-    // c / (X - a) ⇒ c · EXP(a·X)
-    if (den.kind === 'bin' && den.op === '-'
-        && den.l.kind === 'var' && den.l.name === varName
-        && _isConstIn(den.r, varName)) {
-      const a = den.r;
-      const body = AstFn('EXP', [AstBin('*', a, AstVar(varName))]);
-      if (_isNumNode(num) && num.value === 1) return body;
-      if (_isConstIn(num, varName)) return AstBin('*', num, body);
-    }
-    // (X or α) / (X^2 ± α^2) ⇒ COS / COSH / SIN / SINH
-    if (den.kind === 'bin' && (den.op === '+' || den.op === '-')
-        && den.l.kind === 'bin' && den.l.op === '^'
-        && den.l.l.kind === 'var' && den.l.l.name === varName
-        && _isNumNode(den.l.r) && den.l.r.value === 2) {
-      // Is the right-of-den a perfect square α^2 of a constant?
-      const rc = den.r;
-      let alpha = null;
-      if (rc.kind === 'bin' && rc.op === '^'
-          && _isNumNode(rc.r) && rc.r.value === 2
-          && _isConstIn(rc.l, varName)) {
-        alpha = rc.l;
-      } else if (_isNumNode(rc) && rc.value >= 0) {
-        const root = Math.sqrt(rc.value);
-        if (Number.isInteger(root)) alpha = AstNum(root);
-      }
-      if (alpha) {
-        const op = den.op;
-        // num = X ⇒ COS / COSH
-        if (num.kind === 'var' && num.name === varName) {
-          const fn = op === '+' ? 'COS' : 'COSH';
-          return AstFn(fn, [AstBin('*', alpha, AstVar(varName))]);
-        }
-        // num = α (or α · const?) ⇒ SIN / SINH
-        // Accept exact AST equality to `alpha` for the canonical case.
-        if (_astLike(num, alpha)) {
-          const fn = op === '+' ? 'SIN' : 'SINH';
-          return AstFn(fn, [AstBin('*', alpha, AstVar(varName))]);
-        }
-      }
-    }
-  }
-  // Fall-through: wrap in a sentinel.
-  return AstFn('ILAP', [ast]);
-}
-
-/** Structural equality on AST nodes — shallow numeric equality, deep
- *  on every other shape.  Used by the ILAP branch to identify
- *  `numerator === α`. */
-function _astLike(a, b) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  if (a.kind !== b.kind) return false;
-  if (a.kind === 'num') return a.value === b.value;
-  if (a.kind === 'var') return a.name === b.name;
-  if (a.kind === 'neg') return _astLike(a.arg, b.arg);
-  if (a.kind === 'bin') return a.op === b.op
-    && _astLike(a.l, b.l) && _astLike(a.r, b.r);
-  if (a.kind === 'fn') {
-    if (a.name !== b.name || a.args.length !== b.args.length) return false;
-    for (let i = 0; i < a.args.length; i++) {
-      if (!_astLike(a.args[i], b.args[i])) return false;
-    }
-    return true;
-  }
-  return false;
-}
-
 register('LAPLACE', (s) => {
   const [v] = s.popN(1);
   if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  // Route through Giac.  HP50 convention: same variable for input
+  // and output (`X → X`).  Giac's `laplace(f, x, s)` signature wants
+  // three args — we pass the same name twice to keep the output in
+  // X, matching the HP50's "transform in place" idiom.
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
   const varName = _lapVarName(v.expr);
-  const out = algebraSimplify(_laplaceTransform(v.expr, varName));
-  s.push(Symbolic(out));
+  const cmd = buildGiacCmd(
+    v.expr,
+    (e) => `laplace(${e},${varName},${varName})`,
+    [varName],
+  );
+  s.push(Symbolic(giacToAst(giac.caseval(cmd))));
 });
 
 register('ILAP', (s) => {
   const [v] = s.popN(1);
   if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
   const varName = _lapVarName(v.expr);
-  const out = algebraSimplify(_inverseLaplace(v.expr, varName));
-  s.push(Symbolic(out));
+  const cmd = buildGiacCmd(
+    v.expr,
+    (e) => `ilaplace(${e},${varName},${varName})`,
+    [varName],
+  );
+  s.push(Symbolic(giacToAst(giac.caseval(cmd))));
 });
 
 /* ====================================================================
@@ -14393,55 +14129,6 @@ register('EXPLN', (s) => {
        Symbolic radicals.
    ==================================================================== */
 
-/* ---- _astSubstVar — substitute a Var occurrence with an AST ---------
-   Returns a NEW AST with every `Var(name)` replaced by `replacement`.
-   Does not deep-clone non-matching nodes — structural sharing is fine
-   because the walker downstream never mutates. */
-function _astSubstVar(ast, name, replacement) {
-  if (!ast) return ast;
-  if (ast.kind === 'var') return ast.name === name ? replacement : ast;
-  if (ast.kind === 'num') return ast;
-  if (ast.kind === 'neg') {
-    const inner = _astSubstVar(ast.arg, name, replacement);
-    return inner === ast.arg ? ast : AstNeg(inner);
-  }
-  if (ast.kind === 'bin') {
-    const l = _astSubstVar(ast.l, name, replacement);
-    const r = _astSubstVar(ast.r, name, replacement);
-    return (l === ast.l && r === ast.r) ? ast : AstBin(ast.op, l, r);
-  }
-  if (ast.kind === 'fn') {
-    const args = ast.args.map(a => _astSubstVar(a, name, replacement));
-    let dirty = false;
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] !== ast.args[i]) { dirty = true; break; }
-    }
-    return dirty ? AstFn(ast.name, args) : ast;
-  }
-  return ast;
-}
-
-/* ---- _matchVarShift — recognise X, X − a, X + a as a HEAVISIDE /
-       DIRAC argument --------------------------------------------------
-   Returns the shift `a` as an AST (0 for bare `X`), or `null` if the
-   argument isn't one of those shapes.  Used by the LAPLACE dispatch
-   for HEAVISIDE(X − a) and DIRAC(X − a). */
-function _matchVarShift(arg, varName) {
-  if (!arg) return null;
-  if (arg.kind === 'var' && arg.name === varName) return AstNum(0);
-  if (arg.kind === 'bin' && arg.op === '-'
-      && arg.l && arg.l.kind === 'var' && arg.l.name === varName
-      && _isConstIn(arg.r, varName)) {
-    return arg.r;                       // X - a  →  a
-  }
-  if (arg.kind === 'bin' && arg.op === '+'
-      && arg.l && arg.l.kind === 'var' && arg.l.name === varName
-      && _isConstIn(arg.r, varName)) {
-    return AstNeg(arg.r);               // X + a  →  -a  (so H(X+3) ≡ H(X - (-3)))
-  }
-  return null;
-}
-
 /* ---- HEAVISIDE — unit step, Symbolic carrier ------------------------
    Real/Integer input collapses to 1 (x ≥ 0) or 0 (x < 0), matching the
    HP50 convention where HEAVISIDE(0) = 1 (right-continuous at the
@@ -14617,14 +14304,14 @@ function _pythagoreanWalk(ast) {
 register('TSIMP', (s) => {
   const [v] = s.popN(1);
   if (!isSymbolic(v)) throw new RPLError('Bad argument type');
-  let ast = v.expr;
-  for (let i = 0; i < TSIMP_MAX_ITER; i++) {
-    const prev = ast;
-    ast = _pythagoreanWalk(ast);
-    ast = algebraSimplify(ast);
-    if (_astLike(prev, ast)) break;
-  }
-  s.push(Symbolic(ast));
+  // Route through Giac.  `tsimplify(expr)` applies the Pythagorean
+  // identity surface (SIN²+COS²→1, 1−SIN²→COS², TAN·COS→SIN,
+  // SIN/COS→TAN, and their duals) then normalises via the CAS'
+  // own simplify pass — the same loop the previous native walker
+  // approximated with `_pythagoreanWalk` + `algebraSimplify`.
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const cmd = buildGiacCmd(v.expr, (e) => `tsimplify(${e})`);
+  s.push(Symbolic(giacToAst(giac.caseval(cmd))));
 });
 
 /* ---- EXPLN inverse-trig / inverse-hyperbolic rewrite closures ------

@@ -5664,6 +5664,20 @@ function _assertRootsMatch(got, expected, name) {
    PREVAL: F(X) a b → F(b) - F(a).
    ================================================================ */
 
+// PREVAL now routes through Giac.  Each PREVAL call emits one command
+// of the shape `simplify(subst(F,X=b)-subst(F,X=a))`, so we register
+// one fixture per test case with the scalar difference the test
+// expects.  Bulk-register them first — the cluster shares the set.
+giac._clear();
+giac._setFixtures({
+  'purge(X);simplify(subst(X^2,X=3)-subst(X^2,X=0))':         '9',
+  'purge(X);simplify(subst(2*X+1,X=5)-subst(2*X+1,X=1))':     '8',
+  'purge(X);simplify(subst(X^3,X=2)-subst(X^3,X=1))':         '7',
+  'purge(A);purge(X);simplify(subst(X^2,X=A)-subst(X^2,X=0))': 'A^2',
+  'purge(X);simplify(subst(5,X=2)-subst(5,X=1))':             '0',
+  'purge(X);purge(Y);simplify(subst(X+Y,X=1)-subst(X+Y,X=0))': '1',
+});
+
 /* ---- PREVAL of X^2 from 0 to 3 = 9 ---- */
 {
   const s = new Stack();
@@ -5843,6 +5857,30 @@ function _assertRootsMatch(got, expected, name) {
 /* ================================================================
    LAPLACE / ILAP basic rules.
    ================================================================ */
+
+// LAPLACE / ILAP now route through Giac's `laplace` / `ilaplace`
+// (with `X` as both input and output variable, per the HP50 "in
+// place" idiom).  Bulk-register the fixtures the session-058 and
+// session-076 test clusters expect.  Each value is a Giac-parseable
+// string in the exact structural shape the assertions below check
+// for — `1/X`, `1/X^2`, `2/X^3`, … — so the mocked engine returns
+// what the tests assert on.
+giac._clear();
+giac._setFixtures({
+  'purge(X);laplace(1,X,X)':         '1/X',
+  'purge(X);laplace(X,X,X)':         '1/X^2',
+  'purge(X);laplace(X^2,X,X)':       '2/X^3',
+  'purge(X);laplace(exp(2*X),X,X)':  '1/(X-2)',
+  'purge(X);laplace(sin(3*X),X,X)':  '3/(X^2+9)',
+  'purge(X);laplace(cos(X),X,X)':    'X/(X^2+1)',
+  'purge(X);laplace(1+X,X,X)':       '1/X+1/X^2',
+  'purge(X);laplace(5*sin(X),X,X)':  '5*(1/(X^2+1))',
+  'purge(X);laplace(sin(X),X,X)':    '1/(X^2+1)',
+  'purge(X);ilaplace(1/X,X,X)':      '1',
+  'purge(X);ilaplace(1/X^2,X,X)':    'X',
+  'purge(X);ilaplace(1/(X-3),X,X)':  'exp(3*X)',
+  'purge(X);ilaplace(1/(X^2+1),X,X)': 'sin(X)',
+});
 
 /* ---- LAPLACE of 1 = 1/X ---- */
 {
@@ -7002,6 +7040,22 @@ function _s061HasVar(node, name) {
   return false;
 }
 
+// TSIMP now routes through Giac's `tsimplify()` — bulk-register the
+// fixtures the session-061 test cluster expects.  Each key is the
+// purge-prefixed Giac command the adapter emits; each value is the
+// canonical Giac output string we parse back into an AST.
+giac._clear();
+giac._setFixtures({
+  'purge(X);tsimplify(sin(X)^2+cos(X)^2)':   '1',
+  'purge(X);tsimplify(cos(X)^2+sin(X)^2)':   '1',
+  'purge(X);tsimplify(1-sin(X)^2)':          'cos(X)^2',
+  'purge(X);tsimplify(1-cos(X)^2)':          'sin(X)^2',
+  'purge(X);tsimplify(tan(X)*cos(X))':       'sin(X)',
+  'purge(X);tsimplify(sin(X)/cos(X))':       'tan(X)',
+  'purge(A);tsimplify(sin(A)^2+cos(A)^2+5)': '6',
+  'purge(X);purge(Y);tsimplify(X+Y)':        'X+Y',
+});
+
 /* ---- TSIMP Pythagorean sum to 1 ---- */
 {
   const s = new Stack();
@@ -7305,6 +7359,26 @@ function _s061HasVar(node, name) {
   catch (e) { threw = /Bad argument type/.test(e.message); }
   assert(threw, 'session061: DIRAC on List rejects');
 }
+
+// Session-061 LAPLACE/ILAP HEAVISIDE+DIRAC fixtures — the Giac
+// commands emitted for each test in the cluster below.  Negative
+// numeric constants round-trip through astToGiac as `(-N)*…`, so
+// the fixture keys use that literal form.
+giac._clear();
+giac._setFixtures({
+  'purge(X);laplace(HEAVISIDE(X),X,X)':          '1/X',
+  'purge(X);laplace(HEAVISIDE(X-3),X,X)':        'exp(-3*X)/X',
+  'purge(X);laplace(DIRAC(X),X,X)':              '1',
+  'purge(X);laplace(DIRAC(X-3),X,X)':            'exp(-3*X)',
+  'purge(X);laplace(exp(2*X)*sin(X),X,X)':       '1/((X-2)^2+1)',
+  // ILAP keys use the parenthesised-negative shape astToGiac emits
+  // from Neg(Num(3)) inside a multiplication.
+  'purge(X);ilaplace(exp((-3)*X)/X,X,X)':        'HEAVISIDE(X-3)',
+  'purge(X);ilaplace(exp((-3)*X),X,X)':          'DIRAC(X-3)',
+  'purge(X);ilaplace(1,X,X)':                    'DIRAC(X)',
+  'purge(X);laplace(HEAVISIDE(X-2),X,X)':        'exp(-2*X)/X',
+  'purge(X);ilaplace(exp((-2)*X)/X,X,X)':        'HEAVISIDE(X-2)',
+});
 
 /* ---- LAPLACE HEAVISIDE(X) → 1/X ---- */
 {
@@ -7615,6 +7689,15 @@ function _s061HasVar(node, name) {
   setCasVx('Y');
   // F = X + Y, endpoints 0 → 1.  VX = Y, so F(y=0) - F(y=1) substitutes Y:
   //   (X + 1) - (X + 0) = 1.
+  giac._clear();
+  giac._setFixture(
+    'purge(X);purge(Y);simplify(subst(X+Y,Y=1)-subst(X+Y,Y=0))',
+    '1',
+  );
+  giac._setFixture(
+    'purge(A);purge(T);laplace(A*T,T,T)',
+    'A/T^2',
+  );
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X+Y')));
   s.push(Real(0));
