@@ -1,0 +1,42 @@
+rp5050sx — RPL Scientific Calculator
+=====================================
+
+rp5050sx is licensed under the GNU General Public License v3.0 or later.
+See LICENSE for the full text. SPDX-License-Identifier: GPL-3.0-or-later.
+
+This distribution bundles the following third-party components.
+
+-----------------------------------------------------------------
+Giac / Xcas
+  Location:   www/src/vendor/giac/
+  Copyright:  © Bernard Parisse, Renée de Graeve, and contributors
+              (Institut Fourier, Université Grenoble Alpes)
+  License:    GNU General Public License v3.0 or later (GPL-3.0+)
+  Upstream:   https://www-fourier.univ-grenoble-alpes.fr/~parisse/giac.html
+  Build:      Prebuilt WebAssembly bundle obtained from
+              https://github.com/adriweb/emgiac (Emscripten output:
+              giacwasm.js + giacwasm.wasm). See
+              www/src/vendor/giac/README.md for exact provenance.
+
+  Giac is a computer algebra system developed by Bernard Parisse. It
+  is the calculation engine of Xcas, and the same engine (with a
+  different UI) powers the HP Prime CAS. Bernard Parisse also wrote
+  "erable", the CAS that shipped on the HP 48GX / 49 / 49g+ / 50g —
+  so for an HP 50g emulator, Giac is the most lineage-appropriate
+  open-source CAS available.
+
+  Because Giac is GPL-3.0+, rp5050sx as a whole is distributed under
+  GPL-3.0-or-later. You may not relicense this project under a more
+  permissive license while Giac remains bundled.
+
+-----------------------------------------------------------------
+GMP / MPFR / MPFI  (transitively compiled into Giac's WebAssembly)
+  License:    GNU Lesser General Public License (LGPL)
+  Role:       Arbitrary-precision arithmetic libraries used by Giac.
+
+-----------------------------------------------------------------
+KaTeX  (to be added; used for textbook-style math rendering)
+  Upstream:   https://github.com/KaTeX/KaTeX
+  License:    MIT License
+  Role:       Renders LaTeX produced by Giac into HTML/MathML for the
+              stack display and result popups.

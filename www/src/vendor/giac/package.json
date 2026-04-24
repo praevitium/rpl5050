@@ -1,0 +1,4 @@
+{
+  "type": "commonjs",
+  "_comment": "Giac's emscripten output uses CJS-style globals; override the parent package's ESM default."
+}
