@@ -4,30 +4,39 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 095 (2026-04-24).  In-file assertion labels
-written this session read `session095:` — matching the calendar-day
-cohort, per the session-066 convention.  Earlier this session
-logs/session-092 through 094 closed the Giac WASM CAS migration and
-its follow-ups; session 095 finished the cleanup (dead `algebra.js`
-exports gone), fixed the CAS quoted-result parse bug, and landed the
-HP50 AUR §2.2.4 identifier validator.  This lane's log file is
-`logs/session-095.md`.
+**Last updated.** Session 096 (2026-04-24).  In-file assertion labels
+written this session read `session096:` — matching the calendar-day
+cohort, per the session-066 convention.  This session landed three
+paired fixes around backtick-quoted algebraic entry and the CAS input
+boundary: (1) `parseAlgebra` auto-closes `)` at EOF, mirroring the
+existing list/vector/program soft-close — so ``` `SIN(X ` ``` now
+parses as `Symbolic(Fn('SIN', [Var('X')]))` instead of falling through
+to a ghost `Name("SIN(X ")`; (2) `parser.js` re-throws the algebra
+error when the body also fails `isValidHpIdentifier`, surfacing
+"Invalid algebraic: …" instead of minting a stack-borne ghost Name;
+(3) `giac-convert.mjs` validates every Var/Fn name walked by
+`astToGiac` and every `extraVars` entry into `buildGiacCmd` — catching
+the `Name('#FFh')` → `Var('#FFh')` → `#FFh` (Xcas line-comment) →
+`"Unexpected character '#' at pos 0"` failure cascade before Giac
+ever sees the command.  This lane's log file is `logs/session-096.md`.
 
-## Coverage snapshot (session 095)
+## Coverage snapshot (session 096)
 
-Baseline at session start (post-dead-code cleanup): `node tests/
-test-all.mjs` = **3453 passing / 0 failing**.
-Final: **3486 passing / 0 failing** (+33 — the validator block in
-`test-types.mjs`).  `test-persist.mjs` 34 / 0.  `sanity.mjs` 22 / 0.
+Baseline at session start: `node tests/test-all.mjs` = **3486 passing /
+0 failing**.
+Final: **3498 passing / 0 failing** (+12 — 4 new auto-close and
+validator-guard assertions in `test-algebra.mjs`, 4 in `test-entry.mjs`,
+and 4 new CAS name-validator assertions in `test-algebra.mjs`'s
+buildGiacCmd block).  `test-persist.mjs` 34 / 0.  `sanity.mjs` 22 / 0.
 
 | File                        | OK   | FAIL | Notes                                    |
 |-----------------------------|------|------|------------------------------------------|
-| test-algebra.mjs            |  777 | 0    | −578 from s084 (dead symbolic-op tests removed with `algebra.js` exports). |
+| test-algebra.mjs            |  785 | 0    | +8 session-096 (algebra auto-close at EOF: 4; CAS name-validator in astToGiac / buildGiacCmd: 4). |
 | test-arrow-aliases.mjs      |   19 | 0    |                                          |
 | test-binary-int.mjs         |  122 | 0    |                                          |
 | test-comparisons.mjs        |   73 | 0    |                                          |
 | test-control-flow.mjs       |  260 | 0    | `'SUM'` → `'TOTAL'` rename for WHILE loop (name validator: SUM is reserved). |
-| test-entry.mjs              |   86 | 0    |                                          |
+| test-entry.mjs              |   90 | 0    | +4 session-096 backtick-body validator guard (auto-close, ghost-Name rejection, `+` / `Y` round-trips). |
 | test-eval.mjs               |   62 | 0    |                                          |
 | test-helpers.mjs            |   43 | 0    |                                          |
 | test-lists.mjs              |  171 | 0    |                                          |

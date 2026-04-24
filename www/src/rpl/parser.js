@@ -20,7 +20,7 @@
 
 import {
   Real, Integer, BinaryInteger, Complex, Str, Name, RList, Vector, Program,
-  Symbolic, Unit,
+  Symbolic, Unit, isValidHpIdentifier,
 } from './types.js';
 import { RPLError } from './stack.js';
 import { getWordsizeMask, state as _state } from './state.js';
@@ -266,9 +266,24 @@ export function parseEntry(src) {
         if (looksAlgebraic) {
           try {
             return Symbolic(parseAlgebra(body));
-          } catch (_e) {
-            // Fall through to Name below — keeps unusual tick-quoted
-            // tokens working even if they look algebraic at a glance.
+          } catch (e) {
+            // Fall through to Name only if the body is *also* a
+            // syntactically valid HP identifier or a bare operator atom
+            // like `+`.  Otherwise we'd be minting a garbage Name whose
+            // id contains `(`, spaces, etc. — e.g. `SIN(X` on a failed
+            // algebra parse would have become Name("SIN(X") and silently
+            // survived into the stack.  Surfacing the algebra error
+            // instead matches how the HP50 rejects malformed algebraics,
+            // and the auto-close in parseAlgebra's expect(')') already
+            // handles the common "user forgot the closer" case.
+            if (isValidHpIdentifier(body)) {
+              // Valid identifier shape — treat as plain Name (quoted).
+            } else if (/^[+\-*/^=≠<>≤≥]$/.test(body)) {
+              // Bare operator atom like `+`, `≤` — keep legacy
+              // round-trip behaviour.
+            } else {
+              throw new RPLError(`Invalid algebraic: ${e.message}`);
+            }
           }
         }
         // Literal name reference — never auto-evaluated.  The quoted

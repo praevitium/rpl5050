@@ -361,7 +361,16 @@ export function parseAlgebra(src) {
   }
 
   function expect(ch) {
-    if (!eat(ch)) throw new Error(`Expected '${ch}' at pos ${i}`);
+    if (eat(ch)) return;
+    // Soft-close at EOF: if we ran out of input while looking for a ')',
+    // accept it silently — matches the parser.js auto-close of `}` / `]` /
+    // `>>` for unterminated lists / vectors / programs.  Turns `SIN(X `
+    // into `SIN(X)` on entry, same "the user forgot the closer" recovery
+    // the rest of the entry surface already does.  Only `)` gets this
+    // leniency; comma / other expected chars stay strict because they
+    // aren't balanced delimiters.
+    if (ch === ')') { skip(); if (i >= n) return; }
+    throw new Error(`Expected '${ch}' at pos ${i}`);
   }
 
   function parseEq() {

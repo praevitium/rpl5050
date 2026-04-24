@@ -752,6 +752,60 @@ import { assert, assertThrows } from './helpers.mjs';
   }
 }
 
+/* ============================================================
+   Backtick quotedName — validator guard + algebra auto-close
+   ============================================================
+
+   Session 096: `parseEntry` used to silently fall through to
+   `Name(body, {quoted:true})` whenever `parseAlgebra` threw on an
+   algebraic-looking body, minting ghost Names like `Name("SIN(X ")`
+   that polluted the stack and later blew up inside CAS ops.
+
+   Two paired fixes cover that regression surface:
+
+     • algebra.js `expect(')')` auto-closes at EOF, so the common
+       "user forgot the closer" case now parses cleanly.
+     • parser.js re-throws the algebra error when the body also fails
+       `isValidHpIdentifier`, so anything that can't be a legal HP
+       identifier surfaces as "Invalid algebraic: …" instead of a
+       stack-borne ghost.
+
+   Round-trip cases (bare operator atoms like `+`, plain identifiers
+   like `Y`) still resolve to a quoted Name.
+*/
+{
+  // Auto-close: unterminated paren inside backticks parses as a
+  // closed algebraic.
+  const out = parseEntry('`SIN(X `');
+  const v = Array.isArray(out) ? out[0] : out;
+  assert(v && v.type === 'symbolic',
+    `parseEntry('\`SIN(X \`') becomes a Symbolic — got type=${v && v.type}`);
+}
+{
+  // Validator guard: a body that's neither a valid algebraic nor a
+  // valid identifier throws instead of minting Name("#FFh + 1").
+  let threw = false;
+  try { parseEntry('`#FFh + 1`'); }
+  catch (e) { threw = /Invalid algebraic/.test(e.message); }
+  assert(threw,
+    'parseEntry(`#FFh + 1`) throws "Invalid algebraic:" instead of becoming a ghost Name');
+}
+{
+  // Bare operator atom still round-trips as a Name — legacy
+  // programmatic composition must keep working.
+  const out = parseEntry('`+`');
+  const v = Array.isArray(out) ? out[0] : out;
+  assert(isName(v) && v.id === '+',
+    "parseEntry('`+`') round-trips as Name('+')");
+}
+{
+  // Plain identifier body passes validator and lands as a quoted Name.
+  const out = parseEntry('`Y`');
+  const v = Array.isArray(out) ? out[0] : out;
+  assert(isName(v) && v.id === 'Y',
+    "parseEntry('`Y`') round-trips as Name('Y')");
+}
+
 // --- Cleanup shared state so later tests don't see stray bindings
 resetHome();
 setAngle('RAD');

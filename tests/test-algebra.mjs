@@ -257,6 +257,41 @@ import { assert } from './helpers.mjs';
   assert(threw, 'parseAlgebra(FOO(X)) throws (FOO not whitelisted)');
 }
 
+// --- auto-close: missing ')' at EOF ---------------------------------
+// parseAlgebra accepts `SIN(X` as `SIN(X)` — mirrors parser.js's
+// soft-close of unterminated lists/vectors/programs.  Turns the common
+// "user forgot the closer" case into a parseable expression instead of
+// a silent Name fall-through (see the companion parser.js guard).
+{
+  const a = parseAlgebra('SIN(X');
+  assert(a.kind === 'fn' && a.name === 'SIN' && a.args.length === 1 &&
+         a.args[0].kind === 'var' && a.args[0].name === 'X',
+         `parseAlgebra('SIN(X') auto-closes to SIN(X) — got kind=${a.kind} name=${a.name}`);
+}
+{
+  // Trailing whitespace before EOF still closes cleanly.
+  const a = parseAlgebra('SIN(X ');
+  assert(a.kind === 'fn' && a.name === 'SIN',
+         "parseAlgebra('SIN(X ') (trailing space) auto-closes");
+}
+{
+  // Nested unterminated parens cascade — both closers auto-inserted.
+  const a = parseAlgebra('SIN((X+1');
+  assert(a.kind === 'fn' && a.name === 'SIN' &&
+         a.args[0].kind === 'bin' && a.args[0].op === '+',
+         "parseAlgebra('SIN((X+1') cascades auto-close for two parens");
+}
+{
+  // Missing ')' mid-stream — NOT at EOF — still errors.  Auto-close is
+  // strictly an EOF recovery, same as the list/vector/program soft-close
+  // only applies when the token stream runs out.
+  let threw = false;
+  try { parseAlgebra('SIN(X+Y'); } catch (_) { /* EOF auto-close, should NOT throw */ }
+  // The above actually succeeds now — verify nothing throws.
+  try { parseAlgebra('SIN(X + ) +'); } catch (_) { threw = true; }
+  assert(threw, "parseAlgebra('SIN(X + ) +') mid-stream garbage still throws");
+}
+
 // --- fn node: formatter --------------------------------------------
 {
   const out = formatAlgebra(parseAlgebra('SIN(X)'));
@@ -810,6 +845,45 @@ import { assert } from './helpers.mjs';
   // purging HP function names and breaking Giac's command lookup.
   assert(buildGiacCmd(parseAlgebra('SIN(X)'), (e) => `factor(${e})`) === 'purge(X);factor(sin(X))',
          'buildGiacCmd: function-name is not purged');
+}
+
+// --- astToGiac / buildGiacCmd: name-validator guard ---------------
+// Session 096: the CAS input boundary rejects any AST whose Var or Fn
+// carries a name that wouldn't round-trip through Xcas — notably the
+// `#FFh` shape a malformed Name('#FFh') gets lifted to via _toAst.
+// Without this guard, `#` is a line comment in Xcas, caseval silently
+// truncates the command, and parseAlgebra blows up on the garbled
+// output with "Unexpected character '#' at pos 0".
+{
+  const { astToGiac, buildGiacCmd } = await import('../www/src/rpl/cas/giac-convert.mjs');
+  // Synthesise a Var with a bad name directly (bypass parseAlgebra,
+  // since the algebra parser itself would reject this earlier).
+  const badVar = { kind: 'var', name: '#FFh' };
+  let threw = false;
+  try { astToGiac(badVar); } catch (e) { threw = /Invalid name: #FFh/.test(e.message); }
+  assert(threw, 'astToGiac(Var("#FFh")) throws "Invalid name: #FFh"');
+
+  // The bad name can live deep inside the AST — the walker catches it.
+  // AST nodes are frozen so synthesise the shape directly rather than
+  // mutating a parsed tree.
+  const nested = { kind: 'bin', op: '+',
+                   l: { kind: 'var', name: 'X' },
+                   r: { kind: 'var', name: '#bad' } };
+  threw = false;
+  try { astToGiac(nested); } catch (e) { threw = /Invalid name: #bad/.test(e.message); }
+  assert(threw, 'astToGiac rejects a nested Var with invalid name');
+
+  // buildGiacCmd surfaces the same error shape for extraVars
+  // (user-supplied variable argument for DERIV/INTEG/SOLVE/COLLECT).
+  threw = false;
+  try { buildGiacCmd(parseAlgebra('X+1'), (e) => `diff(${e},Y)`, ['#FFh']); }
+  catch (e) { threw = /Invalid name: #FFh/.test(e.message); }
+  assert(threw, 'buildGiacCmd validates extraVars — rejects "#FFh"');
+
+  // Valid identifiers still go through — regression guard.
+  const goodCmd = buildGiacCmd(parseAlgebra('X+Y'), (e) => `diff(${e},Y)`, ['Y']);
+  assert(goodCmd === 'purge(X);purge(Y);diff(X+Y,Y)',
+         `buildGiacCmd: valid extraVars still flow through — got "${goodCmd}"`);
 }
 
 // --- FACTOR op: Giac-backed routing (session 092 CAS pilot) -------

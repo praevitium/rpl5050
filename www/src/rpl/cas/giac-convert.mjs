@@ -20,6 +20,60 @@
 // string / AST manipulation, so it's safe to use in Node tests.
 
 import { Num, Var, Neg, Bin, Fn, parseAlgebra, formatAlgebra, freeVars } from "../algebra.js";
+import { isValidHpIdentifier } from "../types.js";
+import { RPLError } from "../stack.js";
+
+/* ------------------------------------------------------------------
+   CAS-input identifier validation.
+
+   Every name that ends up inside a Giac command string — whether from
+   a `Var` inside the AST, a `Fn` name, or a user-supplied extraVars
+   entry (DERIV/INTEG/SOLVE/COLLECT's second argument) — must be a
+   syntactically valid HP identifier.  Otherwise the string leaks a
+   character Giac interprets specially (notably `#`, which starts a
+   line comment in Xcas) and caseval silently truncates or returns
+   garbage that parseAlgebra then chokes on — "Unexpected character '#'
+   at pos 0" is the canonical symptom.
+
+   Validating at the CAS boundary surfaces a clean "Invalid name: <id>"
+   RPLError before we call Giac, matching the same wording STO /
+   CRDIR use for write-path names (see ops.js _coerceStorableName).
+   ------------------------------------------------------------------ */
+
+function assertValidCasName(name) {
+  if (!isValidHpIdentifier(name)) throw new RPLError(`Invalid name: ${name}`);
+}
+
+/** Walk an AST and throw CasNameError on the first Var / Fn whose name
+ *  wouldn't round-trip through Giac.  Pure traversal — does not mutate
+ *  the tree.  Called at the top of astToGiac and by buildGiacCmd on
+ *  each extraVars entry. */
+function assertAstNamesValid(ast) {
+  if (!ast || typeof ast !== "object") return;
+  switch (ast.kind) {
+    case "var":
+      assertValidCasName(ast.name);
+      return;
+    case "fn":
+      // HP function names are resolved via HP_TO_GIAC; an entry that's
+      // not in the table passes through verbatim, so it also needs to
+      // be identifier-shaped.  The special cases (ALOG / LNGAMMA /
+      // XROOT / MOD / INTEG) all satisfy the predicate too, so this
+      // check doesn't require a whitelist exception.
+      assertValidCasName(ast.name);
+      for (const a of ast.args) assertAstNamesValid(a);
+      return;
+    case "neg":
+      assertAstNamesValid(ast.arg);
+      return;
+    case "bin":
+      assertAstNamesValid(ast.l);
+      assertAstNamesValid(ast.r);
+      return;
+    // "num" and anything else — nothing to check.
+  }
+}
+
 
 /* ------------------------------------------------------------------
    Function-name maps.
@@ -85,6 +139,12 @@ export const GIAC_TO_HP = Object.freeze(
  * if it isn't, `caseval` will return an error string.
  */
 export function astToGiac(ast) {
+  // Reject invalid identifier names before they reach Giac.  Without
+  // this gate, a Var('#FFh') emits `#FFh` in the command string and
+  // Xcas treats `#` as a line comment — truncating the input and
+  // returning garbled output that parseAlgebra then fails to parse
+  // ("Unexpected character '#' at pos 0").
+  assertAstNamesValid(ast);
   return emit(ast, 0);
 }
 
@@ -213,6 +273,11 @@ function emitFn(ast) {
  * deterministic across calls (mock-fixture friendly).
  */
 export function buildGiacCmd(exprAst, buildCmd, extraVars = []) {
+  // extraVars come straight from the user (e.g. DERIV's variable
+  // argument) — validate them here so a bad name surfaces the same
+  // "Invalid name: <id>" RPLError regardless of which op is calling.
+  // astToGiac validates names inside `exprAst` itself.
+  for (const v of extraVars) assertValidCasName(v);
   const giacExpr = astToGiac(exprAst);
   const body = buildCmd(giacExpr);
   const all = new Set([...freeVars(exprAst), ...extraVars]);
