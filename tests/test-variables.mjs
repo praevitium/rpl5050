@@ -1786,13 +1786,13 @@ const {
   assert(copy !== orig, 'session047: NEWOB on Matrix returns new object');
 }
 
-/* ---- MEM pushes a large Real sentinel ---- */
+/* ---- MEM pushes a 1 GiB constant ---- */
 {
   const s = new Stack();
   lookup('MEM').fn(s);
   const v = s.peek();
-  assert(isReal(v) && v.value > 1e9,
-    'session047: MEM pushes Real(Number.MAX_SAFE_INTEGER)');
+  assert(isReal(v) && v.value === 1073741824,
+    'session047: MEM pushes Real(1 GiB)');
 }
 
 // ==================================================================

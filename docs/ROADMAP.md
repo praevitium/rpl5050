@@ -119,6 +119,26 @@ closing:
   V/M apply layer currently drops tags before entering the per-entry
   rounder.  Tagged-over-container is a recurring paper cut.
 
+**Numeric type upgrade — shipped in session 092.**  Three phases
+landed in one session, all under the no-fallback rule:
+
+1. **Rational type** (Fraction.js v5.3.4, BigInt-backed).  New
+   `TYPES.RATIONAL`; `Integer ÷ Integer` in EXACT mode produces a
+   Rational; all unary ops have EXACT/APPROX-aware dispatch (exact in
+   EXACT, collapse-to-Real in APPROX).  Rational lifts into the
+   Symbolic AST as `Bin('/', Num(n), Num(d))`.
+2. **Real → decimal.js backing** (v10.4.3, 15-digit precision).  IEEE
+   artifacts (`0.1 + 0.2 → 0.30000000000000004`) are healed; Real
+   payload shape on the stack is unchanged.
+3. **Complex → complex.js backing** (v2.4.3).  `i*i = -1` exactly,
+   correct branch-cut pow; `{ re, im }` payload unchanged.
+
+Follow-ons on the roadmap: a dedicated num-ratio AST leaf (avoid
+Number() precision loss for BigInt numerators above 2^53), polar /
+CYLIN / SPHERE display paths via complex.js, and migrating the
+remaining complex unary ops (SQRT, LN, EXP, trig) to delegate to
+complex.js rather than keep parallel hand-rolled kernels.
+
 ### 6. UI polish and keyboard-first usability
 
 The keypad and interactive stack are feature-complete but the calculator

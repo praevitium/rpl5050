@@ -1500,3 +1500,121 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     }
   }
 }
+
+/* ================================================================
+   Complex arithmetic — complex.js pilot (session 092).
+
+   Complex × Complex arithmetic routes through complex.js.  The
+   payload on the stack is still a plain `{ re, im }` pair — only
+   the intermediate arithmetic changes.  complex.js's kernel gives
+   us exact identity preservation (i² = -1, not i² ≈ -1 + 0i with
+   trailing zeros), correct branch-cut handling at negative reals
+   for `^`, and a library-vetted polar-form pow.
+   ================================================================ */
+{
+  // i * i = -1 exactly.  Tests the identity preservation through the
+  // complex.js multiplication kernel.
+  {
+    const s = new Stack();
+    s.push(Complex(0, 1));
+    s.push(Complex(0, 1));
+    lookup('*').fn(s);
+    const r = s.peek();
+    assert(r.type === 'complex' && r.re === -1 && r.im === 0,
+      `complex: i * i → (-1, 0) (got (${r.re}, ${r.im}))`);
+  }
+
+  // (1+2i) + (3-i) = 4 + i.
+  {
+    const s = new Stack();
+    s.push(Complex(1, 2));
+    s.push(Complex(3, -1));
+    lookup('+').fn(s);
+    const r = s.peek();
+    assert(r.type === 'complex' && r.re === 4 && r.im === 1,
+      `complex: (1+2i) + (3-i) → (4, 1) (got (${r.re}, ${r.im}))`);
+  }
+
+  // (1+2i) * (3-i) = 5 + 5i.
+  {
+    const s = new Stack();
+    s.push(Complex(1, 2));
+    s.push(Complex(3, -1));
+    lookup('*').fn(s);
+    const r = s.peek();
+    assert(r.type === 'complex' && r.re === 5 && r.im === 5,
+      `complex: (1+2i) * (3-i) → (5, 5) (got (${r.re}, ${r.im}))`);
+  }
+
+  // (1+i)^2 = 2i exactly.  Tests pow via polar form.
+  {
+    const s = new Stack();
+    s.push(Complex(1, 1));
+    s.push(Complex(2, 0));
+    lookup('^').fn(s);
+    const r = s.peek();
+    // The library's pow uses polar form — check the result is within
+    // a very tight ULP of (0, 2).  Strict equality may pick up a last-
+    // bit trig artifact, so tolerate < 1e-12 on each component.
+    assert(r.type === 'complex'
+           && Math.abs(r.re) < 1e-12
+           && Math.abs(r.im - 2) < 1e-12,
+      `complex: (1+i)^2 → (0, 2) (got (${r.re}, ${r.im}))`);
+  }
+
+  // Division by zero on Complex still throws 'Infinite result'.
+  {
+    const s = new Stack();
+    s.push(Complex(1, 1));
+    s.push(Complex(0, 0));
+    try {
+      lookup('/').fn(s);
+      assert(false, 'complex: (1+i) / 0 should throw');
+    } catch (e) {
+      assert(e.message === 'Infinite result',
+        `complex: (1+i) / 0 throws 'Infinite result' (got '${e.message}')`);
+    }
+  }
+}
+
+/* ================================================================
+   Rational lifting into Symbolic AST (session 092 audit).
+
+   `_toAst(Rational)` now returns Bin('/', Num(n), Num(d)) so a
+   Rational can survive into a Symbolic expression without being
+   flattened to a float leaf.  This closes the transcendental audit
+   gap: LN/LOG/EXP/SIN/etc. on a Symbolic argument containing a
+   Rational now form a valid symbolic expression rather than
+   throwing "Bad argument type".
+   ================================================================ */
+{
+  // Rational + Name lifts to Symbolic.
+  {
+    const s = new Stack();
+    s.push(Name('X', { quoted: true }));
+    s.push(Rational(1, 3));
+    lookup('+').fn(s);
+    const r = s.peek();
+    assert(r.type === 'symbolic',
+      `rational->AST: X + 1/3 lifts to Symbolic (got ${r.type})`);
+    const txt = format(r);
+    assert(txt.includes('1/3') && txt.includes('X'),
+      `rational->AST: X + 1/3 formats with both X and 1/3 (got '${txt}')`);
+  }
+
+  // LN of (X + 1/3) — Rational survives through the AST into a
+  // transcendental wrapper.
+  {
+    const s = new Stack();
+    s.push(Name('X', { quoted: true }));
+    s.push(Rational(1, 3));
+    lookup('+').fn(s);
+    lookup('LN').fn(s);
+    const r = s.peek();
+    assert(r.type === 'symbolic',
+      `rational->AST: LN(X + 1/3) is Symbolic (got ${r.type})`);
+    const txt = format(r);
+    assert(txt.includes('LN') && txt.includes('1/3'),
+      `rational->AST: LN(X + 1/3) formats with LN(...) and 1/3 (got '${txt}')`);
+  }
+}

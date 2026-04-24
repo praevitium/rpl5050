@@ -27,10 +27,22 @@ command-support work).  See "Resolved this session (082)" below.
 ```
 R   Real            V   Vector              Sy  Symbolic
 Z   Integer         M   Matrix              T   Tagged
-B   BinaryInteger   L   List                U   Unit
-C   Complex         N   Name (quoted)       S   String
-P   Program         D   Directory           G   Grob
+Q   Rational        L   List                U   Unit
+B   BinaryInteger   N   Name (quoted)       S   String
+C   Complex         D   Directory           G   Grob
+P   Program
 ```
+
+**Rational (`Q`) — session 092.**  New numeric type; BigInt-backed
+exact ratio.  For scalar arithmetic (+ − × ÷ ^), Rational is a
+first-class peer of Integer/Real/Complex on the promotion lattice
+(Z ⊂ Q ⊂ R ⊂ C).  Unary ops (NEG, ABS, INV, SQ, SQRT,
+FLOOR/CEIL/IP/FP, SIGN) have EXACT/APPROX-aware dispatch — EXACT
+keeps the Rational (or collapses to Integer when `d=1` / result is
+integer-valued), APPROX collapses to Real.  Transcendentals (LN, LOG,
+EXP, trig, hyperbolic) fall through `toRealOrThrow` so Q is silently
+coerced to Real — there's no exact `LN(2/3)`.  Symbolic lift routes
+Q through the AST as `Bin('/', Num(n), Num(d))`.
 
 ## Conventions (shared across all ops below)
 

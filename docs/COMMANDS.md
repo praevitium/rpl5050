@@ -47,9 +47,34 @@ covered by the binary-integer section).
 
 ## Arithmetic & scalar math
 
+**Numeric type upgrade — session 092.**  Scalar arithmetic is now
+backed by three vendored libraries, all under the no-fallback rule
+(if the library errors, the op errors — no legacy hand-rolled path):
+
+- **Rational** (`TYPES.RATIONAL`, new this session) — BigInt-backed
+  exact ratio `n/d`.  Integer ÷ Integer that doesn't divide evenly
+  returns Rational in EXACT mode, Real in APPROX.  All unary ops
+  (NEG, ABS, INV, SQ, SQRT, FLOOR/CEIL/IP/FP, SIGN) have
+  EXACT/APPROX-aware dispatch: EXACT keeps exactness where
+  meaningful, APPROX collapses to Real.  Backed by Fraction.js
+  v5.3.4 at `www/src/vendor/fraction.js/`.
+- **Real** — JS number on the stack, but `realBinary` routes
+  intermediate arithmetic through decimal.js at precision 15 so the
+  classic IEEE-754 gotchas (`0.1 + 0.2 → 0.3`, not
+  `0.30000000000000004`) are healed.  Payload shape unchanged.
+  Backed by decimal.js v10.4.3 at `www/src/vendor/decimal.js/`.
+- **Complex** — `{ re, im }` on the stack; `complexBinary` now
+  routes through complex.js (identity preservation for `i*i = -1`,
+  correct branch-cut handling in polar-form `^`).  Backed by
+  complex.js v2.4.3 at `www/src/vendor/complex.js/`.
+
+Rational values lift into the Symbolic AST as `Bin('/', Num(n),
+Num(d))` so they compose cleanly with CAS ops (FACTOR, EXPAND,
+DERIV, etc. via Giac).
+
 | Command | Status | Notes |
 |---------|--------|-------|
-| `+` `-` `*` `/` `^` | ✓ | Full R/Z/C/BIN/Vec/Mat/Unit/Sym dispatch (many sessions). |
+| `+` `-` `*` `/` `^` | ✓ | Full R/Z/Rat/C/BIN/Vec/Mat/Unit/Sym dispatch (many sessions).  Session 092 — Rational arithmetic (EXACT/APPROX-aware), Real via decimal.js, Complex via complex.js. |
 | `NEG` `ABS` `INV` `SQ` `SQRT` | ✓ | Session 064 Tagged transparency; INV/M is matrix inverse, SQ/M is matmul. |
 | `SIGN` | ✓ | Session 062 widening (Sy/L/T). |
 | `ARG` `CONJ` `RE` `IM` | ✓ | |

@@ -17,6 +17,7 @@ import {
 } from './types.js';
 import { Fraction } from '../vendor/fraction.js/fraction.mjs';
 import Decimal from '../vendor/decimal.js/decimal.mjs';
+import Complex$ from '../vendor/complex.js/complex.mjs';
 
 /* -------------------------------------------------------------
    Decimal.js — configured once at module load.
@@ -205,6 +206,17 @@ function _toAst(v) {
   if (isName(v))       return AstVar(v.id);
   if (isInteger(v))    return AstNum(Number(v.value));
   if (isReal(v))       return AstNum(v.value);
+  // Rational lifts to Bin('/', Num(n), Num(d)) so the ratio survives
+  // into the symbolic expression exactly (rather than being coerced
+  // to a float leaf via Number(n)/Number(d)).  The algebra AST has
+  // no num-ratio leaf today; the Bin form prints as `n/d`, routes
+  // through the normal simplifier, and preserves exactness for
+  // downstream ops like FACTOR/EXPAND/INTEG via Giac.  BigInts above
+  // 2^53 lose precision through Number() — acceptable for classroom
+  // inputs; a dedicated 'ratio' AST kind is future work.
+  if (isRational(v)) {
+    return AstBin('/', AstNum(Number(v.n)), AstNum(Number(v.d)));
+  }
   return null;
 }
 
@@ -781,33 +793,47 @@ function integerBinary(op, a, b) {
   throw new RPLError('Unknown op ' + op);
 }
 
+/* -------------------------------------------------------------
+   Complex × Complex arithmetic via complex.js.
+
+   Inputs `a` and `b` are plain `{ re, im }` pairs (our internal
+   shape matches complex.js's expected input exactly — `new Complex$(a)`
+   parses the object directly).  We marshal into Complex$ instances,
+   dispatch the op, then extract `.re` / `.im` back out.
+
+   What complex.js buys over the hand-rolled version:
+     • `i * i === -1` stays exactly -1 (identity preserved through
+       the library's multiplication kernel rather than surviving as
+       a floating-point accident).
+     • `^` uses complex.js's polar-form pow, which handles both
+       integer and fractional exponents correctly and applies the
+       principal branch at negative reals.
+     • Division-by-zero is caught explicitly so we keep our
+       existing 'Infinite result' RPLError instead of complex.js's
+       returned `Infinity + Infinity·i`.
+
+   No fallback: a complex.js error propagates.  Per the
+   no-fallback-for-numeric-libs rule from session 092.
+   ------------------------------------------------------------- */
 function complexBinary(op, a, b) {
-  switch (op) {
-    case '+': return { re: a.re + b.re, im: a.im + b.im };
-    case '-': return { re: a.re - b.re, im: a.im - b.im };
-    case '*': return {
-      re: a.re * b.re - a.im * b.im,
-      im: a.re * b.im + a.im * b.re,
-    };
-    case '/': {
-      const d = b.re * b.re + b.im * b.im;
-      if (d === 0) throw new RPLError('Infinite result');
-      return {
-        re: (a.re * b.re + a.im * b.im) / d,
-        im: (a.im * b.re - a.re * b.im) / d,
-      };
-    }
-    case '^': {
-      // (a)^(b) via exp(b*ln(a)) — basic; revisit for accuracy.
-      const r   = Math.hypot(a.re, a.im);
-      const th  = Math.atan2(a.im, a.re);
-      const lnr = Math.log(r);
-      const er  = Math.exp(b.re * lnr - b.im * th);
-      const an  = b.re * th + b.im * lnr;
-      return { re: er * Math.cos(an), im: er * Math.sin(an) };
-    }
+  // Division-by-zero guard stays explicit: complex.js would return
+  // Complex.INFINITY, but we preserve the pre-migration RPLError so
+  // upstream error messaging is unchanged.
+  if (op === '/' && b.re === 0 && b.im === 0) {
+    throw new RPLError('Infinite result');
   }
-  throw new RPLError('Unknown op ' + op);
+  const ca = new Complex$(a);
+  const cb = new Complex$(b);
+  let r;
+  switch (op) {
+    case '+': r = ca.add(cb); break;
+    case '-': r = ca.sub(cb); break;
+    case '*': r = ca.mul(cb); break;
+    case '/': r = ca.div(cb); break;
+    case '^': r = ca.pow(cb); break;
+    default: throw new RPLError('Unknown op ' + op);
+  }
+  return { re: r.re, im: r.im };
 }
 
 /** When either operand of `+` is a String, the result is a concatenation
@@ -7896,7 +7922,10 @@ register('NEWOB', (s) => {
 });
 
 register('MEM', (s) => {
-  s.push(Real(Number.MAX_SAFE_INTEGER));
+  // 1 GiB — a plausible, fixed "free memory" reading.  Unlike the HP50
+  // this app has no bounded memory pool to measure; a constant keeps
+  // MEM comparisons (`IF MEM 1000 < THEN ...`) predictable across runs.
+  s.push(Real(1073741824));
 });
 
 /* --------------- TRACE — matrix trace ---------------
