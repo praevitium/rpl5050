@@ -4,6 +4,8 @@
   "description": "RPL Scientific Calculator - Modern HP50g Adaptation",
   "type": "module",
   "scripts": {
+    "test": "node tests/test-all.mjs",
+    "serve": "npx --yes live-server --port=5050 --host=127.0.0.1 --no-browser --entry-file=index.html www",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
