@@ -48,7 +48,7 @@ import { assert } from './helpers.mjs';
   resetHome();
   varStore('X', Real(3.14));
   const v = varRecall('X');
-  assert(isReal(v) && v.value === 3.14, 'varStore then varRecall round-trip');
+  assert(isReal(v) && v.value.eq(3.14), 'varStore then varRecall round-trip');
   assert(varRecall('Y') === undefined, 'varRecall absent returns undefined');
 }
 
@@ -61,7 +61,7 @@ import { assert } from './helpers.mjs';
   lookup('STO').fn(s);
   assert(s.depth === 0, 'STO consumes both operands');
   const v = varRecall('A');
-  assert(isReal(v) && v.value === 42, 'STO wrote 42 into A');
+  assert(isReal(v) && v.value.eq(42), 'STO wrote 42 into A');
 }
 
 // STO also accepts a String on level 1 (HP50 allows it)
@@ -115,8 +115,8 @@ import { assert } from './helpers.mjs';
   s.push(RList([Name('A'), Name('B'), Name('C')]));  // level 1 = list
   lookup('STO').fn(s);
   assert(s.depth === 0, 'STO-list consumes both operands');
-  assert(varRecall('A').value === 9 && varRecall('B').value === 9
-      && varRecall('C').value === 9,
+  assert(varRecall('A').value.eq(9) && varRecall('B').value.eq(9)
+      && varRecall('C').value.eq(9),
     'STO-list stored 9 into A, B, and C');
 }
 
@@ -131,7 +131,7 @@ import { assert } from './helpers.mjs';
   lookup('RCL').fn(s);
   assert(s.depth === 3,
     `RCL-list pushes one value per name, got depth=${s.depth}`);
-  assert(s.peek(3).value === 1 && s.peek(2).value === 2 && s.peek(1).value === 3,
+  assert(s.peek(3).value.eq(1) && s.peek(2).value.eq(2) && s.peek(1).value.eq(3),
     'RCL-list preserves list order (A, B, C → 1, 2, 3 bottom-to-top)');
 }
 
@@ -145,7 +145,7 @@ import { assert } from './helpers.mjs';
   let threw = false;
   try { lookup('RCL').fn(s); } catch (e) { threw = true; }
   assert(threw, 'RCL with missing name in list throws');
-  assert(s.depth === 1 && s.peek().value === 10,
+  assert(s.depth === 1 && s.peek().value.eq(10),
     'earlier RCL push survived the throw');
 }
 
@@ -431,12 +431,12 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Name('GLOBAL', { quoted: true }));
   lookup('RCL').fn(s);
-  assert(s.peek()?.value === 100,
+  assert(s.peek()?.value.eq(100),
          'RCL inside SUB walks up and finds GLOBAL at HOME');
   s.drop();
   s.push(Name('LOCAL', { quoted: true }));
   lookup('RCL').fn(s);
-  assert(s.peek()?.value === 1, 'RCL finds LOCAL in the current dir');
+  assert(s.peek()?.value.eq(1), 'RCL finds LOCAL in the current dir');
   resetHome();
 }
 
@@ -447,9 +447,9 @@ import { assert } from './helpers.mjs';
   makeSubdir('SUB');
   goInto('SUB');
   varStore('X', Real(99));
-  assert(varRecall('X')?.value === 99, 'SUB.X shadows HOME.X');
+  assert(varRecall('X')?.value.eq(99), 'SUB.X shadows HOME.X');
   goUp();
-  assert(varRecall('X')?.value === 1, 'HOME.X is unchanged by SUB.X write');
+  assert(varRecall('X')?.value.eq(1), 'HOME.X is unchanged by SUB.X write');
   resetHome();
 }
 
@@ -469,7 +469,7 @@ import { assert } from './helpers.mjs';
   let opThrew = false;
   try { lookup('PURGE').fn(s); } catch (e) { opThrew = true; }
   assert(opThrew, 'PURGE in SUB does not remove HOME.OUTER — errors');
-  assert(varRecall('OUTER')?.value === 1,
+  assert(varRecall('OUTER')?.value.eq(1),
          'HOME.OUTER survived the failed PURGE from SUB');
   resetHome();
 }
@@ -595,7 +595,7 @@ import { assert } from './helpers.mjs';
   assert(isProgram(v), 'PLUS5 is a Program');
   s.push(v);
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && s.peek()?.value === 5,
+  assert(s.depth === 1 && s.peek()?.value.eq(5),
          'VARS press on Program still EVALs (2 3 + = 5)');
   resetHome();
 }
@@ -609,7 +609,7 @@ import { assert } from './helpers.mjs';
   assert(!isProgram(v) && !isDirectory(v),
          'N is neither Program nor Directory');
   s.push(v);
-  assert(s.depth === 1 && s.peek()?.value === 42,
+  assert(s.depth === 1 && s.peek()?.value.eq(42),
          'VARS press on Real pushes literally');
   resetHome();
 }
@@ -674,7 +674,7 @@ import { assert } from './helpers.mjs';
   s.push(Name('N', { quoted: true }));
   lookup('STO').fn(s);
   const n2 = varRecall('N');
-  assert(isReal(n2) && n2.value === 2,
+  assert(isReal(n2) && n2.value.eq(2),
          'STO over ordinary var still overwrites (regression guard)');
   resetHome();
 }
@@ -809,7 +809,7 @@ import { assert } from './helpers.mjs';
     varStore('Y', Real(7));
     assert(hasVarUndo(), 'saveVarStateForUndo records a shadow');
     undoVarState();
-    assert(varRecall('X') && varRecall('X').value === 5,
+    assert(varRecall('X') && varRecall('X').value.eq(5),
       'undoVarState restores X = 5');
     assert(varRecall('Y') === undefined,
       'undoVarState drops Y that was added after snapshot');
@@ -826,9 +826,9 @@ import { assert } from './helpers.mjs';
     assert(varRecall('Y') === undefined, 'first undo: Y gone');
     assert(hasVarRedo(), 'redo slot available after undo');
     redoVarState();                 // forward to { X=5, Y=7 }
-    assert(varRecall('X') && varRecall('X').value === 5,
+    assert(varRecall('X') && varRecall('X').value.eq(5),
       'redo leaves X intact');
-    assert(varRecall('Y') && varRecall('Y').value === 7,
+    assert(varRecall('Y') && varRecall('Y').value.eq(7),
       'redo restores Y = 7');
   }
 
@@ -854,7 +854,7 @@ import { assert } from './helpers.mjs';
     varPurge('X');
     assert(varRecall('X') === undefined, 'X purged live');
     undoVarState();
-    assert(varRecall('X') && varRecall('X').value === 11,
+    assert(varRecall('X') && varRecall('X').value.eq(11),
       'undo restores purged X');
   }
 
@@ -896,7 +896,7 @@ import { assert } from './helpers.mjs';
     goInto('SUB');
     varStore('B', Real(2));
     varPurge('A');
-    assert(varRecall('B').value === 2, 'live: B stored in SUB');
+    assert(varRecall('B').value.eq(2), 'live: B stored in SUB');
     assert(varRecall('A') === undefined, 'live: A purged in SUB');
     // Undo should restore SUB's A and drop B.  We're currently inside
     // SUB; the snapshot was taken from HOME, so undo should also
@@ -905,7 +905,7 @@ import { assert } from './helpers.mjs';
     assert(currentPath().join('/') === 'HOME',
       'undo returns us to HOME (where we were when saveForUndo ran)');
     goInto('SUB');
-    assert(varRecall('A') && varRecall('A').value === 1,
+    assert(varRecall('A') && varRecall('A').value.eq(1),
       'SUB/A restored to 1');
     assert(varRecall('B') === undefined,
       'SUB/B (added after snapshot) is gone');
@@ -919,7 +919,7 @@ import { assert } from './helpers.mjs';
     saveVarStateForUndo();
     varStore('X', Real(999));        // overwrite, same name
     undoVarState();
-    assert(varRecall('X') && varRecall('X').value === 1,
+    assert(varRecall('X') && varRecall('X').value.eq(1),
       'shadow is independent — overwrite did not bleed into snapshot');
   }
 
@@ -951,11 +951,11 @@ import { assert } from './helpers.mjs';
     s.push(Real(2));
     varStore('Y', Real(9));
     e.performUndo();
-    assert(s.depth === 1 && s.peek(1).value === 1,
+    assert(s.depth === 1 && s.peek(1).value.eq(1),
       'performUndo restored stack to { 1 }');
     assert(varRecall('Y') === undefined,
       'performUndo dropped Y added after snap');
-    assert(varRecall('X') && varRecall('X').value === 5,
+    assert(varRecall('X') && varRecall('X').value.eq(5),
       'performUndo kept X that predates snap');
   }
 
@@ -1014,7 +1014,7 @@ import { assert } from './helpers.mjs';
     e.enter();
     assert(varRecall('X') === undefined, 'PURGE removed X');
     e.performUndo();
-    assert(varRecall('X') && varRecall('X').value === 99,
+    assert(varRecall('X') && varRecall('X').value.eq(99),
       'UNDO brought X back');
   }
 
@@ -1032,7 +1032,7 @@ import { assert } from './helpers.mjs';
     s.push(Real(5));
     s.push(Name('X'));
     lookup('STO+').fn(s);
-    assert(varRecall('X').value === 15 && s.depth === 0,
+    assert(varRecall('X').value.eq(15) && s.depth === 0,
       'STO+: X=10, 5 X STO+ → X=15, stack empty');
   }
   {
@@ -1042,7 +1042,7 @@ import { assert } from './helpers.mjs';
     s.push(Name('Y'));
     s.push(Real(40));
     lookup('STO-').fn(s);
-    assert(varRecall('Y').value === 60,
+    assert(varRecall('Y').value.eq(60),
       'STO-: Y=100, Y 40 STO- → Y=60 (either stack order accepted)');
   }
   {
@@ -1051,7 +1051,7 @@ import { assert } from './helpers.mjs';
     s.push(Real(4));
     s.push(Name('Z'));
     lookup('STO*').fn(s);
-    assert(varRecall('Z').value === 12,
+    assert(varRecall('Z').value.eq(12),
       'STO*: Z=3, 4 Z STO* → Z=12');
   }
   {
@@ -1060,7 +1060,7 @@ import { assert } from './helpers.mjs';
     s.push(Real(5));
     s.push(Name('W'));
     lookup('STO/').fn(s);
-    assert(varRecall('W').value === 4,
+    assert(varRecall('W').value.eq(4),
       'STO/: W=20, 5 W STO/ → W=4 (stored/value)');
   }
   {
@@ -1072,7 +1072,7 @@ import { assert } from './helpers.mjs';
     lookup('STO+').fn(s);
     // Integer + Real = Real(10)
     const q = varRecall('Q');
-    assert((isReal(q) && q.value === 10) || (isInteger(q) && q.value === 10n),
+    assert((isReal(q) && q.value.eq(10)) || (isInteger(q) && q.value === 10n),
       'STO+ accepts string as name argument');
   }
   {
@@ -1100,9 +1100,9 @@ const {
   const s = new Stack();
   s.push(Name('X'));
   lookup('INCR').fn(s);
-  assert(varRecall('X').value === 11,
+  assert(varRecall('X').value.eq(11),
     "INCR: X=10, `X` INCR stores X=11");
-  assert(s.depth === 1 && isReal(s.peek(1)) && s.peek(1).value === 11,
+  assert(s.depth === 1 && isReal(s.peek(1)) && s.peek(1).value.eq(11),
     'INCR leaves the NEW value on the stack (11)');
 }
 {
@@ -1111,9 +1111,9 @@ const {
   const s = new Stack();
   s.push(Name('Y'));
   lookup('DECR').fn(s);
-  assert(varRecall('Y').value === 4,
+  assert(varRecall('Y').value.eq(4),
     "DECR: Y=5, `Y` DECR stores Y=4");
-  assert(s.peek(1).value === 4, 'DECR pushes the NEW value (4)');
+  assert(s.peek(1).value.eq(4), 'DECR pushes the NEW value (4)');
 }
 {
   // Integer start: + Real(1) should end up Real(11) or Integer(11n)
@@ -1123,7 +1123,7 @@ const {
   s.push(Name('N'));
   lookup('INCR').fn(s);
   const v = varRecall('N');
-  const num = typeof v.value === 'bigint' ? Number(v.value) : v.value;
+  const num = typeof v.value === 'bigint' ? Number(v.value) : v.value.toNumber();
   assert(num === 11, 'INCR on Integer-valued variable → 11');
 }
 {
@@ -1133,7 +1133,7 @@ const {
   const s = new Stack();
   s.push(Str('K'));
   lookup('INCR').fn(s);
-  assert(varRecall('K').value === 1, "INCR accepts \"K\" (string) as the name arg");
+  assert(varRecall('K').value.eq(1), "INCR accepts \"K\" (string) as the name arg");
 }
 {
   // Undefined variable
@@ -1170,23 +1170,23 @@ const {
   const s = new Stack();
   s.push(Real(7));
   lookup('FS?').fn(s);
-  assert(s.peek(1).value === 1, 'FS? on a set flag pushes 1');
+  assert(s.peek(1).value.eq(1), 'FS? on a set flag pushes 1');
   s.pop();
 
   s.push(Real(8));
   lookup('FS?').fn(s);
-  assert(s.peek(1).value === 0, 'FS? on a clear flag pushes 0');
+  assert(s.peek(1).value.eq(0), 'FS? on a clear flag pushes 0');
   s.pop();
 
   // FC? is the inverse
   s.push(Real(7));
   lookup('FC?').fn(s);
-  assert(s.peek(1).value === 0, 'FC? on a set flag pushes 0');
+  assert(s.peek(1).value.eq(0), 'FC? on a set flag pushes 0');
   s.pop();
 
   s.push(Real(8));
   lookup('FC?').fn(s);
-  assert(s.peek(1).value === 1, 'FC? on a clear flag pushes 1');
+  assert(s.peek(1).value.eq(1), 'FC? on a clear flag pushes 1');
   s.pop();
 }
 {
@@ -1206,7 +1206,7 @@ const {
   const s = new Stack();
   s.push(Real(3));
   lookup('FS?C').fn(s);
-  assert(s.peek(1).value === 1,
+  assert(s.peek(1).value.eq(1),
     'FS?C on a set flag pushes 1 (was-set)');
   s.pop();
   assert(!testUserFlag(3), 'FS?C also cleared the flag');
@@ -1214,7 +1214,7 @@ const {
   // Second call — flag now clear → pushes 0, still clear
   s.push(Real(3));
   lookup('FS?C').fn(s);
-  assert(s.peek(1).value === 0,
+  assert(s.peek(1).value.eq(0),
     'FS?C on the (now) clear flag pushes 0');
   s.pop();
   assert(!testUserFlag(3), 'FS?C leaves a clear flag clear');
@@ -1226,7 +1226,7 @@ const {
   const s = new Stack();
   s.push(Real(4));
   lookup('FC?C').fn(s);
-  assert(s.peek(1).value === 0,
+  assert(s.peek(1).value.eq(0),
     'FC?C on a set flag pushes 0 (was NOT clear)');
   s.pop();
   assert(!testUserFlag(4), 'FC?C cleared the flag');
@@ -1234,7 +1234,7 @@ const {
   // On a clear flag → pushes 1, still clear
   s.push(Real(4));
   lookup('FC?C').fn(s);
-  assert(s.peek(1).value === 1,
+  assert(s.peek(1).value.eq(1),
     'FC?C on a clear flag pushes 1 (was clear)');
   s.pop();
   assert(!testUserFlag(4), 'FC?C leaves a clear flag clear');
@@ -1249,7 +1249,7 @@ const {
 
   s.push(Real(-17));
   lookup('FS?').fn(s);
-  assert(s.peek(1).value === 1, 'FS? -17 → 1 after SF');
+  assert(s.peek(1).value.eq(1), 'FS? -17 → 1 after SF');
   s.pop();
   clearAllUserFlags();
 }
@@ -1429,7 +1429,7 @@ const {
   const s = new Stack();
   s.push(Name('X'));
   lookup('SNEG').fn(s);
-  assert(varRecall('X').value === -7 && s.depth === 0,
+  assert(varRecall('X').value.eq(-7) && s.depth === 0,
     'session046: SNEG X (X=7) → X=-7, stack empty');
 }
 
@@ -1452,7 +1452,7 @@ const {
   const s = new Stack();
   s.push(Name('Y'));
   lookup('SINV').fn(s);
-  assert(varRecall('Y').value === 0.25,
+  assert(varRecall('Y').value.eq(0.25),
     'session046: SINV Y (Y=4) → Y=0.25');
 }
 
@@ -1463,7 +1463,7 @@ const {
   const s = new Stack();
   s.push(Name('R'));
   lookup('SCONJ').fn(s);
-  assert(varRecall('R').value === 5,
+  assert(varRecall('R').value.eq(5),
     'session046: SCONJ on real leaves value unchanged');
 }
 
@@ -1486,7 +1486,7 @@ const {
   const s = new Stack();
   s.push(Str('A'));
   lookup('SNEG').fn(s);
-  assert(varRecall('A').value === -9,
+  assert(varRecall('A').value.eq(-9),
     'session046: SNEG accepts String identifier');
 }
 
@@ -1599,7 +1599,7 @@ const {
   const s = new Stack();
   s.push(RList([Name('A'), Name('B')]));
   lookup('SNEG').fn(s);
-  assert(varRecall('A').value === -2 && varRecall('B').value === 3,
+  assert(varRecall('A').value.eq(-2) && varRecall('B').value.eq(3),
     'SNEG { A B } negates both stored values');
 }
 {
@@ -1756,7 +1756,7 @@ const {
   s.push(orig);
   lookup('NEWOB').fn(s);
   const copy = s.peek();
-  assert(copy.type === 'real' && copy.value === 3.14,
+  assert(copy.type === 'real' && copy.value.eq(3.14),
     'session047: NEWOB preserves value');
   assert(copy !== orig,
     'session047: NEWOB produces a distinct object (not ===)');
@@ -1791,7 +1791,7 @@ const {
   const s = new Stack();
   lookup('MEM').fn(s);
   const v = s.peek();
-  assert(isReal(v) && v.value === 1073741824,
+  assert(isReal(v) && v.value.eq(1073741824),
     'session047: MEM pushes Real(1 GiB)');
 }
 
@@ -1813,7 +1813,7 @@ const {
   const k = new Stack();
   k.push(Integer(42n));
   lookup('KIND').fn(k);
-  assert(s.peek().value === k.peek().value,
+  assert(s.peek().value.eq(k.peek().value),
     'session053: VTYPE X === KIND of stored X');
 }
 

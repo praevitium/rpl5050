@@ -39,7 +39,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     lookup('NEG').fn(s);
     const v = s.peek();
     assert(v.type === 'vector'
-        && v.items[0].value === -1 && v.items[1].value === 2 && v.items[2].value === -3,
+        && v.items[0].value.eq(-1) && v.items[1].value.eq(2) && v.items[2].value.eq(-3),
       `NEG Vector negates each element, got [${v.items.map(x=>x.value).join(' ')}]`);
   }
   {
@@ -48,8 +48,8 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     lookup('NEG').fn(s);
     const m = s.peek();
     assert(m.type === 'matrix'
-        && m.rows[0][0].value === -1 && m.rows[0][1].value === 2
-        && m.rows[1][0].value === -3 && m.rows[1][1].value === -4,
+        && m.rows[0][0].value.eq(-1) && m.rows[0][1].value.eq(2)
+        && m.rows[1][0].value.eq(-3) && m.rows[1][1].value.eq(-4),
       'NEG Matrix negates every entry');
   }
 
@@ -58,7 +58,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(3), Real(4)]));
     lookup('ABS').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 5,
+    assert(isReal(s.peek()) && s.peek().value.eq(5),
       `ABS [3 4] → 5 (got ${s.peek()?.value})`);
   }
   {
@@ -77,7 +77,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     lookup('CONJ').fn(s);
     const v = s.peek();
     assert(v.type === 'vector'
-        && v.items[0].value === 1 && v.items[1].value === 2 && v.items[2].value === 3,
+        && v.items[0].value.eq(1) && v.items[1].value.eq(2) && v.items[2].value.eq(3),
       'CONJ on real-entry Vector is identity');
   }
   {
@@ -85,7 +85,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     s.push(Vector([Real(5), Real(-2)]));
     lookup('RE').fn(s);
     const v = s.peek();
-    assert(v.type === 'vector' && v.items[0].value === 5 && v.items[1].value === -2,
+    assert(v.type === 'vector' && v.items[0].value.eq(5) && v.items[1].value.eq(-2),
       'RE on real-entry Vector is identity');
   }
   {
@@ -93,7 +93,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     s.push(Vector([Real(5), Real(-2)]));
     lookup('IM').fn(s);
     const v = s.peek();
-    assert(v.type === 'vector' && v.items[0].value === 0 && v.items[1].value === 0,
+    assert(v.type === 'vector' && v.items[0].value.eq(0) && v.items[1].value.eq(0),
       'IM on real-entry Vector → zero vector');
   }
 
@@ -104,7 +104,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     lookup('CONJ').fn(s);
     const m = s.peek();
     assert(m.type === 'matrix'
-        && m.rows[0][0].value === 1 && m.rows[1][1].value === 4,
+        && m.rows[0][0].value.eq(1) && m.rows[1][1].value.eq(4),
       'CONJ on real-entry Matrix is identity');
   }
 
@@ -126,7 +126,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     lookup('SIGN').fn(s);
     const v = s.peek();
     assert(v.type === 'vector'
-        && v.items[0].value === 0 && v.items[1].value === 0 && v.items[2].value === 0,
+        && v.items[0].value.eq(0) && v.items[1].value.eq(0) && v.items[2].value.eq(0),
       'SIGN on zero Vector → zero Vector');
   }
 
@@ -319,7 +319,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     const s = new Stack();
     s.push(Str('3.14'));
     lookup('STR→').fn(s);
-    assert(isReal(s.peek(1)) && s.peek(1).value === 3.14,
+    assert(isReal(s.peek(1)) && s.peek(1).value.eq(3.14),
       'STR→ "3.14" → Real(3.14)');
   }
   {
@@ -369,7 +369,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
     s.push(Real(2.5));
     lookup('→STR').fn(s);
     lookup('STR→').fn(s);
-    assert(isReal(s.peek(1)) && s.peek(1).value === 2.5,
+    assert(isReal(s.peek(1)) && s.peek(1).value.eq(2.5),
       '→STR then STR→ round-trips a Real');
   }
   {
@@ -466,7 +466,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
   s.push(Tagged('mytag', Real(2.5)));
   lookup('UNDER').fn(s);
   assert(s.depth === 2, 'session053: UNDER leaves value + tag on stack');
-  assert(s.peek(2).type === 'real' && s.peek(2).value === 2.5,
+  assert(s.peek(2).type === 'real' && s.peek(2).value.eq(2.5),
     'session053: UNDER exposes value');
   assert(s.peek(1).type === 'string' && s.peek(1).value === 'mytag',
     'session053: UNDER pushes tag as String');
@@ -486,7 +486,7 @@ import { assert, assertThrows, runOp } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1.5));
   lookup('KIND').fn(s);
-  assert(s.peek().type === 'real' && typeof s.peek().value === 'number',
+  assert(s.peek().type === 'real' && s.peek().value.isFinite(),
     'session053: KIND returns Real');
 }
 
@@ -579,7 +579,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   const s = new Stack();
   s.push(make());
   lookup('TYPE').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === code,
+  assert(isReal(s.peek()) && s.peek().value.eq(code),
     `session068: TYPE(${label}) = ${code} (got ${s.peek()?.value})`);
 }
 
@@ -588,7 +588,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   const s = new Stack();
   s.push(make());
   lookup('KIND').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === code,
+  assert(isReal(s.peek()) && s.peek().value.eq(code),
     `session068: KIND(${label}) = ${code} (got ${s.peek()?.value})`);
 }
 
@@ -604,7 +604,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     const s = new Stack();
     s.push(Name(name, { quoted: true }));
     lookup('VTYPE').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === code,
+    assert(isReal(s.peek()) && s.peek().value.eq(code),
       `session068: VTYPE('${name}') = ${code} — ${label}`);
   }
 }
@@ -638,7 +638,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   const real = new Stack(); real.push(Real(5));       lookup('TYPE').fn(real);
   const integer = new Stack(); integer.push(Integer(5n)); lookup('TYPE').fn(integer);
   const bin = new Stack(); bin.push(BinaryInteger(5n, 'h')); lookup('TYPE').fn(bin);
-  assert(real.peek().value === 0 && integer.peek().value === 28 && bin.peek().value === 10
+  assert(real.peek().value.eq(0) && integer.peek().value.eq(28) && bin.peek().value.eq(10)
       && real.peek().value !== integer.peek().value
       && integer.peek().value !== bin.peek().value,
     'session068: TYPE distinguishes Real(0) / Integer(28) / BinaryInteger(10)');
@@ -655,10 +655,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // TYPE should pop 1, push 1 → net depth unchanged.
   assert(s.depth === startDepth,
     'session068: TYPE pops 1 and pushes 1 (net depth unchanged)');
-  assert(s.peek().value === 2,
+  assert(s.peek().value.eq(2),
     'session068: TYPE of level-1 String → code 2 (operated on the top, not level 2)');
-  assert(s.peek(2).value === 2, 'session068: TYPE leaves level 2 (Real(2)) untouched');
-  assert(s.peek(3).value === 1, 'session068: TYPE leaves level 3 (Real(1)) untouched');
+  assert(s.peek(2).value.eq(2), 'session068: TYPE leaves level 2 (Real(2)) untouched');
+  assert(s.peek(3).value.eq(1), 'session068: TYPE leaves level 3 (Real(1)) untouched');
 }
 
 /* ---- KIND on empty stack → Too few arguments ---- */
@@ -943,7 +943,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(p1); s.push(p2);
     lookup('==').fn(s);
     const v = s.peek().value;
-    assert(v === 1,
+    assert(v.eq(1),
       'session087: Program == Program structural (identical tokens) = 1');
   }
   // ---- Program × Program SAME equivalent ----
@@ -954,7 +954,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(p1); s.push(p2);
     lookup('SAME').fn(s);
     const v = s.peek().value;
-    assert(v === 1,
+    assert(v.eq(1),
       'session087: SAME on identical-token Programs = 1');
   }
   // ---- Program × Program: differing tokens → 0 (already correct) ----
@@ -967,7 +967,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     const s = new Stack();
     s.push(p1); s.push(p2);
     lookup('==').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session084: Program == Program with different tokens is 0 (regression guard for upcoming widening)');
   }
   // ---- Program × Program: token-order matters ----
@@ -977,7 +977,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     const s = new Stack();
     s.push(p1); s.push(p2);
     lookup('SAME').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session084: SAME on Programs with permuted tokens is 0 (regression guard)');
   }
   // ---- Program × Program: empty programs are equal ----
@@ -988,7 +988,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(p1); s.push(p2);
     lookup('==').fn(s);
     const v = s.peek().value;
-    assert(v === 1,
+    assert(v.eq(1),
       'session087: empty Program == empty Program = 1');
   }
 
@@ -1001,7 +1001,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(d); s.push(d);
     lookup('SAME').fn(s);
     const v = s.peek().value;
-    assert(v === 1,
+    assert(v.eq(1),
       'session087: SAME on the same Directory ref = 1');
   }
   // ---- Directory × Directory: same-name distinct objects → 0 ----
@@ -1015,7 +1015,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     const s = new Stack();
     s.push(d1); s.push(d2);
     lookup('SAME').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session084: SAME on two distinct Directories with same name is 0 (regression guard for reference-identity semantics)');
   }
   // ---- Directory == Directory: same object → HP50 1 ----
@@ -1025,7 +1025,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(d); s.push(d);
     lookup('==').fn(s);
     const v = s.peek().value;
-    assert(v === 1,
+    assert(v.eq(1),
       'session087: Directory == Directory same-ref = 1');
   }
 }
@@ -1433,7 +1433,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(Real(0.2));
     lookup('+').fn(s);
     const r = s.peek();
-    assert(r.type === 'real' && r.value === 0.3,
+    assert(r.type === 'real' && r.value.eq(0.3),
       `decimal: 0.1 + 0.2 → Real(0.3) (got ${r.value})`);
   }
 
@@ -1447,7 +1447,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(Real(1.2));
     lookup('-').fn(s);
     const r = s.peek();
-    assert(r.type === 'real' && r.value === 0,
+    assert(r.type === 'real' && r.value.eq(0),
       `decimal: 3*0.4 - 1.2 → Real(0) (got ${r.value})`);
   }
 
@@ -1458,7 +1458,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(Real(10));
     lookup('/').fn(s);
     const r = s.peek();
-    assert(r.type === 'real' && r.value === 0.1,
+    assert(r.type === 'real' && r.value.eq(0.1),
       `decimal: 1/10 → Real(0.1) (got ${r.value})`);
   }
 
@@ -1469,7 +1469,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(Real(2));
     lookup('^').fn(s);
     const r = s.peek();
-    assert(r.type === 'real' && r.value === 1.21,
+    assert(r.type === 'real' && r.value.eq(1.21),
       `decimal: 1.1^2 → Real(1.21) (got ${r.value})`);
   }
 
@@ -1482,7 +1482,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(Real(0.1));
     lookup('+').fn(s);
     const r = s.peek();
-    assert(r.type === 'real' && r.value === 0.3,
+    assert(r.type === 'real' && r.value.eq(0.3),
       `decimal: 0.1 + 0.1 + 0.1 → Real(0.3) (got ${r.value})`);
   }
 

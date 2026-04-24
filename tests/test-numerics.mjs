@@ -30,7 +30,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Real(2));
   s.push(Real(3));
   lookup('+').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 5, '2 3 + = 5');
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(5), '2 3 + = 5');
 }
 
 // Integer arithmetic stays integer until forced
@@ -81,11 +81,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.pushMany([Real(1), Real(2), Real(3)]);
   lookup('SWAP').fn(s);
-  assert(s.peek(1).value === 2 && s.peek(2).value === 3, 'SWAP');
+  assert(s.peek(1).value.eq(2) && s.peek(2).value.eq(3), 'SWAP');
   lookup('DROP').fn(s);
-  assert(s.peek(1).value === 3, 'DROP');
+  assert(s.peek(1).value.eq(3), 'DROP');
   lookup('DUP').fn(s);
-  assert(s.depth === 3 && s.peek(1).value === 3 && s.peek(2).value === 3, 'DUP');
+  assert(s.depth === 3 && s.peek(1).value.eq(3) && s.peek(2).value.eq(3), 'DUP');
 }
 
 // Parser: integer, real, complex, list
@@ -227,15 +227,15 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(-1.2));
   lookup('FLOOR').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === -2, 'FLOOR(-1.2) = -2');
+  assert(isReal(s.peek()) && s.peek().value.eq(-2), 'FLOOR(-1.2) = -2');
   s.clear();
   s.push(Real(-1.2));
   lookup('CEIL').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === -1, 'CEIL(-1.2) = -1');
+  assert(isReal(s.peek()) && s.peek().value.eq(-1), 'CEIL(-1.2) = -1');
   s.clear();
   s.push(Real(-1.8));
   lookup('IP').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === -1, 'IP(-1.8) = -1 (truncate toward 0)');
+  assert(isReal(s.peek()) && s.peek().value.eq(-1), 'IP(-1.8) = -1 (truncate toward 0)');
   s.clear();
   s.push(Real(1.8));
   lookup('FP').fn(s);
@@ -266,11 +266,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(-7.5));
   lookup('SIGN').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === -1, 'SIGN(-7.5) = -1');
+  assert(isReal(s.peek()) && s.peek().value.eq(-1), 'SIGN(-7.5) = -1');
   s.clear();
   s.push(Real(0));
   lookup('SIGN').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 0, 'SIGN(0) = 0');
+  assert(isReal(s.peek()) && s.peek().value.eq(0), 'SIGN(0) = 0');
   s.clear();
   s.push(Integer(42));
   lookup('SIGN').fn(s);
@@ -288,11 +288,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.pushMany([Real(-7), Real(3)]);
   lookup('MOD').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 2, '-7 3 MOD = 2 (sign of divisor)');
+  assert(isReal(s.peek()) && s.peek().value.eq(2), '-7 3 MOD = 2 (sign of divisor)');
   s.clear();
   s.pushMany([Real(7), Real(-3)]);
   lookup('MOD').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === -2, '7 -3 MOD = -2 (sign of divisor)');
+  assert(isReal(s.peek()) && s.peek().value.eq(-2), '7 -3 MOD = -2 (sign of divisor)');
   s.clear();
   s.pushMany([Integer(-7), Integer(3)]);
   lookup('MOD').fn(s);
@@ -308,11 +308,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.pushMany([Real(5), Real(9)]);
   lookup('MIN').fn(s);
-  assert(s.peek().value === 5, 'MIN(5, 9) = 5');
+  assert(s.peek().value.eq(5), 'MIN(5, 9) = 5');
   s.clear();
   s.pushMany([Real(5), Real(9)]);
   lookup('MAX').fn(s);
-  assert(s.peek().value === 9, 'MAX(5, 9) = 9');
+  assert(s.peek().value.eq(9), 'MAX(5, 9) = 9');
   s.clear();
   s.pushMany([Integer(5), Integer(9)]);
   lookup('MIN').fn(s);
@@ -321,7 +321,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.clear();
   s.pushMany([Integer(5), Real(9.5)]);
   lookup('MAX').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 9.5,
+  assert(isReal(s.peek()) && s.peek().value.eq(9.5),
          'MAX mixed Integer+Real promotes to Real');
 }
 
@@ -348,8 +348,8 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Integer(2));
   lookup('DUPN').fn(s);
   assert(s.depth === 5
-      && s.peek(5).value === 1 && s.peek(4).value === 2 && s.peek(3).value === 3
-      && s.peek(2).value === 2 && s.peek(1).value === 3,
+      && s.peek(5).value.eq(1) && s.peek(4).value.eq(2) && s.peek(3).value.eq(3)
+      && s.peek(2).value.eq(2) && s.peek(1).value.eq(3),
     'session043: 1 2 3 2 DUPN → 1 2 3 2 3');
 }
 {
@@ -357,7 +357,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(7)); s.push(Integer(0));
   lookup('DUPN').fn(s);
-  assert(s.depth === 1 && s.peek(1).value === 7,
+  assert(s.depth === 1 && s.peek(1).value.eq(7),
     'session043: 0 DUPN is a no-op (count consumed, nothing duplicated)');
 }
 {
@@ -378,7 +378,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(42));
   lookup('DUPDUP').fn(s);
-  assert(s.depth === 3 && s.peek(1).value === 42 && s.peek(2).value === 42 && s.peek(3).value === 42,
+  assert(s.depth === 3 && s.peek(1).value.eq(42) && s.peek(2).value.eq(42) && s.peek(3).value.eq(42),
     'session043: DUPDUP 42 → 42 42 42');
 }
 {
@@ -391,7 +391,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1)); s.push(Real(2)); s.push(Real(3));
   lookup('NIP').fn(s);
-  assert(s.depth === 2 && s.peek(1).value === 3 && s.peek(2).value === 1,
+  assert(s.depth === 2 && s.peek(1).value.eq(3) && s.peek(2).value.eq(1),
     'session043: 1 2 3 NIP → 1 3 (drops former level 2)');
 }
 {
@@ -405,7 +405,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(10)); s.push(Real(20)); s.push(Real(30));
   lookup('PICK3').fn(s);
-  assert(s.depth === 4 && s.peek(1).value === 10,
+  assert(s.depth === 4 && s.peek(1).value.eq(10),
     'session043: PICK3 ≡ 3 PICK (no explicit arg)');
 }
 
@@ -415,7 +415,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Real(1)); s.push(Real(2)); s.push(Real(3));
   s.push(Integer(3));
   lookup('ROLL').fn(s);
-  assert(s.peek(3).value === 2 && s.peek(2).value === 3 && s.peek(1).value === 1,
+  assert(s.peek(3).value.eq(2) && s.peek(2).value.eq(3) && s.peek(1).value.eq(1),
     'session043: 1 2 3 3 ROLL → 2 3 1');
 }
 {
@@ -423,7 +423,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1)); s.push(Real(2)); s.push(Integer(1));
   lookup('ROLL').fn(s);
-  assert(s.depth === 2 && s.peek(1).value === 2 && s.peek(2).value === 1,
+  assert(s.depth === 2 && s.peek(1).value.eq(2) && s.peek(2).value.eq(1),
     'session043: 1 ROLL is a no-op');
 }
 {
@@ -431,7 +431,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1)); s.push(Real(2)); s.push(Integer(0));
   lookup('ROLL').fn(s);
-  assert(s.depth === 2 && s.peek(1).value === 2,
+  assert(s.depth === 2 && s.peek(1).value.eq(2),
     'session043: 0 ROLL is a no-op');
 }
 {
@@ -448,7 +448,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Integer(3));
   lookup('ROLLD').fn(s);
   // Inverse of ROLL: 3 1 2
-  assert(s.peek(3).value === 3 && s.peek(2).value === 1 && s.peek(1).value === 2,
+  assert(s.peek(3).value.eq(3) && s.peek(2).value.eq(1) && s.peek(1).value.eq(2),
     'session043: 1 2 3 3 ROLLD → 3 1 2');
 }
 {
@@ -459,8 +459,8 @@ import { assert, assertThrows } from './helpers.mjs';
   lookup('ROLL').fn(s);
   s.push(Integer(4));
   lookup('ROLLD').fn(s);
-  assert(s.depth === 4 && s.peek(4).value === 1 && s.peek(3).value === 2
-      && s.peek(2).value === 3 && s.peek(1).value === 4,
+  assert(s.depth === 4 && s.peek(4).value.eq(1) && s.peek(3).value.eq(2)
+      && s.peek(2).value.eq(3) && s.peek(1).value.eq(4),
     'session043: n ROLL then n ROLLD round-trips');
 }
 
@@ -471,7 +471,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Real(99)); s.push(Integer(3));
   lookup('UNPICK').fn(s);
   // Writes 99 at level 3 of remaining stack (1 2 3): now 99 2 3
-  assert(s.depth === 3 && s.peek(3).value === 99 && s.peek(2).value === 2 && s.peek(1).value === 3,
+  assert(s.depth === 3 && s.peek(3).value.eq(99) && s.peek(2).value.eq(2) && s.peek(1).value.eq(3),
     'session043: 1 2 3 99 3 UNPICK → 99 2 3');
 }
 {
@@ -480,11 +480,11 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Real(10)); s.push(Real(20)); s.push(Real(30));
   s.push(Integer(2));
   lookup('PICK').fn(s);
-  assert(s.peek(1).value === 20, 'session043: PICK setup');
+  assert(s.peek(1).value.eq(20), 'session043: PICK setup');
   // Now: 10 20 30 20 — write back at level 3 (level 2 after the PICK consume)
   s.push(Integer(3));
   lookup('UNPICK').fn(s);
-  assert(s.depth === 3 && s.peek(3).value === 20 && s.peek(2).value === 20 && s.peek(1).value === 30,
+  assert(s.depth === 3 && s.peek(3).value.eq(20) && s.peek(2).value.eq(20) && s.peek(1).value.eq(30),
     'session043: PICK then UNPICK writes the value back');
 }
 {
@@ -500,7 +500,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Real(7)); s.push(Integer(3));
   lookup('NDUPN').fn(s);
   assert(s.depth === 4
-      && s.peek(4).value === 7 && s.peek(3).value === 7 && s.peek(2).value === 7
+      && s.peek(4).value.eq(7) && s.peek(3).value.eq(7) && s.peek(2).value.eq(7)
       && s.peek(1).value === 3n,
     'session043: 7 3 NDUPN → 7 7 7 3');
 }
@@ -536,7 +536,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Complex(3, 4));
   lookup('C→R').fn(s);
   assert(s.depth === 2 && isReal(s.peek(2)) && isReal(s.peek(1))
-      && s.peek(2).value === 3 && s.peek(1).value === 4,
+      && s.peek(2).value.eq(3) && s.peek(1).value.eq(4),
     'session043: (3,4) C→R → 3 4 (re on L2, im on L1)');
 }
 {
@@ -553,7 +553,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(7));
   lookup('C→R').fn(s);
-  assert(s.depth === 2 && s.peek(2).value === 7 && s.peek(1).value === 0,
+  assert(s.depth === 2 && s.peek(2).value.eq(7) && s.peek(1).value.eq(0),
     'session043: C→R on Real x → x 0');
 }
 {
@@ -587,8 +587,8 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Vector([Complex(1, 2), Complex(3, 4)]));
   lookup('C→R').fn(s);
   assert(s.depth === 2
-      && s.peek(2).items[0].value === 1 && s.peek(2).items[1].value === 3
-      && s.peek(1).items[0].value === 2 && s.peek(1).items[1].value === 4,
+      && s.peek(2).items[0].value.eq(1) && s.peek(2).items[1].value.eq(3)
+      && s.peek(1).items[0].value.eq(2) && s.peek(1).items[1].value.eq(4),
     'session043: C→R on complex vector → real-part vector, imag-part vector');
 }
 
@@ -599,7 +599,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1234.5));
   lookup('XPON').fn(s);
-  assert(isReal(s.peek(1)) && s.peek(1).value === 3,
+  assert(isReal(s.peek(1)) && s.peek(1).value.eq(3),
     'session043: XPON 1234.5 → 3');
 }
 {
@@ -613,17 +613,17 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(0));
   lookup('XPON').fn(s);
-  assert(s.peek(1).value === 0, 'session043: XPON 0 → 0');
+  assert(s.peek(1).value.eq(0), 'session043: XPON 0 → 0');
   s.clear();
   s.push(Real(0));
   lookup('MANT').fn(s);
-  assert(s.peek(1).value === 0, 'session043: MANT 0 → 0');
+  assert(s.peek(1).value.eq(0), 'session043: MANT 0 → 0');
 }
 {
   const s = new Stack();
   s.push(Real(-0.05));
   lookup('XPON').fn(s);
-  assert(s.peek(1).value === -2, 'session043: XPON -0.05 → -2');
+  assert(s.peek(1).value.eq(-2), 'session043: XPON -0.05 → -2');
   s.clear();
   s.push(Real(-0.05));
   lookup('MANT').fn(s);
@@ -635,7 +635,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Integer(500n));
   lookup('XPON').fn(s);
-  assert(s.peek(1).value === 2, 'session043: XPON Integer 500 → 2');
+  assert(s.peek(1).value.eq(2), 'session043: XPON Integer 500 → 2');
 }
 {
   // Bad type
@@ -659,7 +659,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(0));
   lookup('LNP1').fn(s);
-  assert(s.peek(1).value === 0, 'session043: LNP1 0 → 0');
+  assert(s.peek(1).value.eq(0), 'session043: LNP1 0 → 0');
 }
 {
   // Domain boundary x <= -1 → Infinite result
@@ -678,7 +678,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(0));
   lookup('EXPM').fn(s);
-  assert(s.peek(1).value === 0, 'session043: EXPM 0 → 0');
+  assert(s.peek(1).value.eq(0), 'session043: EXPM 0 → 0');
 }
 {
   // Inverse pairing: LNP1 ∘ EXPM ≈ identity near 0
@@ -705,11 +705,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(2.5)); s.push(Integer(0));
   lookup('RND').fn(s);
-  assert(s.peek(1).value === 3, 'session043: 2.5 0 RND → 3 (half-away-from-zero)');
+  assert(s.peek(1).value.eq(3), 'session043: 2.5 0 RND → 3 (half-away-from-zero)');
   s.clear();
   s.push(Real(-2.5)); s.push(Integer(0));
   lookup('RND').fn(s);
-  assert(s.peek(1).value === -3, 'session043: -2.5 0 RND → -3');
+  assert(s.peek(1).value.eq(-3), 'session043: -2.5 0 RND → -3');
 }
 {
   const s = new Stack();
@@ -729,7 +729,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Real(12345)); s.push(Integer(-3));
   lookup('RND').fn(s);
   // 3 sig figs of 12345 → 12300
-  assert(s.peek(1).value === 12300, 'session043: 12345 -3 RND → 12300 (3 sig figs)');
+  assert(s.peek(1).value.eq(12300), 'session043: 12345 -3 RND → 12300 (3 sig figs)');
 }
 {
   // Complex input rounds each component
@@ -762,33 +762,33 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(200)); s.push(Real(10));
   lookup('%').fn(s);
-  assert(s.peek(1).value === 20, 'session043: 200 10 % → 20 (10% of 200)');
+  assert(s.peek(1).value.eq(20), 'session043: 200 10 % → 20 (10% of 200)');
 }
 {
   // Integer/Real mix still works
   const s = new Stack();
   s.push(Integer(50)); s.push(Real(25));
   lookup('%').fn(s);
-  assert(s.peek(1).value === 12.5, 'session043: 50 25 % → 12.5 (mixed)');
+  assert(s.peek(1).value.eq(12.5), 'session043: 50 25 % → 12.5 (mixed)');
 }
 {
   const s = new Stack();
   s.push(Real(50)); s.push(Real(20));
   lookup('%T').fn(s);
-  assert(s.peek(1).value === 40, 'session043: 50 20 %T → 40 (20 is 40% of 50)');
+  assert(s.peek(1).value.eq(40), 'session043: 50 20 %T → 40 (20 is 40% of 50)');
 }
 {
   const s = new Stack();
   s.push(Real(100)); s.push(Real(125));
   lookup('%CH').fn(s);
-  assert(s.peek(1).value === 25, 'session043: 100 125 %CH → 25 (25% increase)');
+  assert(s.peek(1).value.eq(25), 'session043: 100 125 %CH → 25 (25% increase)');
 }
 {
   // Decrease
   const s = new Stack();
   s.push(Real(100)); s.push(Real(75));
   lookup('%CH').fn(s);
-  assert(s.peek(1).value === -25, 'session043: 100 75 %CH → -25 (25% decrease)');
+  assert(s.peek(1).value.eq(-25), 'session043: 100 75 %CH → -25 (25% decrease)');
 }
 {
   // Division by zero in %T
@@ -818,7 +818,7 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   const s = new Stack();
   lookup('MAXR').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === Number.MAX_VALUE,
+  assert(isReal(s.peek()) && s.peek().value.eq(Number.MAX_VALUE),
          'session044: MAXR pushes Number.MAX_VALUE');
 }
 
@@ -826,7 +826,7 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   const s = new Stack();
   lookup('MINR').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === Number.MIN_VALUE,
+  assert(isReal(s.peek()) && s.peek().value.eq(Number.MIN_VALUE),
          'session044: MINR pushes Number.MIN_VALUE');
 }
 
@@ -1658,7 +1658,7 @@ setAngle('rad');
   for (const [n, expected] of [[2n,1],[3n,1],[4n,0],[5n,1],[9n,0],[11n,1],[12n,0],[13n,1],[1n,0],[0n,0]]) {
     s.push(Integer(n));
     lookup('ISPRIME?').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === expected,
+    assert(isReal(s.peek()) && s.peek().value.eq(expected),
       `session053: ISPRIME? ${n} → ${expected}`);
     s.pop();
   }
@@ -1669,7 +1669,7 @@ setAngle('rad');
   const s = new Stack();
   s.push(Real(17));
   lookup('ISPRIME?').fn(s);
-  assert(s.peek().value === 1, 'session053: ISPRIME? Real(17) → true');
+  assert(s.peek().value.eq(1), 'session053: ISPRIME? Real(17) → true');
 }
 
 /* ---- ISPRIME? on non-integer Real throws ---- */
@@ -1684,11 +1684,11 @@ setAngle('rad');
   const s = new Stack();
   s.push(Integer(7919n));   // 1000th prime
   lookup('ISPRIME?').fn(s);
-  assert(s.peek().value === 1, 'session053: ISPRIME? 7919 → true');
+  assert(s.peek().value.eq(1), 'session053: ISPRIME? 7919 → true');
   s.pop();
   s.push(Integer(7920n));
   lookup('ISPRIME?').fn(s);
-  assert(s.peek().value === 0, 'session053: ISPRIME? 7920 → false');
+  assert(s.peek().value.eq(0), 'session053: ISPRIME? 7920 → false');
 }
 
 /* ---- NEXTPRIME / PREVPRIME ---- */
@@ -2053,10 +2053,10 @@ setAngle('rad');
   setComplexMode(true);
   const s = new Stack();
   lookup('CMPLX?').fn(s);
-  assert(s.pop().value === 1, 'session054: CMPLX? ON → 1');
+  assert(s.pop().value.eq(1), 'session054: CMPLX? ON → 1');
   setComplexMode(false);
   lookup('CMPLX?').fn(s);
-  assert(s.pop().value === 0, 'session054: CMPLX? OFF → 0');
+  assert(s.pop().value.eq(0), 'session054: CMPLX? OFF → 0');
 }
 
 /* ---- CMPLX OFF: LN(-1) throws Bad argument value ---- */
@@ -2304,9 +2304,9 @@ setAngle('rad');
   lookup('FLOOR').fn(s);
   const v = s.peek();
   assert(v.type === 'vector'
-      && isReal(v.items[0]) && v.items[0].value === 1
-      && isReal(v.items[1]) && v.items[1].value === -3
-      && isReal(v.items[2]) && v.items[2].value === 3,
+      && isReal(v.items[0]) && v.items[0].value.eq(1)
+      && isReal(v.items[1]) && v.items[1].value.eq(-3)
+      && isReal(v.items[2]) && v.items[2].value.eq(3),
     'session062: FLOOR on Vector element-wise');
 }
 {
@@ -2315,7 +2315,7 @@ setAngle('rad');
   lookup('CEIL').fn(s);
   const v = s.peek();
   assert(v.type === 'vector'
-      && v.items[0].value === 2 && v.items[1].value === -1,
+      && v.items[0].value.eq(2) && v.items[1].value.eq(-1),
     'session062: CEIL on Vector element-wise');
 }
 {
@@ -2323,7 +2323,7 @@ setAngle('rad');
   s.push(Vector([Real(1.7), Real(-2.3)]));
   lookup('IP').fn(s);
   const v = s.peek();
-  assert(v.items[0].value === 1 && v.items[1].value === -2,
+  assert(v.items[0].value.eq(1) && v.items[1].value.eq(-2),
     'session062: IP on Vector element-wise');
 }
 {
@@ -2343,8 +2343,8 @@ setAngle('rad');
   lookup('FLOOR').fn(s);
   const m = s.peek();
   assert(m.type === 'matrix'
-      && m.rows[0][0].value === 1 && m.rows[0][1].value === -3
-      && m.rows[1][0].value === 0 && m.rows[1][1].value === 4,
+      && m.rows[0][0].value.eq(1) && m.rows[0][1].value.eq(-3)
+      && m.rows[1][0].value.eq(0) && m.rows[1][1].value.eq(4),
     'session062: FLOOR on Matrix element-wise');
 }
 
@@ -2355,7 +2355,7 @@ setAngle('rad');
   lookup('FLOOR').fn(s);
   const t = s.peek();
   assert(t.type === 'tagged' && t.tag === 'Price'
-      && isReal(t.value) && t.value.value === 4,
+      && isReal(t.value) && t.value.value.eq(4),
     'session062: FLOOR on Tagged preserves tag and floors the value');
 }
 
@@ -2399,8 +2399,8 @@ setAngle('rad');
   lookup('SIGN').fn(s);
   const m = s.peek();
   assert(m.type === 'matrix'
-      && m.rows[0][0].value === -1 && m.rows[0][1].value === 0
-      && m.rows[1][0].value === 1  && m.rows[1][1].value === -1,
+      && m.rows[0][0].value.eq(-1) && m.rows[0][1].value.eq(0)
+      && m.rows[1][0].value.eq(1)  && m.rows[1][1].value.eq(-1),
     'session062: SIGN on Matrix element-wise');
 }
 {
@@ -2409,7 +2409,7 @@ setAngle('rad');
   lookup('SIGN').fn(s);
   const t = s.peek();
   assert(t.type === 'tagged' && t.tag === 'Profit'
-      && isReal(t.value) && t.value.value === -1,
+      && isReal(t.value) && t.value.value.eq(-1),
     'session062: SIGN on Tagged preserves tag');
 }
 
@@ -2483,7 +2483,7 @@ setAngle('rad');
   s.push(Real(3));
   lookup('MOD').fn(s);
   const v = s.peek();
-  assert(isReal(v) && v.value === 1,
+  assert(isReal(v) && v.value.eq(1),
     'session062: MOD on Tagged L drops tag, computes 7 mod 3 = 1');
 }
 {
@@ -2492,7 +2492,7 @@ setAngle('rad');
   s.push(Tagged('D', Real(3)));
   lookup('MOD').fn(s);
   const v = s.peek();
-  assert(isReal(v) && v.value === 2,
+  assert(isReal(v) && v.value.eq(2),
     'session062: MOD on Tagged R drops tag, computes -7 mod 3 = 2 (sign of divisor)');
 }
 {
@@ -2528,7 +2528,7 @@ setAngle('rad');
   s.push(Tagged('Hi', Real(9)));
   lookup('MIN').fn(s);
   const v = s.peek();
-  assert(isReal(v) && v.value === 2,
+  assert(isReal(v) && v.value.eq(2),
     'session062: MIN on two Tagged drops tags, returns min');
 }
 {
@@ -2537,7 +2537,7 @@ setAngle('rad');
   s.push(Tagged('Hi', Real(9)));
   lookup('MAX').fn(s);
   const v = s.peek();
-  assert(isReal(v) && v.value === 9,
+  assert(isReal(v) && v.value.eq(9),
     'session062: MAX on two Tagged drops tags, returns max');
 }
 {
@@ -2586,8 +2586,12 @@ setAngle('rad');
  * FACT additionally gets Symbolic / Name lift and List distribution.
  * ============================================================ */
 
-const _approx = (got, want, tol = 1e-9) =>
-  Math.abs(got - want) < tol;
+const _approx = (got, want, tol = 1e-9) => {
+  // `got` may be a Decimal (from a Real's .value) or a plain JS number.
+  const g = (typeof got === 'object' && got && typeof got.toNumber === 'function')
+    ? got.toNumber() : Number(got);
+  return Math.abs(g - want) < tol;
+};
 
 setAngle('RAD');
 
@@ -3054,7 +3058,7 @@ setAngle('RAD');
   s.push(Real(10));
   lookup('%').fn(s);
   const v = s.peek();
-  assert(v.type === 'real' && v.value === 20,
+  assert(v.type === 'real' && v.value.eq(20),
     'session064: % on Tagged × Real unwraps and drops tag');
 }
 {
@@ -3066,9 +3070,9 @@ setAngle('RAD');
   const v = s.peek();
   assert(v.type === 'list'
       && v.items.length === 3
-      && v.items[0].value === 80
-      && v.items[1].value === 40
-      && v.items[2].value === 20,
+      && v.items[0].value.eq(80)
+      && v.items[1].value.eq(40)
+      && v.items[2].value.eq(20),
     'session064: %T distributes across List × scalar');
 }
 {
@@ -3080,8 +3084,8 @@ setAngle('RAD');
   const v = s.peek();
   assert(v.type === 'list'
       && v.items.length === 2
-      && v.items[0].value === 25
-      && v.items[1].value === -25,
+      && v.items[0].value.eq(25)
+      && v.items[1].value.eq(-25),
     'session064: %CH pairs element-wise on List × List');
 }
 {
@@ -3110,7 +3114,7 @@ setAngle('RAD');
   lookup('INV').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'r'
-      && v.value.type === 'real' && v.value.value === 0.25,
+      && v.value.type === 'real' && v.value.value.eq(0.25),
     'session064: INV on Tagged Real preserves the tag');
 }
 {
@@ -3135,7 +3139,7 @@ setAngle('RAD');
   lookup('SQ').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'a'
-      && v.value.type === 'real' && v.value.value === 9,
+      && v.value.type === 'real' && v.value.value.eq(9),
     'session064: SQ on Tagged Real preserves the tag');
 }
 {
@@ -3523,7 +3527,7 @@ setAngle('RAD');
   s.push(Tagged('b', Real(3)));
   lookup('+').fn(s);
   const v = s.peek();
-  assert(v.type === 'real' && v.value === 5,
+  assert(v.type === 'real' && v.value.eq(5),
     'session068: Tagged + Tagged → numeric (tag drops)');
 }
 {
@@ -3533,7 +3537,7 @@ setAngle('RAD');
   s.push(Real(50));
   lookup('+').fn(s);
   const v = s.peek();
-  assert(v.type === 'real' && v.value === 250,
+  assert(v.type === 'real' && v.value.eq(250),
     'session068: Tagged(Real) + Real → plain Real');
 }
 {
@@ -3543,7 +3547,7 @@ setAngle('RAD');
   s.push(Tagged('delta', Real(7)));
   lookup('-').fn(s);
   const v = s.peek();
-  assert(v.type === 'real' && v.value === 13,
+  assert(v.type === 'real' && v.value.eq(13),
     'session068: Real - Tagged(Real) → plain Real (tag drops)');
 }
 {
@@ -3573,7 +3577,7 @@ setAngle('RAD');
   s.push(Integer(10n));
   lookup('^').fn(s);
   const v = s.peek();
-  assert(v.type === 'real' && v.value === 1024,
+  assert(v.type === 'real' && v.value.eq(1024),
     'session068: Tagged(Real) ^ Int → 1024');
 }
 {
@@ -3596,7 +3600,7 @@ setAngle('RAD');
   lookup('*').fn(s);
   const v = s.peek();
   assert(v.type === 'list' && v.items.length === 3
-      && v.items[0].value === 10 && v.items[2].value === 30,
+      && v.items[0].value.eq(10) && v.items[2].value.eq(30),
     'session068: Tagged(List) * scalar → List (tag drops first)');
 }
 {
@@ -3634,7 +3638,7 @@ setAngle('RAD');
   lookup('NEG').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'x'
-      && v.value.type === 'real' && v.value.value === -5,
+      && v.value.type === 'real' && v.value.value.eq(-5),
     'session068: NEG on Tagged(Real) preserves tag, negates value');
 }
 {
@@ -3656,9 +3660,9 @@ setAngle('RAD');
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'v'
       && v.value.type === 'vector'
-      && v.value.items[0].value === -1
-      && v.value.items[1].value === 2
-      && v.value.items[2].value === -3,
+      && v.value.items[0].value.eq(-1)
+      && v.value.items[1].value.eq(2)
+      && v.value.items[2].value.eq(-3),
     'session068: NEG on Tagged(Vector) preserves tag, element-wise negation');
 }
 {
@@ -3668,7 +3672,7 @@ setAngle('RAD');
   lookup('ABS').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'err'
-      && v.value.type === 'real' && v.value.value === 7.25,
+      && v.value.type === 'real' && v.value.value.eq(7.25),
     'session068: ABS on Tagged(Real) preserves tag, takes abs');
 }
 {
@@ -3678,7 +3682,7 @@ setAngle('RAD');
   lookup('ABS').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'z'
-      && v.value.type === 'real' && v.value.value === 5,
+      && v.value.type === 'real' && v.value.value.eq(5),
     'session068: ABS on Tagged(Complex) preserves tag, |3+4i| = 5');
 }
 {
@@ -3688,7 +3692,7 @@ setAngle('RAD');
   lookup('ABS').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'v'
-      && v.value.type === 'real' && v.value.value === 5,
+      && v.value.type === 'real' && v.value.value.eq(5),
     'session068: ABS on Tagged(Vector) preserves tag, Frobenius = 5');
 }
 {
@@ -3709,7 +3713,7 @@ setAngle('RAD');
   lookup('RE').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'z'
-      && v.value.type === 'real' && v.value.value === 7,
+      && v.value.type === 'real' && v.value.value.eq(7),
     'session068: RE on Tagged(Complex) preserves tag, extracts real part');
 }
 {
@@ -3719,7 +3723,7 @@ setAngle('RAD');
   lookup('IM').fn(s);
   const v = s.peek();
   assert(v.type === 'tagged' && v.tag === 'z'
-      && v.value.type === 'real' && v.value.value === 11,
+      && v.value.type === 'real' && v.value.value.eq(11),
     'session068: IM on Tagged(Complex) preserves tag, extracts imag part');
 }
 {
@@ -4084,7 +4088,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Integer(200n));
   lookup('LNGAMMA').fn(s);
-  assert(Number.isFinite(s.peek().value)
+  assert(s.peek().value.isFinite()
     && _approx(s.peek().value, 857.9336698258574, 1e-8),
     'session068: LNGAMMA(200) stays finite (~857.93)');
 }
@@ -4126,7 +4130,7 @@ setAngle('RAD');
   s.push(Integer(4n));
   s.push(Real(0));
   lookup('UTPC').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 1,
+  assert(isReal(s.peek()) && s.peek().value.eq(1),
     'session068: UTPC(4, 0) = 1');
 }
 {
@@ -4298,7 +4302,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Real(0));
   lookup('erf').fn(s);
-  assert(s.peek().value === 0, 'session069: erf(0) = 0');
+  assert(s.peek().value.eq(0), 'session069: erf(0) = 0');
 }
 {
   // erf(1) ≈ 0.8427007929 — Abramowitz & Stegun Table 7.1.
@@ -4366,7 +4370,7 @@ setAngle('RAD');
   lookup('erf').fn(s);
   const v = s.peek();
   assert(v && v.type === 'list' && v.items.length === 3
-    && v.items[0].value === 0
+    && v.items[0].value.eq(0)
     && _approx(v.items[1].value, 0.8427007929497149, 1e-12)
     && _approx(v.items[2].value, -0.8427007929497149, 1e-12),
     'session069: erf broadcasts element-wise over a List');
@@ -4385,7 +4389,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Real(0));
   lookup('erfc').fn(s);
-  assert(s.peek().value === 1, 'session069: erfc(0) = 1');
+  assert(s.peek().value.eq(1), 'session069: erfc(0) = 1');
 }
 {
   // erfc(1) ≈ 0.1572992070 — AS 7.1, complement of erf(1).
@@ -4481,7 +4485,7 @@ setAngle('RAD');
   s.push(Integer(10n));
   s.push(Real(0));
   lookup('UTPF').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session069: UTPF(5, 10, 0) = 1 (short-circuit)');
 }
 {
@@ -4543,7 +4547,7 @@ setAngle('RAD');
   s.push(Integer(1n));
   s.push(Real(0));
   lookup('UTPT').fn(s);
-  assert(s.peek().value === 0.5,
+  assert(s.peek().value.eq(0.5),
     'session069: UTPT(ν, 0) = 0.5 exactly');
 }
 {
@@ -4764,7 +4768,7 @@ setAngle('RAD');
   const s = new Stack();
   s.push(Real(200)); s.push(Real(10));
   lookup('%').fn(s);
-  assert(s.peek().value === 20,
+  assert(s.peek().value.eq(20),
     `session072: regression guard — %(200, 10) = 20 (got ${s.peek().value})`);
 }
 {
@@ -5573,7 +5577,7 @@ function _arrayEq(a, b) {
   s.push(Integer(0n));
   lookup('ZETA').fn(s);
   // ζ(0) = -1/2 — falls straight out of the code, not iteration.
-  assert(isReal(s.peek()) && s.peek().value === -0.5,
+  assert(isReal(s.peek()) && s.peek().value.eq(-0.5),
     'session086: ZETA(0) = -1/2');
 }
 {
@@ -5590,7 +5594,7 @@ function _arrayEq(a, b) {
   lookup('ZETA').fn(s);
   // Trivial zero at a negative even integer — returned as exact 0, not
   // a computed near-zero from sin(πs/2).
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session086: ZETA(-2) = 0 (trivial zero, exact)');
 }
 {
@@ -5651,7 +5655,7 @@ function _arrayEq(a, b) {
   const s = new Stack();
   s.push(Real(0));
   lookup('LAMBERT').fn(s);
-  assert(s.peek().value === 0, 'session086: LAMBERT(0) = 0');
+  assert(s.peek().value.eq(0), 'session086: LAMBERT(0) = 0');
 }
 {
   const s = new Stack();
@@ -5674,7 +5678,7 @@ function _arrayEq(a, b) {
   s.push(Real(-1 / Math.E));
   lookup('LAMBERT').fn(s);
   // Branch point — Puiseux seeding lets Halley hit -1 exactly.
-  assert(s.peek().value === -1,
+  assert(s.peek().value.eq(-1),
     'session086: LAMBERT(-1/e) = -1 exactly (branch point)');
 }
 

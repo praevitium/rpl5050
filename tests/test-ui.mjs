@@ -113,7 +113,7 @@ import { assert } from './helpers.mjs';
     s.push(Real(2));
     const handled = handleModifierShortcut(evt({ key: 'z', ctrlKey: true }), e);
     assert(handled === true, 'Ctrl-Z is handled');
-    assert(s.depth === 1 && s.peek(1).value === 1,
+    assert(s.depth === 1 && s.peek(1).value.eq(1),
       'Ctrl-Z routes to performUndo — stack restored');
   }
 
@@ -125,7 +125,7 @@ import { assert } from './helpers.mjs';
     e._snapForUndo();
     s.push(Real(6));
     handleModifierShortcut(evt({ key: 'z', metaKey: true }), e);
-    assert(s.depth === 1 && s.peek(1).value === 5,
+    assert(s.depth === 1 && s.peek(1).value.eq(5),
       'Cmd-Z routes to performUndo (Mac convention)');
   }
 
@@ -140,7 +140,7 @@ import { assert } from './helpers.mjs';
     assert(s.depth === 1, 'pre-redo sanity: back at { 1 }');
     const handled = handleModifierShortcut(evt({ key: 'y', ctrlKey: true }), e);
     assert(handled === true, 'Ctrl-Y is handled');
-    assert(s.depth === 2 && s.peek(1).value === 2,
+    assert(s.depth === 2 && s.peek(1).value.eq(2),
       'Ctrl-Y routes to performRedo — push re-applied');
   }
 
@@ -153,7 +153,7 @@ import { assert } from './helpers.mjs';
     s.push(Real(20));
     e.performUndo();
     handleModifierShortcut(evt({ key: 'z', ctrlKey: true, shiftKey: true }), e);
-    assert(s.depth === 2 && s.peek(1).value === 20,
+    assert(s.depth === 2 && s.peek(1).value.eq(20),
       'Shift-Ctrl-Z routes to performRedo');
   }
 
@@ -344,10 +344,10 @@ import { assert } from './helpers.mjs';
     // Stack is [1, 2, 3, 4] with 4 on top (level 1).  Level 3 → 2.
     rollLevel(s, 3);
     const top = s.snapshot();  // [level1, level2, …]
-    assert(s.depth === 4 && top[0].value === 2,
+    assert(s.depth === 4 && top[0].value.eq(2),
            'rollLevel: level 3 moves to level 1 (top)');
     // and the previous levels below it shift down by one.
-    assert(top[1].value === 4 && top[2].value === 3 && top[3].value === 1,
+    assert(top[1].value.eq(4) && top[2].value.eq(3) && top[3].value.eq(1),
            'rollLevel: lower levels close the gap');
   }
   // rollLevel(1) is a no-op
@@ -356,7 +356,7 @@ import { assert } from './helpers.mjs';
     s.push(Real(10)); s.push(Real(20));
     rollLevel(s, 1);
     const top = s.snapshot();
-    assert(top[0].value === 20 && top[1].value === 10,
+    assert(top[0].value.eq(20) && top[1].value.eq(10),
            'rollLevel(1): no-op');
   }
   // rollLevel: out-of-range throws
@@ -375,7 +375,7 @@ import { assert } from './helpers.mjs';
     rollLevel(s, 3);                  // now top = 2
     rollDownToLevel(s, 3);            // should restore original
     const top = s.snapshot();
-    assert(top[0].value === 4 && top[1].value === 3 && top[2].value === 2 && top[3].value === 1,
+    assert(top[0].value.eq(4) && top[1].value.eq(3) && top[2].value.eq(2) && top[3].value.eq(1),
            'rollLevel then rollDownToLevel round-trips');
   }
 
@@ -386,7 +386,7 @@ import { assert } from './helpers.mjs';
     // [10, 20, 30, 40] top=40 — drop level 3 (value=20)
     dropLevel(s, 3);
     const top = s.snapshot();
-    assert(s.depth === 3 && top[0].value === 40 && top[1].value === 30 && top[2].value === 10,
+    assert(s.depth === 3 && top[0].value.eq(40) && top[1].value.eq(30) && top[2].value.eq(10),
            'dropLevel: removes level 3 without touching level 1');
   }
 

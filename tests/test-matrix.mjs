@@ -36,7 +36,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('SIZE').fn(s);
     const top = s.peek();
     assert(top.type === 'list' && top.items.length === 1
-           && top.items[0].type === 'real' && top.items[0].value === 3,
+           && top.items[0].type === 'real' && top.items[0].value.eq(3),
       `SIZE [1 2 3] → { 3. }, got ${formatStackTop(top)}`);
   }
   // SIZE on Matrix returns a 2-element list { rows cols } of Reals.
@@ -46,8 +46,8 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('SIZE').fn(s);
     const top = s.peek();
     assert(top.type === 'list' && top.items.length === 2
-           && top.items[0].type === 'real' && top.items[0].value === 2
-           && top.items[1].type === 'real' && top.items[1].value === 3,
+           && top.items[0].type === 'real' && top.items[0].value.eq(2)
+           && top.items[1].type === 'real' && top.items[1].value.eq(3),
       `SIZE 2x3 matrix → { 2. 3. }, got ${formatStackTop(top)}`);
   }
   // SIZE on String: count characters.
@@ -81,9 +81,9 @@ import { assert, assertThrows } from './helpers.mjs';
     const m = s.peek();
     assert(m.type === 'matrix' && m.rows.length === 3 && m.rows[0].length === 2,
       `TRN 2x3 → 3x2, got rows=${m.rows.length} cols=${m.rows[0]?.length}`);
-    assert(m.rows[0][0].value === 1 && m.rows[0][1].value === 4
-        && m.rows[1][0].value === 2 && m.rows[1][1].value === 5
-        && m.rows[2][0].value === 3 && m.rows[2][1].value === 6,
+    assert(m.rows[0][0].value.eq(1) && m.rows[0][1].value.eq(4)
+        && m.rows[1][0].value.eq(2) && m.rows[1][1].value.eq(5)
+        && m.rows[2][0].value.eq(3) && m.rows[2][1].value.eq(6),
       'TRN: transposed entries match expected positions');
   }
   // TRN twice is identity on a square matrix.
@@ -93,8 +93,8 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('TRN').fn(s);
     lookup('TRN').fn(s);
     const m = s.peek();
-    assert(m.rows[0][0].value === 1 && m.rows[0][1].value === 2
-        && m.rows[1][0].value === 3 && m.rows[1][1].value === 4,
+    assert(m.rows[0][0].value.eq(1) && m.rows[0][1].value.eq(2)
+        && m.rows[1][0].value.eq(3) && m.rows[1][1].value.eq(4),
       'TRN TRN on 2x2 is identity');
   }
   // TRN on non-Matrix (e.g. Vector) → Bad argument type.
@@ -112,8 +112,8 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('+').fn(s);
     const v = s.peek();
     assert(v.type === 'vector' && v.items.length === 3
-        && v.items[0].value === 11 && v.items[1].value === 22
-        && v.items[2].value === 33,
+        && v.items[0].value.eq(11) && v.items[1].value.eq(22)
+        && v.items[2].value.eq(33),
       `Vector + Vector element-wise, got ${formatStackTop(v)}`);
   }
   // Element-wise Vector - Vector.
@@ -123,7 +123,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Vector([Real(1), Real(2), Real(3)]));
     lookup('-').fn(s);
     const v = s.peek();
-    assert(v.items[0].value === 9 && v.items[1].value === 18 && v.items[2].value === 27,
+    assert(v.items[0].value.eq(9) && v.items[1].value.eq(18) && v.items[2].value.eq(27),
       `Vector - Vector element-wise, got ${formatStackTop(v)}`);
   }
   // Mixed Integer + Real element contents promote cleanly.
@@ -133,8 +133,8 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Vector([Real(0.5), Real(1.5)]));
     lookup('+').fn(s);
     const v = s.peek();
-    assert(v.items[0].type === 'real' && v.items[0].value === 1.5
-        && v.items[1].value === 3.5,
+    assert(v.items[0].type === 'real' && v.items[0].value.eq(1.5)
+        && v.items[1].value.eq(3.5),
       `Vector(Int) + Vector(Real) promotes elements, got ${formatStackTop(v)}`);
   }
   // Mismatched lengths → Invalid dimension.
@@ -150,7 +150,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Vector([Real(1), Real(2), Real(3)]));
     s.push(Vector([Real(4), Real(5), Real(6)]));
     lookup('*').fn(s);
-    assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 32,
+    assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(32),
       `V V * → dot product 32 (got ${s.peek()?.value})`);
   }
 
@@ -163,7 +163,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const v = s.peek();
     assert(v && v.type === 'vector' &&
       v.items.length === 3 &&
-      v.items[0].value === 3 && v.items[1].value === 6 && v.items[2].value === 12,
+      v.items[0].value.eq(3) && v.items[1].value.eq(6) && v.items[2].value.eq(12),
       `scalar * Vector broadcasts (got ${v?.items?.map(x => x.value).join(',')})`);
   }
   {
@@ -173,7 +173,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('/').fn(s);                                   // [10,20] / 2
     const v = s.peek();
     assert(v && v.type === 'vector' &&
-      v.items[0].value === 5 && v.items[1].value === 10,
+      v.items[0].value.eq(5) && v.items[1].value.eq(10),
       'Vector / scalar broadcasts');
   }
   {
@@ -183,7 +183,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('+').fn(s);                                   // 1 + [10,20]
     const v = s.peek();
     assert(v && v.type === 'vector' &&
-      v.items[0].value === 11 && v.items[1].value === 21,
+      v.items[0].value.eq(11) && v.items[1].value.eq(21),
       'scalar + Vector broadcasts');
   }
 
@@ -195,8 +195,8 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('+').fn(s);
     const m = s.peek();
     assert(m && m.type === 'matrix' &&
-      m.rows[0][0].value === 11 && m.rows[0][1].value === 22 &&
-      m.rows[1][0].value === 33 && m.rows[1][1].value === 44,
+      m.rows[0][0].value.eq(11) && m.rows[0][1].value.eq(22) &&
+      m.rows[1][0].value.eq(33) && m.rows[1][1].value.eq(44),
       'Matrix + Matrix element-wise');
   }
 
@@ -209,8 +209,8 @@ import { assert, assertThrows } from './helpers.mjs';
     // A*B = [[1*5+2*7, 1*6+2*8], [3*5+4*7, 3*6+4*8]]
     //     = [[19, 22], [43, 50]]
     const m = s.peek();
-    assert(m && m.rows[0][0].value === 19 && m.rows[0][1].value === 22 &&
-      m.rows[1][0].value === 43 && m.rows[1][1].value === 50,
+    assert(m && m.rows[0][0].value.eq(19) && m.rows[0][1].value.eq(22) &&
+      m.rows[1][0].value.eq(43) && m.rows[1][1].value.eq(50),
       `Matrix * Matrix 2x2 (got [[${m?.rows?.[0]?.map(x=>x.value)}],[${m?.rows?.[1]?.map(x=>x.value)}]])`);
   }
 
@@ -223,7 +223,7 @@ import { assert, assertThrows } from './helpers.mjs';
     // [1*7+2*8+3*9, 4*7+5*8+6*9] = [50, 122]
     const v = s.peek();
     assert(v && v.type === 'vector' &&
-      v.items[0].value === 50 && v.items[1].value === 122,
+      v.items[0].value.eq(50) && v.items[1].value.eq(122),
       `Matrix * Vector (got ${v?.items?.map(x => x.value).join(',')})`);
   }
 
@@ -234,8 +234,8 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     lookup('*').fn(s);
     const m = s.peek();
-    assert(m && m.rows[0][0].value === 2 && m.rows[0][1].value === 4 &&
-      m.rows[1][0].value === 6 && m.rows[1][1].value === 8,
+    assert(m && m.rows[0][0].value.eq(2) && m.rows[0][1].value.eq(4) &&
+      m.rows[1][0].value.eq(6) && m.rows[1][1].value.eq(8),
       'scalar * Matrix broadcasts');
   }
 
@@ -261,7 +261,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Vector([Real(1), Real(2), Real(3)]));
     s.push(Vector([Real(4), Real(5), Real(6)]));
     lookup('DOT').fn(s);
-    assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 32,
+    assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(32),
       `DOT [1 2 3] [4 5 6] → 32 (got ${s.peek()?.value})`);
   }
   {
@@ -288,8 +288,8 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('CROSS').fn(s);
     const v = s.peek();
     assert(v.type === 'vector' && v.items.length === 3
-        && v.items[0].value === 0 && v.items[1].value === 0
-        && v.items[2].value === 1,
+        && v.items[0].value.eq(0) && v.items[1].value.eq(0)
+        && v.items[2].value.eq(1),
       `CROSS x̂ × ŷ → ẑ, got [${v.items.map(x=>x.value).join(' ')}]`);
   }
   {
@@ -300,7 +300,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('CROSS').fn(s);
     const v = s.peek();
     // [1,2,3] × [4,5,6] = [2*6-3*5, 3*4-1*6, 1*5-2*4] = [-3, 6, -3]
-    assert(v.items[0].value === -3 && v.items[1].value === 6 && v.items[2].value === -3,
+    assert(v.items[0].value.eq(-3) && v.items[1].value.eq(6) && v.items[2].value.eq(-3),
       `CROSS [1 2 3] × [4 5 6] → [-3 6 -3], got [${v.items.map(x=>x.value).join(' ')}]`);
   }
   {
@@ -318,9 +318,9 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('IDN').fn(s);
     const m = s.peek();
     assert(m.type === 'matrix' && m.rows.length === 3 && m.rows[0].length === 3
-        && m.rows[0][0].value === 1 && m.rows[0][1].value === 0 && m.rows[0][2].value === 0
-        && m.rows[1][0].value === 0 && m.rows[1][1].value === 1 && m.rows[1][2].value === 0
-        && m.rows[2][0].value === 0 && m.rows[2][1].value === 0 && m.rows[2][2].value === 1,
+        && m.rows[0][0].value.eq(1) && m.rows[0][1].value.eq(0) && m.rows[0][2].value.eq(0)
+        && m.rows[1][0].value.eq(0) && m.rows[1][1].value.eq(1) && m.rows[1][2].value.eq(0)
+        && m.rows[2][0].value.eq(0) && m.rows[2][1].value.eq(0) && m.rows[2][2].value.eq(1),
       'IDN 3 produces 3×3 identity');
   }
   {
@@ -330,8 +330,8 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('IDN').fn(s);
     const m = s.peek();
     assert(m.type === 'matrix' && m.rows.length === 2
-        && m.rows[0][0].value === 1 && m.rows[0][1].value === 0
-        && m.rows[1][0].value === 0 && m.rows[1][1].value === 1,
+        && m.rows[0][0].value.eq(1) && m.rows[0][1].value.eq(0)
+        && m.rows[1][0].value.eq(0) && m.rows[1][1].value.eq(1),
       'IDN on 2×2 matrix → 2×2 identity');
   }
   {
@@ -352,7 +352,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Vector([Real(3), Real(4)]));
     lookup('NORM').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 5,
+    assert(isReal(s.peek()) && s.peek().value.eq(5),
       `NORM [3 4] → 5 (got ${s.peek()?.value})`);
   }
   {
@@ -378,7 +378,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     lookup('DET').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === -2,
+    assert(isReal(s.peek()) && s.peek().value.eq(-2),
       `DET [[1 2][3 4]] → -2 (got ${s.peek()?.value})`);
   }
   {
@@ -390,7 +390,7 @@ import { assert, assertThrows } from './helpers.mjs';
       [Real(2),  Real(8), Real(7)],
     ]));
     lookup('DET').fn(s);
-    assert(s.peek().value === -306,
+    assert(s.peek().value.eq(-306),
       `DET 3×3 → -306 (got ${s.peek()?.value})`);
   }
   {
@@ -399,7 +399,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Integer(4n));
     lookup('IDN').fn(s);
     lookup('DET').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       `DET I4 → 1 (got ${s.peek()?.value})`);
   }
   {
@@ -489,8 +489,8 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('SIZE').fn(s);
     const top = s.peek();
     assert(top.items.length === 2
-        && top.items[0].type === 'real' && top.items[0].value === 3
-        && top.items[1].type === 'real' && top.items[1].value === 2,
+        && top.items[0].type === 'real' && top.items[0].value.eq(3)
+        && top.items[1].type === 'real' && top.items[1].value.eq(2),
       'SIZE 3×2 matrix → { 3. 2. } (Reals)');
   }
 }
@@ -512,7 +512,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('TRACE').fn(s);
     const top = s.peek();
     assert((isInteger(top) && top.value === 15n)
-        || (isReal(top) && top.value === 15),
+        || (isReal(top) && top.value.eq(15)),
       `TRACE 3×3 Int → 15 (got ${formatStackTop(top)})`);
   }
   // TRACE of a 2×2 Real matrix → 2.5 + 3.5 = 6.
@@ -530,7 +530,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Matrix([[Real(42)]]));
     lookup('TRACE').fn(s);
     const top = s.peek();
-    assert(isReal(top) && top.value === 42,
+    assert(isReal(top) && top.value.eq(42),
       `TRACE 1×1 [[42]] → 42 (got ${formatStackTop(top)})`);
   }
   // TRACE with Complex diagonal entries stays Complex.
@@ -583,7 +583,7 @@ import { assert, assertThrows } from './helpers.mjs';
       if (matVal.rows[i].length !== expect[i].length) return false;
       for (let j = 0; j < expect[i].length; j++) {
         const cell = matVal.rows[i][j];
-        const v = isInteger(cell) ? Number(cell.value) : cell.value;
+        const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
         if (Math.abs(v - expect[i][j]) > tol) return false;
       }
     }
@@ -697,7 +697,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('CON').fn(s);
     const top = s.peek();
     assert(isVector(top) && top.items.length === 3
-        && top.items.every(x => isReal(x) && x.value === 7),
+        && top.items.every(x => isReal(x) && x.value.eq(7)),
       'session048: CON 3 7 → [7 7 7]');
   }
 
@@ -709,7 +709,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('CON').fn(s);
     const top = s.peek();
     assert(isVector(top) && top.items.length === 4
-        && top.items.every(x => x.value === 0),
+        && top.items.every(x => x.value.eq(0)),
       'session048: CON {4} 0 → [0 0 0 0]');
   }
 
@@ -722,7 +722,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const top = s.peek();
     assert(isMatrix(top) && top.rows.length === 2 && top.rows[0].length === 3,
       'session048: CON {2 3} 5 → 2×3 Matrix');
-    assert(top.rows.every(r => r.every(x => x.value === 5)),
+    assert(top.rows.every(r => r.every(x => x.value.eq(5))),
       'session048: CON {2 3} 5 every entry is 5');
   }
 
@@ -735,7 +735,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const top = s.peek();
     assert(isMatrix(top) && top.rows.length === 3 && top.rows[0].length === 2,
       'session048: CON matrix-shape copy → 3×2 Matrix');
-    assert(top.rows.every(r => r.every(x => x.value === 9)),
+    assert(top.rows.every(r => r.every(x => x.value.eq(9))),
       'session048: CON matrix-shape fills with 9');
   }
 
@@ -747,7 +747,7 @@ import { assert, assertThrows } from './helpers.mjs';
     lookup('CON').fn(s);
     const top = s.peek();
     assert(isVector(top) && top.items.length === 3
-        && top.items.every(x => x.value === 11),
+        && top.items.every(x => x.value.eq(11)),
       'session048: CON vector-shape fill → [11 11 11]');
   }
 
@@ -798,7 +798,7 @@ import { assert, assertThrows } from './helpers.mjs';
       if (matVal.rows[i].length !== expect[i].length) return false;
       for (let j = 0; j < expect[i].length; j++) {
         const cell = matVal.rows[i][j];
-        const v = isInteger(cell) ? Number(cell.value) : cell.value;
+        const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
         if (Math.abs(v - expect[i][j]) > tol) return false;
       }
     }
@@ -809,7 +809,7 @@ import { assert, assertThrows } from './helpers.mjs';
     if (vecVal.items.length !== expect.length) return false;
     for (let i = 0; i < expect.length; i++) {
       const cell = vecVal.items[i];
-      const v = isInteger(cell) ? Number(cell.value) : cell.value;
+      const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
       if (Math.abs(v - expect[i]) > tol) return false;
     }
     return true;
@@ -856,7 +856,7 @@ import { assert, assertThrows } from './helpers.mjs';
     assert(Math.abs(a10) < 1e-9,
       `session049: REF 2×3 row2 col1 ≈ 0, got ${a10}`);
     // Pivot of row 1 must be exactly 1 (we normalize and zero-residual).
-    assert(out.rows[0][0].value === 1,
+    assert(out.rows[0][0].value.eq(1),
       `session049: REF 2×3 pivot at (1,1) = 1`);
   }
 
@@ -983,7 +983,7 @@ import { assert, assertThrows } from './helpers.mjs';
     assert(isVector(out) && out.items.length === 5,
       'session049: RANM 5 → Vector of length 5');
     const allReal = out.items.every(x => isReal(x));
-    const allInRange = out.items.every(x => Number.isInteger(x.value) && x.value >= -9 && x.value <= 9);
+    const allInRange = out.items.every(x => x.value.isInteger() && x.value.gte(-9) && x.value.lte(9));
     assert(allReal && allInRange,
       'session049: RANM 5 → all Real entries in [-9, 9]');
   }
@@ -996,7 +996,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const out = s.peek();
     assert(isMatrix(out) && out.rows.length === 3 && out.rows[0].length === 4,
       'session049: RANM {3 4} → 3×4 Matrix');
-    const allInRange = out.rows.every(r => r.every(x => Number.isInteger(x.value) && x.value >= -9 && x.value <= 9));
+    const allInRange = out.rows.every(r => r.every(x => x.value.isInteger() && x.value.gte(-9) && x.value.lte(9)));
     assert(allInRange, 'session049: RANM {3 4} all entries in [-9, 9]');
   }
 
@@ -1172,7 +1172,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
       if (matVal.rows[i].length !== expect[i].length) return false;
       for (let j = 0; j < expect[i].length; j++) {
         const cell = matVal.rows[i][j];
-        const v = isInteger(cell) ? Number(cell.value) : cell.value;
+        const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
         if (v !== expect[i][j]) return false;
       }
     }
@@ -1183,7 +1183,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     if (vecVal.items.length !== expect.length) return false;
     for (let i = 0; i < expect.length; i++) {
       const cell = vecVal.items[i];
-      const v = isInteger(cell) ? Number(cell.value) : cell.value;
+      const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
       if (v !== expect[i]) return false;
     }
     return true;
@@ -1375,7 +1375,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     lookup('CNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 6,
+    assert(s.peek().type === 'real' && s.peek().value.eq(6),
       `session050: CNRM [[1 2][3 4]] → 6 (got ${s.peek().value})`);
   }
 
@@ -1384,7 +1384,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Real(-1), Real(2)], [Real(-3), Real(4)]]));
     lookup('CNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 6,
+    assert(s.peek().type === 'real' && s.peek().value.eq(6),
       'session050: CNRM uses absolute values');
   }
 
@@ -1393,7 +1393,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Vector([Real(1), Real(-2), Real(3)]));
     lookup('CNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 6,
+    assert(s.peek().type === 'real' && s.peek().value.eq(6),
       'session050: CNRM on Vector → sum of |entries|');
   }
 
@@ -1402,7 +1402,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Complex(3, 4), Real(0)]]));
     lookup('CNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 5,
+    assert(s.peek().type === 'real' && s.peek().value.eq(5),
       'session050: CNRM handles Complex magnitude');
   }
 
@@ -1411,7 +1411,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Integer(1), Integer(2)], [Integer(3), Integer(4)]]));
     lookup('CNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 6,
+    assert(s.peek().type === 'real' && s.peek().value.eq(6),
       'session050: CNRM accepts Integer entries');
   }
 
@@ -1429,7 +1429,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     lookup('RNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 7,
+    assert(s.peek().type === 'real' && s.peek().value.eq(7),
       `session050: RNRM [[1 2][3 4]] → 7 (got ${s.peek().value})`);
   }
 
@@ -1438,7 +1438,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Vector([Real(1), Real(-5), Real(3)]));
     lookup('RNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 5,
+    assert(s.peek().type === 'real' && s.peek().value.eq(5),
       'session050: RNRM on Vector → max of |entries|');
   }
 
@@ -1447,7 +1447,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Matrix([[Complex(3, 4), Real(0)], [Real(1), Real(1)]]));
     lookup('RNRM').fn(s);
-    assert(s.peek().type === 'real' && s.peek().value === 5,
+    assert(s.peek().type === 'real' && s.peek().value.eq(5),
       'session050: RNRM handles Complex magnitude (row1=5 > row2=2)');
   }
 
@@ -1670,7 +1670,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
       if (matVal.rows[i].length !== expect[i].length) return false;
       for (let j = 0; j < expect[i].length; j++) {
         const cell = matVal.rows[i][j];
-        const v = isInteger(cell) ? Number(cell.value) : cell.value;
+        const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
         if (v !== expect[i][j]) return false;
       }
     }
@@ -1681,7 +1681,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     if (vecVal.items.length !== expect.length) return false;
     for (let i = 0; i < expect.length; i++) {
       const cell = vecVal.items[i];
-      const v = isInteger(cell) ? Number(cell.value) : cell.value;
+      const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
       if (v !== expect[i]) return false;
     }
     return true;
@@ -1696,7 +1696,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     lookup('ROW→').fn(s);
     assert(s.depth === 3, `session051: ROW→ on 2×3 pushes 3 stack items (got depth ${s.depth})`);
     const cnt = s.pop();
-    assert(cnt.type === 'real' && cnt.value === 2,
+    assert(cnt.type === 'real' && cnt.value.eq(2),
       'session051: ROW→ count is 2. on a 2×3 matrix');
     const row2 = s.pop();
     const row1 = s.pop();
@@ -1711,7 +1711,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     lookup('ROW→').fn(s);
     const cnt = s.pop();
     const row = s.pop();
-    assert(cnt.type === 'real' && cnt.value === 1 && vecMatches(row, [42]),
+    assert(cnt.type === 'real' && cnt.value.eq(1) && vecMatches(row, [42]),
       'session051: ROW→ on 1×1 gives [42] 1.');
   }
 
@@ -1812,7 +1812,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const col3 = s.pop();
     const col2 = s.pop();
     const col1 = s.pop();
-    assert(cnt.type === 'real' && cnt.value === 3,
+    assert(cnt.type === 'real' && cnt.value.eq(3),
       'session051: COL→ count is 3. on a 2×3 matrix');
     assert(vecMatches(col1, [1, 4]) && vecMatches(col2, [2, 5]) && vecMatches(col3, [3, 6]),
       'session051: COL→ pushes columns in left-to-right order');
@@ -2098,7 +2098,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
       if (matVal.rows[i].length !== expect[i].length) return false;
       for (let j = 0; j < expect[i].length; j++) {
         const cell = matVal.rows[i][j];
-        const v = isInteger(cell) ? Number(cell.value) : cell.value;
+        const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
         if (!approx(v, expect[i][j], tol)) return false;
       }
     }
@@ -2109,7 +2109,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     if (vecVal.items.length !== expect.length) return false;
     for (let i = 0; i < expect.length; i++) {
       const cell = vecVal.items[i];
-      const v = isInteger(cell) ? Number(cell.value) : cell.value;
+      const v = isInteger(cell) ? Number(cell.value) : cell.value.toNumber();
       if (!approx(v, expect[i], tol)) return false;
     }
     return true;
@@ -2122,7 +2122,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     const s = new Stack();
     s.push(Vector([Real(1), Real(2), Real(3), Real(4)]));
     lookup('TOT').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 10,
+    assert(isReal(s.peek()) && s.peek().value.eq(10),
       'session052: TOT of [1 2 3 4] → 10');
   }
   // Integer entries stay numeric; TOT wraps the sum as Real (pure number).
@@ -2132,7 +2132,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
     lookup('TOT').fn(s);
     const t = s.peek();
     assert((isReal(t) || isInteger(t))
-        && (isInteger(t) ? Number(t.value) : t.value) === 25,
+        && (isInteger(t) ? t.value === 25n : t.value.eq(25)),
       'session052: TOT of Integer Vector → 25');
   }
   // Complex support: TOT sums real and imag parts independently.
@@ -2415,7 +2415,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
   const s = new Stack();
   s.push(Vector([Real(1), Real(3), Real(2), Real(5), Real(4)]));
   lookup('MEDIAN').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 3,
+  assert(isReal(s.peek()) && s.peek().value.eq(3),
     'session053: MEDIAN [1 3 2 5 4] = 3');
 }
 
@@ -2424,7 +2424,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
   const s = new Stack();
   s.push(Vector([Real(1), Real(2), Real(3), Real(4)]));
   lookup('MEDIAN').fn(s);
-  assert(s.peek().value === 2.5,
+  assert(s.peek().value.eq(2.5),
     'session053: MEDIAN [1 2 3 4] = 2.5');
 }
 
@@ -2439,7 +2439,7 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
   lookup('MEDIAN').fn(s);
   const v = s.peek();
   assert(v.type === 'vector' && v.items.length === 2 &&
-         v.items[0].value === 2 && v.items[1].value === 20,
+         v.items[0].value.eq(2) && v.items[1].value.eq(20),
     'session053: MEDIAN 3×2 matrix → [2 20]');
 }
 
@@ -2601,38 +2601,38 @@ import { seedPrng, resetPrng, getPrngSeed } from '../www/src/rpl/state.js';
   ]);
   {
     const s = new Stack(); s.push(mk()); lookup('NSIGMA').fn(s);
-    assert(s.pop().value === 3, 'session054: NΣ 3×2 matrix → 3');
+    assert(s.pop().value.eq(3), 'session054: NΣ 3×2 matrix → 3');
   }
   {
     const s = new Stack(); s.push(mk()); lookup('ΣX').fn(s);
-    assert(s.pop().value === 9, 'session054: ΣX → 9');
+    assert(s.pop().value.eq(9), 'session054: ΣX → 9');
   }
   {
     const s = new Stack(); s.push(mk()); lookup('ΣY').fn(s);
-    assert(s.pop().value === 12, 'session054: ΣY → 12');
+    assert(s.pop().value.eq(12), 'session054: ΣY → 12');
   }
   {
     const s = new Stack(); s.push(mk()); lookup('ΣXY').fn(s);
-    assert(s.pop().value === 44, 'session054: ΣXY → 44 (1·2+3·4+5·6)');
+    assert(s.pop().value.eq(44), 'session054: ΣXY → 44 (1·2+3·4+5·6)');
   }
   {
     const s = new Stack(); s.push(mk()); lookup('ΣX2').fn(s);
-    assert(s.pop().value === 35, 'session054: ΣX² → 35 (1+9+25)');
+    assert(s.pop().value.eq(35), 'session054: ΣX² → 35 (1+9+25)');
   }
   {
     const s = new Stack(); s.push(mk()); lookup('ΣY2').fn(s);
-    assert(s.pop().value === 56, 'session054: ΣY² → 56 (4+16+36)');
+    assert(s.pop().value.eq(56), 'session054: ΣY² → 56 (4+16+36)');
   }
   {
     const s = new Stack(); s.push(mk()); lookup('MAXΣ').fn(s);
     const v = s.pop();
-    assert(v.type === 'vector' && v.items[0].value === 5 && v.items[1].value === 6,
+    assert(v.type === 'vector' && v.items[0].value.eq(5) && v.items[1].value.eq(6),
       'session054: MAXΣ → [5, 6]');
   }
   {
     const s = new Stack(); s.push(mk()); lookup('MINΣ').fn(s);
     const v = s.pop();
-    assert(v.type === 'vector' && v.items[0].value === 1 && v.items[1].value === 2,
+    assert(v.type === 'vector' && v.items[0].value.eq(1) && v.items[1].value.eq(2),
       'session054: MINΣ → [1, 2]');
   }
 }
@@ -2776,8 +2776,9 @@ function _matTranspose(A) {
 }
 
 function _matFromMatrixEntry(M) {
-  // Pull raw JS numbers from Matrix of Real entries.
-  return M.rows.map(row => row.map(e => e.value));
+  // Pull raw JS numbers from Matrix of Real entries (Real .value is a
+  // Decimal instance — coerce via .toNumber()).
+  return M.rows.map(row => row.map(e => e.value.toNumber()));
 }
 
 function _approxMatEqual(A, B, tol) {
@@ -2853,7 +2854,7 @@ function _approxMatEqual(A, B, tol) {
   const P = _matFromMatrixEntry(s.pop());
   const R = _matFromMatrixEntry(s.pop());
   const Q = _matFromMatrixEntry(s.pop());
-  const A = Araw.map(row => row.map(e => e.value));
+  const A = Araw.map(row => row.map(e => e.value.toNumber()));
   // Q·R == A.
   const QR = _matMul(Q, R);
   assert(_approxMatEqual(QR, A, 1e-9),
@@ -2892,7 +2893,7 @@ function _approxMatEqual(A, B, tol) {
     'session055: CHOLESKY L is lower-triangular');
   // L·Lᵀ = A.
   const LLt = _matMul(L, _matTranspose(L));
-  const A = Araw.map(row => row.map(e => e.value));
+  const A = Araw.map(row => row.map(e => e.value.toNumber()));
   assert(_approxMatEqual(LLt, A, 1e-9),
     'session055: CHOLESKY L·Lᵀ = A (2×2)');
 }
@@ -2909,7 +2910,7 @@ function _approxMatEqual(A, B, tol) {
   lookup('CHOLESKY').fn(s);
   const L = _matFromMatrixEntry(s.pop());
   const LLt = _matMul(L, _matTranspose(L));
-  const A = Araw.map(row => row.map(e => e.value));
+  const A = Araw.map(row => row.map(e => e.value.toNumber()));
   assert(_approxMatEqual(LLt, A, 1e-8),
     'session055: CHOLESKY L·Lᵀ = A (3×3)');
   // Classic textbook decomposition: L = [[5,0,0], [3,3,0], [-1,1,3]].
@@ -2965,7 +2966,7 @@ function _approxMatEqual(A, B, tol) {
   lookup('RDM').fn(s);
   const V = s.pop();
   assert(isVector(V) && V.items.length === 6
-         && V.items[0].value === 1 && V.items[5].value === 6,
+         && V.items[0].value.eq(1) && V.items[5].value.eq(6),
     'session055: RDM Matrix→Vector row-major');
 }
 
@@ -3005,11 +3006,11 @@ function _approxMatEqual(A, B, tol) {
   lookup('RDM').fn(s);
   const M = s.pop();
   assert(isMatrix(M) && M.rows.length === 2
-         && M.rows[0][0].type === 'real' && M.rows[0][0].value === 1
+         && M.rows[0][0].type === 'real' && M.rows[0][0].value.eq(1)
          && M.rows[0][1].type === 'complex'
          && M.rows[0][1].re === 2 && M.rows[0][1].im === 3
          && M.rows[1][0].type === 'integer' && M.rows[1][0].value === 4n
-         && M.rows[1][1].type === 'real' && M.rows[1][1].value === 5,
+         && M.rows[1][1].type === 'real' && M.rows[1][1].value.eq(5),
     'session055: RDM preserves heterogeneous entries');
 }
 
@@ -3196,7 +3197,7 @@ function _approxMatEqual(A, B, tol) {
   s.push(Vector([Real(42)]));
   lookup('MAD').fn(s);
   const m = s.pop();
-  assert(m.type === 'real' && m.value === 0,
+  assert(m.type === 'real' && m.value.eq(0),
     `session057: MAD [42] = 0, got ${m.value}`);
 }
 
@@ -3245,7 +3246,7 @@ function _approxMatEqual(A, B, tol) {
   const l = s.pop();
   assert(l.type === 'list' && l.items.length === 3,
     'session057: AXL Vector → List of 3');
-  assert(l.items[0].type === 'real' && l.items[0].value === 1,
+  assert(l.items[0].type === 'real' && l.items[0].value.eq(1),
     'session057: AXL entry 0 preserved');
 }
 
@@ -3259,7 +3260,7 @@ function _approxMatEqual(A, B, tol) {
     'session057: AXL Matrix → 2-element List (one per row)');
   assert(l.items[0].type === 'list' && l.items[0].items.length === 2,
     'session057: AXL row is itself a List');
-  assert(l.items[0].items[1].value === 2,
+  assert(l.items[0].items[1].value.eq(2),
     'session057: AXL preserves (0,1) entry');
 }
 
@@ -3282,7 +3283,7 @@ function _approxMatEqual(A, B, tol) {
   const v = s.pop();
   assert(v.type === 'vector' && v.items.length === 3,
     'session057: AXM flat List → length-3 Vector');
-  assert(v.items[2].value === 30,
+  assert(v.items[2].value.eq(30),
     'session057: AXM preserves entries');
 }
 
@@ -3297,7 +3298,7 @@ function _approxMatEqual(A, B, tol) {
   const M = s.pop();
   assert(M.type === 'matrix' && M.rows.length === 2,
     'session057: AXM nested List → 2-row Matrix');
-  assert(M.rows[0].length === 3 && M.rows[1][2].value === 6,
+  assert(M.rows[0].length === 3 && M.rows[1][2].value.eq(6),
     'session057: AXM preserves (1,2) entry');
 }
 
@@ -3337,7 +3338,7 @@ function _approxMatEqual(A, B, tol) {
   lookup('AXM').fn(s);
   lookup('AXL').fn(s);
   const l = s.pop();
-  assert(l.type === 'list' && l.items.length === 3 && l.items[2].value === 9,
+  assert(l.type === 'list' && l.items.length === 3 && l.items[2].value.eq(9),
     'session057: AXL ∘ AXM round-trip preserves flat list');
 }
 
@@ -3348,7 +3349,7 @@ function _approxMatEqual(A, B, tol) {
   lookup('AXL').fn(s);
   lookup('AXM').fn(s);
   const M = s.pop();
-  assert(M.type === 'matrix' && M.rows.length === 2 && M.rows[1][1].value === 4,
+  assert(M.type === 'matrix' && M.rows.length === 2 && M.rows[1][1].value.eq(4),
     'session057: AXM ∘ AXL round-trips Matrix shape');
 }
 

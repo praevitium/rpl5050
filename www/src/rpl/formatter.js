@@ -10,6 +10,7 @@ import {
   TYPES, isReal, isInteger, isRational, isBinaryInteger, isComplex, isString,
   isName, isList, isVector, isMatrix, isProgram, isTagged, isSymbolic,
   isDirectory, isUnit,
+  Decimal,
 } from './types.js';
 import { state as _state, getApproxMode, fromRadians } from './state.js';
 import { formatAlgebra } from './algebra.js';
@@ -147,7 +148,7 @@ function formatVector(v, d) {
   const reals = new Array(n);
   for (let i = 0; i < n; i++) {
     const it = v.items[i];
-    if (isReal(it))         reals[i] = it.value;
+    if (isReal(it))         reals[i] = it.value.toNumber();
     else if (isInteger(it)) reals[i] = Number(it.value);
     else                    return rect();
   }
@@ -169,27 +170,38 @@ function formatVector(v, d) {
 }
 
 function formatCmpxComp(n, d) {
+  // `n` may be a JS number (Complex components, Vector rectangular cells
+  // after the Decimal→number unwrap above) or a Decimal (formatReal's
+  // caller in `format(Real)` passes `v.value` which is a Decimal).
+  const num = (n instanceof Decimal) ? n.toNumber() : n;
   if (
     !getApproxMode() &&
     d.mode === 'STD' &&
-    Number.isFinite(n) &&
-    Number.isInteger(n)
+    Number.isFinite(num) &&
+    Number.isInteger(num)
   ) {
-    return String(n);
+    return String(num);
   }
-  return formatReal(n, d);
+  return formatReal(num, d);
 }
 
 export function formatReal(n, d) {
-  if (!Number.isFinite(n)) return n > 0 ? '∞' : '-∞';
+  // Accept either a JS number or a Decimal instance.  The Real stack
+  // payload carries a Decimal (session 093); Complex, Unit, and Vector
+  // component renderers still hand us JS numbers since those types
+  // haven't been widened yet.  Collapse to Number here since the HP50
+  // STD display crops to 12 sig digits anyway — Decimal precision past
+  // that point has no visible effect.
+  const num = (n instanceof Decimal) ? n.toNumber() : n;
+  if (!Number.isFinite(num)) return num > 0 ? '∞' : '-∞';
   switch (d.mode) {
-    case 'FIX': return n.toFixed(d.digits);
-    case 'SCI': return n.toExponential(d.digits);
-    case 'ENG': return formatEng(n, d.digits);
+    case 'FIX': return num.toFixed(d.digits);
+    case 'SCI': return num.toExponential(d.digits);
+    case 'ENG': return formatEng(num, d.digits);
     case 'STD':
     default:
       // HP50 STD mode: up to 12 significant digits, no trailing zeros.
-      return formatStd(n);
+      return formatStd(num);
   }
 }
 

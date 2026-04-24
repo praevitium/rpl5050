@@ -27,67 +27,67 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Real(3.14));
     lookup('TYPE').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 0, 'TYPE Real → 0');
+    assert(isReal(s.peek()) && s.peek().value.eq(0), 'TYPE Real → 0');
   }
   {
     const s = new Stack();
     s.push(Complex(1, 2));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 1, 'TYPE Complex → 1');
+    assert(s.peek().value.eq(1), 'TYPE Complex → 1');
   }
   {
     const s = new Stack();
     s.push(Str('hi'));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 2, 'TYPE String → 2');
+    assert(s.peek().value.eq(2), 'TYPE String → 2');
   }
   {
     const s = new Stack();
     s.push(Vector([Real(1), Real(2)]));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 3, 'TYPE real Vector → 3');
+    assert(s.peek().value.eq(3), 'TYPE real Vector → 3');
   }
   {
     const s = new Stack();
     s.push(Vector([Real(1), Complex(0, 1)]));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 4, 'TYPE complex Vector → 4');
+    assert(s.peek().value.eq(4), 'TYPE complex Vector → 4');
   }
   {
     const s = new Stack();
     s.push(RList([Real(1)]));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 5, 'TYPE List → 5');
+    assert(s.peek().value.eq(5), 'TYPE List → 5');
   }
   {
     const s = new Stack();
     s.push(Name('X'));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 6, 'TYPE Name → 6');
+    assert(s.peek().value.eq(6), 'TYPE Name → 6');
   }
   {
     const s = new Stack();
     s.push(Program([Real(1)]));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 8, 'TYPE Program → 8');
+    assert(s.peek().value.eq(8), 'TYPE Program → 8');
   }
   {
     const s = new Stack();
     s.push(BinaryInteger(15n, 'h'));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 10, 'TYPE BinaryInteger → 10');
+    assert(s.peek().value.eq(10), 'TYPE BinaryInteger → 10');
   }
   {
     const s = new Stack();
     s.push(Tagged('lbl', Real(1)));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 12, 'TYPE Tagged → 12');
+    assert(s.peek().value.eq(12), 'TYPE Tagged → 12');
   }
   {
     const s = new Stack();
     s.push(Integer(42));
     lookup('TYPE').fn(s);
-    assert(s.peek().value === 28, 'TYPE Integer (ZINT) → 28');
+    assert(s.peek().value.eq(28), 'TYPE Integer (ZINT) → 28');
   }
 
   // ---- OBJ→ ----
@@ -95,8 +95,8 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(Complex(3, 4));
     lookup('OBJ→').fn(s);
-    assert(s.depth === 2 && isReal(s.peek(1)) && s.peek(1).value === 4
-        && isReal(s.peek(2)) && s.peek(2).value === 3,
+    assert(s.depth === 2 && isReal(s.peek(1)) && s.peek(1).value.eq(4)
+        && isReal(s.peek(2)) && s.peek(2).value.eq(3),
       'OBJ→ Complex(3,4) → 3 4');
   }
   {
@@ -104,7 +104,7 @@ import { assert } from './helpers.mjs';
     s.push(Tagged('lbl', Real(7)));
     lookup('OBJ→').fn(s);
     assert(s.depth === 2 && isString(s.peek(1)) && s.peek(1).value === 'lbl'
-        && isReal(s.peek(2)) && s.peek(2).value === 7,
+        && isReal(s.peek(2)) && s.peek(2).value.eq(7),
       'OBJ→ :lbl:7 → 7 "lbl"');
   }
   {
@@ -113,8 +113,8 @@ import { assert } from './helpers.mjs';
     lookup('OBJ→').fn(s);
     assert(s.depth === 4
         && isInteger(s.peek(1)) && s.peek(1).value === 3n
-        && isReal(s.peek(2)) && s.peek(2).value === 30
-        && isReal(s.peek(4)) && s.peek(4).value === 10,
+        && isReal(s.peek(2)) && s.peek(2).value.eq(30)
+        && isReal(s.peek(4)) && s.peek(4).value.eq(10),
       'OBJ→ { 10 20 30 } → 10 20 30 3');
   }
   {
@@ -124,8 +124,8 @@ import { assert } from './helpers.mjs';
     // Vector OBJ→ leaves a { size } marker, not a bare count, so the
     // data can be reassembled with →ARRY later.
     assert(s.depth === 4
-        && s.peek(1).type === 'list' && s.peek(1).items[0].value === 3
-        && isReal(s.peek(2)) && s.peek(2).value === 3,
+        && s.peek(1).type === 'list' && s.peek(1).items[0].value.eq(3)
+        && isReal(s.peek(2)) && s.peek(2).value.eq(3),
       'OBJ→ [1 2 3] → 1 2 3 { 3 }');
   }
   {
@@ -134,9 +134,9 @@ import { assert } from './helpers.mjs';
     lookup('OBJ→').fn(s);
     assert(s.depth === 5
         && s.peek(1).type === 'list'
-        && s.peek(1).items[0].value === 2 && s.peek(1).items[1].value === 2
-        && isReal(s.peek(2)) && s.peek(2).value === 4
-        && isReal(s.peek(5)) && s.peek(5).value === 1,
+        && s.peek(1).items[0].value.eq(2) && s.peek(1).items[1].value.eq(2)
+        && isReal(s.peek(2)) && s.peek(2).value.eq(4)
+        && isReal(s.peek(5)) && s.peek(5).value.eq(1),
       'OBJ→ [[1 2][3 4]] → 1 2 3 4 { 2 2 }');
   }
   {
@@ -189,7 +189,7 @@ import { assert } from './helpers.mjs';
   const v = s.peek(1);
   assert(v.type === 'vector' && v.items.length === 3,
     '→ARRY 1 2 3 3 → Vector of 3 items');
-  assert(v.items[0].value === 1 && v.items[2].value === 3,
+  assert(v.items[0].value.eq(1) && v.items[2].value.eq(3),
     '→ARRY preserves element order');
 }
 /* ---- →ARRY: {n} list → Vector ---- */
@@ -200,7 +200,7 @@ import { assert } from './helpers.mjs';
   lookup('→ARRY').fn(s);
   const v = s.peek(1);
   assert(v.type === 'vector' && v.items.length === 2
-      && v.items[0].value === 10 && v.items[1].value === 20,
+      && v.items[0].value.eq(10) && v.items[1].value.eq(20),
     '→ARRY with {2} size-list → Vector[10 20]');
 }
 /* ---- →ARRY: {m n} list → Matrix (row-major) ---- */
@@ -214,8 +214,8 @@ import { assert } from './helpers.mjs';
   const m = s.peek(1);
   assert(m.rows.length === 2 && m.rows[0].length === 3,
     '→ARRY shape is 2 rows × 3 cols');
-  assert(m.rows[0][0].value === 1 && m.rows[0][2].value === 3
-      && m.rows[1][0].value === 4 && m.rows[1][2].value === 6,
+  assert(m.rows[0][0].value.eq(1) && m.rows[0][2].value.eq(3)
+      && m.rows[1][0].value.eq(4) && m.rows[1][2].value.eq(6),
     '→ARRY matrix elements row-major: [[1 2 3][4 5 6]]');
 }
 /* ---- ASCII alias ->ARRY ---- */
@@ -253,9 +253,9 @@ import { assert } from './helpers.mjs';
   assert(s.depth === 4, 'ARRY→ on Vector[3] → 3 elements + size-list');
   const size = s.peek(1);
   assert(size.type === 'list' && size.items.length === 1
-      && size.items[0].value === 3,
+      && size.items[0].value.eq(3),
     'ARRY→ pushes {3} as size spec');
-  assert(s.peek(2).value === 33 && s.peek(4).value === 11,
+  assert(s.peek(2).value.eq(33) && s.peek(4).value.eq(11),
     'ARRY→ Vector elements in HP50 order (L2=last, L4=first)');
 }
 /* ---- ARRY→: Matrix decompose ---- */
@@ -266,9 +266,9 @@ import { assert } from './helpers.mjs';
   assert(s.depth === 5, 'ARRY→ on 2×2 Matrix → 4 elements + size-list');
   const size = s.peek(1);
   assert(size.type === 'list' && size.items.length === 2
-      && size.items[0].value === 2 && size.items[1].value === 2,
+      && size.items[0].value.eq(2) && size.items[1].value.eq(2),
     'ARRY→ on Matrix pushes {2 2} size spec');
-  assert(s.peek(2).value === 4 && s.peek(5).value === 1,
+  assert(s.peek(2).value.eq(4) && s.peek(5).value.eq(1),
     'ARRY→ on Matrix: elements in row-major order, L2=last, L5=first');
 }
 /* ---- ARRY→ round-trip with →ARRY ---- */
@@ -279,7 +279,7 @@ import { assert } from './helpers.mjs';
   lookup('→ARRY').fn(s);
   const round = s.peek(1);
   assert(round.type === 'vector' && round.items.length === 4
-      && round.items[0].value === 1 && round.items[3].value === 4,
+      && round.items[0].value.eq(1) && round.items[3].value.eq(4),
     'ARRY→ then →ARRY round-trips a Vector');
 }
 {
@@ -290,7 +290,7 @@ import { assert } from './helpers.mjs';
   const round = s.peek(1);
   assert(round.type === 'matrix'
       && round.rows.length === 2 && round.rows[0].length === 3
-      && round.rows[0][0].value === 1 && round.rows[1][2].value === 6,
+      && round.rows[0][0].value.eq(1) && round.rows[1][2].value.eq(6),
     'ARRY→ then →ARRY round-trips a Matrix (row-major preserved)');
 }
 /* ---- ASCII alias ARRY-> ---- */
@@ -299,7 +299,7 @@ import { assert } from './helpers.mjs';
   s.push(Vector([Real(9)]));
   lookup('ARRY->').fn(s);
   assert(s.depth === 2
-      && s.peek(1).type === 'list' && s.peek(1).items[0].value === 1,
+      && s.peek(1).type === 'list' && s.peek(1).items[0].value.eq(1),
     'ASCII alias ARRY-> behaves the same as ARRY→');
 }
 /* ---- ARRY→ on a non-array ---- */
@@ -327,7 +327,7 @@ import { assert } from './helpers.mjs';
   lookup('→V2').fn(s);
   const v = s.peek(1);
   assert(v.type === 'vector' && v.items.length === 2
-      && v.items[0].value === 3 && v.items[1].value === 4,
+      && v.items[0].value.eq(3) && v.items[1].value.eq(4),
     '→V2 3 4 → [3 4]');
 }
 {
@@ -356,7 +356,7 @@ import { assert } from './helpers.mjs';
   lookup('→V3').fn(s);
   const v = s.peek(1);
   assert(v.type === 'vector' && v.items.length === 3
-      && v.items[0].value === 1 && v.items[2].value === 3,
+      && v.items[0].value.eq(1) && v.items[2].value.eq(3),
     '→V3 1 2 3 → [1 2 3]');
 }
 {
@@ -375,7 +375,7 @@ import { assert } from './helpers.mjs';
   lookup('V→').fn(s);
   assert(s.depth === 3,
     'V→ on 3-vector pushes 3 scalars (NO size list, differs from ARRY→)');
-  assert(s.peek(3).value === 11 && s.peek(2).value === 22 && s.peek(1).value === 33,
+  assert(s.peek(3).value.eq(11) && s.peek(2).value.eq(22) && s.peek(1).value.eq(33),
     'V→ preserves element order (L3=first, L1=last)');
 }
 {
@@ -391,7 +391,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Vector([Real(5), Real(6)]));
   lookup('V->').fn(s);
-  assert(s.depth === 2 && s.peek(1).value === 6,
+  assert(s.depth === 2 && s.peek(1).value.eq(6),
     'ASCII alias V-> works like V→');
 }
 {
@@ -418,7 +418,7 @@ import { assert } from './helpers.mjs';
   lookup('→V3').fn(s);
   lookup('V→').fn(s);
   assert(s.depth === 3
-      && s.peek(3).value === 1 && s.peek(1).value === 3,
+      && s.peek(3).value.eq(1) && s.peek(1).value.eq(3),
     '→V3 then V→ round-trips three scalars');
 }
 
@@ -433,12 +433,12 @@ import { assert } from './helpers.mjs';
   s.push(Real(4));
   // Explicit runOp wrap so LASTARG sees the `+`'s consumed arguments.
   s.runOp(() => lookup('+').fn(s));
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 7,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(7),
     'session046: 3 4 + → 7');
   lookup('LASTARG').fn(s);
   assert(s.depth === 3
-      && isReal(s.peek(2)) && s.peek(2).value === 3
-      && isReal(s.peek(1)) && s.peek(1).value === 4,
+      && isReal(s.peek(2)) && s.peek(2).value.eq(3)
+      && isReal(s.peek(1)) && s.peek(1).value.eq(4),
     'session046: LASTARG after 3 4 + pushes 3 4');
 }
 
@@ -450,7 +450,7 @@ import { assert } from './helpers.mjs';
   s.runOp(() => lookup('-').fn(s));
   lookup('LAST').fn(s);
   assert(s.depth === 3
-      && s.peek(2).value === 10 && s.peek(1).value === 2,
+      && s.peek(2).value.eq(10) && s.peek(1).value.eq(2),
     'session046: LAST (synonym) after 10 2 - pushes 10 2');
 }
 
@@ -459,9 +459,9 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(5));
   s.runOp(() => lookup('NEG').fn(s));
-  assert(s.peek().value === -5, 'session046: 5 NEG → -5 (setup)');
+  assert(s.peek().value.eq(-5), 'session046: 5 NEG → -5 (setup)');
   lookup('LASTARG').fn(s);
-  assert(s.depth === 2 && s.peek(2).value === -5 && s.peek(1).value === 5,
+  assert(s.depth === 2 && s.peek(2).value.eq(-5) && s.peek(1).value.eq(5),
     'session046: LASTARG after NEG pushes the pre-NEG value');
 }
 
@@ -493,7 +493,7 @@ import { assert } from './helpers.mjs';
   lookup('LASTARG').fn(s);
   // After PUT the stack has 1 item; LASTARG adds 3 → total 4
   assert(s.depth === 4, 'session046: LASTARG after PUT pushes the 3 args');
-  assert(s.peek(1).value === 99,  'session046: LASTARG PUT arg3 = value');
+  assert(s.peek(1).value.eq(99),  'session046: LASTARG PUT arg3 = value');
   assert(s.peek(2).value === 2n,  'session046: LASTARG PUT arg2 = index');
   assert(s.peek(3).items.length === 3, 'session046: LASTARG PUT arg1 = original list');
 }
@@ -516,8 +516,8 @@ import { assert } from './helpers.mjs';
   // Stack now [24, 8, 3, 8, 3] — LASTARG pushed the args again.
   assert(s.depth === 5,
     'session048: LASTARG is idempotent — chaining re-pushes the same args');
-  assert(s.peek(1).value === 3 && s.peek(2).value === 8
-      && s.peek(3).value === 3 && s.peek(4).value === 8,
+  assert(s.peek(1).value.eq(3) && s.peek(2).value.eq(8)
+      && s.peek(3).value.eq(3) && s.peek(4).value.eq(8),
     'session048: chained LASTARG pushes [8,3] twice on top of [24]');
 }
 
@@ -531,8 +531,8 @@ import { assert } from './helpers.mjs';
   // _lastArgs still [2, 9] from the `+`
   lookup('LASTARG').fn(s);              // pushes again
   assert(s.depth === 5
-      && s.peek(4).value === 2 && s.peek(3).value === 9
-      && s.peek(2).value === 2 && s.peek(1).value === 9,
+      && s.peek(4).value.eq(2) && s.peek(3).value.eq(9)
+      && s.peek(2).value.eq(2) && s.peek(1).value.eq(9),
     'session046: direct LASTARG doesn\'t overwrite _lastArgs (test-only path)');
 }
 
@@ -778,7 +778,7 @@ import { assert } from './helpers.mjs';
   lookup('OBJ→').fn(s);
   assert(s.depth === 4,
     'session068: OBJ→ on 3+X leaves 4 items');
-  assert(s._items[0].type === 'real' && s._items[0].value === 3,
+  assert(s._items[0].type === 'real' && s._items[0].value.eq(3),
     'session068: OBJ→ 3+X left-arg unwraps to Real(3)');
   assert(s._items[1].type === 'name' && s._items[1].id === 'X',
     'session068: OBJ→ 3+X right-arg is Name(X)');
@@ -824,7 +824,7 @@ import { assert } from './helpers.mjs';
   lookup('OBJ→').fn(s);
   assert(s.depth === 2,
     'session068: OBJ→ on leaf Symbolic(Num) leaves 2 items');
-  assert(s._items[0].type === 'real' && s._items[0].value === 7,
+  assert(s._items[0].type === 'real' && s._items[0].value.eq(7),
     'session068: OBJ→ leaf Num unwraps to Real(7)');
   assert(s._items[1].type === 'integer' && s._items[1].value === 1n,
     'session068: OBJ→ leaf Num count is 1');
@@ -1250,7 +1250,7 @@ function _roundTripProgram(prog) {
   assert(s.depth === 4, 'session077: ARRY→ pushes elements + 1-elem size-list');
   const top = s.peek();
   assert(top.type === 'list' && top.items.length === 1 &&
-         top.items[0].type === 'real' && top.items[0].value === 3,
+         top.items[0].type === 'real' && top.items[0].value.eq(3),
     'session077: ARRY→ size-spec is a LIST wrapping Real — asymmetric with '
     + 'LIST→/OBJ→(Program) by design (matches →ARRY input shape)');
 }

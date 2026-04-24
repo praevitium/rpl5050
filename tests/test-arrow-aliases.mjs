@@ -52,7 +52,7 @@ function rplEqual(a, b) {
   if (!a || !b || a.type !== b.type) return false;
   switch (a.type) {
     case 'integer':        return a.value === b.value;
-    case 'real':           return a.value === b.value;
+    case 'real':           return a.value.eq(b.value);
     case 'binaryInteger':  return a.value === b.value && a.base === b.base;
     case 'complex':        return a.re === b.re && a.im === b.im;
     case 'string':         return a.value === b.value;
@@ -150,7 +150,7 @@ for (const [canon, ascii, pre, label] of unaryPairs) {
   const sA2 = new Stack();
   sA2.push(aBI);
   lookup('B->R').fn(sA2);
-  assert(rplEqual(sU2.peek(), sA2.peek()) && sU2.peek().value === 255,
+  assert(rplEqual(sU2.peek(), sA2.peek()) && sU2.peek().value.eq(255),
     'session064: B→R and B->R agree (#FFh → 255.0)');
 }
 

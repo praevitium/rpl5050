@@ -66,20 +66,20 @@ assert(s2.depth === 9, 'stack has 9 items after restore');
 
 const lvl1 = s2.peek(1);
 assert(isProgram(lvl1), 'level 1 is Program');
-assert(lvl1.tokens.length === 3 && isReal(lvl1.tokens[0]) && lvl1.tokens[0].value === 1,
+assert(lvl1.tokens.length === 3 && isReal(lvl1.tokens[0]) && lvl1.tokens[0].value.eq(1),
        'program token[0] is Real(1)');
 assert(isName(lvl1.tokens[2]) && lvl1.tokens[2].id === '+',
        'program token[2] is Name(+)');
 
 const tagged = s2.peek(2);
-assert(isTagged(tagged) && tagged.tag === 'LABEL' && tagged.value.value === 7,
+assert(isTagged(tagged) && tagged.tag === 'LABEL' && tagged.value.value.eq(7),
        'tagged 7 restored');
 
 const vec = s2.peek(3);
-assert(isVector(vec) && vec.items[1].value === 2, 'vector[1] restored');
+assert(isVector(vec) && vec.items[1].value.eq(2), 'vector[1] restored');
 
 const list = s2.peek(4);
-assert(isList(list) && list.items.length === 3 && list.items[2].value === 3,
+assert(isList(list) && list.items.length === 3 && list.items[2].value.eq(3),
        'list[2] restored');
 
 const qname = s2.peek(5);
@@ -95,7 +95,7 @@ const int = s2.peek(8);
 assert(isInteger(int) && int.value === 42n, 'Integer 42 restored');
 
 const real = s2.peek(9);
-assert(isReal(real) && real.value === 3.14, 'Real 3.14 restored');
+assert(isReal(real) && real.value.eq(3.14), 'Real 3.14 restored');
 
 /* --- Variables --- */
 // Current dir is SUB now.  Check INNER.
@@ -107,7 +107,7 @@ assert(inner && isString(inner) && inner.value === 'from inside',
 calcState.current = calcState.home;
 const a   = calcState.current.entries.get('A');
 const big = calcState.current.entries.get('BIG');
-assert(a && isReal(a) && a.value === 100, 'A restored');
+assert(a && isReal(a) && a.value.eq(100), 'A restored');
 assert(big && isInteger(big) && big.value === (2n ** 80n), 'BigInt-valued Integer restored');
 
 const subDir = calcState.current.entries.get('SUB');
@@ -155,8 +155,8 @@ assert(isBinaryInteger(bi) && bi.value === 0xFFn && bi.base === 'h',
 const mat = s4.peek(3);
 assert(isMatrix(mat) && mat.rows.length === 2 && mat.rows[0].length === 2,
        'Matrix 2×2 shape restored');
-assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value === 2 &&
-       isReal(mat.rows[1][0]) && mat.rows[1][0].value === 3,
+assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value.eq(2) &&
+       isReal(mat.rows[1][0]) && mat.rows[1][0].value.eq(3),
        'Matrix cell values restored');
 
 /* --- PRNG seed survives the snapshot round-trip.

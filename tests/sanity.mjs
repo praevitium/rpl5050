@@ -42,7 +42,7 @@ const t0 = Date.now();
    ================================================================ */
 {
   const r = Real(3.14);
-  assert(isReal(r) && r.value === 3.14, 'sanity: Real(3.14) constructs');
+  assert(isReal(r) && r.value.eq(3.14), 'sanity: Real(3.14) constructs');
   const n = Integer(42n);
   assert(isInteger(n) && n.value === 42n, 'sanity: Integer(42n) constructs');
   const s = Str('hi');
@@ -60,10 +60,10 @@ const t0 = Date.now();
   s.push(Real(1));
   s.push(Real(2));
   assert(s.depth === 2, 'sanity: two pushes → depth 2');
-  assert(s.peek().value === 2, 'sanity: top-of-stack is last push (2)');
-  assert(s.peek(2).value === 1, 'sanity: level 2 is first push (1)');
+  assert(s.peek().value.eq(2), 'sanity: top-of-stack is last push (2)');
+  assert(s.peek(2).value.eq(1), 'sanity: level 2 is first push (1)');
   const popped = s.pop();
-  assert(popped.value === 2 && s.depth === 1,
+  assert(popped.value.eq(2) && s.depth === 1,
     'sanity: pop returns the top value and decrements depth');
 }
 
@@ -91,7 +91,7 @@ const t0 = Date.now();
   s.push(Real(1.5));
   s.push(Real(2.5));
   lookup('+').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 4,
+  assert(isReal(s.peek()) && s.peek().value.eq(4),
     'sanity: 1.5 2.5 + = Real(4)');
 }
 
@@ -119,7 +119,7 @@ const t0 = Date.now();
     const s = new Stack();
     s.push(Real(0));
     lookup('SIN').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 0,
+    assert(isReal(s.peek()) && s.peek().value.eq(0),
       `sanity: SIN(0) = 0 under ${mode}`);
   }
   // Leave angle mode at DEG so we don't leak state into downstream

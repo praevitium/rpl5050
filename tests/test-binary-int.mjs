@@ -356,7 +356,7 @@ setBinaryBase(null);
   s.clear();
   s.pushMany([Real(1), Real(0)]);
   lookup('AND').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 0,
+  assert(isReal(s.peek()) && s.peek().value.eq(0),
          'Real 1 AND Real 0 still boolean = 0');
 }
 
@@ -381,7 +381,7 @@ setBinaryBase(null);
   // B→R: BinInt → Real.
   s.push(BinaryInteger(0xFFn, 'h'));
   lookup('B→R').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 255,
+  assert(isReal(s.peek()) && s.peek().value.eq(255),
          '#FFh B→R = 255.');
 
   // R→B: Real → BinInt at current wordsize; base from display override.
@@ -419,7 +419,7 @@ setBinaryBase(null);
   s.clear();
   s.push(BinaryInteger(0xAn, 'h'));
   lookup('B->R').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 10, 'B->R ASCII alias = B→R');
+  assert(isReal(s.peek()) && s.peek().value.eq(10), 'B->R ASCII alias = B→R');
 
   s.clear();
   s.push(Real(42));
@@ -868,7 +868,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'h')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #FFh == #FFh = 1 (BinInt == BinInt same masked value).');
   }
 
@@ -877,7 +877,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'd')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #FFh == #255d = 1 (display base is not semantic).');
   }
 
@@ -886,14 +886,14 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'b')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #FFh == #11111111b = 1 (hex vs bin display, same value).');
   }
   {
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'o'), BinaryInteger(255n, 'd')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #377o == #255d = 1 (oct vs dec display, same value).');
   }
 
@@ -905,14 +905,14 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(256n, 'h')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session074: #FFh == #100h (different values) = 0 (regression guard).');
   }
   {
     const s = new Stack();
     s.pushMany([BinaryInteger(0n, 'h'), BinaryInteger(1n, 'd')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session074: #0h == #1d (different values, cross-base) = 0.');
   }
 
@@ -922,7 +922,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'd')]);
     lookup('<>').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session074: #FFh <> #255d = 0 (complement of ==; widening applies).');
   }
 
@@ -931,7 +931,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'h'), BinaryInteger(255n, 'h')]);
     lookup('SAME').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: SAME #FFh #FFh = 1 (SAME uses eqValues BinInt×BinInt branch).');
   }
 
@@ -943,14 +943,14 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(16n, 'h'), Integer(16n)]);
     lookup('==').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #10h == Integer(16) = 1 (== widens across numeric families).');
   }
   {
     const s = new Stack();
     s.pushMany([BinaryInteger(16n, 'h'), Integer(16n)]);
     lookup('SAME').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session074: SAME #10h Integer(16) = 0 (strict type + value; types differ). Regression guard.');
   }
 
@@ -965,7 +965,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(0x100n, 'h'), BinaryInteger(0n, 'd')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #100h (wrap → #0h) == #0d at ws=8 = 1 (masking inside eqValues).');
     resetBinaryState();
   }
@@ -978,14 +978,14 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(255n, 'h'), Str('FF')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session074: #FFh == "FF" = 0 (cross-type: BinInt vs String is not comparable, not an error).');
   }
   {
     const s = new Stack();
     s.pushMany([Str('FF'), BinaryInteger(255n, 'h')]);
     lookup('==').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session074: "FF" == #FFh = 0 (symmetric cross-type non-match).');
   }
 
@@ -997,7 +997,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(1n, 'h'), BinaryInteger(2n, 'h')]);
     lookup('<').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #1h < #2h = 1 (comparePair accepts BinInt post-widening).');
   }
   // Additional comparator coverage (positive + cross-base + ws-mask).
@@ -1005,14 +1005,14 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(5n, 'h'), BinaryInteger(2n, 'h')]);
     lookup('>').fn(s);
-    assert(s.peek().value === 1, 'session074: #5h > #2h = 1.');
+    assert(s.peek().value.eq(1), 'session074: #5h > #2h = 1.');
   }
   {
     // Cross-base ≤ — display base irrelevant under the comparator.
     const s = new Stack();
     s.pushMany([BinaryInteger(5n, 'h'), BinaryInteger(5n, 'd')]);
     lookup('≤').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #5h ≤ #5d = 1 (cross-base, equal values).');
   }
   {
@@ -1021,7 +1021,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(3n, 'h'), Real(5)]);
     lookup('<').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #3h < Real(5) = 1 (BinInt ↔ Real cross-family comparator).');
   }
   {
@@ -1032,7 +1032,7 @@ setBinaryBase(null);
     const s = new Stack();
     s.pushMany([BinaryInteger(0x100n, 'h'), BinaryInteger(1n, 'h')]);
     lookup('<').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session074: #100h < #1h at ws=8 = 1 (wordsize mask applies to comparator).');
     resetBinaryState();
   }

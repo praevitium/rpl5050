@@ -235,7 +235,7 @@ import { assert } from './helpers.mjs';
   ]));
   lookup('EVAL').fn(s);
   const sum = varRecall('SUM');
-  assert(sum && sum.value === 15, 'WHILE loop sums 1..5 to 15');
+  assert(sum && sum.value.eq(15), 'WHILE loop sums 1..5 to 15');
 }
 
 // WHILE with a false test from the start never enters the body
@@ -377,7 +377,7 @@ import { assert } from './helpers.mjs';
   lookup('EVAL').fn(s);
   assert(isInteger(s.peek()) && s.peek().value === 6n,
          'FOR loop computes 1+2+3 = 6 (Integer preserved)');
-  assert(varRecall('I')?.value === 99,
+  assert(varRecall('I')?.value.eq(99),
          'prior binding of I restored after FOR loop');
 }
 
@@ -433,7 +433,7 @@ import { assert } from './helpers.mjs';
   try { lookup('EVAL').fn(s); } catch (e) { threw = true; }
   assert(threw, 'START loop with 1/0 in body throws');
   assert(s.depth === 2, 'stack restored to pre-EVAL depth after START error');
-  assert(isReal(s.peek(2)) && s.peek(2).value === 100,
+  assert(isReal(s.peek(2)) && s.peek(2).value.eq(100),
          'pre-existing Real(100) preserved after rollback');
 }
 
@@ -745,9 +745,9 @@ import { assert } from './helpers.mjs';
   ]));
   lookup('EVAL').fn(s);
   assert(s.depth === 3, 'FOR 1.0..3 pushed 3 I-values');
-  assert(isReal(s.peek(3)) && s.peek(3).value === 1,
+  assert(isReal(s.peek(3)) && s.peek(3).value.eq(1),
          'FOR iter 1 (mixed bounds): I is Real(1)');
-  assert(isReal(s.peek(1)) && s.peek(1).value === 3,
+  assert(isReal(s.peek(1)) && s.peek(1).value.eq(3),
          'FOR iter 3 (mixed bounds): I is Real(3)');
 }
 
@@ -788,9 +788,9 @@ import { assert } from './helpers.mjs';
   // remaining iterations.  The first stored I was still Integer(1).
   assert(isInteger(s.peek(9)) && s.peek(9).value === 1n,
          'FOR iter 1 (int mode before first STEP): I is Integer(1n)');
-  assert(isReal(s.peek(8)) && s.peek(8).value === 1.5,
+  assert(isReal(s.peek(8)) && s.peek(8).value.eq(1.5),
          'FOR iter 2 (after Real STEP, demoted): I is Real(1.5)');
-  assert(isReal(s.peek()) && s.peek().value === 5,
+  assert(isReal(s.peek()) && s.peek().value.eq(5),
          'FOR iter 9 (Real mode): I is Real(5)');
 }
 

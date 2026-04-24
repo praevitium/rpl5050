@@ -6,7 +6,13 @@
    shape and provide type predicates.
 
    Types implemented:
-     Real      — JS number (IEEE-754, upgrade later to 12-digit BCD)
+     Real      — decimal.js Decimal instance at 15-digit precision
+                 (HP50 STD display crops to 12; the extra 3 digits are
+                 guard precision that heal IEEE-754 artefacts across
+                 chained arithmetic).  The stored value is ALWAYS a
+                 Decimal — callers that need a JS number call
+                 `.toNumber()` explicitly.  See `toRealOrThrow` which
+                 is the canonical coercion helper.
      Integer   — arbitrary precision via BigInt
      Complex   — { re, im } real pair
      String    — quoted string literal
@@ -32,6 +38,15 @@
        future graphics primitives have something to round-trip.
    ================================================================= */
 
+import Decimal from '../vendor/decimal.js/decimal.mjs';
+/* decimal.js runtime config — precision/rounding are set once in
+   ops.js at module load, which runs before any stack values are built
+   in normal operation.  If a caller constructs a Real before ops.js
+   has had a chance to configure Decimal, they'll just get the
+   library defaults (20 digits, ROUND_HALF_UP); the Real is still
+   well-formed and arithmetic re-rounds on every op. */
+export { Decimal };
+
 export const TYPES = Object.freeze({
   REAL:      'real',
   INTEGER:   'integer',
@@ -56,11 +71,32 @@ export const BIN_BASES = Object.freeze(['h', 'd', 'o', 'b']);
 
 /* --------------------------- constructors --------------------------- */
 
+/**
+ * A Real — 15-digit decimal-backed number.
+ *
+ * Accepts any input Decimal.js can swallow: a JS Number (finite, not
+ * NaN), a decimal string (`'0.1'`, `'-3.14e2'`), a BigInt, or another
+ * Decimal instance.  The payload is always stored as a Decimal so
+ * chained arithmetic preserves 15 significant digits without IEEE-754
+ * drift.  Callers that need a plain JS number read `.value.toNumber()`
+ * (or use `toRealOrThrow(v)`, which does the unwrap for them).
+ *
+ * NaN is rejected at construction — the HP50 has no NaN; failed
+ * arithmetic raises an error instead.
+ */
 export function Real(n) {
-  if (typeof n !== 'number' || Number.isNaN(n)) {
-    throw new TypeError(`Real() needs a finite number, got ${n}`);
+  // Reject JS NaN up front.  Decimal doesn't throw on NaN; it stores
+  // it and propagates — which is the opposite of what the HP50 does.
+  if (typeof n === 'number' && Number.isNaN(n)) {
+    throw new TypeError('Real() does not accept NaN');
   }
-  return Object.freeze({ type: TYPES.REAL, value: n });
+  // Already-Decimal fast path: avoid re-wrapping if the caller has
+  // done the work (realBinary hands us Decimals end-to-end).
+  const d = (n instanceof Decimal) ? n : new Decimal(n);
+  if (d.isNaN()) {
+    throw new TypeError(`Real() does not accept NaN (from ${n})`);
+  }
+  return Object.freeze({ type: TYPES.REAL, value: d });
 }
 
 export function Integer(n) {
@@ -283,12 +319,16 @@ export const isNumber    = v => isReal(v) || isInteger(v) || isRational(v) || is
 /* ------------------------ numeric coercion helpers ------------------------ */
 
 /**
- * Coerce any numeric value to a Real.  BigInts become floats, complex with
- * a zero imaginary part become real, otherwise throws.  Used by math ops
- * that aren't complex-aware yet.
+ * Coerce any numeric value to a JS number — used by transcendental ops
+ * (SIN, COS, LN, …) that delegate to `Math.*`.  Real's Decimal payload
+ * is unwrapped with `.toNumber()`.
+ *
+ * Precision-sensitive arithmetic (`+`, `-`, `*`, `/`, `^`) does NOT go
+ * through this helper — it uses `toRealDecimal` / `promoteNumericPair`
+ * so Decimal identity is preserved end-to-end.
  */
 export function toRealOrThrow(v) {
-  if (isReal(v)) return v.value;
+  if (isReal(v)) return v.value.toNumber();
   if (isInteger(v)) return Number(v.value);
   if (isRational(v)) return Number(v.n) / Number(v.d);
   if (isComplex(v) && v.im === 0) return v.re;
@@ -296,11 +336,31 @@ export function toRealOrThrow(v) {
 }
 
 /**
- * Coerce to complex { re, im }.
+ * Coerce to a Decimal.  Unlike `toRealOrThrow` this keeps the full
+ * 15-digit precision — it's the entry point `realBinary` uses to bring
+ * Integer / Rational operands into Decimal space without round-tripping
+ * through IEEE-754.
+ */
+export function toRealDecimal(v) {
+  if (isReal(v)) return v.value;
+  if (isInteger(v)) return new Decimal(v.value.toString());
+  if (isRational(v)) {
+    // n / d routed through Decimal at current precision.  For Integer
+    // pairs the division is exact when d | n; otherwise it rounds per
+    // the module-level Decimal.set() config (15 digits, ROUND_HALF_UP).
+    return new Decimal(v.n.toString()).div(new Decimal(v.d.toString()));
+  }
+  if (isComplex(v) && v.im === 0) return new Decimal(v.re);
+  throw new TypeError(`Bad argument type: expected real, got ${v?.type}`);
+}
+
+/**
+ * Coerce to complex { re, im }.  Re/Im are JS numbers (complex.js and
+ * our Complex stack payload both live in IEEE-754 land).
  */
 export function toComplex(v) {
   if (isComplex(v)) return { re: v.re, im: v.im };
-  if (isReal(v))    return { re: v.value, im: 0 };
+  if (isReal(v))    return { re: v.value.toNumber(), im: 0 };
   if (isInteger(v)) return { re: Number(v.value), im: 0 };
   if (isRational(v)) return { re: Number(v.n) / Number(v.d), im: 0 };
   throw new TypeError(`Bad argument type: expected number, got ${v?.type}`);
@@ -328,8 +388,8 @@ export function promoteNumericPair(a, b) {
     return { a: toRationalPair(a), b: toRationalPair(b), kind: 'rational' };
   }
   return {
-    a: toRealOrThrow(a),
-    b: toRealOrThrow(b),
+    a: toRealDecimal(a),
+    b: toRealDecimal(b),
     kind: 'real',
   };
 }

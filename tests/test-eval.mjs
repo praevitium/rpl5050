@@ -32,7 +32,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(7));
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 7,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(7),
          'EVAL of Real(7) = Real(7) on top');
 }
 
@@ -62,7 +62,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Name('PI'));
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === Math.PI,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(Math.PI),
          'EVAL of bound Name(PI) pushes Real(pi)');
 }
 
@@ -85,7 +85,7 @@ import { assert } from './helpers.mjs';
   s.push(Real(10));
   s.push(Program([Real(5), Name('+')]));   // << 5 + >>
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 15,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(15),
          'EVAL of << 5 + >> with 10 on stack = 15');
 }
 
@@ -98,7 +98,7 @@ import { assert } from './helpers.mjs';
   // << A B + >>  ⇒  42
   s.push(Program([Name('A'), Name('B'), Name('+')]));
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 42,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(42),
          'program << A B + >> with A=40, B=2 evaluates to 42');
 }
 
@@ -119,7 +119,7 @@ import { assert } from './helpers.mjs';
   s.push(Program([Integer(1), Real(2.5), Str('hi')]));
   lookup('EVAL').fn(s);
   assert(s.depth === 3, 'program of 3 literals leaves 3 items');
-  assert(s.peek(3).value === 1n && s.peek(2).value === 2.5 && s.peek(1).value === 'hi',
+  assert(s.peek(3).value === 1n && s.peek(2).value.eq(2.5) && s.peek(1).value === 'hi',
          'literals pushed in source order');
 }
 
@@ -154,8 +154,8 @@ import { assert } from './helpers.mjs';
   //   BEFORE the pop, so the Program is still there along with Real(100)
   //   and Real(1).
   assert(s.depth === 3, 'on error, stack restored to pre-EVAL depth (3)');
-  assert(isReal(s.peek(3)) && s.peek(3).value === 100, 'level 3 preserved');
-  assert(isReal(s.peek(2)) && s.peek(2).value === 1,   'level 2 preserved');
+  assert(isReal(s.peek(3)) && s.peek(3).value.eq(100), 'level 3 preserved');
+  assert(isReal(s.peek(2)) && s.peek(2).value.eq(1),   'level 2 preserved');
   assert(isProgram(s.peek(1)),                          'EVAL\u2019d program restored on top');
 }
 
@@ -167,7 +167,7 @@ import { assert } from './helpers.mjs';
   // Tagged label "label", value Name('Z')  ⇒  EVAL strips, looks up Z = 99
   s.push(Tagged('label', Name('Z')));
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 99,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(99),
          'EVAL of Tagged unwraps and EVALs the inner value');
 }
 
@@ -302,7 +302,7 @@ import { assert } from './helpers.mjs';
   s.clear();
   s.push(Name('X'));
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 999,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(999),
          'EVAL of bare bound Name still auto-recalls (regression check)');
   resetHome();
 }

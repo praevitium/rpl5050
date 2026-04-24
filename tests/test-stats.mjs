@@ -45,20 +45,20 @@ function makeXYMatrix() {
   const s = new Stack();
   s.push(makeXYMatrix());
   lookup('NΣ').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 4,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(4),
     'session064: NΣ on 4-row XY matrix returns 4');
 
   // NSIGMA alias (ASCII)
   const t = new Stack();
   t.push(makeXYMatrix());
   lookup('NSIGMA').fn(t);
-  assert(t.peek().value === 4, 'session064: NSIGMA ASCII name == NΣ');
+  assert(t.peek().value.eq(4), 'session064: NSIGMA ASCII name == NΣ');
 
   // On a bare Vector: count the items.
   const u = new Stack();
   u.push(Vector([Real(1), Real(2), Real(3), Real(4), Real(5)]));
   lookup('NΣ').fn(u);
-  assert(u.peek().value === 5, 'session064: NΣ on 5-item Vector returns 5');
+  assert(u.peek().value.eq(5), 'session064: NΣ on 5-item Vector returns 5');
 }
 
 /* ---- ΣX / ΣX² on single-column Vector ---- */
@@ -66,20 +66,20 @@ function makeXYMatrix() {
   const s = new Stack();
   s.push(Vector([Real(1), Real(2), Real(3), Real(4)]));
   lookup('ΣX').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 10,
+  assert(isReal(s.peek()) && s.peek().value.eq(10),
     'session064: ΣX on [1 2 3 4] → 10');
 
   const t = new Stack();
   t.push(Vector([Real(1), Real(2), Real(3), Real(4)]));
   lookup('ΣX2').fn(t);
-  assert(t.peek().value === 30,
+  assert(t.peek().value.eq(30),
     'session064: ΣX² on [1 2 3 4] → 30 (=1+4+9+16)');
 
   // SX ASCII alias returns same value as ΣX.
   const u = new Stack();
   u.push(makeXYMatrix());
   lookup('SX').fn(u);
-  assert(u.peek().value === 10,
+  assert(u.peek().value.eq(10),
     'session064: SX (ASCII) on XY matrix col-0 → 10');
 }
 
@@ -88,25 +88,25 @@ function makeXYMatrix() {
   const s = new Stack();
   s.push(makeXYMatrix());
   lookup('ΣY').fn(s);
-  assert(s.peek().value === 20, 'session064: ΣY on XY matrix → 20');
+  assert(s.peek().value.eq(20), 'session064: ΣY on XY matrix → 20');
 
   const t = new Stack();
   t.push(makeXYMatrix());
   lookup('ΣY2').fn(t);
-  assert(t.peek().value === 120,
+  assert(t.peek().value.eq(120),
     'session064: ΣY² on XY matrix → 120 (=4+16+36+64)');
 
   const u = new Stack();
   u.push(makeXYMatrix());
   lookup('ΣXY').fn(u);
-  assert(u.peek().value === 60,
+  assert(u.peek().value.eq(60),
     'session064: ΣXY on XY matrix → 60 (=2+8+18+32)');
 
   // SY2 alias matches ΣY²
   const v = new Stack();
   v.push(makeXYMatrix());
   lookup('SY2').fn(v);
-  assert(v.peek().value === 120, 'session064: SY2 (ASCII) == ΣY²');
+  assert(v.peek().value.eq(120), 'session064: SY2 (ASCII) == ΣY²');
 
   // ΣY on a single-column input → "Invalid dimension" (needs >=2 cols).
   const w = new Stack();
@@ -122,7 +122,7 @@ function makeXYMatrix() {
   lookup('MAXΣ').fn(s);
   const v = s.peek();
   assert(isVector(v) && v.items.length === 2
-         && v.items[0].value === 4 && v.items[1].value === 8,
+         && v.items[0].value.eq(4) && v.items[1].value.eq(8),
     'session064: MAXΣ on XY matrix → Vector [4, 8]');
 
   const t = new Stack();
@@ -130,7 +130,7 @@ function makeXYMatrix() {
   lookup('MINΣ').fn(t);
   const w = t.peek();
   assert(isVector(w) && w.items.length === 2
-         && w.items[0].value === 1 && w.items[1].value === 2,
+         && w.items[0].value.eq(1) && w.items[1].value.eq(2),
     'session064: MINΣ on XY matrix → Vector [1, 2]');
 
   // MAXS / MINS (ASCII) match.
@@ -138,7 +138,7 @@ function makeXYMatrix() {
   u.push(makeXYMatrix());
   lookup('MAXS').fn(u);
   const mv = u.peek();
-  assert(isVector(mv) && mv.items[0].value === 4,
+  assert(isVector(mv) && mv.items[0].value.eq(4),
     'session064: MAXS (ASCII) == MAXΣ');
 
   // On a bare Vector the output is a single-element Vector of the max.
@@ -146,7 +146,7 @@ function makeXYMatrix() {
   x.push(Vector([Real(-3), Real(5), Real(0)]));
   lookup('MAXΣ').fn(x);
   const mv2 = x.peek();
-  assert(isVector(mv2) && mv2.items.length === 1 && mv2.items[0].value === 5,
+  assert(isVector(mv2) && mv2.items.length === 1 && mv2.items[0].value.eq(5),
     'session064: MAXΣ on plain Vector → 1-elem Vector of the max');
 }
 
@@ -166,7 +166,7 @@ function makeXYMatrix() {
   let res = null;
   try { lookup('ΣX').fn(t); res = t.peek(); } catch (e) { res = e; }
   assert(res instanceof Error ? /Bad argument/.test(res.message)
-                              : (isReal(res) && res.value === 0),
+                              : (isReal(res) && res.value.eq(0)),
     'session064: ΣX on empty Vector → 0 or Bad argument (documented)');
 
   // NΣ on non-Vector/Matrix: Bad argument type.
@@ -198,7 +198,7 @@ function makeXYMatrix() {
   // but MEAN is multi-column on HP50).  Assert the weaker invariant:
   // the (x-col) answer 2.5 appears somewhere in the result.
   const r = s.peek();
-  const ok = (isReal(r) && r.value === 2.5)
-          || (isVector(r) && r.items.length >= 1 && r.items[0].value === 2.5);
+  const ok = (isReal(r) && r.value.eq(2.5))
+          || (isVector(r) && r.items.length >= 1 && r.items[0].value.eq(2.5));
   assert(ok, 'session064: MEAN on XY matrix reports col-0 mean 2.5 (scalar or col-0 of Vector)');
 }

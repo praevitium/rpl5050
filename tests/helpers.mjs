@@ -63,7 +63,9 @@ export function rplEqual(a, b) {
   if (!a || !b || a.type !== b.type) return false;
   switch (a.type) {
     case 'integer':        return a.value === b.value;
-    case 'real':           return a.value === b.value;
+    // Real stores a Decimal instance — compare with .eq() so 0.1 + 0.2
+    // compares equal to 0.3 (same Decimal value, different instance).
+    case 'real':           return a.value.eq(b.value);
     case 'binaryInteger':  return a.value === b.value && a.base === b.base;
     case 'complex':        return a.re === b.re && a.im === b.im;
     case 'string':         return a.value === b.value;

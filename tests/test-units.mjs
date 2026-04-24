@@ -174,7 +174,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(parseEntry('2_m')[0]);
   lookup('/').fn(s);
   const r = s.peek();
-  assert(isReal(r) && r.value === 3,
+  assert(isReal(r) && r.value.eq(3),
          `6_m / 2_m → Real(3) (got ${JSON.stringify(r)})`);
 }
 {
@@ -231,7 +231,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(parseEntry('3.5_km')[0]);
   lookup('UVAL').fn(s);
   const r = s.peek();
-  assert(isReal(r) && r.value === 3.5, `UVAL 3.5_km → Real(3.5)`);
+  assert(isReal(r) && r.value.eq(3.5), `UVAL 3.5_km → Real(3.5)`);
 }
 {
   // UBASE: 1_km → 1000_m
@@ -292,5 +292,5 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(parseEntry('1_m')[0]);
   lookup('TYPE').fn(s);
   const r = s.peek();
-  assert(isReal(r) && r.value === 13, `TYPE of a Unit is 13 (got ${r.value})`);
+  assert(isReal(r) && r.value.eq(13), `TYPE of a Unit is 13 (got ${r.value})`);
 }

@@ -28,7 +28,7 @@ import { assert } from './helpers.mjs';
     s.push(RList([Real(10), Real(20), Real(30)]));
     s.push(Integer(2));
     lookup('GET').fn(s);
-    assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 20,
+    assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(20),
       'GET { 10 20 30 } 2 → 20');
   }
   {
@@ -45,7 +45,7 @@ import { assert } from './helpers.mjs';
     s.push(Vector([Real(7), Real(8), Real(9)]));
     s.push(Integer(3));
     lookup('GET').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 9,
+    assert(isReal(s.peek()) && s.peek().value.eq(9),
       'GET [ 7 8 9 ] 3 → 9');
   }
 
@@ -55,7 +55,7 @@ import { assert } from './helpers.mjs';
     s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
     s.push(RList([Integer(2), Integer(1)]));
     lookup('GET').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 3,
+    assert(isReal(s.peek()) && s.peek().value.eq(3),
       'GET [[1 2][3 4]] {2 1} → 3');
   }
 
@@ -78,7 +78,7 @@ import { assert } from './helpers.mjs';
     lookup('PUT').fn(s);
     const out = s.peek();
     assert(out.type === 'list' && out.items.length === 3
-        && out.items[1].value === 99 && out.items[0].value === 1,
+        && out.items[1].value.eq(99) && out.items[0].value.eq(1),
       'PUT { 1 2 3 } 2 99 → { 1 99 3 }');
   }
 
@@ -90,8 +90,8 @@ import { assert } from './helpers.mjs';
     s.push(Real(50));
     lookup('PUT').fn(s);
     const m = s.peek();
-    assert(m.type === 'matrix' && m.rows[0][1].value === 50
-        && m.rows[1][1].value === 4,
+    assert(m.type === 'matrix' && m.rows[0][1].value.eq(50)
+        && m.rows[1][1].value.eq(4),
       'PUT [[1 2][3 4]] {1 2} 50 → [[1 50][3 4]]');
   }
 
@@ -100,7 +100,7 @@ import { assert } from './helpers.mjs';
     const s = new Stack();
     s.push(RList([Real(7), Real(8), Real(9)]));
     lookup('HEAD').fn(s);
-    assert(isReal(s.peek()) && s.peek().value === 7,
+    assert(isReal(s.peek()) && s.peek().value.eq(7),
       'HEAD { 7 8 9 } → 7');
   }
   {
@@ -118,7 +118,7 @@ import { assert } from './helpers.mjs';
     lookup('TAIL').fn(s);
     const t = s.peek();
     assert(t.type === 'list' && t.items.length === 2
-        && t.items[0].value === 8 && t.items[1].value === 9,
+        && t.items[0].value.eq(8) && t.items[1].value.eq(9),
       'TAIL { 7 8 9 } → { 8 9 }');
   }
   {
@@ -146,7 +146,7 @@ import { assert } from './helpers.mjs';
     lookup('SUB').fn(s);
     const out = s.peek();
     assert(out.type === 'list' && out.items.length === 3
-        && out.items[0].value === 2 && out.items[2].value === 4,
+        && out.items[0].value.eq(2) && out.items[2].value.eq(4),
       'SUB { 1 2 3 4 5 } 2 4 → { 2 3 4 }');
   }
   {
@@ -177,7 +177,7 @@ import { assert } from './helpers.mjs';
     lookup('→LIST').fn(s);
     const out = s.peek();
     assert(s.depth === 1 && out.type === 'list' && out.items.length === 3
-        && out.items[0].value === 10 && out.items[2].value === 30,
+        && out.items[0].value.eq(10) && out.items[2].value.eq(30),
       '10 20 30 3 →LIST → { 10 20 30 }');
   }
   {
@@ -195,9 +195,9 @@ import { assert } from './helpers.mjs';
     lookup('LIST→').fn(s);
     assert(s.depth === 4
         && isInteger(s.peek(1)) && s.peek(1).value === 3n
-        && isReal(s.peek(2)) && s.peek(2).value === 9
-        && isReal(s.peek(3)) && s.peek(3).value === 8
-        && isReal(s.peek(4)) && s.peek(4).value === 7,
+        && isReal(s.peek(2)) && s.peek(2).value.eq(9)
+        && isReal(s.peek(3)) && s.peek(3).value.eq(8)
+        && isReal(s.peek(4)) && s.peek(4).value.eq(7),
       '{ 7 8 9 } LIST→ → 7 8 9 3');
   }
 
@@ -255,8 +255,8 @@ import { assert } from './helpers.mjs';
     const out = s.peek();
     assert(out.type === 'list'
         && out.items.length === 3
-        && out.items[0].value === 10
-        && out.items[2].value === 30,
+        && out.items[0].value.eq(10)
+        && out.items[2].value.eq(30),
       'LIST→ then →LIST round-trips a list');
   }
 
@@ -310,7 +310,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(42)]));
   lookup('SORT').fn(s);
-  assert(s.peek(1).items.length === 1 && s.peek(1).items[0].value === 42,
+  assert(s.peek(1).items.length === 1 && s.peek(1).items[0].value.eq(42),
     'SORT on {42} → {42}');
 }
 /* ---- SORT: mixed numeric + string rejects ---- */
@@ -335,8 +335,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(src);
   lookup('SORT').fn(s);
-  assert(src.items[0].value === 3 && src.items[1].value === 1
-      && src.items[2].value === 2,
+  assert(src.items[0].value.eq(3) && src.items[1].value.eq(1)
+      && src.items[2].value.eq(2),
     'SORT does not mutate the original List');
 }
 
@@ -357,7 +357,7 @@ import { assert } from './helpers.mjs';
   lookup('REVLIST').fn(s);
   const out = s.peek(1);
   assert(out.items[0].type === 'name' && out.items[0].id === 'three'
-      && out.items[2].value === 1,
+      && out.items[2].value.eq(1),
     'REVLIST works on heterogeneous lists');
 }
 /* ---- REVLIST: empty ---- */
@@ -402,7 +402,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(1), Real(2), Real(3), Real(4)]));
   lookup('ΣLIST').fn(s);
-  assert(isReal(s.peek(1)) && s.peek(1).value === 10,
+  assert(isReal(s.peek(1)) && s.peek(1).value.eq(10),
     'ΣLIST {1 2 3 4} → 10');
 }
 /* ---- ΣLIST: Integer-only stays Integer ---- */
@@ -419,7 +419,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([]));
   lookup('ΣLIST').fn(s);
-  assert(isReal(s.peek(1)) && s.peek(1).value === 0,
+  assert(isReal(s.peek(1)) && s.peek(1).value.eq(0),
     'ΣLIST {} → 0');
 }
 /* ---- ΣLIST: singleton passes through ---- */
@@ -427,7 +427,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(42)]));
   lookup('ΣLIST').fn(s);
-  assert(s.peek(1).value === 42,
+  assert(s.peek(1).value.eq(42),
     'ΣLIST {42} → 42');
 }
 /* ---- ΣLIST: non-list throws ---- */
@@ -443,7 +443,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(10), Real(20)]));
   lookup('SLIST').fn(s);
-  assert(s.peek(1).value === 30, 'ASCII alias SLIST works like ΣLIST');
+  assert(s.peek(1).value.eq(30), 'ASCII alias SLIST works like ΣLIST');
 }
 
 /* ---- ΠLIST: numeric ---- */
@@ -451,28 +451,28 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(2), Real(3), Real(4)]));
   lookup('ΠLIST').fn(s);
-  assert(s.peek(1).value === 24, 'ΠLIST {2 3 4} → 24');
+  assert(s.peek(1).value.eq(24), 'ΠLIST {2 3 4} → 24');
 }
 /* ---- ΠLIST: empty → 1 ---- */
 {
   const s = new Stack();
   s.push(RList([]));
   lookup('ΠLIST').fn(s);
-  assert(s.peek(1).value === 1, 'ΠLIST {} → 1');
+  assert(s.peek(1).value.eq(1), 'ΠLIST {} → 1');
 }
 /* ---- ΠLIST: singleton ---- */
 {
   const s = new Stack();
   s.push(RList([Real(7)]));
   lookup('ΠLIST').fn(s);
-  assert(s.peek(1).value === 7, 'ΠLIST {7} → 7');
+  assert(s.peek(1).value.eq(7), 'ΠLIST {7} → 7');
 }
 /* ---- ASCII alias PLIST ---- */
 {
   const s = new Stack();
   s.push(RList([Real(2), Real(5)]));
   lookup('PLIST').fn(s);
-  assert(s.peek(1).value === 10, 'ASCII alias PLIST works like ΠLIST');
+  assert(s.peek(1).value.eq(10), 'ASCII alias PLIST works like ΠLIST');
 }
 
 /* ---- ΔLIST: successive differences ---- */
@@ -549,7 +549,7 @@ import { assert } from './helpers.mjs';
   assert(out.type === 'list' && out.items.length === 5,
     'REPL on list preserves length');
   assert(out.items[2].id === 'A' && out.items[3].id === 'B'
-      && out.items[0].value === 1 && out.items[4].value === 5,
+      && out.items[0].value.eq(1) && out.items[4].value.eq(5),
     'REPL {1 2 3 4 5} 3 {A B} → {1 2 A B 5}');
 }
 /* ---- REPL on a Vector ---- */
@@ -561,8 +561,8 @@ import { assert } from './helpers.mjs';
   lookup('REPL').fn(s);
   const v = s.peek(1);
   assert(v.type === 'vector'
-      && v.items[0].value === 1 && v.items[1].value === 20
-      && v.items[2].value === 30 && v.items[3].value === 4,
+      && v.items[0].value.eq(1) && v.items[1].value.eq(20)
+      && v.items[2].value.eq(30) && v.items[3].value.eq(4),
     'REPL [1 2 3 4] 2 [20 30] → [1 20 30 4]');
 }
 /* ---- REPL on a Matrix ---- */
@@ -576,8 +576,8 @@ import { assert } from './helpers.mjs';
   lookup('REPL').fn(s);
   const m = s.peek(1);
   assert(m.type === 'matrix'
-      && m.rows[1][1].value === 50 && m.rows[1][2].value === 60
-      && m.rows[0][0].value === 1 && m.rows[2][2].value === 9,
+      && m.rows[1][1].value.eq(50) && m.rows[1][2].value.eq(60)
+      && m.rows[0][0].value.eq(1) && m.rows[2][2].value.eq(9),
     'REPL 3×3 {2 2} [[50 60]] splices at (row 2, col 2)');
 }
 /* ---- REPL: Matrix overflow throws ---- */
@@ -679,11 +679,11 @@ import { assert } from './helpers.mjs';
   const out = s.peek();
   assert(out.type === 'list' && out.items.length === 3,
          'session044: MAP list returns list');
-  assert(isReal(out.items[0]) && out.items[0].value === 2,
+  assert(isReal(out.items[0]) && out.items[0].value.eq(2),
          'session044: MAP list[0] = 2');
-  assert(isReal(out.items[1]) && out.items[1].value === 4,
+  assert(isReal(out.items[1]) && out.items[1].value.eq(4),
          'session044: MAP list[1] = 4');
-  assert(isReal(out.items[2]) && out.items[2].value === 6,
+  assert(isReal(out.items[2]) && out.items[2].value.eq(6),
          'session044: MAP list[2] = 6');
 }
 
@@ -696,7 +696,7 @@ import { assert } from './helpers.mjs';
   const out = s.peek();
   assert(out.type === 'vector' && out.items.length === 3,
          'session044: MAP vector returns vector');
-  assert(out.items[0].value === 1 && out.items[1].value === 4 && out.items[2].value === 9,
+  assert(out.items[0].value.eq(1) && out.items[1].value.eq(4) && out.items[2].value.eq(9),
          'session044: MAP vector SQ → [1 4 9]');
 }
 
@@ -720,8 +720,8 @@ import { assert } from './helpers.mjs';
   const out = s.peek();
   assert(out.type === 'matrix' && out.rows.length === 2 && out.rows[0].length === 2,
          'session044: MAP matrix preserves 2x2 shape');
-  assert(out.rows[0][0].value === 10 && out.rows[0][1].value === 20 &&
-         out.rows[1][0].value === 30 && out.rows[1][1].value === 40,
+  assert(out.rows[0][0].value.eq(10) && out.rows[0][1].value.eq(20) &&
+         out.rows[1][0].value.eq(30) && out.rows[1][1].value.eq(40),
          'session044: MAP matrix [[10,20],[30,40]]');
 }
 
@@ -733,7 +733,7 @@ import { assert } from './helpers.mjs';
   s.push(Program([Real(1), Name('+')]));
   lookup('MAP').fn(s);
   assert(s.depth === 2, 'session044: MAP leaves one extra stack item and the result');
-  assert(s.peek().type === 'list' && s.peek().items[1].value === 3,
+  assert(s.peek().type === 'list' && s.peek().items[1].value.eq(3),
          'session044: MAP { 1 2 } << 1 + >> → { 2 3 }');
 }
 
@@ -783,8 +783,8 @@ import { assert } from './helpers.mjs';
   lookup('SEQ').fn(s);
   const L = s.peek();
   assert(L && L.type === 'list' && L.items.length === 4 &&
-         L.items[0].value === 1 && L.items[1].value === 4 &&
-         L.items[2].value === 9 && L.items[3].value === 16,
+         L.items[0].value.eq(1) && L.items[1].value.eq(4) &&
+         L.items[2].value.eq(9) && L.items[3].value.eq(16),
          'session045: SEQ X^2 1..4 step 1 → { 1 4 9 16 }');
 }
 
@@ -799,7 +799,7 @@ import { assert } from './helpers.mjs';
   lookup('SEQ').fn(s);
   const L = s.peek();
   assert(L && L.items.length === 3 &&
-         L.items[0].value === 5 && L.items[1].value === 3 && L.items[2].value === 1,
+         L.items[0].value.eq(5) && L.items[1].value.eq(3) && L.items[2].value.eq(1),
          'session045: SEQ X 5..1 step -2 → { 5 3 1 }');
 }
 
@@ -840,7 +840,7 @@ import { assert } from './helpers.mjs';
   s.push(Real(3));
   s.push(Real(1));
   lookup('SEQ').fn(s);
-  assert(varRecall('Y').value === 99,
+  assert(varRecall('Y').value.eq(99),
          'session045: SEQ restores prior Y binding after loop');
   varPurge('Y');
 }
@@ -855,7 +855,7 @@ import { assert } from './helpers.mjs';
   lookup('DOLIST').fn(s);
   const L = s.peek();
   assert(L && L.type === 'list' && L.items.length === 3 &&
-         L.items[0].value === 11 && L.items[1].value === 22 && L.items[2].value === 33,
+         L.items[0].value.eq(11) && L.items[1].value.eq(22) && L.items[2].value.eq(33),
          'session045: DOLIST n=2 elementwise + → { 11 22 33 }');
 }
 
@@ -867,7 +867,7 @@ import { assert } from './helpers.mjs';
   lookup('DOLIST').fn(s);
   const L = s.peek();
   assert(L && L.items.length === 3 &&
-         L.items[0].value === 1 && L.items[1].value === 4 && L.items[2].value === 9,
+         L.items[0].value.eq(1) && L.items[1].value.eq(4) && L.items[2].value.eq(9),
          'session045: DOLIST implicit n=1 with SQ → { 1 4 9 }');
 }
 
@@ -881,7 +881,7 @@ import { assert } from './helpers.mjs';
   lookup('DOLIST').fn(s);
   const L = s.peek();
   assert(L && L.items.length === 2 &&
-         L.items[0].value === 11 && L.items[1].value === 22,
+         L.items[0].value.eq(11) && L.items[1].value.eq(22),
          'session045: DOLIST truncates to shortest list');
 }
 
@@ -906,7 +906,7 @@ import { assert } from './helpers.mjs';
   lookup('DOSUBS').fn(s);
   const L = s.peek();
   assert(L && L.items.length === 3 &&
-         L.items[0].value === 3 && L.items[1].value === 5 && L.items[2].value === 7,
+         L.items[0].value.eq(3) && L.items[1].value.eq(5) && L.items[2].value.eq(7),
          'session045: DOSUBS window=2 + → { 3 5 7 }');
 }
 
@@ -944,7 +944,7 @@ import { assert } from './helpers.mjs';
   lookup('DOSUBS').fn(s);
   const L = s.peek();
   assert(L && L.items.length === 3 &&
-         L.items[0].value === 6 && L.items[1].value === 9 && L.items[2].value === 12,
+         L.items[0].value.eq(6) && L.items[1].value.eq(9) && L.items[2].value.eq(12),
          'session045: DOSUBS window=3 sum → { 6 9 12 }');
 }
 
@@ -954,7 +954,7 @@ import { assert } from './helpers.mjs';
   s.push(RList([Real(1), Real(2), Real(3), Real(4)]));
   s.push(Program([Name('+')]));
   lookup('STREAM').fn(s);
-  assert(s.peek().value === 10,
+  assert(s.peek().value.eq(10),
          'session045: STREAM { 1 2 3 4 } + → 10');
 }
 
@@ -964,7 +964,7 @@ import { assert } from './helpers.mjs';
   s.push(RList([Real(42)]));
   s.push(Program([Name('+')]));
   lookup('STREAM').fn(s);
-  assert(s.peek().value === 42,
+  assert(s.peek().value.eq(42),
          'session045: STREAM on single-element list → that element');
 }
 
@@ -984,7 +984,7 @@ import { assert } from './helpers.mjs';
   s.push(RList([Real(3), Real(7), Real(1), Real(9), Real(5)]));
   s.push(Program([Name('MAX')]));
   lookup('STREAM').fn(s);
-  assert(s.peek().value === 9,
+  assert(s.peek().value.eq(9),
          'session045: STREAM MAX → max of list');
 }
 
@@ -1153,7 +1153,7 @@ import { assert } from './helpers.mjs';
   const lst = s.pop();
   assert(isList(lst) && lst.items.length === 3, 'session052: GETI leaves list intact');
   assert(isInteger(nxt) && nxt.value === 3n, 'session052: GETI advances 2 → 3');
-  assert(isReal(elt) && elt.value === 20, 'session052: GETI returns item at original idx');
+  assert(isReal(elt) && elt.value.eq(20), 'session052: GETI returns item at original idx');
 }
 
 /* ---- GETI wraparound: last index → 1 ---- */
@@ -1167,7 +1167,7 @@ import { assert } from './helpers.mjs';
   s.pop();   // drop list
   assert(isInteger(nxt) && nxt.value === 1n,
     'session052: GETI wraps last idx (3) → 1');
-  assert(elt.value === 3, 'session052: GETI last-idx item is the last element');
+  assert(elt.value.eq(3), 'session052: GETI last-idx item is the last element');
 }
 
 /* ---- GETI on Vector ---- */
@@ -1179,7 +1179,7 @@ import { assert } from './helpers.mjs';
   const elt = s.pop();
   const nxt = s.pop();
   assert(isInteger(nxt) && nxt.value === 2n, 'session052: GETI on Vector idx 1 → 2');
-  assert(elt.value === 5, 'session052: GETI on Vector returns first element');
+  assert(elt.value.eq(5), 'session052: GETI on Vector returns first element');
 }
 
 /* ---- GETI out-of-range throws ---- */
@@ -1207,7 +1207,7 @@ import { assert } from './helpers.mjs';
   assert(isList(nxt) && nxt.items.length === 2
       && nxt.items[0].value === 1n && nxt.items[1].value === 3n,
     'session052: GETI Matrix (1,2) → next (1,3) column-major');
-  assert(elt.value === 2, 'session052: GETI Matrix returns (1,2) entry');
+  assert(elt.value.eq(2), 'session052: GETI Matrix returns (1,2) entry');
 }
 
 /* ---- GETI Matrix wrap: last column → next row, first col ---- */
@@ -1278,10 +1278,10 @@ import { assert } from './helpers.mjs';
   const lst = s.pop();
   assert(isInteger(nxt) && nxt.value === 3n, 'session052: PUTI advances 2 → 3');
   assert(isList(lst) && lst.items.length === 3
-      && lst.items[1].value === 99,
+      && lst.items[1].value.eq(99),
     'session052: PUTI patches index 2 → 99');
   // Unmodified items stay put.
-  assert(lst.items[0].value === 10 && lst.items[2].value === 30,
+  assert(lst.items[0].value.eq(10) && lst.items[2].value.eq(30),
     'session052: PUTI leaves other items alone');
 }
 
@@ -1295,7 +1295,7 @@ import { assert } from './helpers.mjs';
   const nxt = s.pop();
   const lst = s.pop();
   assert(nxt.value === 1n, 'session052: PUTI wraps last idx → 1');
-  assert(lst.items[2].value === 42, 'session052: PUTI still writes at original idx');
+  assert(lst.items[2].value.eq(42), 'session052: PUTI still writes at original idx');
 }
 
 /* ---- PUTI on Vector ---- */
@@ -1307,7 +1307,7 @@ import { assert } from './helpers.mjs';
   lookup('PUTI').fn(s);
   const nxt = s.pop();
   const v = s.pop();
-  assert(v.items[0].value === 7 && nxt.value === 2n,
+  assert(v.items[0].value.eq(7) && nxt.value === 2n,
     'session052: PUTI on Vector writes + advances');
 }
 
@@ -1323,11 +1323,11 @@ import { assert } from './helpers.mjs';
   lookup('PUTI').fn(s);
   const nxt = s.pop();
   const M = s.pop();
-  assert(M.rows[0][1].value === 99, 'session052: PUTI Matrix writes at (1,2)');
+  assert(M.rows[0][1].value.eq(99), 'session052: PUTI Matrix writes at (1,2)');
   assert(nxt.items[0].value === 2n && nxt.items[1].value === 1n,
     'session052: PUTI Matrix (1,2) advances to (2,1) column-major');
   // Other cells intact.
-  assert(M.rows[0][0].value === 1 && M.rows[1][0].value === 3 && M.rows[1][1].value === 4,
+  assert(M.rows[0][0].value.eq(1) && M.rows[1][0].value.eq(3) && M.rows[1][1].value.eq(4),
     'session052: PUTI Matrix leaves other cells alone');
 }
 

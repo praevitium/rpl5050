@@ -62,7 +62,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Real(3)); s.push(Real(4));
     const e = new Entry(s);
     e.typeOrExec('+', '+');
-    assert(s.depth === 1 && s.peek().value === 7, 'typeOrExec outside → exec +');
+    assert(s.depth === 1 && s.peek().value.eq(7), 'typeOrExec outside → exec +');
   }
 
   // typeOrExecFn — inside `'` types `FN(`; outside runs the op
@@ -232,7 +232,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Real(2)); s.push(Real(5));
     const e = new Entry(s);
     e.typeOrExec('+', '+');
-    assert(s.depth === 1 && s.peek().value === 7, 'non-algebraic + still exec');
+    assert(s.depth === 1 && s.peek().value.eq(7), 'non-algebraic + still exec');
   }
 }
 
@@ -364,25 +364,25 @@ import { assert, assertThrows } from './helpers.mjs';
     // CONJ on Real → identity
     const s = new Stack(); s.push(Real(7));
     lookup('CONJ').fn(s, null);
-    assert(s.peek().value === 7, 'CONJ(7) = 7');
+    assert(s.peek().value.eq(7), 'CONJ(7) = 7');
   }
   {
     const s = new Stack();
     s.push({ type: 'complex', re: 3, im: -4 });
     lookup('RE').fn(s, null);
-    assert(s.peek().value === 3, 'RE(3-4i) = 3');
+    assert(s.peek().value.eq(3), 'RE(3-4i) = 3');
   }
   {
     const s = new Stack();
     s.push({ type: 'complex', re: 3, im: -4 });
     lookup('IM').fn(s, null);
-    assert(s.peek().value === -4, 'IM(3-4i) = -4');
+    assert(s.peek().value.eq(-4), 'IM(3-4i) = -4');
   }
   {
     // IM on Real → 0
     const s = new Stack(); s.push(Real(9));
     lookup('IM').fn(s, null);
-    assert(s.peek().value === 0, 'IM(9) = 0');
+    assert(s.peek().value.eq(0), 'IM(9) = 0');
   }
 
   // ----- GCD / LCM on integers -----
@@ -664,7 +664,7 @@ import { assert, assertThrows } from './helpers.mjs';
     s.push(Real(7));
     const e = new Entry(s);
     e.toggleSign();
-    assert(s.depth === 1 && isReal(s.peek(1)) && s.peek(1).value === -7,
+    assert(s.depth === 1 && isReal(s.peek(1)) && s.peek(1).value.eq(-7),
       'empty buffer: +/- NEGs the stack top');
   }
 

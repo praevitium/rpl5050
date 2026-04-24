@@ -211,7 +211,7 @@ import { assert } from './helpers.mjs';
   s.push(Real(7.5));
   s.push(Name('X'));
   lookup('DERIV').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 0, 'DERIV 7.5 wrt X = 0 Real');
+  assert(isReal(s.peek()) && s.peek().value.eq(0), 'DERIV 7.5 wrt X = 0 Real');
 }
 {
   // DERIV on a bare Name: 'X' 'X' DERIV → 1, 'Y' 'X' DERIV → 0.
@@ -281,7 +281,7 @@ import { assert } from './helpers.mjs';
   assert(s.depth === 1, 'entryLoop leaves a single result');
   const out = s.peek();
   assert(isSymbolic(out) || (isInteger(out) && out.value === 2n) ||
-         (isReal(out) && out.value === 2),
+         (isReal(out) && out.value.eq(2)),
          "result is 2 (as Symbolic or Integer); got: " +
          (isSymbolic(out) ? formatAlgebra(out.expr) : JSON.stringify(out)));
   // After simplify, the derivative of 2*X + 3 wrt X is 2 (a Num).
@@ -536,7 +536,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 1')));
   lookup('EVAL').fn(s);
-  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value === 5,
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(5),
          `EVAL X^2+1 with X=2 → Real(5); got ${
            isReal(s.peek()) ? s.peek().value :
            isSymbolic(s.peek()) ? formatAlgebra(s.peek().expr) : 'other'}`);
@@ -563,7 +563,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('SIN(X)')));
   lookup('EVAL').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 0,
+  assert(isReal(s.peek()) && s.peek().value.eq(0),
          `EVAL SIN(X) with X=0 (RAD) → 0; got ${
            isReal(s.peek()) ? s.peek().value : 'non-real'}`);
 }
@@ -606,7 +606,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('SQRT(9)')));
   lookup('EVAL').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 3,
+  assert(isReal(s.peek()) && s.peek().value.eq(3),
          `EVAL SQRT(9) → Real(3); got ${
            isReal(s.peek()) ? s.peek().value :
            isSymbolic(s.peek()) ? formatAlgebra(s.peek().expr) : 'other'}`);
@@ -1152,7 +1152,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(7));
   lookup('EXPAND').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 7,
+  assert(isReal(s.peek()) && s.peek().value.eq(7),
          `EXPAND on a Real is a pass-through`);
 }
 
@@ -1183,7 +1183,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(5));
   lookup('COLLECT').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 5,
+  assert(isReal(s.peek()) && s.peek().value.eq(5),
          `COLLECT on a Real is a pass-through`);
 }
 {
@@ -1409,7 +1409,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(42.5));
   lookup('FACTOR').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 42.5,
+  assert(isReal(s.peek()) && s.peek().value.eq(42.5),
          `FACTOR on non-integer Real is a pass-through`);
 }
 {
@@ -1481,7 +1481,7 @@ import { assert } from './helpers.mjs';
   s.push(Name('X', { quoted: true }));
   s.push(Real(3));
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 10,
+  assert(isReal(s.peek()) && s.peek().value.eq(10),
          `SUBST 3-arg: X^2+1, X, 3 → Real(10) (got ${JSON.stringify(s.peek())})`);
 }
 {
@@ -1515,7 +1515,7 @@ import { assert } from './helpers.mjs';
   s.push(RList([Name('X', { quoted: true }), Real(2),
                  Name('Y', { quoted: true }), Real(3)]));
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 5,
+  assert(isReal(s.peek()) && s.peek().value.eq(5),
          `SUBST list form: X+Y with {X=2, Y=3} → 5 (got ${JSON.stringify(s.peek())})`);
 }
 {
@@ -1524,7 +1524,7 @@ import { assert } from './helpers.mjs';
   s.push(Symbolic(parseAlgebra('X^2 - 4')));
   s.push(RList([Name('X', { quoted: true }), Real(2)]));
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 0,
+  assert(isReal(s.peek()) && s.peek().value.eq(0),
          `SUBST list form: X^2-4 with {X=2} → 0`);
 }
 
@@ -1576,7 +1576,7 @@ import { assert } from './helpers.mjs';
   s.push(Symbolic(parseAlgebra('X + X')));
   s.push(Real(7));
   lookup('COLLECT').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 7,
+  assert(isReal(s.peek()) && s.peek().value.eq(7),
          `COLLECT: Real on top is not a variable — falls to 1-arg and passes through`);
   // Underlying Symbolic untouched on level 2.
   assert(isSymbolic(s.peek(2)) &&
@@ -1603,7 +1603,7 @@ import { assert } from './helpers.mjs';
   for (const v of parseEntry("`X^2 + 1`")) s.push(v);
   for (const v of parseEntry("`X = 3`")) s.push(v);
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 10,
+  assert(isReal(s.peek()) && s.peek().value.eq(10),
          `parseEntry → SUBST eqn-form end-to-end: 10 (got ${JSON.stringify(s.peek())})`);
 }
 
@@ -1639,7 +1639,7 @@ import { assert } from './helpers.mjs';
   s.push(Symbolic(parseAlgebra('X^2 + 1')));
   s.push(Symbolic(parseAlgebra('X = 3')));
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 10,
+  assert(isReal(s.peek()) && s.peek().value.eq(10),
          `SUBST eqn form: X^2+1 with 'X=3' → 10 (got ${JSON.stringify(s.peek())})`);
 }
 {
@@ -1659,7 +1659,7 @@ import { assert } from './helpers.mjs';
   s.push(RList([Symbolic(parseAlgebra('X = 2')),
                  Symbolic(parseAlgebra('Y = 3'))]));
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 5,
+  assert(isReal(s.peek()) && s.peek().value.eq(5),
          `SUBST list of eqns: X+Y with {X=2, Y=3} → 5 (got ${JSON.stringify(s.peek())})`);
 }
 {
@@ -1670,7 +1670,7 @@ import { assert } from './helpers.mjs';
   s.push(RList([Name('X', { quoted: true }), Real(2),
                  Name('Y', { quoted: true }), Real(3)]));
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 5,
+  assert(isReal(s.peek()) && s.peek().value.eq(5),
          `SUBST list pairs (regression): X+Y with {X=2, Y=3} → 5`);
 }
 {
@@ -1681,7 +1681,7 @@ import { assert } from './helpers.mjs';
                  Name('Y', { quoted: true }), Real(2),
                  Symbolic(parseAlgebra('Z = 3'))]));
   lookup('SUBST').fn(s);
-  assert(isReal(s.peek()) && s.peek().value === 6,
+  assert(isReal(s.peek()) && s.peek().value.eq(6),
          `SUBST mixed list: 1+2+3=6 (got ${JSON.stringify(s.peek())})`);
 }
 
@@ -3285,10 +3285,10 @@ import { assert } from './helpers.mjs';
     s.saveForUndo();
     s.push(Real(3));                            // state B: { 1 2 3 }
     s.undo();
-    assert(s.depth === 2 && s.peek(1).value === 2 && s.peek(2).value === 1,
+    assert(s.depth === 2 && s.peek(1).value.eq(2) && s.peek(2).value.eq(1),
       'undo restores state A { 1 2 }');
     s.redo();                                   // forward again → B
-    assert(s.depth === 3 && s.peek(1).value === 3,
+    assert(s.depth === 3 && s.peek(1).value.eq(3),
       'redo re-applies the undone step → state B { 1 2 3 }');
   }
 
@@ -3321,7 +3321,7 @@ import { assert } from './helpers.mjs';
     e.enter();                                   // pushes 42 (parseEntry yields Integer for a bare digit run)
     assert(s.depth === 2 && Number(s.peek(1).value) === 42, `ENTER pushed 42, got ${s.peek(1)?.value}`);
     s.undo();
-    assert(s.depth === 1 && s.peek(1).value === 10, 'undo rolls back to { 10 }');
+    assert(s.depth === 1 && s.peek(1).value.eq(10), 'undo rolls back to { 10 }');
   }
 
   // ---- Entry.execOp() snapshots before op ----
@@ -3331,9 +3331,9 @@ import { assert } from './helpers.mjs';
     s.push(Real(2)); s.push(Real(3));
     const e = new Entry(s);
     e.execOp('+');                               // 2 3 + → 5
-    assert(s.depth === 1 && s.peek(1).value === 5, 'execOp added to 5');
+    assert(s.depth === 1 && s.peek(1).value.eq(5), 'execOp added to 5');
     s.undo();
-    assert(s.depth === 2 && s.peek(1).value === 3 && s.peek(2).value === 2,
+    assert(s.depth === 2 && s.peek(1).value.eq(3) && s.peek(2).value.eq(2),
       'undo restored {2, 3} before +');
   }
 
@@ -3350,7 +3350,7 @@ import { assert } from './helpers.mjs';
     const e = new Entry(s);
     e.execOp('SIN');                             // should error, not pop
     assert(s.depth === 2, `SIN on string keeps depth (got ${s.depth})`);
-    assert(isReal(s.peek(2)) && s.peek(2).value === 1, 'level 2 still Real 1');
+    assert(isReal(s.peek(2)) && s.peek(2).value.eq(1), 'level 2 still Real 1');
     assert(s.peek(1).type === 'string' && s.peek(1).value === 'hello',
       'level 1 still string "hello"');
     assert(e.error && /bad argument type/i.test(e.error),
@@ -3365,7 +3365,7 @@ import { assert } from './helpers.mjs';
     const e = new Entry(s);
     e.type('"foo"');                             // buffer: "foo"
     e.execOp('SIN');                             // commit pushes "foo", SIN fails
-    assert(s.depth === 1 && s.peek(1).value === 42,
+    assert(s.depth === 1 && s.peek(1).value.eq(42),
       'failed op rolls back both buffer commit and op attempt');
   }
 
@@ -3376,9 +3376,9 @@ import { assert } from './helpers.mjs';
     s.push(Real(1)); s.push(Real(2)); s.push(Real(3));
     const e = new Entry(s);
     e.backspace();                                // buffer empty → DROP
-    assert(s.depth === 2 && s.peek(1).value === 2, 'backspace dropped 3');
+    assert(s.depth === 2 && s.peek(1).value.eq(2), 'backspace dropped 3');
     s.undo();
-    assert(s.depth === 3 && s.peek(1).value === 3, 'undo restored 3');
+    assert(s.depth === 3 && s.peek(1).value.eq(3), 'undo restored 3');
   }
 
   // ---- Backspace that only edits buffer does NOT snapshot ----
@@ -3405,7 +3405,7 @@ import { assert } from './helpers.mjs';
     e.enter();                                    // push 7 → {3, 7} ; undo-snap: {3}
     s.undo();
     // Undo should revert the most recent action: back to { 3 }.
-    assert(s.depth === 1 && s.peek(1).value === 3,
+    assert(s.depth === 1 && s.peek(1).value.eq(3),
       `most-recent undo restores { 3 }, got depth=${s.depth} top=${s.peek(1)?.value}`);
   }
 
@@ -3420,12 +3420,12 @@ import { assert } from './helpers.mjs';
     s.saveForUndo();
     s.push(Real(2));
     lookup('UNDO').fn(s, null);
-    assert(s.depth === 1 && s.peek(1).value === 1, 'named UNDO op restores { 1 }');
+    assert(s.depth === 1 && s.peek(1).value.eq(1), 'named UNDO op restores { 1 }');
     lookup('REDO').fn(s, null);
-    assert(s.depth === 2 && s.peek(1).value === 2, 'REDO re-applies the undone push → { 1 2 }');
+    assert(s.depth === 2 && s.peek(1).value.eq(2), 'REDO re-applies the undone push → { 1 2 }');
     // LASTSTACK is still a working alias for single-step UNDO.
     lookup('LASTSTACK').fn(s, null);
-    assert(s.depth === 1 && s.peek(1).value === 1, 'LASTSTACK alias steps back one level');
+    assert(s.depth === 1 && s.peek(1).value.eq(1), 'LASTSTACK alias steps back one level');
   }
 
   // ============================================================
@@ -3448,11 +3448,11 @@ import { assert } from './helpers.mjs';
     assert(s.depth === 4, 'sanity: 4 pushes produced depth 4');
 
     s.undo();                       // → C
-    assert(s.depth === 3 && s.peek(1).value === 3, 'undo 1 → state C { 1 2 3 }');
+    assert(s.depth === 3 && s.peek(1).value.eq(3), 'undo 1 → state C { 1 2 3 }');
     s.undo();                       // → B
-    assert(s.depth === 2 && s.peek(1).value === 2, 'undo 2 → state B { 1 2 }');
+    assert(s.depth === 2 && s.peek(1).value.eq(2), 'undo 2 → state B { 1 2 }');
     s.undo();                       // → A
-    assert(s.depth === 1 && s.peek(1).value === 1, 'undo 3 → state A { 1 }');
+    assert(s.depth === 1 && s.peek(1).value.eq(1), 'undo 3 → state A { 1 }');
 
     let threw = false;
     try { s.undo(); } catch (e) { threw = /no undo/i.test(e.message); }
@@ -3460,11 +3460,11 @@ import { assert } from './helpers.mjs';
 
     // Now walk forward.
     s.redo();
-    assert(s.depth === 2 && s.peek(1).value === 2, 'redo 1 → state B { 1 2 }');
+    assert(s.depth === 2 && s.peek(1).value.eq(2), 'redo 1 → state B { 1 2 }');
     s.redo();
-    assert(s.depth === 3 && s.peek(1).value === 3, 'redo 2 → state C { 1 2 3 }');
+    assert(s.depth === 3 && s.peek(1).value.eq(3), 'redo 2 → state C { 1 2 3 }');
     s.redo();
-    assert(s.depth === 4 && s.peek(1).value === 4, 'redo 3 → state D { 1 2 3 4 }');
+    assert(s.depth === 4 && s.peek(1).value.eq(4), 'redo 3 → state D { 1 2 3 4 }');
 
     let threw2 = false;
     try { s.redo(); } catch (e) { threw2 = /no redo/i.test(e.message); }
@@ -3536,9 +3536,9 @@ import { assert } from './helpers.mjs';
     assert(s.depth === 1 && varRecall('X') === undefined,
       'performUndo rolls back both stack and var state');
     e.performRedo();
-    assert(s.depth === 2 && s.peek(1).value === 20,
+    assert(s.depth === 2 && s.peek(1).value.eq(20),
       'performRedo restores the stack push');
-    assert(varRecall('X') && varRecall('X').value === 42,
+    assert(varRecall('X') && varRecall('X').value.eq(42),
       'performRedo restores the var STO');
   }
 
@@ -3906,14 +3906,14 @@ import { assert } from './helpers.mjs';
       const s = new Stack();
       s.push(Integer(5)); s.push(Integer(3));
       lookup('<').fn(s);
-      assert(s.peek(1).type === TYPES.REAL && s.peek(1).value === 0,
+      assert(s.peek(1).type === TYPES.REAL && s.peek(1).value.eq(0),
         '5 3 < → 0. (boolean path preserved)');
     }
     {
       const s = new Stack();
       s.push(Integer(5)); s.push(Integer(3));
       lookup('≠').fn(s);
-      assert(s.peek(1).type === TYPES.REAL && s.peek(1).value === 1,
+      assert(s.peek(1).type === TYPES.REAL && s.peek(1).value.eq(1),
         '5 3 ≠ → 1. (boolean path preserved)');
     }
 
@@ -3933,7 +3933,7 @@ import { assert } from './helpers.mjs';
       const s = new Stack();
       s.push(Name('X')); s.push(Name('X'));
       lookup('==').fn(s);
-      assert(s.peek(1).type === TYPES.REAL && s.peek(1).value === 1,
+      assert(s.peek(1).type === TYPES.REAL && s.peek(1).value.eq(1),
         'Name(X) Name(X) == → 1. (structural test, not symbolic)');
     }
 
@@ -4340,7 +4340,7 @@ import { assert } from './helpers.mjs';
   {
     const top = runEvalExact("`2+3`");
     // Integer-result-from-integer-inputs still folds under EXACT.
-    assert(isReal(top) && top.value === 5,
+    assert(isReal(top) && top.value.eq(5),
            `session041: EXACT '2+3' EVAL folds to 5. — got ${formatStackTop(top)}`);
   }
   {
@@ -4705,7 +4705,7 @@ import { assert } from './helpers.mjs';
   s.push(Real(999));
   lookup('PEVAL').fn(s);
   const r = s.pop();
-  assert(isReal(r) && r.value === 7,
+  assert(isReal(r) && r.value.eq(7),
     'session055: PEVAL constant → constant');
 }
 
@@ -4849,7 +4849,7 @@ import { assert } from './helpers.mjs';
   s.push(Real(1e-15));
   lookup('EPSX0').fn(s);
   const v = s.pop();
-  assert(isReal(v) && v.value === 0,
+  assert(isReal(v) && v.value.eq(0),
     'session055: EPSX0 Real tiny → 0');
 }
 
@@ -4859,7 +4859,7 @@ import { assert } from './helpers.mjs';
   s.push(Real(2));
   lookup('EPSX0').fn(s);
   const v = s.pop();
-  assert(isReal(v) && v.value === 2,
+  assert(isReal(v) && v.value.eq(2),
     'session055: EPSX0 Real 2 → 2');
 }
 
@@ -4869,7 +4869,7 @@ import { assert } from './helpers.mjs';
   s.push(Complex(3, 1e-13));
   lookup('EPSX0').fn(s);
   const v = s.pop();
-  assert(isReal(v) && v.value === 3,
+  assert(isReal(v) && v.value.eq(3),
     'session055: EPSX0 tiny-imag Complex → Real');
 }
 
@@ -4880,9 +4880,9 @@ import { assert } from './helpers.mjs';
   lookup('EPSX0').fn(s);
   const v = s.pop();
   assert(v.items.length === 3
-         && v.items[0].value === 0
-         && v.items[1].value === 2
-         && v.items[2].value === 0,
+         && v.items[0].value.eq(0)
+         && v.items[1].value.eq(2)
+         && v.items[2].value.eq(0),
     'session055: EPSX0 Vector element-wise');
 }
 
@@ -5586,7 +5586,7 @@ function _assertRootsMatch(got, expected, name) {
   lookup('PREVAL').fn(s);
   const out = s.pop();
   // F = 5: F(b) - F(a) = 0
-  assert(isReal(out) && out.value === 0,
+  assert(isReal(out) && out.value.eq(0),
     'session058: PREVAL on constant F → 0');
 }
 
@@ -7051,7 +7051,7 @@ function _s061HasVar(node, name) {
   s.push(Real(2.5));
   lookup('HEAVISIDE').fn(s);
   const out = s.pop();
-  assert(isReal(out) && out.value === 1,
+  assert(isReal(out) && out.value.eq(1),
     'session061: HEAVISIDE(2.5) = 1');
 }
 
@@ -7061,7 +7061,7 @@ function _s061HasVar(node, name) {
   s.push(Real(-0.001));
   lookup('HEAVISIDE').fn(s);
   const out = s.pop();
-  assert(isReal(out) && out.value === 0,
+  assert(isReal(out) && out.value.eq(0),
     'session061: HEAVISIDE(-0.001) = 0');
 }
 
@@ -7071,7 +7071,7 @@ function _s061HasVar(node, name) {
   s.push(Real(0));
   lookup('HEAVISIDE').fn(s);
   const out = s.pop();
-  assert(isReal(out) && out.value === 1,
+  assert(isReal(out) && out.value.eq(1),
     'session061: HEAVISIDE(0) = 1 (right-continuous)');
 }
 
@@ -7112,7 +7112,7 @@ function _s061HasVar(node, name) {
   s.push(Real(3.2));
   lookup('DIRAC').fn(s);
   const out = s.pop();
-  assert(isReal(out) && out.value === 0,
+  assert(isReal(out) && out.value.eq(0),
     'session061: DIRAC(3.2) = 0');
 }
 

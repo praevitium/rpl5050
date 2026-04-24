@@ -93,7 +93,7 @@ import { parseEntry as _parseEntryForObjTo } from './parser.js';
    Any other type passed as a test is a user bug — throw.
    ------------------------------------------------------------------ */
 function isTruthy(v) {
-  if (isReal(v))    return v.value !== 0;
+  if (isReal(v))    return !v.value.isZero();
   if (isInteger(v)) return v.value !== 0n;
   if (isComplex(v)) return v.re !== 0 || v.im !== 0;
   throw new RPLError('Bad argument type');
@@ -205,7 +205,7 @@ function _toAst(v) {
   if (isSymbolic(v))   return v.expr;
   if (isName(v))       return AstVar(v.id);
   if (isInteger(v))    return AstNum(Number(v.value));
-  if (isReal(v))       return AstNum(v.value);
+  if (isReal(v))       return AstNum(v.value.toNumber());
   // Rational lifts to Bin('/', Num(n), Num(d)) so the ratio survives
   // into the symbolic expression exactly (rather than being coerced
   // to a float leaf via Number(n)/Number(d)).  The algebra AST has
@@ -283,7 +283,7 @@ function _symbolicDecompose(v) {
  *  Throws if `v` isn't a plain numeric — the unit paths never mix Complex
  *  operands (HP50 doesn't allow complex-valued units either). */
 function _numVal(v) {
-  if (isReal(v))    return v.value;
+  if (isReal(v))    return v.value.toNumber();
   if (isInteger(v)) return Number(v.value);
   throw new RPLError('Bad argument type');
 }
@@ -331,7 +331,7 @@ function _unitBinary(op, a, b) {
     // non-integer exponents in the uexpr, which the catalog-backed
     // dimensional algebra doesn't model.
     const n = isInteger(b) ? Number(b.value)
-            : isReal(b)    ? b.value
+            : isReal(b)    ? b.value.toNumber()
             : NaN;
     if (!Number.isFinite(n) || !Number.isInteger(n)) {
       throw new RPLError('Bad argument value');
@@ -365,7 +365,13 @@ function _scalarBinary(op, a, b) {
     // division that IS exact stays Integer.  All other ops stay on the
     // BigInt path.
     if (op === '/' && p.b !== 0n && p.a % p.b !== 0n) {
-      if (getApproxMode()) return Real(Number(p.a) / Number(p.b));
+      if (getApproxMode()) {
+        // Big integer → Decimal via string so precision isn't capped by
+        // IEEE-754's 53-bit mantissa.  Division then rounds at 15 digits.
+        const da = new Decimal(p.a.toString());
+        const db = new Decimal(p.b.toString());
+        return Real(da.div(db));
+      }
       return Rational(p.a, p.b);
     }
     const r = integerBinary(op, p.a, p.b);
@@ -376,8 +382,13 @@ function _scalarBinary(op, a, b) {
     // the flag says "give me decimals", and a Rational result would
     // contradict that.  In EXACT mode, arithmetic stays exact.
     if (getApproxMode()) {
-      const ra = Number(p.a.n) / Number(p.a.d);
-      const rb = Number(p.b.n) / Number(p.b.d);
+      // Route through Decimal rather than Number() to keep 15-digit
+      // precision across the rational → decimal collapse.  A
+      // "big-numerator / big-denominator" Rational that can't round-
+      // trip through IEEE-754 (e.g. a factorial ratio) still lands
+      // cleanly in Decimal space.
+      const ra = new Decimal(p.a.n.toString()).div(new Decimal(p.a.d.toString()));
+      const rb = new Decimal(p.b.n.toString()).div(new Decimal(p.b.d.toString()));
       return Real(realBinary(op, ra, rb));
     }
     return _rationalBinary(op, p.a, p.b);
@@ -744,34 +755,32 @@ function _modPow(x, e, n) {
 /* -------------------------------------------------------------
    Real × Real arithmetic via decimal.js.
 
-   Every binary op on two JS numbers goes through Decimal so the user
-   sees HP50-style decimal arithmetic:
-     0.1 + 0.2  →  0.3       (not 0.30000000000000004)
-     3 * 0.4 - 1.2  →  0     (not 2.22e-16)
-   We configure Decimal at precision 15 (one guard digit over the HP50
-   STD display's 12 significant digits) and return a JS number via
-   `.toNumber()` — the Real shape on the stack doesn't change.
+   The Real stack payload is a Decimal instance (see types.js — the
+   session-093 migration).  `realBinary` takes the two Decimal payloads
+   straight from `promoteNumericPair` and returns a Decimal; the caller
+   wraps it with `Real(...)` which stores the Decimal directly.
 
-   `^` with a non-integer base or exponent is delegated to Decimal.pow,
-   which handles fractional exponents correctly.  Integer-exponent and
-   integer-base cases go through the same path; it's uniform and fast
-   enough for classroom-calculator inputs.
+   Why keep it in Decimal end-to-end?  A chain like `1 3 / 3 *` rounds
+   to 12 digits on the HP50 (`0.999999999999`) — storing the Decimal
+   lets us reproduce that exactly.  Round-tripping through `.toNumber()`
+   at every op injects the IEEE-754 representation of the intermediate
+   (`0.333333333333333148…`), which then compounds across further ops.
 
-   Division-by-zero matches the existing native behaviour: throw
-   'Infinite result'.  Decimal itself would return `Infinity`, but we
-   preserve the pre-migration RPLError so upstream error messaging
-   stays identical.
+   Division-by-zero stays explicit: throw 'Infinite result'.  Decimal
+   would otherwise return `Infinity`; we preserve the pre-migration
+   error message so callers and tests don't have to special-case the
+   library's behaviour.
+
+   No fallback: any other Decimal error propagates untouched.
    ------------------------------------------------------------- */
 function realBinary(op, a, b) {
-  if (op === '/' && b === 0) throw new RPLError('Infinite result');
-  const da = new Decimal(a);
-  const db = new Decimal(b);
+  if (op === '/' && b.isZero()) throw new RPLError('Infinite result');
   switch (op) {
-    case '+': return da.plus(db).toNumber();
-    case '-': return da.minus(db).toNumber();
-    case '*': return da.times(db).toNumber();
-    case '/': return da.div(db).toNumber();
-    case '^': return Decimal.pow(da, db).toNumber();
+    case '+': return a.plus(b);
+    case '-': return a.minus(b);
+    case '*': return a.times(b);
+    case '/': return a.div(b);
+    case '^': return Decimal.pow(a, b);
   }
   throw new RPLError('Unknown op ' + op);
 }
@@ -892,12 +901,15 @@ register('^', binaryMath('^'));
 register('NEG', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstNeg(_toAst(v)))); return; }
-  if (isReal(v))     s.push(Real(-v.value));
+  if (isReal(v))     s.push(Real(v.value.neg()));
   else if (isInteger(v)) s.push(Integer(-v.value));
   else if (isRational(v)) {
     // APPROX mode collapses to Real (flag says "decimals"); EXACT stays
     // exact — negate the numerator only.
-    if (getApproxMode()) s.push(Real(-Number(v.n) / Number(v.d)));
+    if (getApproxMode()) {
+      const r = new Decimal(v.n.toString()).div(new Decimal(v.d.toString())).neg();
+      s.push(Real(r));
+    }
     else s.push(Rational(-v.n, v.d));
   }
   else if (isComplex(v)) s.push(Complex(-v.re, -v.im));
@@ -918,8 +930,8 @@ register('INV', _withTaggedUnary(_withListUnary((s) => {
     return;
   }
   if (isReal(v)) {
-    if (v.value === 0) throw new RPLError('Infinite result');
-    s.push(Real(1 / v.value));
+    if (v.value.isZero()) throw new RPLError('Infinite result');
+    s.push(Real(new Decimal(1).div(v.value)));
   } else if (isInteger(v)) {
     if (v.value === 0n) throw new RPLError('Infinite result');
     // 1/n: exact Rational in EXACT mode, Real in APPROX mode.
@@ -963,12 +975,15 @@ register('INV', _withTaggedUnary(_withListUnary((s) => {
 register('ABS', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstFn('ABS', [_toAst(v)]))); return; }
-  if (isReal(v))    s.push(Real(Math.abs(v.value)));
+  if (isReal(v))    s.push(Real(v.value.abs()));
   else if (isInteger(v)) s.push(Integer(v.value < 0n ? -v.value : v.value));
   else if (isRational(v)) {
     // |a/b| = |a|/b (d is always positive by Rational invariant).
     // APPROX collapses to Real.
-    if (getApproxMode()) s.push(Real(Math.abs(Number(v.n) / Number(v.d))));
+    if (getApproxMode()) {
+      const r = new Decimal(v.n.toString()).div(new Decimal(v.d.toString())).abs();
+      s.push(Real(r));
+    }
     else s.push(Rational(v.n < 0n ? -v.n : v.n, v.d));
   }
   else if (isComplex(v)) s.push(Real(Math.hypot(v.re, v.im)));
@@ -997,14 +1012,14 @@ register('ABS', _withTaggedUnary(_withListUnary((s) => {
 register('SQ', _withTaggedUnary(_withListUnary((s) => {             // ^2
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstBin('^', _toAst(v), AstNum(2)))); return; }
-  if (isReal(v))    s.push(Real(v.value * v.value));
+  if (isReal(v))    s.push(Real(v.value.times(v.value)));
   else if (isInteger(v)) s.push(Integer(v.value * v.value));
   else if (isRational(v)) {
     // (a/b)^2 = a^2/b^2 — gcd is still 1 (squaring preserves coprime).
     // Collapse to Real in APPROX; otherwise keep exact.
     if (getApproxMode()) {
-      const r = Number(v.n) / Number(v.d);
-      s.push(Real(r * r));
+      const r = new Decimal(v.n.toString()).div(new Decimal(v.d.toString()));
+      s.push(Real(r.times(r)));
     } else s.push(Rational(v.n * v.n, v.d * v.d));
   }
   else if (isComplex(v)) s.push(Complex(
@@ -1022,7 +1037,7 @@ register('SQ', _withTaggedUnary(_withListUnary((s) => {             // ^2
 register('SQRT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v))  { s.push(Symbolic(AstFn('SQRT', [_toAst(v)]))); return; }
-  if (isComplex(v) || (isReal(v) && v.value < 0) ||
+  if (isComplex(v) || (isReal(v) && v.value.isNegative()) ||
       (isInteger(v) && v.value < 0n) ||
       (isRational(v) && v.n < 0n)) {
     const c = toComplex(v);
@@ -1248,7 +1263,7 @@ function _rounderScalar(name, realFn, intFn) {
     if (isBinaryInteger(v))  return name === 'FP'
       ? BinaryInteger(0n, v.base)
       : v;
-    if (isReal(v))           return Real(realFn(v.value));
+    if (isReal(v))           return Real(realFn(v.value.toNumber()));
     if (isUnit(v))           return Unit(realFn(v.value), v.uexpr);
     if (_isSymOperand(v))    return Symbolic(AstFn(name, [_toAst(v)]));
     throw new RPLError('Bad argument type');
@@ -1278,7 +1293,7 @@ _registerRounder('FP',    _fpScalar);
 register('SIGN', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (isReal(v)) {
-    s.push(Real(Math.sign(v.value)));
+    s.push(Real(Math.sign(v.value.toNumber())));
   } else if (isInteger(v)) {
     if (v.value === 0n) s.push(Integer(0n));
     else s.push(Integer(v.value > 0n ? 1n : -1n));
@@ -1305,7 +1320,7 @@ register('SIGN', _withTaggedUnary(_withListUnary((s) => {
     // Matrix: apply SIGN to each scalar entry.  Real/Integer/Complex
     // entries go through the scalar cases above via recursion.
     s.push(Matrix(v.rows.map(r => r.map(x => {
-      if (isReal(x))    return Real(Math.sign(x.value));
+      if (isReal(x))    return Real(Math.sign(x.value.toNumber()));
       if (isInteger(x)) return x.value === 0n ? Integer(0n) : Integer(x.value > 0n ? 1n : -1n);
       if (isComplex(x)) {
         const m = Math.hypot(x.re, x.im);
@@ -1336,7 +1351,7 @@ register('SIGN', _withTaggedUnary(_withListUnary((s) => {
    is angle-mode-sensitive (negative → π, non-negative → 0) —
    element-wise just broadcasts that. */
 function _argScalar(v) {
-  if (isReal(v))    return Real(fromRadians(v.value < 0 ? Math.PI : 0));
+  if (isReal(v))    return Real(fromRadians(v.value.isNegative() ? Math.PI : 0));
   if (isInteger(v)) return Real(fromRadians(v.value < 0n ? Math.PI : 0));
   if (isComplex(v)) return Real(fromRadians(Math.atan2(v.im, v.re)));
   if (_isSymOperand(v)) return Symbolic(AstFn('ARG', [_toAst(v)]));
@@ -1404,8 +1419,8 @@ register('IM', _withTaggedUnary(_withListUnary((s) => {
 function _toBigIntOrThrow(v) {
   if (isInteger(v)) return v.value;
   if (isReal(v)) {
-    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
-    return BigInt(v.value);
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    return BigInt(v.value.toFixed(0));
   }
   throw new RPLError('Bad argument type');
 }
@@ -1514,7 +1529,7 @@ register('FACT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     return;
   }
   if (isReal(v)) {
-    const x = v.value;
+    const x = v.value.toNumber();
     // Non-positive integer-valued Real is a gamma pole.
     if (Number.isInteger(x) && x < 0) throw new RPLError('Infinite result');
     // Exact Integer when input is a non-negative integer-valued Real.
@@ -1653,10 +1668,10 @@ function _combPermArgs(a, b, opName) {
     // on the integers; HP50 AUR rejects fractional arguments as "Bad
     // argument value" rather than coercing via gamma (that's FACT's
     // job, not COMB's).
-    if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+    if (!v.value.isFinite() || !v.value.isInteger()) {
       throw new RPLError('Bad argument value');
     }
-    return BigInt(v.value);
+    return BigInt(v.value.toFixed(0));
   };
   return { kind: 'int', n: toBig(a), m: toBig(b) };
 }
@@ -1695,10 +1710,10 @@ register('IDIV2', (s) => {
   const toBig = (v) => {
     if (isInteger(v)) return v.value;
     if (isReal(v)) {
-      if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+      if (!v.value.isFinite() || !v.value.isInteger()) {
         throw new RPLError('Bad argument value');
       }
-      return BigInt(v.value);
+      return BigInt(v.value.toFixed(0));
     }
     throw new RPLError('Bad argument type');
   };
@@ -1743,7 +1758,7 @@ register('UTPN', (s) => {
   const [mu, var2, x] = s.popN(3);
   const asReal = (v) => {
     if (isInteger(v)) return Number(v.value);
-    if (isReal(v))    return v.value;
+    if (isReal(v))    return v.value.toNumber();
     throw new RPLError('Bad argument type');
   };
   const m = asReal(mu);
@@ -1797,10 +1812,10 @@ register('UTPN', (s) => {
 function _intQuotientArg(v) {
   if (isInteger(v)) return v.value;
   if (isReal(v)) {
-    if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+    if (!v.value.isFinite() || !v.value.isInteger()) {
       throw new RPLError('Bad argument value');
     }
-    return BigInt(v.value);
+    return BigInt(v.value.toFixed(0));
   }
   throw new RPLError('Bad argument type');
 }
@@ -1960,7 +1975,7 @@ function _lngamma(x) {
 
 function _gammaScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('GAMMA', [_toAst(v)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   // Integer-valued inputs at the non-positive integers are poles.
   if (Number.isInteger(x) && x <= 0) throw new RPLError('Infinite result');
@@ -1973,7 +1988,7 @@ function _gammaScalar(v) {
 
 function _lngammaScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('LNGAMMA', [_toAst(v)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   if (Number.isInteger(x) && x <= 0) throw new RPLError('Infinite result');
   return Real(_lngamma(x));
@@ -2099,14 +2114,14 @@ function _polygammaAsymptotic(n, y) {
 
 function _psiScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('PSI', [_toAst(v)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   return Real(_digamma(x));
 }
 
 function _polygammaScalar(n, v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('PSI', [_toAst(v), AstNum(n)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   return Real(_polygamma(n, x));
 }
@@ -2120,9 +2135,9 @@ register('PSI', (s) => {
     let n = null;
     if (isInteger(top)) {
       n = Number(top.value);
-    } else if (isReal(top) && Number.isFinite(top.value) &&
-               Number.isInteger(top.value)) {
-      n = top.value;
+    } else if (isReal(top) && top.value.isFinite() &&
+               top.value.isInteger()) {
+      n = top.value.toNumber();
     }
     if (n !== null && n >= 0) {
       const [x] = s.popN(2).slice(0, 1);   // popN returns [x, n]
@@ -2202,7 +2217,7 @@ register('UTPC', (s) => {
   const [nu, x] = s.popN(2);
   const asReal = (v) => {
     if (isInteger(v)) return Number(v.value);
-    if (isReal(v))    return v.value;
+    if (isReal(v))    return v.value.toNumber();
     throw new RPLError('Bad argument type');
   };
   const n = asReal(nu), X = asReal(x);
@@ -2330,8 +2345,8 @@ function _betaScalar(a, b) {
   if (_isSymOperand(a) || _isSymOperand(b)) {
     return Symbolic(AstFn('Beta', [_toAst(a), _toAst(b)]));
   }
-  const aNum = isInteger(a) ? Number(a.value) : isReal(a) ? a.value : null;
-  const bNum = isInteger(b) ? Number(b.value) : isReal(b) ? b.value : null;
+  const aNum = isInteger(a) ? Number(a.value) : isReal(a) ? a.value.toNumber() : null;
+  const bNum = isInteger(b) ? Number(b.value) : isReal(b) ? b.value.toNumber() : null;
   if (aNum === null || bNum === null) throw new RPLError('Bad argument type');
   if (!Number.isFinite(aNum) || !Number.isFinite(bNum)) {
     throw new RPLError('Bad argument value');
@@ -2349,7 +2364,7 @@ function _betaScalar(a, b) {
  *  helper already in the file.  Domain extends to all real x.  */
 function _erfScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('erf', [_toAst(v)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
   if (x === 0) return Real(0);
@@ -2362,7 +2377,7 @@ function _erfScalar(v) {
  *  which 1 − erf(5) cannot represent to any useful precision).  */
 function _erfcScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('erfc', [_toAst(v)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
   if (x === 0) return Real(1);
@@ -2402,7 +2417,7 @@ register('UTPF', (s) => {
   const [n, d, F] = s.popN(3);
   const asReal = (v) => {
     if (isInteger(v)) return Number(v.value);
-    if (isReal(v))    return v.value;
+    if (isReal(v))    return v.value.toNumber();
     throw new RPLError('Bad argument type');
   };
   const nv = asReal(n), dv = asReal(d), Fv = asReal(F);
@@ -2435,7 +2450,7 @@ register('UTPT', (s) => {
   const [nu, t] = s.popN(2);
   const asReal = (v) => {
     if (isInteger(v)) return Number(v.value);
-    if (isReal(v))    return v.value;
+    if (isReal(v))    return v.value.toNumber();
     throw new RPLError('Bad argument type');
   };
   const nv = asReal(nu), tv = asReal(t);
@@ -3515,7 +3530,7 @@ function _symConstantRpl(name) {
  *  an AstNum, so they stay symbolic during partial evaluation. */
 function _symConstantValue(name) {
   const v = _symConstantRpl(name);
-  if (v && v.type === 'real' && Number.isFinite(v.value)) return v.value;
+  if (v && v.type === 'real' && v.value.isFinite()) return v.value.toNumber();
   return undefined;
 }
 
@@ -3609,13 +3624,13 @@ function _evalValueSync(s, v, depth) {
       // pushed by runArrow.
       const localVal = _localLookup(name);
       if (localVal !== undefined) {
-        if (isReal(localVal)) return localVal.value;
+        if (isReal(localVal)) return localVal.value.toNumber();
         if (isInteger(localVal)) return Number(localVal.value);
         return null;
       }
       const bound = varRecall(name);
       if (bound !== undefined) {
-        if (isReal(bound)) return bound.value;
+        if (isReal(bound)) return bound.value.toNumber();
         if (isInteger(bound)) return Number(bound.value);
         return null;
       }
@@ -3845,7 +3860,9 @@ function eqValues(a, b) {
     const p = promoteNumericPair(a, b);
     if (p.kind === 'complex')  return p.a.re === p.b.re && p.a.im === p.b.im;
     if (p.kind === 'integer')  return p.a === p.b;
-    return p.a === p.b;
+    if (p.kind === 'rational') return p.a.n === p.b.n && p.a.d === p.b.d;
+    // 'real' kind: p.a and p.b are Decimal instances — compare by value.
+    return p.a.eq(p.b);
   }
   /* BinaryInteger structural equality.
      BinInt stays out of `isNumber` (base-preservation rules for
@@ -4070,8 +4087,14 @@ function comparePair(s, cmp, op) {
     av = p.a.re; bv = p.b.re;
   } else if (p.kind === 'integer') {
     av = Number(p.a); bv = Number(p.b);
+  } else if (p.kind === 'rational') {
+    // Cross-multiply to compare without forming a real; d is always positive.
+    av = p.a.n * p.b.d; bv = p.b.n * p.a.d;
   } else {
-    av = p.a; bv = p.b;
+    // 'real' kind — p.a and p.b are Decimal instances.  Coerce to JS
+    // number for the `<` / `>` / `≤` / `≥` comparator lambdas.  Ordering
+    // is preserved within the 15-digit Decimal precision we use.
+    av = p.a.toNumber(); bv = p.b.toNumber();
   }
   s.push(cmp(av, bv) ? TRUE : FALSE);
 }
@@ -4199,7 +4222,7 @@ register('STWS', (s) => {
   let n;
   if (isInteger(v))           n = Number(v.value);
   else if (isBinaryInteger(v)) n = Number(v.value);
-  else if (isReal(v))         n = v.value;
+  else if (isReal(v))         n = v.value.toNumber();
   else throw new RPLError('Bad argument type');
   if (!Number.isFinite(n)) throw new RPLError('Bad argument value');
   setWordsize(Math.trunc(n));
@@ -4289,7 +4312,7 @@ register('R→B', (s) => {
   const v = s.pop();
   let n;
   if (isInteger(v))       n = v.value;
-  else if (isReal(v))     n = BigInt(Math.trunc(v.value));
+  else if (isReal(v))     n = BigInt(v.value.trunc().toFixed(0));
   else throw new RPLError('Bad argument type');
   const m = _mask();
   // Mask: for negatives, JS BigInt AND with a positive mask gives the
@@ -4303,7 +4326,7 @@ register('R->B', (s) => {          // ASCII alias
   const v = s.pop();
   let n;
   if (isInteger(v))       n = v.value;
-  else if (isReal(v))     n = BigInt(Math.trunc(v.value));
+  else if (isReal(v))     n = BigInt(v.value.trunc().toFixed(0));
   else throw new RPLError('Bad argument type');
   const m = _mask();
   const payload = n & m;
@@ -4513,8 +4536,8 @@ register('FACTOR', (s) => {
   // edge cases crisply, and doesn't need Giac. (Routing it to Giac would
   // actually regress — caseval("factor(12)") returns "(2)^2*3" which is
   // not what HP50 users expect.)
-  if (isInteger(v) || (isReal(v) && Number.isInteger(v.value))) {
-    const bv = isInteger(v) ? v.value : BigInt(v.value);
+  if (isInteger(v) || (isReal(v) && v.value.isInteger())) {
+    const bv = isInteger(v) ? v.value : BigInt(v.value.toFixed(0));
     const abs = bv < 0n ? -bv : bv;
     // 0 and ±1 have no meaningful prime factorisation; primes above
     // 2^53 exceed what an AstNum can hold without precision loss, so
@@ -4612,7 +4635,7 @@ register('SOLVE', (s) => {
   let ast;
   if (isSymbolic(exprArg))        ast = exprArg.expr;
   else if (isName(exprArg))       ast = AstVar(exprArg.id);
-  else if (isReal(exprArg))       ast = AstNum(exprArg.value);
+  else if (isReal(exprArg))       ast = AstNum(exprArg.value.toNumber());
   else if (isInteger(exprArg))    ast = AstNum(Number(exprArg.value));
   else throw new RPLError('Bad argument type');
 
@@ -4698,7 +4721,7 @@ register('SUBST', (s) => {
     let ast;
     if (isSymbolic(exprVal))     ast = exprVal.expr;
     else if (isName(exprVal))    ast = AstVar(exprVal.id);
-    else if (isReal(exprVal))    ast = AstNum(exprVal.value);
+    else if (isReal(exprVal))    ast = AstNum(exprVal.value.toNumber());
     else if (isInteger(exprVal)) ast = AstNum(Number(exprVal.value));
     else throw new RPLError('Bad argument type');
     const result = algebraSubst(ast, eqn.expr.l.name, eqn.expr.r);
@@ -4712,7 +4735,7 @@ register('SUBST', (s) => {
   let ast;
   if (isSymbolic(exprVal))    ast = exprVal.expr;
   else if (isName(exprVal))   ast = AstVar(exprVal.id);
-  else if (isReal(exprVal))   ast = AstNum(exprVal.value);
+  else if (isReal(exprVal))   ast = AstNum(exprVal.value.toNumber());
   else if (isInteger(exprVal)) ast = AstNum(Number(exprVal.value));
   else throw new RPLError('Bad argument type');
   const vname = isName(varVal)   ? varVal.id
@@ -4733,7 +4756,7 @@ function _isEquationSymbolic(v) {
 /** Coerce a stack value to an algebra AST node for substitution. */
 function coerceToAst(v) {
   if (isSymbolic(v)) return v.expr;
-  if (isReal(v))     return AstNum(v.value);
+  if (isReal(v))     return AstNum(v.value.toNumber());
   if (isInteger(v))  return AstNum(Number(v.value));
   if (isName(v))     return AstVar(v.id);
   throw new RPLError('SUBST: unsupported value type');
@@ -5017,10 +5040,10 @@ register('IDN', (s) => {
   let n;
   if (isInteger(v)) n = Number(v.value);
   else if (isReal(v)) {
-    if (!Number.isFinite(v.value) || Math.floor(v.value) !== v.value) {
+    if (!v.value.isFinite() || !v.value.isInteger()) {
       throw new RPLError('Bad argument value');
     }
-    n = v.value;
+    n = v.value.toNumber();
   } else if (isMatrix(v)) {
     // HP50: IDN on a matrix uses its row count (must be square).
     n = v.rows.length;
@@ -5165,8 +5188,9 @@ function _toIntIdx(v) {
     return n;
   }
   if (isReal(v)) {
-    const n = v.value;
-    if (!Number.isInteger(n) || n < 1) throw new RPLError('Bad argument value');
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    const n = v.value.toNumber();
+    if (n < 1) throw new RPLError('Bad argument value');
     return n;
   }
   if (isBinaryInteger(v)) {
@@ -5186,8 +5210,9 @@ function _toCountN(v) {
     return n;
   }
   if (isReal(v)) {
-    const n = v.value;
-    if (!Number.isInteger(n) || n < 0) throw new RPLError('Bad argument value');
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    const n = v.value.toNumber();
+    if (n < 0) throw new RPLError('Bad argument value');
     return n;
   }
   if (isBinaryInteger(v)) {
@@ -5596,9 +5621,10 @@ register('OBJ→', (s) => {
     // implement the Real split; Integer is a no-op except it re-pushes.
     if (isInteger(v)) { s.push(v); return; }
     // Real → mantissa (in [1,10)) and exponent (integer).
-    if (v.value === 0) { s.push(Real(0)); s.push(Integer(0n)); return; }
-    const sign = v.value < 0 ? -1 : 1;
-    const abs = Math.abs(v.value);
+    if (v.value.isZero()) { s.push(Real(0)); s.push(Integer(0n)); return; }
+    const x = v.value.toNumber();
+    const sign = x < 0 ? -1 : 1;
+    const abs = Math.abs(x);
     const e = Math.floor(Math.log10(abs));
     const m = sign * abs / Math.pow(10, e);
     s.push(Real(m));
@@ -5634,8 +5660,8 @@ function _toCountIdx(v) {
   if (isInteger(v))              return Number(v.value);
   if (isBinaryInteger(v))        return Number(v.value);
   if (isReal(v)) {
-    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
-    return v.value;
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    return v.value.toNumber();
   }
   throw new RPLError('Bad argument type');
 }
@@ -5870,7 +5896,7 @@ function _popFlagNumber(s) {
   const [v] = s.popN(1);
   let n;
   if (isInteger(v))      n = Number(v.value);
-  else if (isReal(v))    n = v.value;
+  else if (isReal(v))    n = v.value.toNumber();
   else                   throw new RPLError('Bad argument type');
   if (!Number.isInteger(n) || n === 0 || n < -128 || n > 128) {
     throw new RPLError('Bad argument value');
@@ -5936,8 +5962,8 @@ register('CHR', (s) => {
   let n;
   if (isInteger(v))      n = Number(v.value);
   else if (isReal(v)) {
-    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
-    n = v.value;
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    n = v.value.toNumber();
   } else                  throw new RPLError('Bad argument type');
   if (n < 0 || n > 0x10FFFF) throw new RPLError('Bad argument value');
   s.push(Str(String.fromCodePoint(n)));
@@ -6001,7 +6027,7 @@ register('STOF', (s) => {
   for (const item of l.items) {
     let n;
     if (isInteger(item))   n = Number(item.value);
-    else if (isReal(item)) n = item.value;
+    else if (isReal(item)) n = item.value.toNumber();
     else throw new RPLError('Bad argument type');
     if (!Number.isInteger(n) || n === 0 || n < -128 || n > 128) {
       throw new RPLError('Bad argument value');
@@ -6441,7 +6467,7 @@ register('NDUPN', (s) => {
      `(3,4) C→R R→C` gives `(3,4)` back.
    -------------------------------------------------------------- */
 function _coerceRealComponent(v) {
-  if (isReal(v)) return v.value;
+  if (isReal(v)) return v.value.toNumber();
   if (isInteger(v)) return Number(v.value);
   throw new RPLError('Bad argument type');
 }
@@ -7310,8 +7336,8 @@ function _popOneReturn(s, prog, baseDepth, errLabel) {
 // integer-valued Reals as integer counts.  Used by SEQ/DOLIST/DOSUBS.
 function _toIntCount(v, errLabel) {
   if (isInteger(v)) return Number(v.value);
-  if (isReal(v) && Number.isFinite(v.value) && Math.trunc(v.value) === v.value) {
-    return v.value;
+  if (isReal(v) && v.value.isFinite() && v.value.isInteger()) {
+    return v.value.toNumber();
   }
   throw new RPLError(errLabel);
 }
@@ -7504,10 +7530,8 @@ function _coerceToBinInt(v, base) {
     return BinaryInteger(raw, base);
   }
   if (isReal(v)) {
-    const f = v.value;
-    if (!Number.isFinite(f)) throw new RPLError('Bad argument value');
-    const t = Math.trunc(f);
-    const bi = BigInt(t);
+    if (!v.value.isFinite()) throw new RPLError('Bad argument value');
+    const bi = BigInt(v.value.trunc().toFixed(0));
     if (bi < 0n) {
       const w = BigInt(getWordsize());
       const mod = 1n << w;
@@ -7809,7 +7833,7 @@ register('→Q', (s) => {
     return;
   }
   if (!isReal(v)) throw new RPLError('Bad argument type');
-  const x = v.value;
+  const x = v.value.toNumber();
   if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
   if (x === 0) { s.push(Symbolic(AstNum(0))); return; }
   if (Number.isInteger(x)) { s.push(Symbolic(AstNum(x))); return; }
@@ -8016,8 +8040,8 @@ register('Q→', (s) => {
   // `3 →Q Q→` see `3 1` on the stack.
   if (isInteger(v))  { s.push(Integer(v.value)); s.push(Integer(1n)); return; }
   if (isReal(v)) {
-    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
-    s.push(Integer(BigInt(v.value))); s.push(Integer(1n)); return;
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    s.push(Integer(BigInt(v.value.toFixed(0)))); s.push(Integer(1n)); return;
   }
   if (!isSymbolic(v)) throw new RPLError('Bad argument type');
   const [n, d] = _qDecompose(v.expr);
@@ -8152,23 +8176,23 @@ function _conShapeFrom(v) {
   // Integer, Real (integer-valued), {n}, {m n}, Vector, Matrix.
   if (isInteger(v))           return { m: Number(v.value), n: null };
   if (isReal(v)) {
-    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
-    return { m: v.value, n: null };
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    return { m: v.value.toNumber(), n: null };
   }
   if (isList(v)) {
     if (v.items.length === 1) {
       const k = v.items[0];
       if (isInteger(k))       return { m: Number(k.value), n: null };
-      if (isReal(k) && Number.isInteger(k.value)) return { m: k.value, n: null };
+      if (isReal(k) && k.value.isInteger()) return { m: k.value.toNumber(), n: null };
       throw new RPLError('Bad argument type');
     }
     if (v.items.length === 2) {
       const [a, b] = v.items;
       const mm = isInteger(a) ? Number(a.value)
-               : (isReal(a) && Number.isInteger(a.value)) ? a.value
+               : (isReal(a) && a.value.isInteger()) ? a.value.toNumber()
                : (() => { throw new RPLError('Bad argument type'); })();
       const nn = isInteger(b) ? Number(b.value)
-               : (isReal(b) && Number.isInteger(b.value)) ? b.value
+               : (isReal(b) && b.value.isInteger()) ? b.value.toNumber()
                : (() => { throw new RPLError('Bad argument type'); })();
       return { m: mm, n: nn };
     }
@@ -8374,7 +8398,7 @@ function _asNumArray2D(rows) {
   // throws Bad argument type on any non-Real/non-Integer entry.
   return rows.map(row => row.map(x => {
     if (isInteger(x)) return Number(x.value);
-    if (isReal(x)) return x.value;
+    if (isReal(x)) return x.value.toNumber();
     throw new RPLError('Bad argument type');
   }));
 }
@@ -8382,7 +8406,7 @@ function _asNumArray2D(rows) {
 function _asNumArray1D(items) {
   return items.map(x => {
     if (isInteger(x)) return Number(x.value);
-    if (isReal(x)) return x.value;
+    if (isReal(x)) return x.value.toNumber();
     throw new RPLError('Bad argument type');
   });
 }
@@ -8576,7 +8600,7 @@ register('LSQ', (s) => {
 function _indexAsInt(v, op) {
   // Accepts Integer or integer-valued Real; returns a JS number index.
   if (isInteger(v)) return Number(v.value);
-  if (isReal(v) && Number.isInteger(v.value)) return v.value;
+  if (isReal(v) && v.value.isInteger()) return v.value.toNumber();
   throw new RPLError('Bad argument type');
 }
 
@@ -8666,7 +8690,7 @@ register('COL-', (s) => {
 function _magEntry(x) {
   // |x| for a numeric matrix/vector cell.  Throws Bad argument type
   // on Symbolic / other non-numeric.
-  if (isReal(x)) return Math.abs(x.value);
+  if (isReal(x)) return x.value.abs().toNumber();
   if (isInteger(x)) { const n = x.value; return Number(n < 0n ? -n : n); }
   if (isComplex(x)) return Math.hypot(x.re, x.im);
   throw new RPLError('Bad argument type');
@@ -8812,8 +8836,8 @@ register('RDZ', (s) => {
   if (isReal(v)) {
     // HP50 accepts any Real; we require integer-valued to avoid
     // silently losing the fractional part.
-    if (!Number.isInteger(v.value)) throw new RPLError('Bad argument value');
-    seedPrng(v.value);
+    if (!v.value.isInteger()) throw new RPLError('Bad argument value');
+    seedPrng(v.value.toNumber());
     return;
   }
   throw new RPLError('Bad argument type');
@@ -9081,13 +9105,13 @@ register('RCIJ', (s) => {
    ----------------------------------------------------------------- */
 
 function _statsNumericEntry(x) {
-  if (isReal(x))    return x.value;
+  if (isReal(x))    return x.value.toNumber();
   if (isInteger(x)) return Number(x.value);
   throw new RPLError('Bad argument type');
 }
 
 function _statsNumOrComplexEntry(x) {
-  if (isReal(x))    return { re: x.value, im: 0, complex: false };
+  if (isReal(x))    return { re: x.value.toNumber(), im: 0, complex: false };
   if (isInteger(x)) return { re: Number(x.value), im: 0, complex: false };
   if (isComplex(x)) return { re: x.re, im: x.im, complex: true };
   throw new RPLError('Bad argument type');
@@ -9277,10 +9301,10 @@ register('HILBERT', (s) => {
   let n;
   if (isInteger(v)) n = Number(v.value);
   else if (isReal(v)) {
-    if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+    if (!v.value.isFinite() || !v.value.isInteger()) {
       throw new RPLError('Bad argument value');
     }
-    n = v.value;
+    n = v.value.toNumber();
   } else throw new RPLError('Bad argument type');
   if (n < 1) throw new RPLError('Bad argument value');
   const rows = [];
@@ -9331,7 +9355,7 @@ register('→Qπ', (s) => {
   const [v] = s.popN(1);
   let x;
   if (isInteger(v)) x = Number(v.value);
-  else if (isReal(v)) x = v.value;
+  else if (isReal(v)) x = v.value.toNumber();
   else throw new RPLError('Bad argument type');
   if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
   if (x === 0) { s.push(Symbolic(AstNum(0))); return; }
@@ -9690,10 +9714,10 @@ function _extGcdBig(a, b) {
 function _toBigIntStrict(v) {
   if (isInteger(v)) return v.value;
   if (isReal(v)) {
-    if (!Number.isFinite(v.value) || !Number.isInteger(v.value)) {
+    if (!v.value.isFinite() || !v.value.isInteger()) {
       throw new RPLError('Bad argument value');
     }
-    return BigInt(v.value);
+    return BigInt(v.value.toFixed(0));
   }
   throw new RPLError('Bad argument type');
 }
@@ -10069,10 +10093,10 @@ register('FCOEF', (s) => {
     const root = pairList.items[i];
     const multV = pairList.items[i + 1];
     if (!isInteger(multV) &&
-        !(isReal(multV) && Number.isInteger(multV.value))) {
+        !(isReal(multV) && multV.value.isInteger())) {
       throw new RPLError('Bad argument type');
     }
-    const m = Number(isInteger(multV) ? multV.value : multV.value);
+    const m = isInteger(multV) ? Number(multV.value) : multV.value.toNumber();
     if (m < 0) throw new RPLError('Bad argument value');
     for (let k = 0; k < m; k++) {
       const fac = _vxMinusRoot(root);
@@ -10181,7 +10205,7 @@ register('DOERR', (s) => {
   if (isInteger(v) || isReal(v) || isBinaryInteger(v)) {
     let code;
     if (isInteger(v))            code = Number(v.value);
-    else if (isReal(v))          code = v.value;
+    else if (isReal(v))          code = v.value.toNumber();
     else                         code = Number(v.value);
     if (code === 0) return;                   // DOERR 0 = clear / no-op
     // Reverse-lookup the canonical message for known codes; fall back
@@ -10364,8 +10388,8 @@ function _popNumDigits(s) {
   let d;
   if (isInteger(n)) d = Number(n.value);
   else if (isReal(n)) {
-    if (!Number.isInteger(n.value)) throw new RPLError('Bad argument value');
-    d = n.value;
+    if (!n.value.isInteger()) throw new RPLError('Bad argument value');
+    d = n.value.toNumber();
   } else {
     throw new RPLError('Bad argument type');
   }
@@ -10517,7 +10541,7 @@ register('CORR', (s) => {
 
 function _coefToCx(c) {
   if (isInteger(c)) return _cx(Number(c.value), 0);
-  if (isReal(c))    return _cx(c.value, 0);
+  if (isReal(c))    return _cx(c.value.toNumber(), 0);
   if (isComplex(c)) return _cx(c.re, c.im);
   throw new RPLError('Bad argument type');
 }
@@ -10674,7 +10698,7 @@ function _polyTrimLeading(items) {
 
 function _isNumericZero(x) {
   if (isInteger(x)) return x.value === 0n;
-  if (isReal(x))    return x.value === 0;
+  if (isReal(x))    return x.value.isZero();
   if (isComplex(x)) return x.re === 0 && x.im === 0;
   return false;
 }
@@ -11503,7 +11527,7 @@ function _cToPOp(s) {
   const v = s.pop();
   let re, im;
   if (isComplex(v))       { re = v.re;                im = v.im; }
-  else if (isReal(v))     { re = v.value;             im = 0;    }
+  else if (isReal(v))     { re = v.value.toNumber();  im = 0;    }
   else if (isInteger(v))  { re = Number(v.value);     im = 0;    }
   else throw new RPLError('Bad argument type');
   const r = Math.hypot(re, im);
@@ -11517,7 +11541,7 @@ function _pToCOp(s) {
   const v = s.pop();
   let r, thUser;
   if (isComplex(v))       { r = v.re;                thUser = v.im; }
-  else if (isReal(v))     { r = v.value;             thUser = 0;    }
+  else if (isReal(v))     { r = v.value.toNumber();  thUser = 0;    }
   else if (isInteger(v))  { r = Number(v.value);     thUser = 0;    }
   else throw new RPLError('Bad argument type');
   const th = toRadians(thUser);
@@ -11577,7 +11601,7 @@ function _epsx0Scalar(v) {
     return v.value === 0n ? Integer(_ZERO) : v;
   }
   if (isReal(v)) {
-    return Math.abs(v.value) < _EPSX0_THRESHOLD ? Real(0) : v;
+    return v.value.abs().lt(_EPSX0_THRESHOLD) ? Real(0) : v;
   }
   if (isComplex(v)) {
     const r = Math.abs(v.re) < _EPSX0_THRESHOLD ? 0 : v.re;
@@ -11731,21 +11755,21 @@ function _shapeFromList(L) {
   if (!isList(L)) throw new RPLError('Bad argument type');
   if (L.items.length === 1) {
     const n = L.items[0];
-    if (!isInteger(n) && !(isReal(n) && Number.isInteger(n.value))) {
+    if (!isInteger(n) && !(isReal(n) && n.value.isInteger())) {
       throw new RPLError('Bad argument type');
     }
-    const nn = Number(isInteger(n) ? n.value : n.value);
+    const nn = isInteger(n) ? Number(n.value) : n.value.toNumber();
     if (nn <= 0) throw new RPLError('Bad argument value');
     return { rows: null, cols: nn };
   }
   if (L.items.length === 2) {
     const m = L.items[0], n = L.items[1];
-    if ((!isInteger(m) && !(isReal(m) && Number.isInteger(m.value))) ||
-        (!isInteger(n) && !(isReal(n) && Number.isInteger(n.value)))) {
+    if ((!isInteger(m) && !(isReal(m) && m.value.isInteger())) ||
+        (!isInteger(n) && !(isReal(n) && n.value.isInteger()))) {
       throw new RPLError('Bad argument type');
     }
-    const mm = Number(isInteger(m) ? m.value : m.value);
-    const nn = Number(isInteger(n) ? n.value : n.value);
+    const mm = isInteger(m) ? Number(m.value) : m.value.toNumber();
+    const nn = isInteger(n) ? Number(n.value) : n.value.toNumber();
     if (mm <= 0 || nn <= 0) throw new RPLError('Bad argument value');
     return { rows: mm, cols: nn };
   }
@@ -11989,10 +12013,10 @@ function _nFromIntegerArg(v) {
   if (isInteger(v)) {
     n = Number(v.value);
   } else if (isReal(v)) {
-    if (!Number.isFinite(v.value) || Math.floor(v.value) !== v.value) {
+    if (!v.value.isFinite() || !v.value.isInteger()) {
       throw new RPLError('Bad argument value');
     }
-    n = v.value;
+    n = v.value.toNumber();
   } else {
     throw new RPLError('Bad argument type');
   }
@@ -12076,10 +12100,10 @@ function _tchebOp(s) {
   if (isInteger(v)) {
     n = Number(v.value);
   } else if (isReal(v)) {
-    if (!Number.isFinite(v.value) || Math.floor(v.value) !== v.value) {
+    if (!v.value.isFinite() || !v.value.isInteger()) {
       throw new RPLError('Bad argument value');
     }
-    n = v.value;
+    n = v.value.toNumber();
   } else {
     throw new RPLError('Bad argument type');
   }
@@ -12288,7 +12312,7 @@ function _zeta(s) {
 
 function _zetaScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('ZETA', [_toAst(v)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   return Real(_zeta(x));
 }
@@ -12384,7 +12408,7 @@ function _lambertW0(x) {
 
 function _lambertScalar(v) {
   if (_isSymOperand(v)) return Symbolic(AstFn('LAMBERT', [_toAst(v)]));
-  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value : null;
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
   if (x === null) throw new RPLError('Bad argument type');
   return Real(_lambertW0(x));
 }
@@ -13088,7 +13112,7 @@ function _invertFitModel(model, y) {
  *  for PREDV / PREDX.  Complex is rejected — the fit models are
  *  real-valued and the inverse is real-to-real. */
 function _fitScalar(v) {
-  if (isReal(v))    return v.value;
+  if (isReal(v))    return v.value.toNumber();
   if (isInteger(v)) return Number(v.value);
   if (isBinaryInteger(v)) return Number(v.value);
   throw new RPLError('Bad argument type');
@@ -13212,7 +13236,7 @@ register('PREVAL', (s) => {
   else if (vars.size === 1) varName = [...vars][0];
   else                      varName = vx;
   const endpointToAst = (v) => {
-    if (isReal(v))    return AstNum(v.value);
+    if (isReal(v))    return AstNum(v.value.toNumber());
     if (isInteger(v)) return AstNum(Number(v.value));
     if (isBinaryInteger(v)) return AstNum(Number(v.value));
     if (isSymbolic(v)) return v.expr;
@@ -14334,7 +14358,7 @@ function _realStepValue(x) { return x >= 0 ? 1 : 0; }
 
 register('HEAVISIDE', (s) => {
   const [v] = s.popN(1);
-  if (isReal(v))          { s.push(Real(_realStepValue(v.value))); return; }
+  if (isReal(v))          { s.push(Real(_realStepValue(v.value.toNumber()))); return; }
   if (isInteger(v))       { s.push(Integer(BigInt(_realStepValue(Number(v.value))))); return; }
   if (isBinaryInteger(v)) { s.push(Integer(BigInt(_realStepValue(Number(v.value))))); return; }
   if (_isSymOperand(v))   { s.push(Symbolic(AstFn('HEAVISIDE', [_toAst(v)]))); return; }

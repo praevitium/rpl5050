@@ -31,11 +31,11 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(3)); s.push(Integer(3));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, '3.0 == 3 (int) is true');
+  assert(s.peek().value.eq(1), '3.0 == 3 (int) is true');
   s.clear();
   s.push(Real(1)); s.push(Real(2));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, '1 == 2 is false');
+  assert(s.peek().value.eq(0), '1 == 2 is false');
 }
 
 // ≠ / <> / < / > / ≤ / ≥
@@ -43,19 +43,19 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1)); s.push(Real(2));
   lookup('<').fn(s);
-  assert(s.peek().value === 1, '1 < 2');
+  assert(s.peek().value.eq(1), '1 < 2');
   s.clear();
   s.push(Real(5)); s.push(Real(5));
   lookup('≤').fn(s);
-  assert(s.peek().value === 1, '5 ≤ 5');
+  assert(s.peek().value.eq(1), '5 ≤ 5');
   s.clear();
   s.push(Real(5)); s.push(Real(6));
   lookup('>=').fn(s);
-  assert(s.peek().value === 0, '5 >= 6 is false');
+  assert(s.peek().value.eq(0), '5 >= 6 is false');
   s.clear();
   s.push(Real(3)); s.push(Real(4));
   lookup('<>').fn(s);
-  assert(s.peek().value === 1, '3 <> 4 is true');
+  assert(s.peek().value.eq(1), '3 <> 4 is true');
 }
 
 // == on Names and Strings (structural)
@@ -63,37 +63,37 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Name('X')); s.push(Name('X'));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, "Name(`X`) == Name(`X`)");
+  assert(s.peek().value.eq(1), "Name(`X`) == Name(`X`)");
   s.clear();
   s.push(Str('foo')); s.push(Str('bar'));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, "`foo` != `bar`");
+  assert(s.peek().value.eq(0), "`foo` != `bar`");
 }
 
 // Logical ops
 {
   const s = new Stack();
   s.push(Real(1)); s.push(Real(0)); lookup('AND').fn(s);
-  assert(s.peek().value === 0, '1 AND 0 = 0');
+  assert(s.peek().value.eq(0), '1 AND 0 = 0');
   s.clear();
   s.push(Real(1)); s.push(Real(0)); lookup('OR').fn(s);
-  assert(s.peek().value === 1, '1 OR 0 = 1');
+  assert(s.peek().value.eq(1), '1 OR 0 = 1');
   s.clear();
   s.push(Real(1)); s.push(Real(1)); lookup('XOR').fn(s);
-  assert(s.peek().value === 0, '1 XOR 1 = 0');
+  assert(s.peek().value.eq(0), '1 XOR 1 = 0');
   s.clear();
   s.push(Real(0)); lookup('NOT').fn(s);
-  assert(s.peek().value === 1, 'NOT 0 = 1');
+  assert(s.peek().value.eq(1), 'NOT 0 = 1');
   s.clear();
   s.push(Real(42)); lookup('NOT').fn(s);
-  assert(s.peek().value === 0, 'NOT 42 = 0');
+  assert(s.peek().value.eq(0), 'NOT 42 = 0');
 }
 
 // TRUE / FALSE push the literals
 {
   const s = new Stack();
-  lookup('TRUE').fn(s);  assert(s.peek().value === 1, 'TRUE pushes 1');
-  lookup('FALSE').fn(s); assert(s.peek().value === 0, 'FALSE pushes 0');
+  lookup('TRUE').fn(s);  assert(s.peek().value.eq(1), 'TRUE pushes 1');
+  lookup('FALSE').fn(s); assert(s.peek().value.eq(0), 'FALSE pushes 0');
 }
 
 /* ================================================================
@@ -123,46 +123,46 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Complex(3, 4)); s.push(Complex(3, 4));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, 'session068: (3,4) == (3,4) is true');
+  assert(s.peek().value.eq(1), 'session068: (3,4) == (3,4) is true');
 }
 {
   const s = new Stack();
   s.push(Complex(1, 2)); s.push(Complex(1, 3));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session068: (1,2) == (1,3) is false (im differs)');
+  assert(s.peek().value.eq(0), 'session068: (1,2) == (1,3) is false (im differs)');
 }
 {
   const s = new Stack();
   s.push(Complex(2, 0)); s.push(Complex(0, 2));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session068: (2,0) == (0,2) is false (swap re/im)');
+  assert(s.peek().value.eq(0), 'session068: (2,0) == (0,2) is false (swap re/im)');
 }
 {
   // Complex with zero imaginary part == Real with same value.
   const s = new Stack();
   s.push(Complex(5, 0)); s.push(Real(5));
   lookup('==').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session068: (5,0) == 5 is true (promotion folds to complex compare)');
 }
 {
   const s = new Stack();
   s.push(Complex(3, 4)); s.push(Real(3));
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session068: (3,4) == 3 is false (imaginary part differs)');
 }
 {
   const s = new Stack();
   s.push(Complex(1, 2)); s.push(Complex(1, 2));
   lookup('≠').fn(s);
-  assert(s.peek().value === 0, 'session068: (1,2) ≠ (1,2) is false');
+  assert(s.peek().value.eq(0), 'session068: (1,2) ≠ (1,2) is false');
 }
 {
   const s = new Stack();
   s.push(Complex(1, 2)); s.push(Complex(3, 4));
   lookup('≠').fn(s);
-  assert(s.peek().value === 1, 'session068: (1,2) ≠ (3,4) is true');
+  assert(s.peek().value.eq(1), 'session068: (1,2) ≠ (3,4) is true');
 }
 
 /* ---- Complex < is rejected (partial order undefined on ℂ) ---- */
@@ -178,13 +178,13 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Name('X')); s.push(Name('X'));
   lookup('SAME').fn(s);
-  assert(s.peek().value === 1, 'session068: SAME(X, X) on Names is true');
+  assert(s.peek().value.eq(1), 'session068: SAME(X, X) on Names is true');
 }
 {
   const s = new Stack();
   s.push(Name('X')); s.push(Name('Y'));
   lookup('SAME').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session068: SAME(X, Y) on distinct Names is false');
 }
 
@@ -262,7 +262,7 @@ import { assert, assertThrows } from './helpers.mjs';
   t.push(Real(3)); t.push(Real(4));
   lookup('≤').fn(t);
   const uni = t.peek().value;
-  assert(ascii === 1 && uni === 1 && ascii === uni,
+  assert(ascii.eq(1) && uni.eq(1) && ascii.eq(uni),
     'session068: <= and ≤ agree on 3 4 (both 1)');
 }
 
@@ -272,21 +272,21 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Integer(7n)); s.push(Real(7));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, 'session068: Integer(7) == Real(7) is true');
+  assert(s.peek().value.eq(1), 'session068: Integer(7) == Real(7) is true');
 }
 {
   // Integer == Integer with big-bigint value
   const s = new Stack();
   s.push(Integer(10n ** 30n)); s.push(Integer(10n ** 30n));
   lookup('==').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session068: 10^30 == 10^30 is true (arbitrary-precision BigInt)');
 }
 {
   // Real NaN-adjacent edge: HP50 rejects NaN at the Real constructor
   // so this case simply validates that the constructor guard exists —
   // a surprise NaN should never reach ==.  We do NOT test NaN == NaN.
-  assertThrows(() => Real(NaN), /finite/,
+  assertThrows(() => Real(NaN), /NaN/,
     'session068: Real(NaN) is rejected at construction (prevents NaN==NaN ambiguity)');
 }
 
@@ -295,13 +295,13 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Str('hello')); s.push(Str('hello'));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, 'session068: "hello" == "hello" is true');
+  assert(s.peek().value.eq(1), 'session068: "hello" == "hello" is true');
 }
 {
   const s = new Stack();
   s.push(Str('hello')); s.push(Str('Hello'));
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session068: "hello" == "Hello" is false (case-sensitive structural compare)');
 }
 
@@ -323,7 +323,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(RList([Real(1), Real(2), Real(3)]));
   s.push(RList([Real(1), Real(2), Real(3)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session072: List == List is structural (1 for identical) — gap filed s070, fixed s072');
 }
 {
@@ -331,7 +331,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Vector([Real(1), Real(2)]));
   s.push(Vector([Real(1), Real(2)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session072: Vector == Vector is structural — gap filed s070, fixed s072');
 }
 
@@ -343,7 +343,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Str('a')); s.push(Str('b'));
     lookup('<').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session087: "a" < "b" = 1 (String lex <)');
   }
   // "b" > "a"
@@ -351,7 +351,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Str('b')); s.push(Str('a'));
     lookup('>').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session087: "b" > "a" = 1 (String lex >)');
   }
   // "abc" ≤ "abd"
@@ -359,7 +359,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Str('abc')); s.push(Str('abd'));
     lookup('≤').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session087: "abc" ≤ "abd" = 1 (String lex ≤, differ at last char)');
   }
   // "z" ≥ "z" (equal strings)
@@ -367,7 +367,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Str('z')); s.push(Str('z'));
     lookup('≥').fn(s);
-    assert(s.peek().value === 1,
+    assert(s.peek().value.eq(1),
       'session087: "z" ≥ "z" = 1 (equal strings)');
   }
   // "b" < "a" = 0 (regression guard)
@@ -375,7 +375,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Str('b')); s.push(Str('a'));
     lookup('<').fn(s);
-    assert(s.peek().value === 0,
+    assert(s.peek().value.eq(0),
       'session087: "b" < "a" = 0 (regression guard)');
   }
   // Mixed String + Real still rejected
@@ -397,7 +397,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(symA); s.push(symB);
   lookup('SAME').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session072: SAME on structurally identical Symbolics returns 1 — gap filed s070, fixed s072');
 }
 
@@ -409,7 +409,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(-3));
   lookup('NOT').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session068: NOT(-3) = 0 (any non-zero is truthy, HP50 flag-style logic)');
 }
 {
@@ -424,7 +424,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     s.push(Real(a)); s.push(Real(b));
     lookup(op).fn(s);
-    if (s.peek().value !== want) allOk = false;
+    if (!s.peek().value.eq(want)) allOk = false;
   }
   assert(allOk,
     'session068: Real AND/OR/XOR truth table (12 rows) all correct');
@@ -442,7 +442,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(RList([Real(1), Real(2), Real(3)]));
   s.push(RList([Real(1), Real(2), Real(3)]));
   lookup('SAME').fn(s);
-  assert(s.peek().value === 1, 'session072: SAME {1,2,3} {1,2,3} = 1');
+  assert(s.peek().value.eq(1), 'session072: SAME {1,2,3} {1,2,3} = 1');
 }
 {
   // Different length — not equal.
@@ -450,7 +450,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(RList([Real(1), Real(2)]));
   s.push(RList([Real(1), Real(2), Real(3)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session072: {1,2} == {1,2,3} = 0 (length mismatch)');
+  assert(s.peek().value.eq(0), 'session072: {1,2} == {1,2,3} = 0 (length mismatch)');
 }
 {
   // Same length, different element — not equal.
@@ -458,7 +458,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(RList([Real(1), Real(2), Real(3)]));
   s.push(RList([Real(1), Real(2), Real(4)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session072: {1,2,3} == {1,2,4} = 0');
+  assert(s.peek().value.eq(0), 'session072: {1,2,3} == {1,2,4} = 0');
 }
 {
   // Nested lists — recursive structural compare.
@@ -466,7 +466,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(RList([RList([Real(1), Real(2)]), Real(3)]));
   s.push(RList([RList([Real(1), Real(2)]), Real(3)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, 'session072: { {1,2} 3 } == { {1,2} 3 } = 1');
+  assert(s.peek().value.eq(1), 'session072: { {1,2} 3 } == { {1,2} 3 } = 1');
 }
 {
   // Heterogeneous list with promoted numerics — Real vs Integer inside still equal.
@@ -474,7 +474,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(RList([Real(1), Real(2)]));
   s.push(RList([Integer(1n), Integer(2n)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session072: { 1. 2. } == { 1 2 } = 1 (numeric promotion inside list)');
 }
 /* ---- Vector == Vector ---- */
@@ -483,14 +483,14 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Vector([Real(3), Real(4)]));
   s.push(Vector([Real(3), Real(4)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, 'session072: [3 4] == [3 4] = 1');
+  assert(s.peek().value.eq(1), 'session072: [3 4] == [3 4] = 1');
 }
 {
   const s = new Stack();
   s.push(Vector([Real(3), Real(4)]));
   s.push(Vector([Real(4), Real(3)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session072: [3 4] == [4 3] = 0 (order-sensitive)');
+  assert(s.peek().value.eq(0), 'session072: [3 4] == [4 3] = 0 (order-sensitive)');
 }
 {
   // Vector vs list is a cross-type no — structural compare does not mix.
@@ -498,7 +498,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Vector([Real(1), Real(2)]));
   s.push(RList([Real(1), Real(2)]));
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session072: [1 2] == {1 2} = 0 (different container types are not equal)');
 }
 /* ---- Matrix == Matrix ---- */
@@ -507,7 +507,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
   lookup('==').fn(s);
-  assert(s.peek().value === 1, 'session072: [[1 2][3 4]] == [[1 2][3 4]] = 1');
+  assert(s.peek().value.eq(1), 'session072: [[1 2][3 4]] == [[1 2][3 4]] = 1');
 }
 {
   // Row count mismatch — not equal.
@@ -515,14 +515,14 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Matrix([[Real(1), Real(2)]]));
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session072: matrix row-count mismatch → 0');
+  assert(s.peek().value.eq(0), 'session072: matrix row-count mismatch → 0');
 }
 {
   const s = new Stack();
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]));
   s.push(Matrix([[Real(1), Real(2)], [Real(3), Real(5)]]));
   lookup('SAME').fn(s);
-  assert(s.peek().value === 0, 'session072: SAME matrix cell mismatch → 0');
+  assert(s.peek().value.eq(0), 'session072: SAME matrix cell mismatch → 0');
 }
 /* ---- Symbolic == Symbolic and SAME ---- */
 {
@@ -531,7 +531,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 1, "session072: `X+Y` == `X+Y` = 1");
+  assert(s.peek().value.eq(1), "session072: `X+Y` == `X+Y` = 1");
 }
 {
   // Subtly different operand order — structural compare is order-sensitive.
@@ -540,7 +540,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     "session072: `X+Y` == `Y+X` = 0 (commutativity is a CAS concern, not ==)");
 }
 {
@@ -550,7 +550,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('SAME').fn(s);
-  assert(s.peek().value === 1, "session072: SAME `SIN(X)` `SIN(X)` = 1");
+  assert(s.peek().value.eq(1), "session072: SAME `SIN(X)` `SIN(X)` = 1");
 }
 {
   // SIN(X) vs COS(X) — different fn name.
@@ -559,7 +559,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 0, "session072: `SIN(X)` == `COS(X)` = 0 (fn-name differs)");
+  assert(s.peek().value.eq(0), "session072: `SIN(X)` == `COS(X)` = 0 (fn-name differs)");
 }
 {
   // Nested bin + fn.
@@ -568,7 +568,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 1, "session072: `X^2+SIN(X)` structural match");
+  assert(s.peek().value.eq(1), "session072: `X^2+SIN(X)` structural match");
 }
 /* ---- Tagged == Tagged ---- */
 {
@@ -577,7 +577,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Tagged('price', Real(200)));
   s.push(Tagged('price', Real(200)));
   lookup('SAME').fn(s);
-  assert(s.peek().value === 1,
+  assert(s.peek().value.eq(1),
     'session072: SAME price:200 price:200 = 1 (tag + value match)');
 }
 {
@@ -586,7 +586,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Tagged('price', Real(200)));
   s.push(Tagged('cost',  Real(200)));
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session072: price:200 == cost:200 = 0 (tag differs)');
 }
 {
@@ -595,7 +595,7 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Tagged('x', Real(1)));
   s.push(Tagged('x', Real(2)));
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session072: x:1 == x:2 = 0 (value differs)');
+  assert(s.peek().value.eq(0), 'session072: x:1 == x:2 = 0 (value differs)');
 }
 /* ---- Unit == Unit ---- */
 {
@@ -605,7 +605,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 1, 'session072: 1_m == 1_m = 1');
+  assert(s.peek().value.eq(1), 'session072: 1_m == 1_m = 1');
 }
 {
   // Same dimension, different scale — structural compare says not equal.
@@ -614,7 +614,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session072: 1_m == 1_km = 0 (different uexpr even though both are lengths)');
 }
 {
@@ -624,7 +624,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(a); s.push(b);
   lookup('==').fn(s);
-  assert(s.peek().value === 0, 'session072: 1_m == 2_m = 0 (value differs)');
+  assert(s.peek().value.eq(0), 'session072: 1_m == 2_m = 0 (value differs)');
 }
 /* ---- Cross-type rejection (regression guard) ---- */
 {
@@ -632,7 +632,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(1)])); s.push(Str('1'));
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     'session072: {1} == "1" = 0 (cross-type: list ≠ string)');
 }
 {
@@ -645,6 +645,6 @@ import { assert, assertThrows } from './helpers.mjs';
   // `eqValues`, which returns false on Sy-vs-Real.  This is intentional
   // per the docstring on register('=='): "strict structural equality".
   lookup('==').fn(s);
-  assert(s.peek().value === 0,
+  assert(s.peek().value.eq(0),
     "session072: `X` == 5 = 0 (== is strictly structural, no symbolic lift)");
 }
