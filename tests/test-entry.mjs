@@ -732,7 +732,7 @@ import { assert, assertThrows } from './helpers.mjs';
   // Chained LASTARG through the entry path: LASTARG is idempotent
   // per HP50 semantics — pressing it N times pushes the same arg set
   // N times, because ops that only grow the stack (LASTARG itself,
-  // DUP, OVER, DEPTH, …) no longer clobber the _lastArgs slot.
+  // DUP, OVER, DEPTH, …) leave the _lastArgs slot untouched.
   {
     const s = new Stack();
     const e = new Entry(s);

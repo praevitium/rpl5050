@@ -1137,7 +1137,7 @@ function _cxApprox(got, re, im, label) {
     'session045: ASINH(0 + i) = 0 + π/2 i');
 }
 
-// ACOSH of real x < 1 now lifts to Complex (covered in test-entry.mjs
+// ACOSH of real x < 1 lifts to Complex (covered in test-entry.mjs
 // too — keep one assertion here for locality): ACOSH(-1) = 0 + πi
 {
   const s = new Stack();
@@ -1147,7 +1147,7 @@ function _cxApprox(got, re, im, label) {
     'session045: ACOSH(-1) = 0 + πi (real < 1 lifts to Complex)');
 }
 
-// ATANH of real |x| > 1 now lifts to Complex: ATANH(2) = ln(3)/2 + i*(-π/2)
+// ATANH of real |x| > 1 lifts to Complex: ATANH(2) = ln(3)/2 + i*(-π/2)
 // (the principal branch lands on the negative-imaginary side via atan2 for
 // the (1-z)=(-1, 0) piece)
 {

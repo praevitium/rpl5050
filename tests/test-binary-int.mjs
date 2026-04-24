@@ -90,11 +90,10 @@ setBinaryBase(null);
   let threw1 = false;
   try { parseEntry('#'); } catch (_) { threw1 = true; }
   assert(threw1, 'parseEntry("#") throws (no digits, no base)');
-  // parseEntry('#123') no longer throws — a missing base letter falls
-  // back to the currently-selected display base (state.binaryBase,
-  // default 'h').  Explicit-suffix literals still drive the base; this
-  // only catches bare-# input which HP50 also interprets via the active
-  // base mode.  See parser.js around the '#' tokenizer case.
+  // parseEntry('#123') accepts a missing base letter — it falls back to
+  // the currently-selected display base (state.binaryBase, default 'h').
+  // Explicit-suffix literals still drive the base.  See parser.js around
+  // the '#' tokenizer case.
   const noSuffix = parseEntry('#123');
   assert(noSuffix.length === 1 && noSuffix[0].type === 'binaryInteger' &&
          noSuffix[0].value === 0x123n && noSuffix[0].base === 'h',
@@ -990,9 +989,9 @@ setBinaryBase(null);
   }
 
   // Comparators on BinInt — HP50 AUR §4-1 supports `<` / `>` / `≤` /
-  // `≥` on BinInts by masked numeric value.  Hard-flipped in the s074
-  // source fix: `comparePair()` now promotes BinInts to Integer(value
-  // & mask) before routing to the numeric path.
+  // `≥` on BinInts by masked numeric value.  `comparePair()` promotes
+  // BinInts to Integer(value & mask) before routing to the numeric
+  // path.
   {
     const s = new Stack();
     s.pushMany([BinaryInteger(1n, 'h'), BinaryInteger(2n, 'h')]);

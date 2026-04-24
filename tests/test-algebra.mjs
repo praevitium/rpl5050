@@ -111,10 +111,10 @@ import { assert } from './helpers.mjs';
 }
 
 // --- DERIV op end-to-end -------------------------------------------
-// DERIV routes Symbolic inputs through Giac's diff() now.  Each test
-// below registers a mock fixture keyed on the exact caseval command
-// `buildGiacCmd` emits (purge prefix + diff call), then asserts that
-// the op parses Giac's reply back into the expected AST.
+// DERIV routes Symbolic inputs through Giac's diff().  Each test below
+// registers a mock fixture keyed on the exact caseval command
+// `buildGiacCmd` emits, then asserts that the op parses Giac's reply
+// back into the expected AST.
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 3*X + 1')));
@@ -286,8 +286,9 @@ import { assert } from './helpers.mjs';
   // strictly an EOF recovery, same as the list/vector/program soft-close
   // only applies when the token stream runs out.
   let threw = false;
-  try { parseAlgebra('SIN(X+Y'); } catch (_) { /* EOF auto-close, should NOT throw */ }
-  // The above actually succeeds now — verify nothing throws.
+  try { parseAlgebra('SIN(X+Y'); } catch (_) { /* EOF auto-close — must NOT throw */ }
+  // The unterminated EOF case succeeds via auto-close; mid-stream garbage
+  // still throws.
   try { parseAlgebra('SIN(X + ) +'); } catch (_) { threw = true; }
   assert(threw, "parseAlgebra('SIN(X + ) +') mid-stream garbage still throws");
 }
@@ -600,7 +601,7 @@ import { assert } from './helpers.mjs';
 // --- pretty.js — ⁿ√k indexed radical for XROOT -------
 // XROOT(radicand, index) renders as a √-hook with the index tucked
 // into the crook at SUP_SCALE of base size.  The radical path stays a
-// single <path>; the index is a separate <text>.  Parser now recognises
+// single <path>; the index is a separate <text>.  The parser recognises
 // XROOT as a two-arg KNOWN_FUNCTION so `'XROOT(2, 3)'` round-trips.
 {
   // XROOT parses at the entry line.
@@ -1017,7 +1018,7 @@ import { assert } from './helpers.mjs';
 // --- giacToAst: detects Giac runtime-error strings ----------------
 // If Giac delivers an error-shaped string (from purge-on-unassigned in
 // a build without try/catch, or any other runtime error that slips
-// through the value channel), giacToAst now raises a clean
+// through the value channel), giacToAst raises a clean
 // GiacResultError(kind="runtime-error") carrying the raw string — not
 // a parseAlgebra "Unexpected character" leak.
 {
@@ -3459,10 +3460,10 @@ function _assertRootsMatch(got, expected, name) {
    PREVAL: F(X) a b → F(b) - F(a).
    ================================================================ */
 
-// PREVAL now routes through Giac.  Each PREVAL call emits one command
-// of the shape `simplify(subst(F,X=b)-subst(F,X=a))`, so we register
-// one fixture per test case with the scalar difference the test
-// expects.  Bulk-register them first — the cluster shares the set.
+// PREVAL routes through Giac.  Each PREVAL call emits one command of
+// the shape `simplify(subst(F,X=b)-subst(F,X=a))`, so we register one
+// fixture per test case with the scalar difference the test expects.
+// Bulk-register them first — the cluster shares the set.
 giac._clear();
 giac._setFixtures({
   'simplify(subst(X^2,X=3)-subst(X^2,X=0))':         '9',
