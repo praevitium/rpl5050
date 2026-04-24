@@ -454,7 +454,7 @@ export function getHalted() { return state.halted; }
  *  through the full `yield*` delegation chain, running every active
  *  `finally` block and cleanly releasing any compiled-local frames
  *  that were live at the point of suspension.  Safe to call on
- *  records that have no generator field (legacy or test-injected). */
+ *  records that have no generator field (e.g. test-injected stubs). */
 function _closeRecord(record) {
   if (record && record.generator) {
     try { record.generator.return(); } catch (_) { /* ignore */ }

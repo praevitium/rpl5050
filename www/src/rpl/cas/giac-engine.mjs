@@ -10,10 +10,9 @@
 // Why main-thread + sync (not a worker):
 //   A Web Worker forces every caseval() call to be a Promise, which means
 //   every op that touches the CAS becomes async, which means the whole
-//   eval loop has to be async-capable. We tried that once (session 092
-//   blanket-async migration) — cascaded into 200 test failures because
-//   each `await` yielded a microtask and every test that asserted stack
-//   state immediately after `lookup('X').fn(s)` tripped on un-settled
+//   eval loop has to be async-capable. Blanket-asyncifying every op causes
+//   the eval loop to yield microtasks between steps, and tests that assert
+//   stack state immediately after `lookup('X').fn(s)` trip on un-settled
 //   state. Premature async is the enemy.
 //
 //   Emscripten's generated caseval is a synchronous C function. Running

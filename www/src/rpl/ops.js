@@ -363,9 +363,8 @@ function _scalarBinary(op, a, b) {
   }
   if (p.kind === 'integer') {
     // Integer / Integer that doesn't divide evenly promotes to Rational
-    // in EXACT mode (session 092), or to Real in APPROX.  Integer
-    // division that IS exact stays Integer.  All other ops stay on the
-    // BigInt path.
+    // in EXACT mode, or to Real in APPROX.  Integer division that IS
+    // exact stays Integer.  All other ops stay on the BigInt path.
     if (op === '/' && p.b !== 0n && p.a % p.b !== 0n) {
       if (getApproxMode()) {
         // Big integer → Decimal via string so precision isn't capped by
@@ -835,12 +834,12 @@ function integerBinary(op, a, b) {
        returned `Infinity + Infinity·i`.
 
    No fallback: a complex.js error propagates.  Per the
-   no-fallback-for-numeric-libs rule from session 092.
+   no-fallback-for-numeric-libs rule.
    ------------------------------------------------------------- */
 function complexBinary(op, a, b) {
   // Division-by-zero guard stays explicit: complex.js would return
-  // Complex.INFINITY, but we preserve the pre-migration RPLError so
-  // upstream error messaging is unchanged.
+  // Complex.INFINITY, but we raise an RPLError to match the numeric
+  // binary path's `'Infinite result'` message.
   if (op === '/' && b.re === 0 && b.im === 0) {
     throw new RPLError('Infinite result');
   }
@@ -2684,10 +2683,10 @@ function _coerceDirName(v) {
  * ≤127 chars, starts with letter, not a reserved command name).  Used
  * by STO / STO+- etc. / CRDIR / SVX / STOF — anywhere a *new or
  * overwritten* variable binding is created.  Read-only paths (RCL,
- * PURGE, VARS) keep using `_coerceDirName` so that they can still
- * address legacy names the user might have created before the
- * validator landed.  The HP50 itself raises "Invalid name" for these
- * cases; we use the same wording so ERRN picks up a recognisable code.
+ * PURGE, VARS) keep using `_coerceDirName` so they stay permissive and
+ * can still address any name that already exists in a directory.  The
+ * HP50 itself raises "Invalid name" for these cases; we use the same
+ * wording so ERRN picks up a recognisable code.
  */
 function _coerceStorableName(v) {
   const id = _coerceDirName(v);
@@ -4633,15 +4632,9 @@ register('SIMPLIFY', (s) => {
 register('FACTOR', (s) => {
   const v = s.pop();
 
-  // Symbolic input: route to Giac (the new CAS).  We convert the AST to
-  // a Giac expression string, call factor(...), then parse Giac's output
-  // back into an AST.  No fallback — if Giac isn't ready or the call
-  // errors, the op errors.  The legacy algebraFactor path has been retired.
-  //
-  // `buildGiacCmd` wraps the factor call with `purge(...)` statements
-  // for every free variable in the AST.  Without this, Xcas built-in
-  // names that collide with user variables (e.g. `UI`, `GF`) raise
-  // `"<name> is not defined"` instead of staying symbolic.
+  // Symbolic input: route to Giac.  Convert the AST to a Giac expression
+  // string, call factor(...), then parse Giac's output back into an AST.
+  // No fallback — if Giac isn't ready or the call errors, the op errors.
   if (isSymbolic(v)) {
     if (!giac.isReady()) {
       throw new RPLError('CAS not ready');

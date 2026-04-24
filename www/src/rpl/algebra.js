@@ -707,13 +707,12 @@ function combineLikeTerms(ast) {
  *  Pure numeric sub-trees collapse to a single Num.
  *  Identity: `simplify(expr)` is idempotent. */
 /* NOTE: simplify, expand, deriv, integ, solve, subst, collectByVar, factor,
- * and replaceVar were once part of this module's public surface — they
- * powered ops.js's EXPAND/DERIV/INTEG/SOLVE/SUBST/COLLECT/FACTOR/LAPLACE
- * pipelines before the Giac migration.  As of session 095 every CAS op
- * routes through Giac, so these functions are retained only as the
- * internal scaffolding of a few other live exports (parseAlgebra uses
- * simplify for `--x → x` collapses at parse time, etc.).  They are NOT
- * re-exported; tests cover the live surface end-to-end through ops. */
+ * and replaceVar are internal-only.  Every CAS op (EXPAND/DERIV/INTEG/
+ * SOLVE/SUBST/COLLECT/FACTOR/LAPLACE …) routes through Giac, so these
+ * functions are retained only as the internal scaffolding of a few other
+ * live exports (parseAlgebra uses simplify for `--x → x` collapses at
+ * parse time, etc.).  They are NOT re-exported; tests cover the live
+ * surface end-to-end through ops. */
 function simplify(ast) {
   if (!ast) return ast;
   if (ast.kind === 'num' || ast.kind === 'var') return ast;

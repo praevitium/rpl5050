@@ -162,7 +162,7 @@ import { assert, assertThrows } from './helpers.mjs';
   {
     const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
     giac._clear();
-    giac._setFixture('purge(X);factor(X^2+2*X+1)', '(X+1)^2');
+    giac._setFixture('factor(X^2+2*X+1)', '(X+1)^2');
     const s = new Stack();
     const e = new Entry(s);
     for (const ch of "`X^2 + 2*X + 1`") {
@@ -183,7 +183,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     const e = new Entry(s);
     giac._clear();
-    giac._setFixture('purge(X);solve(X^2-4,X)', '[2,-2]');
+    giac._setFixture('solve(X^2-4,X)', '[2,-2]');
     for (const ch of "`X^2 - 4` `X` SOLVE") {
       if ('+-*/^'.includes(ch) && e.isAlgebraic()) e.typeOrExec(ch, ch);
       else e.type(ch);
@@ -203,7 +203,7 @@ import { assert, assertThrows } from './helpers.mjs';
     const s = new Stack();
     const e = new Entry(s);
     giac._clear();
-    giac._setFixture('purge(X);diff(sin(X^2),X)', '2*X*cos(X^2)');
+    giac._setFixture('diff(sin(X^2),X)', '2*X*cos(X^2)');
     for (const ch of "`SIN(X^2)` `X` DERIV") {
       if ('+-*/^'.includes(ch) && e.isAlgebraic()) e.typeOrExec(ch, ch);
       else e.type(ch);
@@ -756,15 +756,15 @@ import { assert, assertThrows } from './helpers.mjs';
    Backtick quotedName — validator guard + algebra auto-close
    ============================================================
 
-   Session 096: `parseEntry` used to silently fall through to
-   `Name(body, {quoted:true})` whenever `parseAlgebra` threw on an
-   algebraic-looking body, minting ghost Names like `Name("SIN(X ")`
-   that polluted the stack and later blew up inside CAS ops.
+   `parseEntry` must not silently fall through to
+   `Name(body, {quoted:true})` when `parseAlgebra` throws on an
+   algebraic-looking body — that used to mint ghost Names like
+   `Name("SIN(X ")` that polluted the stack and blew up inside CAS ops.
 
-   Two paired fixes cover that regression surface:
+   Two paired behaviours cover that surface:
 
      • algebra.js `expect(')')` auto-closes at EOF, so the common
-       "user forgot the closer" case now parses cleanly.
+       "user forgot the closer" case parses cleanly.
      • parser.js re-throws the algebra error when the body also fails
        `isValidHpIdentifier`, so anything that can't be a legal HP
        identifier surfaces as "Invalid algebraic: …" instead of a
@@ -791,8 +791,8 @@ import { assert, assertThrows } from './helpers.mjs';
     'parseEntry(`#FFh + 1`) throws "Invalid algebraic:" instead of becoming a ghost Name');
 }
 {
-  // Bare operator atom still round-trips as a Name — legacy
-  // programmatic composition must keep working.
+  // Bare operator atom round-trips as a Name — programmatic composition
+  // of op-only bodies stays supported.
   const out = parseEntry('`+`');
   const v = Array.isArray(out) ? out[0] : out;
   assert(isName(v) && v.id === '+',

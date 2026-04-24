@@ -687,22 +687,19 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    ================================================================ */
 {
   /* --------- Item 1: DERIV on hyperbolic functions ---------- */
-  // Session 082 originally pinned DERIV's in-table behaviour for
-  // hyperbolic / inverse-hyperbolic functions against the native
-  // algebra.js derivative table.  Session 095 moved DERIV onto Giac,
-  // which computes derivatives for the entire function universe —
-  // the tests below now register fixtures for the exact caseval
+  // DERIV routes through Giac, which handles the entire function
+  // universe.  The tests below register fixtures for the exact caseval
   // commands the op emits and assert the formatted round-trip.
   const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
   giac._clear();
   giac._setFixtures({
-    'purge(X);diff(sinh(X),X)':  'cosh(X)',
-    'purge(X);diff(cosh(X),X)':  'sinh(X)',
-    'purge(X);diff(tanh(X),X)':  '1-tanh(X)^2',
-    'purge(X);diff(asinh(X),X)': '1/sqrt(X^2+1)',
-    'purge(X);diff(acosh(X),X)': '1/sqrt(X^2-1)',
-    'purge(X);diff(atanh(X),X)': '1/(1-X^2)',
-    'purge(X);diff(cosh(2*X),X)': '2*sinh(2*X)',
+    'diff(sinh(X),X)':  'cosh(X)',
+    'diff(cosh(X),X)':  'sinh(X)',
+    'diff(tanh(X),X)':  '1-tanh(X)^2',
+    'diff(asinh(X),X)': '1/sqrt(X^2+1)',
+    'diff(acosh(X),X)': '1/sqrt(X^2-1)',
+    'diff(atanh(X),X)': '1/(1-X^2)',
+    'diff(cosh(2*X),X)': '2*sinh(2*X)',
   });
   {
     const [e] = parseEntry("`SINH(X)`");
@@ -751,33 +748,27 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
   giac._clear();
 
-  // HEAVISIDE note (session 095): on Giac, `diff(Heaviside(X),X)`
-  // returns `Dirac(X)` instead of throwing.  The old
-  // "DERIV still rejects unknown functions" assertion tested a
-  // property of algebra.js's handwritten derivative table that
-  // Giac replaces with a complete one — the rejection check no
-  // longer applies and was removed.
+  // HEAVISIDE note: on Giac, `diff(Heaviside(X),X)` returns `Dirac(X)`
+  // rather than throwing, so DERIV does not reject unknown functions.
 }
 
 {
   /* --------- Item 2: INTEG on SINH / COSH / ALOG ---------- */
-  // Session 082 originally pinned INTEG's direct-arg rules.  Giac
-  // computes antiderivatives without a lookup table, so the tests
-  // below register fixtures for each caseval command and still
-  // verify the formatted round-trip.
+  // INTEG routes through Giac, which computes antiderivatives without
+  // a lookup table.  The tests below register fixtures for each caseval
+  // command and verify the formatted round-trip.
   const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
   giac._clear();
   giac._setFixtures({
-    'purge(X);integrate(sinh(X),X)': 'cosh(X)',
-    'purge(X);integrate(cosh(X),X)': 'sinh(X)',
+    'integrate(sinh(X),X)': 'cosh(X)',
+    'integrate(cosh(X),X)': 'sinh(X)',
     // Giac writes ALOG as `10^X` under the hood; our astToGiac emits
     // `(10^(X))` for `ALOG(X)`.  giacToAst then parses the reply back
     // through the `10^X` shape, which `formatAlgebra` renders as
-    // "10^X/LN(10)" — close enough to the session-082 expectation that
-    // we relax the match below.
-    'purge(X);integrate((10^(X)),X)': '10^X/ln(10)',
+    // "10^X/LN(10)" — the test below accepts either rendering.
+    'integrate((10^(X)),X)': '10^X/ln(10)',
     // TANH's antiderivative in Giac: ln(cosh(X)).
-    'purge(X);integrate(tanh(X),X)': 'ln(cosh(X))',
+    'integrate(tanh(X),X)': 'ln(cosh(X))',
   });
   {
     const [e] = parseEntry("`SINH(X)`");
@@ -792,9 +783,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       `session082: INTEG COSH(X) d/X = SINH(X) (got ${format(out)})`);
   }
   {
-    // Session 095 note: Giac normalises ALOG through `10^X`, so the
-    // round-tripped result prints as `10^X/LN(10)` rather than the old
-    // ALOG-form.  Accept either rendering.
+    // Giac normalises ALOG through `10^X`, so the round-tripped result
+    // prints as `10^X/LN(10)`.  Accept either rendering.
     const [e] = parseEntry("`ALOG(X)`");
     const out = runOp('INTEG', e, Name('X'));
     const f = format(out);
@@ -804,9 +794,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       `session082: INTEG ALOG(X) d/X = 10^X/LN(10) (got ${f})`);
   }
   {
-    // TANH now has a closed-form antiderivative via Giac (LN(COSH(X))).
-    // Session 082's "fallback" assertion no longer applies — pin the
-    // real answer instead.
+    // TANH has a closed-form antiderivative via Giac: LN(COSH(X)).
     const [e] = parseEntry("`TANH(X)`");
     const out = runOp('INTEG', e, Name('X'));
     const f = format(out);
@@ -827,34 +815,33 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
 {
   /* --------- Item 3: simplify rounding / sign idempotency ---------- */
-  // Session 082 pinned these HP50-specific rounding identities as
-  // rules inside the native algebra.simplify rewriter.  Session 095
-  // moved COLLECT's 1-arg form onto Giac's simplify(), and Giac does
-  // not know the HP50-flavoured FLOOR/CEIL/IP/FP/SIGN idempotency
-  // rules — so the fixtures below simulate what Giac *would* return
-  // if we taught it those rules (or added a post-Giac normalisation
-  // pass).  The tests still verify the caseval plumbing + formatter
-  // round-trip; pinning the simplify rules themselves moved to a
-  // follow-up task (#41, post-algebra.js retirement).
+  // HP50-specific rounding identities (FLOOR/CEIL/IP/FP/SIGN idempotency)
+  // aren't part of Giac's native simplify().  COLLECT's 1-arg form
+  // routes through Giac's simplify(), so the fixtures below simulate
+  // what Giac *would* return if we taught it those rules (or added a
+  // post-Giac normalisation pass).  The tests still verify the caseval
+  // plumbing + formatter round-trip.
+  // TODO: add a post-Giac normalisation pass that applies the HP50-
+  // flavoured idempotency rules so these fixtures can be dropped.
   const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
   giac._clear();
   giac._setFixtures({
-    'purge(X);simplify(FLOOR(FLOOR(X)))': 'FLOOR(X)',
-    'purge(X);simplify(CEIL(CEIL(X)))':   'CEIL(X)',
-    'purge(X);simplify(IP(IP(X)))':       'IP(X)',
-    'purge(X);simplify(FP(FP(X)))':       'FP(X)',
-    'purge(X);simplify(sign(sign(X)))':   'sign(X)',
-    'purge(X);simplify(FP(FLOOR(X)))':    '0',
-    'purge(X);simplify(FP(CEIL(X)))':     '0',
-    'purge(X);simplify(FP(IP(X)))':       '0',
-    'purge(X);simplify(FLOOR(CEIL(X)))':  'CEIL(X)',
-    'purge(X);simplify(CEIL(FLOOR(X)))':  'FLOOR(X)',
-    'purge(X);simplify(IP(FLOOR(X)))':    'FLOOR(X)',
-    'purge(X);simplify(IP(CEIL(X)))':     'CEIL(X)',
-    'purge(X);simplify(FLOOR(IP(X)))':    'IP(X)',
-    'purge(X);simplify(CEIL(IP(X)))':     'IP(X)',
-    'purge(X);simplify(FLOOR(FP(X)))':    'FLOOR(FP(X))',
-    'purge(X);simplify(CEIL(FP(X)))':     'CEIL(FP(X))',
+    'simplify(FLOOR(FLOOR(X)))': 'FLOOR(X)',
+    'simplify(CEIL(CEIL(X)))':   'CEIL(X)',
+    'simplify(IP(IP(X)))':       'IP(X)',
+    'simplify(FP(FP(X)))':       'FP(X)',
+    'simplify(sign(sign(X)))':   'sign(X)',
+    'simplify(FP(FLOOR(X)))':    '0',
+    'simplify(FP(CEIL(X)))':     '0',
+    'simplify(FP(IP(X)))':       '0',
+    'simplify(FLOOR(CEIL(X)))':  'CEIL(X)',
+    'simplify(CEIL(FLOOR(X)))':  'FLOOR(X)',
+    'simplify(IP(FLOOR(X)))':    'FLOOR(X)',
+    'simplify(IP(CEIL(X)))':     'CEIL(X)',
+    'simplify(FLOOR(IP(X)))':    'IP(X)',
+    'simplify(CEIL(IP(X)))':     'IP(X)',
+    'simplify(FLOOR(FP(X)))':    'FLOOR(FP(X))',
+    'simplify(CEIL(FP(X)))':     'CEIL(FP(X))',
   });
 
   const IDEMP = [
@@ -1100,11 +1087,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Session 092 — Rational data type (Fraction.js-backed)
+   Rational data type (Fraction.js-backed)
 
-   Introduces an exact ratio-of-integers type alongside Integer / Real /
-   Complex.  Canonical shape: { type: 'rational', n: BigInt, d: BigInt }
-   with gcd(|n|,d)=1 and d≥1.  Arithmetic runs through Fraction.js —
+   An exact ratio-of-integers type alongside Integer / Real / Complex.
+   Canonical shape: { type: 'rational', n: BigInt, d: BigInt } with
+   gcd(|n|,d)=1 and d≥1.  Arithmetic runs through Fraction.js —
    arbitrary precision via BigInt, no fallbacks.
    ================================================================ */
 {
@@ -1434,17 +1421,15 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Real arithmetic — decimal.js pilot (session 092).
+   Real arithmetic — decimal.js-backed.
 
    Real × Real arithmetic goes through decimal.js at precision 15.
    The point: heal the IEEE-754 artifacts that haunt JS-number
-   arithmetic, so the HP50 classroom-math illusion holds.  The Real
-   payload shape doesn't change (still a JS number); only the
-   intermediate arithmetic runs in Decimal space.
+   arithmetic, so the HP50 classroom-math illusion holds.
    ================================================================ */
 {
   // Sanity — the classic 0.1 + 0.2 ≠ 0.3 trap in JS number arithmetic.
-  // After the decimal.js migration, Real + Real gives an exact 0.3.
+  // Real + Real must give an exact 0.3 via decimal.js.
   {
     const s = new Stack();
     s.push(Real(0.1));
@@ -1520,14 +1505,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Complex arithmetic — complex.js pilot (session 092).
+   Complex arithmetic — complex.js-backed.
 
    Complex × Complex arithmetic routes through complex.js.  The
-   payload on the stack is still a plain `{ re, im }` pair — only
-   the intermediate arithmetic changes.  complex.js's kernel gives
-   us exact identity preservation (i² = -1, not i² ≈ -1 + 0i with
-   trailing zeros), correct branch-cut handling at negative reals
-   for `^`, and a library-vetted polar-form pow.
+   payload on the stack is a plain `{ re, im }` pair.  complex.js's
+   kernel gives us exact identity preservation (i² = -1, not
+   i² ≈ -1 + 0i with trailing zeros), correct branch-cut handling at
+   negative reals for `^`, and a library-vetted polar-form pow.
    ================================================================ */
 {
   // i * i = -1 exactly.  Tests the identity preservation through the
@@ -1596,14 +1580,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Rational lifting into Symbolic AST (session 092 audit).
+   Rational lifting into Symbolic AST.
 
-   `_toAst(Rational)` now returns Bin('/', Num(n), Num(d)) so a
-   Rational can survive into a Symbolic expression without being
-   flattened to a float leaf.  This closes the transcendental audit
-   gap: LN/LOG/EXP/SIN/etc. on a Symbolic argument containing a
-   Rational now form a valid symbolic expression rather than
-   throwing "Bad argument type".
+   `_toAst(Rational)` returns Bin('/', Num(n), Num(d)) so a Rational
+   survives into a Symbolic expression without being flattened to a
+   float leaf.  LN/LOG/EXP/SIN/etc. on a Symbolic argument containing
+   a Rational form a valid symbolic expression rather than throwing
+   "Bad argument type".
    ================================================================ */
 {
   // Rational + Name lifts to Symbolic.
@@ -1873,7 +1856,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Wiring integration check: the /ops.js/ write path surfaces
   // "Invalid name" through RPLError when given anything that fails
   // isStorableHpName.  The string literal is the canonical message
-  // emitted by _coerceStorableName (ops.js session 095).
+  // emitted by _coerceStorableName.
   resetHome();
   clearLastError();
   {

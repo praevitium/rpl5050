@@ -187,11 +187,11 @@ function formatCmpxComp(n, d) {
 
 export function formatReal(n, d) {
   // Accept either a JS number or a Decimal instance.  The Real stack
-  // payload carries a Decimal (session 093); Complex, Unit, and Vector
-  // component renderers still hand us JS numbers since those types
-  // haven't been widened yet.  Collapse to Number here since the HP50
-  // STD display crops to 12 sig digits anyway — Decimal precision past
-  // that point has no visible effect.
+  // payload carries a Decimal; Complex, Unit, and Vector component
+  // renderers still hand us JS numbers since those types haven't been
+  // widened yet.  Collapse to Number here since the HP50 STD display
+  // crops to 12 sig digits anyway — Decimal precision past that point
+  // has no visible effect.
   const num = (n instanceof Decimal) ? n.toNumber() : n;
   if (!Number.isFinite(num)) return num > 0 ? '∞' : '-∞';
   switch (d.mode) {
@@ -256,9 +256,9 @@ function formatSymbolic(expr) {
   if (expr && typeof expr === 'object' && typeof expr.kind === 'string') {
     return formatAlgebra(expr);
   }
-  // Legacy fallback — older tests/stubs stored { op, args: [...] } or
-  // raw strings / numbers.  Keep rendering them so nothing already
-  // on the stack becomes unreadable.
+  // Fallback for non-AST expression shapes ({ op, args: [...] } objects,
+  // raw strings, raw numbers).  Keep rendering them so stored snapshots
+  // that predate the algebra AST stay readable.
   if (expr == null) return '';
   if (typeof expr === 'string') return expr;
   if (typeof expr === 'number') return String(expr);

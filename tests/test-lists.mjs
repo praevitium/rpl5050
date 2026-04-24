@@ -1424,7 +1424,7 @@ import { assert } from './helpers.mjs';
    ================================================================= */
 
 // ---- Unary numeric: {1 4 9} SQRT → {1 2 3} ----
-// Perfect squares stay exact (Integer) in EXACT mode — session 092.
+// Perfect squares stay exact (Integer) in EXACT mode.
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(4n), Integer(9n)]));
@@ -1501,7 +1501,7 @@ import { assert } from './helpers.mjs';
 }
 
 // ---- Nested lists: {1 {4 9}} SQRT → {1 {2 3}} ----
-// Perfect squares stay exact (Integer) in EXACT mode — session 092.
+// Perfect squares stay exact (Integer) in EXACT mode.
 {
   const s = new Stack();
   s.push(RList([Integer(1n), RList([Integer(4n), Integer(9n)])]));

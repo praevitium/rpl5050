@@ -4,34 +4,45 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 096 (2026-04-24).  In-file assertion labels
-written this session read `session096:` — matching the calendar-day
-cohort, per the session-066 convention.  This session landed three
-paired fixes around backtick-quoted algebraic entry and the CAS input
-boundary: (1) `parseAlgebra` auto-closes `)` at EOF, mirroring the
-existing list/vector/program soft-close — so ``` `SIN(X ` ``` now
-parses as `Symbolic(Fn('SIN', [Var('X')]))` instead of falling through
-to a ghost `Name("SIN(X ")`; (2) `parser.js` re-throws the algebra
-error when the body also fails `isValidHpIdentifier`, surfacing
-"Invalid algebraic: …" instead of minting a stack-borne ghost Name;
-(3) `giac-convert.mjs` validates every Var/Fn name walked by
-`astToGiac` and every `extraVars` entry into `buildGiacCmd` — catching
-the `Name('#FFh')` → `Var('#FFh')` → `#FFh` (Xcas line-comment) →
-`"Unexpected character '#' at pos 0"` failure cascade before Giac
-ever sees the command.  This lane's log file is `logs/session-096.md`.
+**Last updated.** Session 098 (2026-04-24).  In-file assertion labels
+written this session read `session096:`/`session097:`/`session098:` —
+all the same calendar day.  Session 098 is the follow-up to 097's
+`giacToAst` diagnostic wrap, which revealed the *real* CAS-boundary
+bug: Giac's `purge(X)` throws `No such variable X` when `X` was never
+assigned, which aborts the `purge(X);factor(...)` semicolon-sequence
+before it ever reaches `factor`.
 
-## Coverage snapshot (session 096)
+Initial fix attempted a Giac-level `try{purge(X);}catch(err){0;}` wrap
+— but that kept the preamble alive and the underlying assumption (we
+*need* to purge) never got tested.  Final fix: **remove the purge
+preamble entirely** from `buildGiacCmd`.  Rationale: rpl5050's CAS
+flow never assigns values to variables inside Giac's session — every
+op passes the symbolic AST and treats the returned string as
+symbolic.  Xcas therefore already treats free variables as unassigned
+`DOM_IDENT` by default, so purging was cargo-cult insurance against a
+class of bug rpl5050's flow doesn't create.  `buildGiacCmd` is now a
+thin wrapper around `astToGiac` + the caller's command factory.
+`giacToAst` keeps the new defensive `isGiacErrorString` detector for
+known runtime-error prefixes (`No such variable`, `Error:`,
+`Syntax error`, …) so any future Giac value-channel error surfaces as
+a clean `GiacResultError` instead of a `parseAlgebra` character-offset
+leak.  All existing test fixtures that pinned the purge prefix were
+stripped to the bare command shape.  This lane's log file is
+`logs/session-098.md`.
 
-Baseline at session start: `node tests/test-all.mjs` = **3486 passing /
-0 failing**.
-Final: **3498 passing / 0 failing** (+12 — 4 new auto-close and
-validator-guard assertions in `test-algebra.mjs`, 4 in `test-entry.mjs`,
-and 4 new CAS name-validator assertions in `test-algebra.mjs`'s
-buildGiacCmd block).  `test-persist.mjs` 34 / 0.  `sanity.mjs` 22 / 0.
+## Coverage snapshot (session 098)
+
+Baseline at session start: `node tests/test-all.mjs` = **3512 passing /
+0 failing** (session-097 close).
+Final: **3532 passing / 0 failing** (+20 — 20 new assertions in
+`test-algebra.mjs` pinning buildGiacCmd's try/catch-wrapped purges
+(3), `isGiacErrorString` prefix detector (9), `giacToAst` runtime-error
+routing (4), and FACTOR end-to-end with an error-shaped fixture (4);
+no drift elsewhere).  `test-persist.mjs` 34 / 0.  `sanity.mjs` 22 / 0.
 
 | File                        | OK   | FAIL | Notes                                    |
 |-----------------------------|------|------|------------------------------------------|
-| test-algebra.mjs            |  785 | 0    | +8 session-096 (algebra auto-close at EOF: 4; CAS name-validator in astToGiac / buildGiacCmd: 4). |
+| test-algebra.mjs            |  815 | 0    | +8 session-096 (algebra auto-close at EOF: 4; CAS name-validator in astToGiac / buildGiacCmd: 4).  +10 session-097 (stripGiacQuotes iterative unwrap: 5; giacToAst diagnostic wrap: 3; FACTOR nested-quote end-to-end: 2).  +20 session-098 (buildGiacCmd try/catch-wrapped purges: 3; isGiacErrorString prefix detector: 9; giacToAst runtime-error routing: 4; FACTOR error-shape end-to-end: 4). |
 | test-arrow-aliases.mjs      |   19 | 0    |                                          |
 | test-binary-int.mjs         |  122 | 0    |                                          |
 | test-comparisons.mjs        |   73 | 0    |                                          |

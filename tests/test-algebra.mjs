@@ -120,7 +120,7 @@ import { assert } from './helpers.mjs';
   s.push(Symbolic(parseAlgebra('X^2 + 3*X + 1')));
   s.push(Name('X'));
   giac._clear();
-  giac._setFixture('purge(X);diff(X^2+3*X+1,X)', '2*X+3');
+  giac._setFixture('diff(X^2+3*X+1,X)', '2*X+3');
   lookup('DERIV').fn(s);
   assert(s.depth === 1 && isSymbolic(s.peek()), 'DERIV op pushes a Symbolic');
   assert(formatAlgebra(s.peek().expr) === '2*X + 3',
@@ -200,7 +200,7 @@ import { assert } from './helpers.mjs';
     }
   };
   giac._clear();
-  giac._setFixture('purge(X);diff(2*X+3,X)', '2');
+  giac._setFixture('diff(2*X+3,X)', '2');
   entryLoop("`2*X+3` `X` DERIV");
   assert(s.depth === 1, 'entryLoop leaves a single result');
   const out = s.peek();
@@ -329,7 +329,7 @@ import { assert } from './helpers.mjs';
   s.push(Symbolic(parseAlgebra('SIN(X)')));
   s.push(Name('X'));
   giac._clear();
-  giac._setFixture('purge(X);diff(sin(X),X)', 'cos(X)');
+  giac._setFixture('diff(sin(X),X)', 'cos(X)');
   lookup('DERIV').fn(s);
   assert(s.depth === 1 && isSymbolic(s.peek()),
          'DERIV on SIN(X) keeps a Symbolic result');
@@ -711,7 +711,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('(X+1)^2')));
   giac._clear();
-  giac._setFixture('purge(X);expand((X+1)^2)', 'X^2+2*X+1');
+  giac._setFixture('expand((X+1)^2)', 'X^2+2*X+1');
   lookup('EXPAND').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === 'X^2 + 2*X + 1',
@@ -739,7 +739,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X + X + Y')));
   giac._clear();
-  giac._setFixture('purge(X);purge(Y);simplify(X+X+Y)', '2*X+Y');
+  giac._setFixture('simplify(X+X+Y)', '2*X+Y');
   lookup('COLLECT').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === '2*X + Y',
@@ -752,7 +752,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X*Y + Y*X')));
   giac._clear();
-  giac._setFixture('purge(X);purge(Y);simplify(X*Y+Y*X)', '2*X*Y');
+  giac._setFixture('simplify(X*Y+Y*X)', '2*X*Y');
   lookup('COLLECT').fn(s);
   assert(formatAlgebra(s.peek().expr) === '2*X*Y',
          `COLLECT 'X*Y + Y*X' → '${formatAlgebra(s.peek().expr)}' (want '2*X*Y')`);
@@ -832,28 +832,28 @@ import { assert } from './helpers.mjs';
   assert(buildGiacCmd(parseAlgebra('2+3*4'), (e) => `factor(${e})`) === 'factor(2+3*4)',
          'buildGiacCmd: no purge prefix when AST has no free vars');
   // Single free var.
-  assert(buildGiacCmd(parseAlgebra('X^2+1'), (e) => `factor(${e})`) === 'purge(X);factor(X^2+1)',
+  assert(buildGiacCmd(parseAlgebra('X^2+1'), (e) => `factor(${e})`) === 'factor(X^2+1)',
          'buildGiacCmd: single-var prefix');
   // Multi var, alphabetical.
-  assert(buildGiacCmd(parseAlgebra('A*X+B'), (e) => `factor(${e})`) === 'purge(A);purge(B);purge(X);factor(A*X+B)',
+  assert(buildGiacCmd(parseAlgebra('A*X+B'), (e) => `factor(${e})`) === 'factor(A*X+B)',
          'buildGiacCmd: multi-var alphabetical prefix');
   // Arbitrary command factory — not limited to factor.
-  assert(buildGiacCmd(parseAlgebra('X+1'), (e) => `expand((${e})^3)`) === 'purge(X);expand((X+1)^3)',
+  assert(buildGiacCmd(parseAlgebra('X+1'), (e) => `expand((${e})^3)`) === 'expand((X+1)^3)',
          'buildGiacCmd: arbitrary command factory');
   // Function-call names are NOT free vars — SIN stays as a function
   // and X is the only purge target.  Guards against accidentally
   // purging HP function names and breaking Giac's command lookup.
-  assert(buildGiacCmd(parseAlgebra('SIN(X)'), (e) => `factor(${e})`) === 'purge(X);factor(sin(X))',
+  assert(buildGiacCmd(parseAlgebra('SIN(X)'), (e) => `factor(${e})`) === 'factor(sin(X))',
          'buildGiacCmd: function-name is not purged');
 }
 
 // --- astToGiac / buildGiacCmd: name-validator guard ---------------
-// Session 096: the CAS input boundary rejects any AST whose Var or Fn
-// carries a name that wouldn't round-trip through Xcas — notably the
-// `#FFh` shape a malformed Name('#FFh') gets lifted to via _toAst.
-// Without this guard, `#` is a line comment in Xcas, caseval silently
-// truncates the command, and parseAlgebra blows up on the garbled
-// output with "Unexpected character '#' at pos 0".
+// The CAS input boundary rejects any AST whose Var or Fn carries a name
+// that wouldn't round-trip through Xcas — notably the `#FFh` shape a
+// malformed Name('#FFh') gets lifted to via _toAst.  Without this guard,
+// `#` is a line comment in Xcas, caseval silently truncates the command,
+// and parseAlgebra blows up on the garbled output with "Unexpected
+// character '#' at pos 0".
 {
   const { astToGiac, buildGiacCmd } = await import('../www/src/rpl/cas/giac-convert.mjs');
   // Synthesise a Var with a bad name directly (bypass parseAlgebra,
@@ -882,24 +882,202 @@ import { assert } from './helpers.mjs';
 
   // Valid identifiers still go through — regression guard.
   const goodCmd = buildGiacCmd(parseAlgebra('X+Y'), (e) => `diff(${e},Y)`, ['Y']);
-  assert(goodCmd === 'purge(X);purge(Y);diff(X+Y,Y)',
+  assert(goodCmd === 'diff(X+Y,Y)',
          `buildGiacCmd: valid extraVars still flow through — got "${goodCmd}"`);
 }
 
-// --- FACTOR op: Giac-backed routing (session 092 CAS pilot) -------
+// --- stripGiacQuotes: iterative unwrap -----------------------------
+// Giac's semicolon-sequence output sometimes nests the string wrap one
+// layer deeper for certain result shapes, yielding `"\"X-1\""`.  A
+// single strip would leave a leading `"` in the string handed to
+// parseAlgebra and trigger `Unexpected character '"' at pos 0`.  The
+// strip loops until stable; these tests pin that behaviour.
+{
+  const { stripGiacQuotes } = await import('../www/src/rpl/cas/giac-convert.mjs');
+
+  // Single-layer wrap — regression check (existing behaviour).
+  assert(stripGiacQuotes('"(X+1)^2"') === '(X+1)^2',
+         'stripGiacQuotes: single-layer strip unchanged');
+
+  // Nested wrap — the bug.  `"\\\"X-1\\\""` in a JS string literal is
+  // the 10-char sequence `"\"X-1\""` on disk (outer quotes + escaped
+  // inner quotes + X-1 content).  One strip yields `"X-1"`; a second
+  // strip should then yield `X-1` so parseAlgebra is happy.
+  assert(stripGiacQuotes('"\\"X-1\\""') === 'X-1',
+         `stripGiacQuotes: nested strip (got "${stripGiacQuotes('"\\"X-1\\""')}")`);
+
+  // Triple-nested — same iterative logic.
+  assert(stripGiacQuotes('"\\"\\\\\\"A\\\\\\"\\""') === 'A',
+         `stripGiacQuotes: triple-nested strip (got "${stripGiacQuotes('"\\"\\\\\\"A\\\\\\"\\""')}")`);
+
+  // Unquoted input passes through unchanged.
+  assert(stripGiacQuotes('X-1') === 'X-1',
+         'stripGiacQuotes: unquoted pass-through');
+
+  // Non-string passes through unchanged.
+  assert(stripGiacQuotes(42) === 42,
+         'stripGiacQuotes: non-string pass-through');
+}
+
+// --- giacToAst: wraps parse failures with raw Giac string ---------
+// If anything ever slips past stripGiacQuotes and reaches parseAlgebra
+// with a malformed input, the error message carries the raw Giac output
+// so debugging starts with a visible fingerprint instead of a bare
+// "Unexpected character '\"' at pos 0".
+{
+  const { giacToAst } = await import('../www/src/rpl/cas/giac-convert.mjs');
+
+  let caught = null;
+  try { giacToAst('"X-1'); /* leading-only quote, parseAlgebra barfs */ }
+  catch (e) { caught = e; }
+  assert(caught !== null, 'giacToAst throws on unparseable Giac output');
+  assert(/Giac output did not parse/.test(caught.message),
+         `giacToAst error includes "Giac output did not parse": ${caught && caught.message}`);
+  assert(/"\\"X-1"/.test(caught.message) || caught.message.includes('"X-1'),
+         `giacToAst error includes raw string: ${caught && caught.message}`);
+}
+
+// --- FACTOR end-to-end: nested-quote fixture doesn't leak to parser -
+// Simulate the real-Giac shape where caseval returns a doubly-wrapped
+// string `"\"X-1\""`.  With the iterative strip, FACTOR yields
+// Symbolic(X-1) instead of propagating `Unexpected character '"' at
+// pos 0`.
+{
+  giac._clear();
+  // Fixture is passed through stripGiacQuotes on retrieval (the mock
+  // mirrors the real engine exactly).  The raw 10-char string on disk
+  // is `"\"X-1\""`.
+  giac._setFixture('factor((X-1)^2/(X-1))', '"\\"X-1\\""');
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('(X-1)^2/(X-1)')));
+  lookup('FACTOR').fn(s);
+  assert(isSymbolic(s.peek()),
+         `FACTOR on nested-quote Giac output yields Symbolic (got type ${s.peek() && s.peek().type})`);
+  assert(formatAlgebra(s.peek().expr) === 'X - 1',
+         `FACTOR of (X-1)^2/(X-1) → 'X - 1' via iterative strip (got '${formatAlgebra(s.peek().expr)}')`);
+  giac._clear();
+}
+
+// --- buildGiacCmd: bare body, no purge preamble ------------------
+// buildGiacCmd emits the bare astToGiac body — no `purge(v1);purge(v2);…`
+// preamble.  rpl5050's CAS flow never assigns variables inside Giac's
+// session, so purging is unnecessary, and on recent Giac builds
+// `purge(X)` on an unassigned X raises "No such variable X", aborting
+// the semicolon sequence and leaking the error string through the value
+// channel.
+{
+  const { buildGiacCmd } = await import('../www/src/rpl/cas/giac-convert.mjs');
+  // Single free var — bare body.
+  const single = buildGiacCmd(parseAlgebra('X^2+1'), (e) => `factor(${e})`);
+  assert(single === 'factor(X^2+1)',
+         `buildGiacCmd: single-var bare body (got "${single}")`);
+  // Multi free vars — still just the body; free-var discovery no
+  // longer leaks into the command string at all.
+  const multi = buildGiacCmd(parseAlgebra('A*X+B'), (e) => `factor(${e})`);
+  assert(multi === 'factor(A*X+B)',
+         `buildGiacCmd: multi-var bare body (got "${multi}")`);
+  // No free vars — same path.
+  const none = buildGiacCmd(parseAlgebra('2+3*4'), (e) => `factor(${e})`);
+  assert(none === 'factor(2+3*4)',
+         `buildGiacCmd: no-var bare body (got "${none}")`);
+}
+
+// --- isGiacErrorString: known Giac runtime-error prefixes ---------
+// Giac sometimes delivers runtime errors as result strings rather than
+// thrown exceptions (typically when a semicolon-sequence clause aborts
+// with no try/catch around it).  The detector is prefix-based and
+// deliberately narrow — only well-known shapes count, so benign strings
+// that happen to contain "error" don't get flagged.
+{
+  const { isGiacErrorString } = await import('../www/src/rpl/cas/giac-convert.mjs');
+  assert(isGiacErrorString('No such variable X') === true,
+         'isGiacErrorString: "No such variable X"');
+  assert(isGiacErrorString('  No such variable Y  ') === true,
+         'isGiacErrorString: trims surrounding whitespace');
+  assert(isGiacErrorString('Error: bad argument') === true,
+         'isGiacErrorString: "Error:" prefix');
+  assert(isGiacErrorString('Syntax error line 1') === true,
+         'isGiacErrorString: "Syntax error" prefix');
+  assert(isGiacErrorString('Bad argument value') === true,
+         'isGiacErrorString: "Bad argument" prefix');
+  // Non-error results pass through unflagged.
+  assert(isGiacErrorString('X^2+1') === false,
+         'isGiacErrorString: algebraic expression is not an error');
+  assert(isGiacErrorString('42') === false,
+         'isGiacErrorString: number is not an error');
+  assert(isGiacErrorString('') === false,
+         'isGiacErrorString: empty string is not an error');
+  assert(isGiacErrorString(42) === false,
+         'isGiacErrorString: non-string returns false');
+  // Contains "error" but not at a known prefix position — pass through.
+  assert(isGiacErrorString('approximation_error(0.001)') === false,
+         'isGiacErrorString: non-prefix "error" not flagged');
+}
+
+// --- giacToAst: detects Giac runtime-error strings ----------------
+// If Giac delivers an error-shaped string (from purge-on-unassigned in
+// a build without try/catch, or any other runtime error that slips
+// through the value channel), giacToAst now raises a clean
+// GiacResultError(kind="runtime-error") carrying the raw string — not
+// a parseAlgebra "Unexpected character" leak.
+{
+  const { giacToAst, GiacResultError } =
+    await import('../www/src/rpl/cas/giac-convert.mjs');
+
+  let caught = null;
+  try { giacToAst('No such variable X'); }
+  catch (e) { caught = e; }
+  assert(caught instanceof GiacResultError,
+         `giacToAst: error-string → GiacResultError (got ${caught && caught.name})`);
+  assert(caught && caught.kind === 'runtime-error',
+         `giacToAst: error-string kind is "runtime-error" (got "${caught && caught.kind}")`);
+  assert(caught && caught.raw === 'No such variable X',
+         `giacToAst: GiacResultError.raw preserved (got "${caught && caught.raw}")`);
+
+  // Different prefixes still caught.
+  caught = null;
+  try { giacToAst('Error: out of memory'); } catch (e) { caught = e; }
+  assert(caught instanceof GiacResultError && caught.kind === 'runtime-error',
+         'giacToAst: "Error: ..." routed to runtime-error');
+}
+
+// --- FACTOR end-to-end: real-Giac error-return is surfaced cleanly -
+// Defensive belt-and-suspenders for the purge-on-unassigned path.  Even
+// if a future Giac build doesn't honour the try/catch wrap and leaks
+// the "No such variable X" through to caseval's result channel,
+// giacToAst's runtime-error detector catches it before it ever reaches
+// parseAlgebra — the user sees a clean error, not a character complaint.
+{
+  giac._clear();
+  giac._setFixture('factor((X-1)^2/(X-1))',
+                   'No such variable X');
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('(X-1)^2/(X-1)')));
+  let threw = null;
+  try { lookup('FACTOR').fn(s); } catch (e) { threw = e; }
+  assert(threw !== null,
+         'FACTOR on error-shaped Giac output raises');
+  // _dispatchOp wraps with "FACTOR: " prefix; runtime-error path uses the
+  // GiacResultError message which quotes the raw string.
+  assert(threw && /runtime-error|No such variable/.test(threw.message),
+         `FACTOR error message mentions runtime-error / raw shape (got "${threw && threw.message}")`);
+  // Must NOT be the old "Unexpected character" parseAlgebra leak.
+  assert(threw && !/Unexpected character '"'/.test(threw.message),
+         `FACTOR error is not the old parse-failure leak (got "${threw && threw.message}")`);
+  giac._clear();
+}
+
+// --- FACTOR op: Giac-backed routing -------------------------------
 // Prove that FACTOR on a Symbolic routes through Giac. There is no
-// legacy fallback — the CAS is Giac, full stop. We register fixtures
-// for the cases we exercise and verify both (a) the result AST is
-// the round-tripped Giac output and (b) the call actually hit
-// giac.caseval (via the mock's call log).
+// fallback — the CAS is Giac, full stop. We register fixtures for the
+// cases we exercise and verify both (a) the result AST is the round-
+// tripped Giac output and (b) the call actually hit giac.caseval (via
+// the mock's call log).
 {
   giac._clear();
   // Giac's real output for factor(x^2+2x+1) is `(x+1)^2`; input is the
-  // HP50 uppercase var which astToGiac echoes back as-is.  The FACTOR
-  // op purges free vars before the factor call to dodge Xcas built-in
-  // name collisions (session 094) — so the caseval key is prefixed with
-  // `purge(X);`.
-  giac._setFixture('purge(X);factor(X^2+2*X+1)', '(X+1)^2');
+  // HP50 uppercase var which astToGiac echoes back as-is.
+  giac._setFixture('factor(X^2+2*X+1)', '(X+1)^2');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 2*X + 1')));
   lookup('FACTOR').fn(s);
@@ -908,14 +1086,14 @@ import { assert } from './helpers.mjs';
          `FACTOR op via Giac: X^2+2X+1 → '(X + 1)^2' (got '${formatAlgebra(s.peek().expr)}')`);
   const log = giac._callLogCopy();
   assert(
-    log.includes('purge(X);factor(X^2+2*X+1)'),
-    `FACTOR routed through giac.caseval with purge prefix — log: ${JSON.stringify(log)}`,
+    log.includes('factor(X^2+2*X+1)'),
+    `FACTOR routed through giac.caseval — log: ${JSON.stringify(log)}`,
   );
   giac._clear();
 }
 {
   giac._clear();
-  giac._setFixture('purge(X);factor(X^3-1)', '(X-1)*(X^2+X+1)');
+  giac._setFixture('factor(X^3-1)', '(X-1)*(X^2+X+1)');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^3 - 1')));
   lookup('FACTOR').fn(s);
@@ -928,8 +1106,7 @@ import { assert } from './helpers.mjs';
 }
 {
   // No-fallback policy: if Giac errors (or has no fixture in the mock),
-  // FACTOR propagates the error. No silent degrade to the legacy
-  // algebra.js path.
+  // FACTOR propagates the error. No silent degrade.
   giac._clear();
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 - 1')));
@@ -984,19 +1161,18 @@ import { assert } from './helpers.mjs';
   }
 }
 
-// --- FACTOR op: reserved-name collision (session 094) --------------
-// Regression for the "UI is not defined" bug.  Giac's caseval resolves
-// bare identifiers through its global symbol table before running
-// commands, so a handful of two-letter uppercase names (UI, GF, IS,
-// DO, IF, …) collide with Xcas built-ins and fail with
-// `"<name> is not defined"` instead of staying symbolic.  FACTOR
-// purges every free var in the AST first, so the collision no longer
-// triggers.  Two checks: (a) the caseval command Giac actually sees
-// begins with `purge(...)` for each free var, alphabetically; (b) a
-// multi-variable expression purges each name exactly once.
+// --- FACTOR op: reserved-name pass-through -------------------------
+// Regression guard for the "UI is not defined" shape.  Giac's caseval
+// resolves bare identifiers through its global symbol table before
+// running commands, so a handful of two-letter uppercase names (UI, GF,
+// IS, DO, IF, …) can collide with Xcas built-ins and fail with
+// `"<name> is not defined"` instead of staying symbolic.  FACTOR must
+// round-trip these names through factor(...) cleanly — the mock's
+// fixtures assert (a) the symbolic result and (b) that exactly the
+// expected caseval command was issued, with no mangling of the name.
 {
   giac._clear();
-  giac._setFixture('purge(UI);factor(UI^2+1)', 'UI^2+1');
+  giac._setFixture('factor(UI^2+1)', 'UI^2+1');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('UI^2 + 1')));
   lookup('FACTOR').fn(s);
@@ -1005,19 +1181,19 @@ import { assert } from './helpers.mjs';
          formatAlgebra(s.peek().expr) === 'UI^2 + 1',
          `FACTOR UI^2+1 round-trips symbolically (got '${formatAlgebra(s.peek().expr)}')`);
   const log = giac._callLogCopy();
-  assert(log.length === 1 && log[0] === 'purge(UI);factor(UI^2+1)',
+  assert(log.length === 1 && log[0] === 'factor(UI^2+1)',
          `FACTOR purges reserved name UI — log: ${JSON.stringify(log)}`);
   giac._clear();
 }
 {
   // Multi-var purge ordering — alphabetical, one purge per var.
   giac._clear();
-  giac._setFixture('purge(A);purge(B);purge(X);factor(A*X+B)', 'A*X+B');
+  giac._setFixture('factor(A*X+B)', 'A*X+B');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('A*X + B')));
   lookup('FACTOR').fn(s);
   const log = giac._callLogCopy();
-  assert(log.length === 1 && log[0] === 'purge(A);purge(B);purge(X);factor(A*X+B)',
+  assert(log.length === 1 && log[0] === 'factor(A*X+B)',
          `FACTOR purges every free var alphabetically — log: ${JSON.stringify(log)}`);
   giac._clear();
 }
@@ -1030,15 +1206,15 @@ import { assert } from './helpers.mjs';
 // below cover every intermediate result.
 giac._clear();
 giac._setFixtures({
-  'purge(X);subst(X^2+1,X=3)':                      '10',
-  'purge(X);purge(Y);subst(X+Y,X=2)':               'Y+2',
-  'purge(A);purge(B);purge(X);purge(Y);subst(A*X+B,X=Y)': 'A*Y+B',
-  'purge(X);subst(X^2-4,X=2)':                      '0',
-  'purge(Y);subst(Y+2,Y=3)':                        '5',
-  'purge(A);purge(B);purge(X);purge(Y);subst(A*X+B,X=Y+1)': 'A*(Y+1)+B',
-  'purge(X);purge(Y);purge(Z);subst(X+Y+Z,X=1)':    'Y+Z+1',
-  'purge(Y);purge(Z);subst(Y+Z+1,Y=2)':             'Z+3',
-  'purge(Z);subst(Z+3,Z=3)':                        '6',
+  'subst(X^2+1,X=3)':                      '10',
+  'subst(X+Y,X=2)':               'Y+2',
+  'subst(A*X+B,X=Y)': 'A*Y+B',
+  'subst(X^2-4,X=2)':                      '0',
+  'subst(Y+2,Y=3)':                        '5',
+  'subst(A*X+B,X=Y+1)': 'A*(Y+1)+B',
+  'subst(X+Y+Z,X=1)':    'Y+Z+1',
+  'subst(Y+Z+1,Y=2)':             'Z+3',
+  'subst(Z+3,Z=3)':                        '6',
 });
 {
   const s = new Stack();
@@ -1100,7 +1276,7 @@ giac._setFixtures({
   s.push(Symbolic(parseAlgebra('X + A*X + B*X + C')));
   s.push(Name('X', { quoted: true }));
   giac._clear();
-  giac._setFixture('purge(A);purge(B);purge(C);purge(X);collect(X+A*X+B*X+C,X)',
+  giac._setFixture('collect(X+A*X+B*X+C,X)',
                    '(A+B+1)*X+C');
   lookup('COLLECT').fn(s);
   assert(isSymbolic(s.peek()) &&
@@ -1113,7 +1289,7 @@ giac._setFixtures({
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X + X + Y')));
   giac._clear();
-  giac._setFixture('purge(X);purge(Y);simplify(X+X+Y)', '2*X+Y');
+  giac._setFixture('simplify(X+X+Y)', '2*X+Y');
   lookup('COLLECT').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === '2*X + Y',
@@ -1172,13 +1348,13 @@ giac._setFixtures({
 // their own caseval command, so one fixture per step.
 giac._clear();
 giac._setFixtures({
-  'purge(X);subst(X^2+1,X=3)':                       '10',
-  'purge(A);purge(B);purge(X);purge(Y);subst(A*X+B,X=Y+1)': 'A*(Y+1)+B',
-  'purge(X);purge(Y);subst(X+Y,X=2)':                'Y+2',
-  'purge(Y);subst(Y+2,Y=3)':                         '5',
-  'purge(X);purge(Y);purge(Z);subst(X+Y+Z,X=1)':     'Y+Z+1',
-  'purge(Y);purge(Z);subst(Y+Z+1,Y=2)':              'Z+3',
-  'purge(Z);subst(Z+3,Z=3)':                         '6',
+  'subst(X^2+1,X=3)':                       '10',
+  'subst(A*X+B,X=Y+1)': 'A*(Y+1)+B',
+  'subst(X+Y,X=2)':                'Y+2',
+  'subst(Y+2,Y=3)':                         '5',
+  'subst(X+Y+Z,X=1)':     'Y+Z+1',
+  'subst(Y+Z+1,Y=2)':              'Z+3',
+  'subst(Z+3,Z=3)':                         '6',
 });
 {
   // Basic numeric eval via equation form.
@@ -1375,7 +1551,7 @@ giac._setFixtures({
   s.push(Symbolic(parseAlgebra('X^2 - 4')));
   s.push(Name('X'));
   giac._clear();
-  giac._setFixture('purge(X);solve(X^2-4,X)', '[2,-2]');
+  giac._setFixture('solve(X^2-4,X)', '[2,-2]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 2,
@@ -1394,7 +1570,7 @@ giac._setFixtures({
   s.push(Symbolic(parseAlgebra('2*X + 6 = 0')));
   s.push(Name('X'));
   giac._clear();
-  giac._setFixture('purge(X);solve(2*X+6=0,X)', '[-3]');
+  giac._setFixture('solve(2*X+6=0,X)', '[-3]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 1 &&
@@ -1409,7 +1585,7 @@ giac._setFixtures({
   s.push(Symbolic(parseAlgebra('X^2 + 1')));
   s.push(Name('X'));
   giac._clear();
-  giac._setFixture('purge(X);solve(X^2+1,X)', '[i,-i]');
+  giac._setFixture('solve(X^2+1,X)', '[i,-i]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 2 &&
@@ -1424,7 +1600,7 @@ giac._setFixtures({
   s.push(Symbolic(parseAlgebra('Y - 7')));
   s.push(Str('Y'));
   giac._clear();
-  giac._setFixture('purge(Y);solve(Y-7,Y)', '[7]');
+  giac._setFixture('solve(Y-7,Y)', '[7]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 1 &&
@@ -1822,9 +1998,9 @@ giac._setFixtures({
 
 /* ========== EXACT mode keeps Integer fractions exact ==
    EXACT (the default indicator) must not reduce fractions to their
-   decimal equivalents — that is APPROX mode's job.  Session 092: non-
-   exact Integer/Integer division now produces a native Rational type
-   (replacing the earlier Symbolic('n/d') wrapper), backed by Fraction.js.
+   decimal equivalents — that is APPROX mode's job.  Non-exact
+   Integer/Integer division produces a native Rational type (backed by
+   Fraction.js), not a Symbolic('n/d') wrapper.
    ====================================================================== */
 {
   const { setApproxMode } = await import('../www/src/rpl/state.js');
@@ -2125,8 +2301,8 @@ giac._setFixtures({
   const { astToSvg } = await import('../www/src/rpl/pretty.js');
   {
     const { svg } = astToSvg(parseAlgebra('X + 1'));
-    // The `+` glyph is no longer padded by full character widths —
-    // so the <text> body is literally `+`, not ` + `.
+    // The `+` glyph isn't padded by full character widths — the <text>
+    // body is literally `+`, not ` + `.
     assert(svg.includes('>+<') && !svg.includes('> + <'),
            `session041: 'X + 1' renders with tight + separator (got ${svg})`);
   }
@@ -3289,12 +3465,12 @@ function _assertRootsMatch(got, expected, name) {
 // expects.  Bulk-register them first — the cluster shares the set.
 giac._clear();
 giac._setFixtures({
-  'purge(X);simplify(subst(X^2,X=3)-subst(X^2,X=0))':         '9',
-  'purge(X);simplify(subst(2*X+1,X=5)-subst(2*X+1,X=1))':     '8',
-  'purge(X);simplify(subst(X^3,X=2)-subst(X^3,X=1))':         '7',
-  'purge(A);purge(X);simplify(subst(X^2,X=A)-subst(X^2,X=0))': 'A^2',
-  'purge(X);simplify(subst(5,X=2)-subst(5,X=1))':             '0',
-  'purge(X);purge(Y);simplify(subst(X+Y,X=1)-subst(X+Y,X=0))': '1',
+  'simplify(subst(X^2,X=3)-subst(X^2,X=0))':         '9',
+  'simplify(subst(2*X+1,X=5)-subst(2*X+1,X=1))':     '8',
+  'simplify(subst(X^3,X=2)-subst(X^3,X=1))':         '7',
+  'simplify(subst(X^2,X=A)-subst(X^2,X=0))': 'A^2',
+  'simplify(subst(5,X=2)-subst(5,X=1))':             '0',
+  'simplify(subst(X+Y,X=1)-subst(X+Y,X=0))': '1',
 });
 
 /* ---- PREVAL of X^2 from 0 to 3 = 9 ---- */
@@ -3486,19 +3662,19 @@ giac._setFixtures({
 // what the tests assert on.
 giac._clear();
 giac._setFixtures({
-  'purge(X);laplace(1,X,X)':         '1/X',
-  'purge(X);laplace(X,X,X)':         '1/X^2',
-  'purge(X);laplace(X^2,X,X)':       '2/X^3',
-  'purge(X);laplace(exp(2*X),X,X)':  '1/(X-2)',
-  'purge(X);laplace(sin(3*X),X,X)':  '3/(X^2+9)',
-  'purge(X);laplace(cos(X),X,X)':    'X/(X^2+1)',
-  'purge(X);laplace(1+X,X,X)':       '1/X+1/X^2',
-  'purge(X);laplace(5*sin(X),X,X)':  '5*(1/(X^2+1))',
-  'purge(X);laplace(sin(X),X,X)':    '1/(X^2+1)',
-  'purge(X);ilaplace(1/X,X,X)':      '1',
-  'purge(X);ilaplace(1/X^2,X,X)':    'X',
-  'purge(X);ilaplace(1/(X-3),X,X)':  'exp(3*X)',
-  'purge(X);ilaplace(1/(X^2+1),X,X)': 'sin(X)',
+  'laplace(1,X,X)':         '1/X',
+  'laplace(X,X,X)':         '1/X^2',
+  'laplace(X^2,X,X)':       '2/X^3',
+  'laplace(exp(2*X),X,X)':  '1/(X-2)',
+  'laplace(sin(3*X),X,X)':  '3/(X^2+9)',
+  'laplace(cos(X),X,X)':    'X/(X^2+1)',
+  'laplace(1+X,X,X)':       '1/X+1/X^2',
+  'laplace(5*sin(X),X,X)':  '5*(1/(X^2+1))',
+  'laplace(sin(X),X,X)':    '1/(X^2+1)',
+  'ilaplace(1/X,X,X)':      '1',
+  'ilaplace(1/X^2,X,X)':    'X',
+  'ilaplace(1/(X-3),X,X)':  'exp(3*X)',
+  'ilaplace(1/(X^2+1),X,X)': 'sin(X)',
 });
 
 /* ---- LAPLACE of 1 = 1/X ---- */
@@ -4665,14 +4841,14 @@ function _s061HasVar(node, name) {
 // canonical Giac output string we parse back into an AST.
 giac._clear();
 giac._setFixtures({
-  'purge(X);tsimplify(sin(X)^2+cos(X)^2)':   '1',
-  'purge(X);tsimplify(cos(X)^2+sin(X)^2)':   '1',
-  'purge(X);tsimplify(1-sin(X)^2)':          'cos(X)^2',
-  'purge(X);tsimplify(1-cos(X)^2)':          'sin(X)^2',
-  'purge(X);tsimplify(tan(X)*cos(X))':       'sin(X)',
-  'purge(X);tsimplify(sin(X)/cos(X))':       'tan(X)',
-  'purge(A);tsimplify(sin(A)^2+cos(A)^2+5)': '6',
-  'purge(X);purge(Y);tsimplify(X+Y)':        'X+Y',
+  'tsimplify(sin(X)^2+cos(X)^2)':   '1',
+  'tsimplify(cos(X)^2+sin(X)^2)':   '1',
+  'tsimplify(1-sin(X)^2)':          'cos(X)^2',
+  'tsimplify(1-cos(X)^2)':          'sin(X)^2',
+  'tsimplify(tan(X)*cos(X))':       'sin(X)',
+  'tsimplify(sin(X)/cos(X))':       'tan(X)',
+  'tsimplify(sin(A)^2+cos(A)^2+5)': '6',
+  'tsimplify(X+Y)':        'X+Y',
 });
 
 /* ---- TSIMP Pythagorean sum to 1 ---- */
@@ -4985,18 +5161,18 @@ giac._setFixtures({
 // the fixture keys use that literal form.
 giac._clear();
 giac._setFixtures({
-  'purge(X);laplace(HEAVISIDE(X),X,X)':          '1/X',
-  'purge(X);laplace(HEAVISIDE(X-3),X,X)':        'exp(-3*X)/X',
-  'purge(X);laplace(DIRAC(X),X,X)':              '1',
-  'purge(X);laplace(DIRAC(X-3),X,X)':            'exp(-3*X)',
-  'purge(X);laplace(exp(2*X)*sin(X),X,X)':       '1/((X-2)^2+1)',
+  'laplace(HEAVISIDE(X),X,X)':          '1/X',
+  'laplace(HEAVISIDE(X-3),X,X)':        'exp(-3*X)/X',
+  'laplace(DIRAC(X),X,X)':              '1',
+  'laplace(DIRAC(X-3),X,X)':            'exp(-3*X)',
+  'laplace(exp(2*X)*sin(X),X,X)':       '1/((X-2)^2+1)',
   // ILAP keys use the parenthesised-negative shape astToGiac emits
   // from Neg(Num(3)) inside a multiplication.
-  'purge(X);ilaplace(exp((-3)*X)/X,X,X)':        'HEAVISIDE(X-3)',
-  'purge(X);ilaplace(exp((-3)*X),X,X)':          'DIRAC(X-3)',
-  'purge(X);ilaplace(1,X,X)':                    'DIRAC(X)',
-  'purge(X);laplace(HEAVISIDE(X-2),X,X)':        'exp(-2*X)/X',
-  'purge(X);ilaplace(exp((-2)*X)/X,X,X)':        'HEAVISIDE(X-2)',
+  'ilaplace(exp((-3)*X)/X,X,X)':        'HEAVISIDE(X-3)',
+  'ilaplace(exp((-3)*X),X,X)':          'DIRAC(X-3)',
+  'ilaplace(1,X,X)':                    'DIRAC(X)',
+  'laplace(HEAVISIDE(X-2),X,X)':        'exp(-2*X)/X',
+  'ilaplace(exp((-2)*X)/X,X,X)':        'HEAVISIDE(X-2)',
 });
 
 /* ---- LAPLACE HEAVISIDE(X) → 1/X ---- */
@@ -5291,11 +5467,10 @@ giac._setFixtures({
 
 /* ---- SVX rejects empty String with Invalid name ---- */
 {
-  // Session 095: SVX now routes through the HP50 identifier validator
-  // (types.js isValidHpIdentifier), which catches empty strings and
-  // any non-conforming name with a single "Invalid name" error — the
-  // same wording the HP50 uses.  Previously the op hand-rolled its
-  // own empty-string check and threw "Bad argument value".
+  // SVX routes through the HP50 identifier validator (types.js
+  // isValidHpIdentifier), which catches empty strings and any non-
+  // conforming name with a single "Invalid name" error — the same
+  // wording the HP50 uses.
   const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
@@ -5315,11 +5490,11 @@ giac._setFixtures({
   //   (X + 1) - (X + 0) = 1.
   giac._clear();
   giac._setFixture(
-    'purge(X);purge(Y);simplify(subst(X+Y,Y=1)-subst(X+Y,Y=0))',
+    'simplify(subst(X+Y,Y=1)-subst(X+Y,Y=0))',
     '1',
   );
   giac._setFixture(
-    'purge(A);purge(T);laplace(A*T,T,T)',
+    'laplace(A*T,T,T)',
     'A/T^2',
   );
   const s = new Stack();

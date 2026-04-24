@@ -279,12 +279,20 @@ export function buildGiacCmd(exprAst, buildCmd, extraVars = []) {
   // astToGiac validates names inside `exprAst` itself.
   for (const v of extraVars) assertValidCasName(v);
   const giacExpr = astToGiac(exprAst);
-  const body = buildCmd(giacExpr);
-  const all = new Set([...freeVars(exprAst), ...extraVars]);
-  const vars = [...all].sort();
-  if (vars.length === 0) return body;
-  const purges = vars.map((n) => `purge(${n})`).join(';');
-  return `${purges};${body}`;
+  return buildCmd(giacExpr);
+  // No `purge(v1);purge(v2);…` preamble is emitted. rpl5050's CAS flow
+  // never assigns values to variables inside Giac's session — every op
+  // passes the symbolic AST and treats the returned string as symbolic.
+  // Xcas therefore treats free variables like `X`, `Y`, … as symbolic
+  // by default (their initial state is unassigned `DOM_IDENT`), so a
+  // preamble is both unnecessary and actively harmful: Xcas raises
+  // `No such variable X` when `purge(X)` runs for unassigned X.
+  //
+  // If future ops start assigning Giac-side state or using names that
+  // collide with Xcas built-ins (UI, GF, IS, …), reintroduce the purge
+  // — but only for the specific colliding names, and guard each with a
+  // Giac-level try/catch so an unassigned-variable error doesn't abort
+  // the semicolon-sequence.
 }
 
 /**
@@ -328,11 +336,9 @@ export function splitGiacList(giacStr) {
 /**
  * Giac's `caseval` returns its result as a C string, and for a handful
  * of output shapes wraps the expression in literal double-quotes — most
- * notably when the input was a semicolon sequence (which is the case
- * for every command built through `buildGiacCmd`, since that helper
- * prepends `purge(...)` clauses).  The embedded quotes trip up the
- * HP-style expression parser and the list splitter, which don't accept
- * `"` as a token.
+ * notably when the input was a semicolon sequence.  The embedded quotes
+ * trip up the HP-style expression parser and the list splitter, which
+ * don't accept `"` as a token.
  *
  * Strip a single layer of surrounding double-quotes if present, plus
  * any standard backslash escapes Giac may have inserted inside.
@@ -345,9 +351,8 @@ export function splitGiacList(giacStr) {
 export function stripGiacQuotes(s) {
   if (typeof s !== "string") return s;
   // Iteratively strip layers of surrounding double-quotes.  Giac
-  // sometimes nests the wrap: when a semicolon-sequence (as built by
-  // `buildGiacCmd` — `purge(X); factor(...)`) returns a value that is
-  // itself string-typed on the Giac side, the output arrives
+  // sometimes nests the wrap: when a semicolon-sequence returns a value
+  // that is itself string-typed on the Giac side, the output arrives
   // double-wrapped as `"\"...\""` — one `""` layer from the sequence,
   // another from the inner string type.  A single strip leaves a
   // leading `"` that `parseAlgebra` then trips on
@@ -403,6 +408,17 @@ export function giacToAst(giacStr) {
     throw new GiacResultError(s, "infinity");
   }
 
+  // Giac runtime errors sometimes make it across the boundary as
+  // plain-text result strings rather than thrown exceptions — e.g.
+  // `No such variable X` when `purge(X)` is called on an unassigned
+  // variable in a build that doesn't support try/catch around purge.
+  // Detect the well-known prefixes and raise a `GiacResultError` with a
+  // clean user-facing message instead of leaking the raw text into
+  // parseAlgebra (which trips on the leading quote / unexpected token).
+  if (isGiacErrorString(s)) {
+    throw new GiacResultError(s, "runtime-error");
+  }
+
   // Remap lowercase Giac names -> HP uppercase. The algebra parser's
   // isKnownFunction check is case-insensitive but we want canonical
   // uppercase in the AST, matching the rest of the codebase. We only
@@ -419,7 +435,18 @@ export function giacToAst(giacStr) {
     return match;
   });
 
-  return parseAlgebra(mapped);
+  // Wrap parse failures with the raw Giac string so the user (and
+  // future debuggers) see exactly what Giac returned instead of a bare
+  // `Unexpected character '"' at pos 0` that gives no hint whether the
+  // boundary normalisation (stripGiacQuotes) missed a shape.  The raw
+  // string is quoted via JSON.stringify so control chars are visible.
+  try {
+    return parseAlgebra(mapped);
+  } catch (e) {
+    throw new Error(
+      `Giac output did not parse (${e.message}): ${JSON.stringify(giacStr)}`,
+    );
+  }
 }
 
 /**
@@ -435,6 +462,41 @@ export class GiacResultError extends Error {
     this.raw = raw;
     this.kind = kind;
   }
+}
+
+/**
+ * Known-shape Giac runtime errors delivered as result strings.
+ *
+ * Giac/Xcas emits a handful of error messages through `caseval`'s return
+ * channel rather than throwing — especially when a semicolon sequence
+ * aborts at a clause that doesn't have a try/catch around it.  A freshly-
+ * built caseval command like `purge(X);factor(...)` will abort on the
+ * `purge(X)` clause with `"No such variable X"` as the return value,
+ * and we must treat that as an error not a result.
+ *
+ * The matcher is deliberately prefix-based and uppercase-insensitive;
+ * Giac varies its exact phrasing across builds but always leads with the
+ * same few tokens.  Callers receive a `GiacResultError` of kind
+ * `"runtime-error"` carrying the original string.
+ */
+export function isGiacErrorString(s) {
+  if (typeof s !== "string") return false;
+  const t = s.trim();
+  if (t === "") return false;
+  // Prefixes observed in Giac 1.9 and earlier builds.
+  const prefixes = [
+    "No such variable",
+    "Error:",
+    "Bad argument",
+    "Invalid dimension",
+    "Unable to",
+    "GIAC_ERROR",
+    "Syntax error",
+  ];
+  for (const p of prefixes) {
+    if (t.startsWith(p)) return true;
+  }
+  return false;
 }
 
 /* ------------------------------------------------------------------

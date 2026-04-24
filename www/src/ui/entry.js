@@ -53,8 +53,8 @@ export class Entry {
   /** Apply a transaction spec to the internal state.  When an EditorView
    *  is attached, routes through view.dispatch so the DOM stays in sync;
    *  otherwise mutates _state directly.  Never emits — callers decide
-   *  when subscribers should be notified (matches the legacy pattern
-   *  where a single method batches multiple edits before one _emit). */
+   *  when subscribers should be notified, so a single method can batch
+   *  multiple edits before one _emit. */
   _dispatch(spec) {
     if (this._view) {
       this._view.dispatch(spec);
