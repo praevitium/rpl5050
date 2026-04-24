@@ -34,6 +34,13 @@ export const state = {
   // extends that to 3-vectors.  The formatter is the sole consumer —
   // only the on-screen display changes; stored values stay rectangular.
   coordMode: 'RECT',         // 'RECT' | 'CYLIN' | 'SPHERE'
+  // Number display mode (HP50 STD / FIX / SCI / ENG).  `displayMode` is
+  // the mode name; `displayDigits` is the digit count consumed by
+  // FIX/SCI/ENG (ignored by STD).  The LCD renderer reads these before
+  // each stack repaint so the STD / FIX n / SCI n / ENG n ops take
+  // visible effect; →STR also consults them.
+  displayMode: 'STD',        // 'STD' | 'FIX' | 'SCI' | 'ENG'
+  displayDigits: 12,         // 0..11 for FIX/SCI/ENG
   home:    _home,
   current: _home,            // directory variables read from / write to
   // Last-error slot — written by IFERR when it catches an RPLError, read by
@@ -207,6 +214,27 @@ export function setCoordMode(mode) {
 export function cycleCoordMode() {
   const i = COORD_MODES.indexOf(state.coordMode);
   setCoordMode(COORD_MODES[(i + 1) % COORD_MODES.length]);
+}
+
+/* --------------------- number-display mode ---------------------- */
+
+export const DISPLAY_MODES = Object.freeze(['STD', 'FIX', 'SCI', 'ENG']);
+
+/** Set the number-display mode.  `digits` is required for FIX/SCI/ENG
+ *  and ignored for STD.  Subscribers fire so the LCD and annunciator
+ *  update in lockstep. */
+export function setDisplay(mode, digits) {
+  const m = String(mode).toUpperCase();
+  if (!DISPLAY_MODES.includes(m)) {
+    throw new Error(`Unknown display mode: ${mode}`);
+  }
+  let changed = false;
+  if (state.displayMode !== m) { state.displayMode = m; changed = true; }
+  if (m !== 'STD' && Number.isFinite(digits) && state.displayDigits !== digits) {
+    state.displayDigits = digits;
+    changed = true;
+  }
+  if (changed) _emit();
 }
 
 /** Convert a number from the user's current angle mode to radians. */

@@ -199,6 +199,7 @@ import { assert, assertThrows } from './helpers.mjs';
 
   // DERIV flow: `'SIN(X^2)' 'X' DERIV`
   {
+    const { giac } = await import('../www/src/rpl/cas/giac-engine.mjs');
     const s = new Stack();
     const e = new Entry(s);
     giac._clear();

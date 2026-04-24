@@ -196,14 +196,21 @@ import { assert } from './helpers.mjs';
 }
 
 // --- DERIV op end-to-end -------------------------------------------
+// DERIV routes Symbolic inputs through Giac's diff() now.  Each test
+// below registers a mock fixture keyed on the exact caseval command
+// `buildGiacCmd` emits (purge prefix + diff call), then asserts that
+// the op parses Giac's reply back into the expected AST.
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 3*X + 1')));
   s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('purge(X);diff(X^2+3*X+1,X)', '2*X+3');
   lookup('DERIV').fn(s);
   assert(s.depth === 1 && isSymbolic(s.peek()), 'DERIV op pushes a Symbolic');
   assert(formatAlgebra(s.peek().expr) === '2*X + 3',
          `DERIV op on X^2+3X+1 wrt X → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
 }
 {
   // DERIV with a Real expr returns Real(0) — convenience coercion.
@@ -277,6 +284,8 @@ import { assert } from './helpers.mjs';
       s.push(v);
     }
   };
+  giac._clear();
+  giac._setFixture('purge(X);diff(2*X+3,X)', '2');
   entryLoop("`2*X+3` `X` DERIV");
   assert(s.depth === 1, 'entryLoop leaves a single result');
   const out = s.peek();
@@ -290,6 +299,7 @@ import { assert } from './helpers.mjs';
   const rendered = formatStackTop(out);
   assert(rendered === "`2`" || rendered === '2' || rendered === "2",
          `keyboard 'X^2+3*X+1' DERIV renders as '${rendered}'`);
+  giac._clear();
 }
 
 // ==================================================================
@@ -479,11 +489,14 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('SIN(X)')));
   s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('purge(X);diff(sin(X),X)', 'cos(X)');
   lookup('DERIV').fn(s);
   assert(s.depth === 1 && isSymbolic(s.peek()),
          'DERIV on SIN(X) keeps a Symbolic result');
   assert(formatAlgebra(s.peek().expr) === 'COS(X)',
          `DERIV op SIN(X) wrt X → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
 }
 
 // --- freeVars + evalAst core ---------------------------------------
@@ -1138,17 +1151,21 @@ import { assert } from './helpers.mjs';
   assert(out === 'X^3', `expand X*X^2 → '${out}' (want 'X^3')`);
 }
 
-// EXPAND op (RPL registry path).
+// EXPAND op (RPL registry path).  Routes through Giac's expand().
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('(X+1)^2')));
+  giac._clear();
+  giac._setFixture('purge(X);expand((X+1)^2)', 'X^2+2*X+1');
   lookup('EXPAND').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === 'X^2 + 2*X + 1',
          `EXPAND op on (X+1)^2 → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
 }
 {
   // EXPAND on a Real is a no-op pass-through (matches HP50 leniency).
+  // Real/Integer/Name don't hit Giac — no fixture needed.
   const s = new Stack();
   s.push(Real(7));
   lookup('EXPAND').fn(s);
@@ -1157,25 +1174,34 @@ import { assert } from './helpers.mjs';
 }
 
 // --- COLLECT op (CAS menu alias for simplify) ---------
+// COLLECT 1-arg routes through Giac's simplify(); 2-arg through
+// Giac's collect(expr,var).  Each block registers the caseval
+// fixture the op emits.
 {
   // COLLECT on a Symbolic sums like terms via the simplifier.
   // 'X + X + Y' must come back as '2*X + Y' — same result as EVAL
   // would produce, but reachable without triggering full evaluation.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X + X + Y')));
+  giac._clear();
+  giac._setFixture('purge(X);purge(Y);simplify(X+X+Y)', '2*X+Y');
   lookup('COLLECT').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === '2*X + Y',
          `COLLECT 'X + X + Y' → '${formatAlgebra(s.peek().expr)}' (want '2*X + Y')`);
+  giac._clear();
 }
 {
   // COLLECT picks up the canonicalization path — Y*X bucket matches
   // X*Y, so the coefficients add.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X*Y + Y*X')));
+  giac._clear();
+  giac._setFixture('purge(X);purge(Y);simplify(X*Y+Y*X)', '2*X*Y');
   lookup('COLLECT').fn(s);
   assert(formatAlgebra(s.peek().expr) === '2*X*Y',
          `COLLECT 'X*Y + Y*X' → '${formatAlgebra(s.peek().expr)}' (want '2*X*Y')`);
+  giac._clear();
 }
 {
   // COLLECT on a non-algebraic passes through unchanged — matches
@@ -1541,6 +1567,22 @@ import { assert } from './helpers.mjs';
 }
 
 // --- SUBST op: 3-arg form on the stack -----------------------------
+// SUBST routes each binding through Giac's `subst(expr, var=value)`.
+// For list/equation multi-binding forms, bindings are applied
+// sequentially so each step is its own caseval command — fixtures
+// below cover every intermediate result.
+giac._clear();
+giac._setFixtures({
+  'purge(X);subst(X^2+1,X=3)':                      '10',
+  'purge(X);purge(Y);subst(X+Y,X=2)':               'Y+2',
+  'purge(A);purge(B);purge(X);purge(Y);subst(A*X+B,X=Y)': 'A*Y+B',
+  'purge(X);subst(X^2-4,X=2)':                      '0',
+  'purge(Y);subst(Y+2,Y=3)':                        '5',
+  'purge(A);purge(B);purge(X);purge(Y);subst(A*X+B,X=Y+1)': 'A*(Y+1)+B',
+  'purge(X);purge(Y);purge(Z);subst(X+Y+Z,X=1)':    'Y+Z+1',
+  'purge(Y);purge(Z);subst(Y+Z+1,Y=2)':             'Z+3',
+  'purge(Z);subst(Z+3,Z=3)':                        '6',
+});
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 1')));
@@ -1621,19 +1663,26 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X + A*X + B*X + C')));
   s.push(Name('X', { quoted: true }));
+  giac._clear();
+  giac._setFixture('purge(A);purge(B);purge(C);purge(X);collect(X+A*X+B*X+C,X)',
+                   '(A+B+1)*X+C');
   lookup('COLLECT').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === '(A + B + 1)*X + C',
          `COLLECT 2-arg: '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
 }
 {
   // Backwards compat: 1-arg form still works as a simplify alias.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X + X + Y')));
+  giac._clear();
+  giac._setFixture('purge(X);purge(Y);simplify(X+X+Y)', '2*X+Y');
   lookup('COLLECT').fn(s);
   assert(isSymbolic(s.peek()) &&
          formatAlgebra(s.peek().expr) === '2*X + Y',
          `COLLECT 1-arg still works as simplify alias`);
+  giac._clear();
 }
 {
   // 2-arg with a Real on top stays 1-arg (Real is not a variable).
@@ -2442,10 +2491,16 @@ import { assert } from './helpers.mjs';
 }
 
 // --- SOLVE op: stack integration ------------------------------
+// SOLVE routes through Giac's solve(expr,var) — the reply is a list
+// literal of roots which `splitGiacList` splits and we re-wrap each
+// root as a `var = root` equation.  Each block registers a fixture
+// for the caseval command the op emits.
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 - 4')));
   s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('purge(X);solve(X^2-4,X)', '[2,-2]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 2,
@@ -2456,41 +2511,51 @@ import { assert } from './helpers.mjs';
   assert(isSymbolic(top.items[1]) &&
          formatAlgebra(top.items[1].expr) === 'X = -2',
          `SOLVE op: second root is X=-2`);
+  giac._clear();
 }
 {
   // Linear via equation form.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('2*X + 6 = 0')));
   s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('purge(X);solve(2*X+6=0,X)', '[-3]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 1 &&
          isSymbolic(top.items[0]) &&
          formatAlgebra(top.items[0].expr) === 'X = -3',
          `SOLVE op: 2X+6=0 → X=-3`);
+  giac._clear();
 }
 {
   // Complex conjugate pair.  X^2 + 1 = 0 → {±i}.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 1')));
   s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('purge(X);solve(X^2+1,X)', '[i,-i]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 2 &&
          formatAlgebra(top.items[0].expr) === 'X = i' &&
          formatAlgebra(top.items[1].expr) === 'X = -i',
          `SOLVE op: X^2+1 → {±i}`);
+  giac._clear();
 }
 {
   // Variable as String works too.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('Y - 7')));
   s.push(Str('Y'));
+  giac._clear();
+  giac._setFixture('purge(Y);solve(Y-7,Y)', '[7]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 1 &&
          formatAlgebra(top.items[0].expr) === 'Y = 7',
          `SOLVE op: accepts String 'Y' as var`);
+  giac._clear();
 }
 
 // --- FACTOR: EXPAND round-trip for quartic ---

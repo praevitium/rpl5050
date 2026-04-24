@@ -70,6 +70,7 @@ import {
   setWordsize, getWordsize, getWordsizeMask,
   setBinaryBase, getBinaryBase,
   setCoordMode,
+  setDisplay,
   setTextbookMode, getTextbookMode,
   setApproxMode, getApproxMode,
   setComplexMode, getComplexMode, toggleComplexMode,
@@ -4467,8 +4468,9 @@ register('EXPAND', (s) => {
    ------------------------------------------------------------------ */
 register('COLLECT', (s) => {
   // 2-arg form — top is a variable specifier and level-2 is a Symbolic.
-  // We test level-2 first so a lone Name at depth 1 still hits the
-  // pass-through path below.
+  // Routes through Giac's `collect(expr,var)` which groups by powers of
+  // the named variable.  We test level-2 first so a lone Name at depth
+  // 1 still hits the pass-through path below.
   if (s.depth >= 2) {
     const top = s.peek(1);
     const below = s.peek(2);
@@ -4476,20 +4478,48 @@ register('COLLECT', (s) => {
       const varName = isName(top) ? top.id : top.value;
       s.pop();                             // discard the variable spec
       const expr = s.pop();
-      s.push(Symbolic(algebraCollectByVar(expr.expr, varName)));
+      if (!giac.isReady()) throw new RPLError('CAS not ready');
+      const cmd = buildGiacCmd(expr.expr, (e) => `collect(${e},${varName})`, [varName]);
+      s.push(Symbolic(giacToAst(giac.caseval(cmd))));
       return;
     }
   }
-  // 1-arg form — simplify alias.
+  // 1-arg form — simplify alias.  Giac's `simplify()` combines like
+  // terms and canonicalises — same intent as the old algebra.simplify.
   const v = s.pop();
   if (isSymbolic(v)) {
-    s.push(Symbolic(algebraSimplify(v.expr)));
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(v.expr, (e) => `simplify(${e})`);
+    s.push(Symbolic(giacToAst(giac.caseval(cmd))));
     return;
   }
   if (isReal(v) || isInteger(v) || isName(v)) {
     s.push(v);
     return;
   }
+  throw new RPLError('Bad argument type');
+});
+
+/* ------------------------------------------------------------------
+   SIMPLIFY  ( expr -- simplified )
+
+   HP50 CAS command.  Canonicalises an expression — combines like
+   terms, cancels common factors, folds constants.  Thin shim over
+   Giac's `simplify()` (the same call COLLECT's 1-arg form uses); the
+   dedicated op exists so the HP50 CAS menu's SIMPLIFY slot and user
+   programs that spell out `'expr' SIMPLIFY` keep working unchanged
+   after the algebra.js retirement.  Numbers and bare names are
+   idempotent — pushed back untouched.
+   ------------------------------------------------------------------ */
+register('SIMPLIFY', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(v.expr, (e) => `simplify(${e})`);
+    s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isName(v)) { s.push(v); return; }
   throw new RPLError('Bad argument type');
 });
 
@@ -4647,14 +4677,25 @@ register('SOLVE', (s) => {
   else if (isInteger(exprArg))    ast = AstNum(Number(exprArg.value));
   else throw new RPLError('Bad argument type');
 
-  const roots = algebraSolve(ast, varName);
-  if (roots === null) {
-    // Didn't recognise the shape — return an empty list rather than
-    // throwing so SOLVE is composable with user programs.
+  // Route through Giac: `solve(expr,var)` returns a list literal like
+  // `[r1,r2,…]`.  We split the list (nesting-aware via splitGiacList),
+  // parse each root, and wrap each as an equation `var = root` —
+  // matches the HP50 convention that SOLVE yields a list of equations.
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const cmd = buildGiacCmd(ast, (e) => `solve(${e},${varName})`, [varName]);
+  const raw = giac.caseval(cmd);
+  const parts = splitGiacList(raw);
+  // Giac returns `[]` for "no solutions", or (on some inputs) a bare
+  // expression when it didn't treat the input as an equation.  Both
+  // cases collapse to an empty list — SOLVE stays composable.
+  if (parts === null || parts.length === 0) {
     s.push(RList([]));
     return;
   }
-  const items = roots.map(r => Symbolic(r));
+  const items = parts.map((rootStr) => {
+    const rootAst = giacToAst(rootStr);
+    return Symbolic(AstBin('=', AstVar(varName), rootAst));
+  });
   s.push(RList(items));
 });
 
@@ -4681,6 +4722,27 @@ register('SOLVE', (s) => {
    convention ('0' comes back as Real(0)).
    ------------------------------------------------------------------ */
 register('SUBST', (s) => {
+  // SUBST routes through Giac: each (var → value) binding becomes
+  // `subst(expr, var=valueExpr)`.  Multi-substitution is applied
+  // sequentially — Giac's own multi-subst is associative but the
+  // sequential form keeps the code path identical between the list
+  // and 3-arg forms.  We purge the binding var as well as the free
+  // vars of both expr and value so Xcas built-ins stay neutralised.
+  const substViaGiac = (ast, vname, valueAst) => {
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const valueGiac = astToGiac(valueAst);
+    // `freeVars(valueAst)` doesn't get walked by `buildGiacCmd` (which
+    // only walks exprAst) so we pass the value's free vars in via
+    // extraVars, plus the binding variable itself.
+    const extra = [vname, ...algebraFreeVars(valueAst)];
+    const cmd = buildGiacCmd(
+      ast,
+      (e) => `subst(${e},${vname}=${valueGiac})`,
+      extra,
+    );
+    return giacToAst(giac.caseval(cmd));
+  };
+
   const top = s.peek();
 
   // Form A: list form.  Walks items looking for either a
@@ -4701,7 +4763,7 @@ register('SUBST', (s) => {
     while (i < items.length) {
       const item = items[i];
       if (_isEquationSymbolic(item)) {
-        ast = algebraSubst(ast, item.expr.l.name, item.expr.r);
+        ast = substViaGiac(ast, item.expr.l.name, item.expr.r);
         i += 1;
       } else {
         if (i + 1 >= items.length) {
@@ -4713,7 +4775,7 @@ register('SUBST', (s) => {
                     : isString(nameVal)  ? nameVal.value
                     : null;
         if (vname === null) throw new RPLError('SUBST: bad variable name in list');
-        ast = algebraSubst(ast, vname, coerceToAst(valueVal));
+        ast = substViaGiac(ast, vname, coerceToAst(valueVal));
         i += 2;
       }
     }
@@ -4732,7 +4794,7 @@ register('SUBST', (s) => {
     else if (isReal(exprVal))    ast = AstNum(exprVal.value.toNumber());
     else if (isInteger(exprVal)) ast = AstNum(Number(exprVal.value));
     else throw new RPLError('Bad argument type');
-    const result = algebraSubst(ast, eqn.expr.l.name, eqn.expr.r);
+    const result = substViaGiac(ast, eqn.expr.l.name, eqn.expr.r);
     _pushSubstResult(s, result);
     return;
   }
@@ -4750,7 +4812,7 @@ register('SUBST', (s) => {
               : isString(varVal) ? varVal.value
               : null;
   if (vname === null) throw new RPLError('SUBST: bad variable');
-  const result = algebraSubst(ast, vname, coerceToAst(valueVal));
+  const result = substViaGiac(ast, vname, coerceToAst(valueVal));
   _pushSubstResult(s, result);
 });
 
@@ -4786,10 +4848,15 @@ register('DERIV', (s) => {
   else if (isString(varArg)) varName = varArg.value;
   else throw new RPLError('Bad argument type');
 
-  // Expression: Symbolic → run the algebra derivative.
+  // Expression: Symbolic → route through Giac's diff(expr, var).
+  // `buildGiacCmd` adds `purge(…)` for every free variable (the diff
+  // variable included, via extraVars) so Xcas built-in names like
+  // `UI`/`GF` don't collide with the user's identifiers.
   if (isSymbolic(expr)) {
-    const dAst = algebraDeriv(expr.expr, varName);
-    s.push(Symbolic(dAst));
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(expr.expr, (e) => `diff(${e},${varName})`, [varName]);
+    const ast = giacToAst(giac.caseval(cmd));
+    s.push(Symbolic(ast));
     return;
   }
   // Constant shortcut — number → 0.
@@ -4826,18 +4893,27 @@ register('INTEG', (s) => {
   else if (isString(varArg)) varName = varArg.value;
   else throw new RPLError('Bad argument type');
 
+  // Helper: call Giac's integrate(expr,var).  `extraVars` includes the
+  // integration variable so it gets purged alongside the free vars —
+  // without this, `integrate(UI, UI)` would see Giac's reserved `UI`.
+  const integrateViaGiac = (ast) => {
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(ast, (e) => `integrate(${e},${varName})`, [varName]);
+    return giacToAst(giac.caseval(cmd));
+  };
+
   if (isSymbolic(expr)) {
-    s.push(Symbolic(algebraInteg(expr.expr, varName)));
+    s.push(Symbolic(integrateViaGiac(expr.expr)));
     return;
   }
   if (isReal(expr) || isInteger(expr)) {
     const c = isInteger(expr) ? Number(expr.value) : expr.value;
     if (c === 0) { s.push(Integer(0n)); return; }
-    s.push(Symbolic(algebraInteg(AstNum(c), varName)));
+    s.push(Symbolic(integrateViaGiac(AstNum(c))));
     return;
   }
   if (isName(expr)) {
-    s.push(Symbolic(algebraInteg(AstVar(expr.id), varName)));
+    s.push(Symbolic(integrateViaGiac(AstVar(expr.id))));
     return;
   }
   throw new RPLError('Bad argument type');
@@ -10366,30 +10442,20 @@ register('APPEND', (s) => {
 });
 
 /* --------------- STD / FIX / SCI / ENG — number-format modes ---------
-   HP50 AUR §3.2.  State-only changes today — the `_calcState.display*`
-   fields read by the formatter's default path drive `→STR` and any
-   downstream op that passes the state's display mode to `format()`.
-   The LCD render path still uses the display's own `displayOpts`
-   instance; wiring that to follow state.display* is a future UI-enabled
-   session and is not part of this cluster.
+   HP50 AUR §3.2.  Each op routes through `setDisplay()` so the state
+   emitter fires — the LCD renderer reads `state.displayMode` /
+   `state.displayDigits` before each stack repaint, and the status-line
+   annunciator updates via the same subscribe path.  `→STR` and any
+   other op that passes the state's display mode to `format()` sees
+   the same update.
 
      STD                     ( — )       set mode = STD, digits ignored
      FIX    ( n → )                      set mode = FIX, digits = clamp(n, 0, 11)
      SCI    ( n → )                      set mode = SCI, digits = clamp(n, 0, 11)
      ENG    ( n → )                      set mode = ENG, digits = clamp(n, 0, 11)
 
-   The `state.displayMode` / `state.displayDigits` fields are created on
-   demand — we defensively initialise them if absent so this works
-   against any previously-snapshotted state.  Non-integer Real and
-   negative digits throw Bad argument value.
+   Non-integer Real and negative digits throw Bad argument value.
    ----------------------------------------------------------------- */
-
-function _setDisplayState(mode, digits) {
-  if (_calcState.displayMode === undefined)  _calcState.displayMode = 'STD';
-  if (_calcState.displayDigits === undefined) _calcState.displayDigits = 12;
-  _calcState.displayMode = mode;
-  if (digits !== null) _calcState.displayDigits = digits;
-}
 
 function _popNumDigits(s) {
   const [n] = s.popN(1);
@@ -10406,10 +10472,10 @@ function _popNumDigits(s) {
   return d;
 }
 
-register('STD', () => { _setDisplayState('STD', null); });
-register('FIX', (s) => { const d = _popNumDigits(s); _setDisplayState('FIX', d); });
-register('SCI', (s) => { const d = _popNumDigits(s); _setDisplayState('SCI', d); });
-register('ENG', (s) => { const d = _popNumDigits(s); _setDisplayState('ENG', d); });
+register('STD', () => { setDisplay('STD'); });
+register('FIX', (s) => { const d = _popNumDigits(s); setDisplay('FIX', d); });
+register('SCI', (s) => { const d = _popNumDigits(s); setDisplay('SCI', d); });
+register('ENG', (s) => { const d = _popNumDigits(s); setDisplay('ENG', d); });
 
 /* --------------- MEDIAN — order-statistic over a Vector --------------
    HP50 AUR §18.  Standard odd/even convention: middle entry when n is

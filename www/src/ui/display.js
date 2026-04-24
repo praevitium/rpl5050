@@ -135,6 +135,12 @@ export class Display {
       // textbook only affects algebraic expressions.
       const cell = row.querySelector('.value');
       const inner = row.querySelector('.value-text');
+      // Sync the display options from global state before each format
+      // call so STD / FIX n / SCI n / ENG n ops take visible effect
+      // immediately.  (The state fields are the source of truth; the
+      // local `displayOpts` is a convenience buffer.)
+      this.displayOpts.mode   = calcState.displayMode   || 'STD';
+      this.displayOpts.digits = calcState.displayDigits ?? 12;
       if (calcState.textbookMode && isSymbolic(val)) {
         const { svg } = astToSvg(val.expr, { size: 22 });
         inner.innerHTML = svg;
@@ -275,6 +281,20 @@ export class Display {
     el.textContent = label;
     el.classList.add('on');
     el.title = `${label} — BinaryInteger display base (click to cycle)`;
+  }
+
+  /** Update the number-display mode annunciator: STD / FIX n / SCI n /
+   *  ENG n.  Always lit — the user should see at a glance which mode
+   *  is active (matches HP50's persistent indicator).  Reuses the
+   *  `#ann-display` slot. */
+  setDisplayAnnunciator(mode, digits) {
+    const el = this.statusLine?.querySelector('#ann-display');
+    if (!el) return;
+    const m = String(mode || 'STD').toUpperCase();
+    const label = m === 'STD' ? 'STD' : `${m} ${digits}`;
+    el.textContent = label;
+    el.classList.add('on');
+    el.title = `Number display mode: ${label}`;
   }
 
   /** Show the current coordinate mode (XYZ / R∠Z / R∠∠) for complex /

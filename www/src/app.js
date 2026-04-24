@@ -149,6 +149,7 @@ class App {
       this.display.setApproxAnnunciator(st.approxMode);
       this.display.setBinaryBaseAnnunciator(st.binaryBase);
       this.display.setCoordMode(st.coordMode);
+      this.display.setDisplayAnnunciator(st.displayMode, st.displayDigits);
       if (this.menuKind === 'VARS')  this.showVarsMenu({ preservePage: true });
       if (this.menuKind === 'MODES') this.showModesMenu({ preservePage: true });
       // Re-render the stack so Symbolic rows swap between pretty-printed
@@ -189,6 +190,7 @@ class App {
     this.display.setApproxAnnunciator(calcState.approxMode);
     this.display.setBinaryBaseAnnunciator(calcState.binaryBase);
     this.display.setCoordMode(calcState.coordMode);
+    this.display.setDisplayAnnunciator(calcState.displayMode, calcState.displayDigits);
 
     // Alpha annunciator on the LCD status line mirrors shift state.
     // The annunciator is visible whenever alpha OR alphaLock is active;
