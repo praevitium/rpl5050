@@ -27,3 +27,11 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Tauri
+src-tauri/target/
+src-tauri/dist/
+.tauri/
+
+# Build artifacts
+bundle/

@@ -266,7 +266,7 @@ body {
   height: auto;
 }
 
-/* Blank row used to push real stack rows upward when the user has
+/* Blank row that pushes real stack rows upward when the user has
    scrolled up with ▲.  Same height as a normal row; visually empty. */
 .stack-row.scroll-pad { visibility: hidden; }
 

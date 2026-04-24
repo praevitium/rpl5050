@@ -1,0 +1,41 @@
+{
+  "productName": "rp5050sx",
+  "version": "0.1.0",
+  "identifier": "com.rpl5050.app",
+  "build": {
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "devPath": ".",
+    "frontendDist": "."
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "rp5050sx - RPL Scientific Calculator",
+        "width": 600,
+        "height": 900,
+        "resizable": false,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb",
+      "dmg",
+      "msi",
+      "AppImage"
+    ],
+    "deb": {
+      "depends": []
+    },
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13"
+    }
+  }
+}
