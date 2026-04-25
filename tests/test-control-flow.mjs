@@ -432,12 +432,13 @@ import { assert, assertThrows } from './helpers.mjs';
   const err = assertThrows(() => lookup('EVAL').fn(s),
                            null,
                            'START loop with 1/0 in body throws');
-  // session122: pin HP50 error-message shape on the START div-by-zero
-  // surface — was previously asserted only as "threw === true".
+  // Pin the HP50 error-message shape on the START div-by-zero surface.
   assert(/Infinite result/.test(err.message),
     'session122: START div-by-zero raises "Infinite result"');
-  assert(s.depth === 2, 'stack restored to pre-EVAL depth after START error');
-  assert(isReal(s.peek(2)) && s.peek(2).value.eq(100),
+  // EVAL's snapshot is post-pop, so on error the erroring Program is
+  // consumed and only the pre-EVAL Real(100) remains.
+  assert(s.depth === 1, 'stack restored to post-pop depth after START error (Program consumed)');
+  assert(isReal(s.peek(1)) && s.peek(1).value.eq(100),
          'pre-existing Real(100) preserved after rollback');
 }
 
@@ -662,12 +663,12 @@ import { assert, assertThrows } from './helpers.mjs';
   assertThrows(() => lookup('EVAL').fn(s),
                /IFERR without THEN/,
                'IFERR without THEN is a structural error');
-  // session122: stack-rollback regression guard — on a structural-
-  // error throw EVAL must restore the pre-EVAL stack depth (the
-  // Program is back on the stack at level 1).  Was previously
-  // unverified.
-  assert(s.depth === 1 && isProgram(s.peek()),
-    'session122: malformed-IFERR throw restores Program to pre-EVAL stack');
+  // EVAL's snapshot is post-pop, so on a structural-error throw the
+  // Program is consumed (gone from the stack) and only the body's
+  // partial pushes — none here, since the error is raised before any
+  // push — remain.  End state is empty stack.
+  assert(s.depth === 0,
+    'ship-prep r3: malformed-IFERR throw consumes the Program (post-pop snapshot)');
 }
 
 // Parse IFERR from source and execute end-to-end
@@ -834,8 +835,7 @@ import { assert, assertThrows } from './helpers.mjs';
   const err = assertThrows(() => lookup('EVAL').fn(s),
                            /STEP of 0/,
                            'FOR/STEP with Integer step of 0 throws');
-  // session122: pin the exact "STEP of 0" message shape — was
-  // previously only "threw === true".  Caught error: "STEP of 0".
+  // Pin the exact "STEP of 0" message shape.
   assert(err.message === 'STEP of 0',
     'session122: FOR/STEP zero-step error message is exactly "STEP of 0"');
 }
@@ -1162,7 +1162,9 @@ import { assert, assertThrows } from './helpers.mjs';
    AUR p.1-27.  ABORT stops execution of the currently-running
    program.  Unlike RPLError, ABORT is *not* catchable by IFERR, and
    EVAL's snapshot-restore lets it pass through so the stack reflects
-   the state at the abort point, not pre-EVAL.
+   the state at the abort point, not post-pop.  (RPLError throws now
+   restore to post-pop instead — ship-prep r3 — but ABORT still
+   bypasses the restore so the program's pre-abort pushes survive.)
    ================================================================ */
 
 // Basic: ABORT inside a program unwinds EVAL and does NOT re-push the
@@ -1362,8 +1364,11 @@ import { assert, assertThrows } from './helpers.mjs';
     'session068: outer b=2 visible after inner → closed');
 }
 
-// Too-few-arguments error preserves the stack (EVAL's save/restore
-// kicks in because the error is an RPLError).
+// Too-few-arguments error: the body's caller (the → op) is consumed
+// inside the program, but the EVAL'd Program itself stays popped
+// (ship-prep r3: post-pop snapshot).  The pre-EVAL Integer(100) is
+// preserved because nothing in the program had popped it yet — → only
+// peeks the depth before deciding to throw.
 {
   resetHome();
   const s = new Stack();
@@ -1376,9 +1381,10 @@ import { assert, assertThrows } from './helpers.mjs';
   try { lookup('EVAL').fn(s); } catch (e) { caught = e; }
   assert(caught && /Too few arguments/.test(caught.message),
     'session068: → with too-few args raises Too few arguments');
-  // EVAL's snapshot-restore should have put the 100 and the Program back.
-  assert(s.depth === 2 && s._items[0].value === 100n,
-    'session068: → error path leaves outer stack intact (EVAL restore)');
+  // Post-pop snapshot was [Integer(100)]; restore() walks back there,
+  // and the Program is consumed.
+  assert(s.depth === 1 && s._items[0].value === 100n,
+    'ship-prep r3: → error path consumes the Program, keeps outer Integer(100)');
 }
 
 // Error inside the body pops the frame even on the error path — after
@@ -2097,13 +2103,12 @@ import { assert, assertThrows } from './helpers.mjs';
   assertThrows(() => lookup('EVAL').fn(s),
                /IFERR without THEN/,
                'session077: IFERR with neither THEN nor END still raises "IFERR without THEN"');
-  // session122: companion to the line-660 site — verify the
-  // no-END/no-THEN variant ALSO restores the pre-EVAL stack
-  // (Program back at level 1).  Distinct from the with-END path
-  // above because here the structural-scan failure happens before
-  // the auto-close machinery has a chance to substitute an END.
-  assert(s.depth === 1 && isProgram(s.peek()),
-    'session122: malformed-IFERR (no END) throw restores Program to pre-EVAL stack');
+  // Ship-prep r3: companion to the with-END site above — the
+  // post-pop snapshot is empty since nothing was on the stack
+  // pre-EVAL except the Program itself.  Restore() walks back to
+  // empty.
+  assert(s.depth === 0,
+    'ship-prep r3: malformed-IFERR (no END) consumes the Program (post-pop snapshot)');
 }
 
 /* ---- Auto-closed IFERR inside a longer program body:
@@ -2894,28 +2899,25 @@ import { assert, assertThrows } from './helpers.mjs';
     'session101: KILL leaves single-step flag clear');
 }
 
-/* ---- Session 106 supersedes the session-101 R-002 regression guard.
-       Pre-session-106, a HALT inside a Name-reached sub-program threw
-       `HALT: cannot suspend inside a sub-program call`; R-002 pinned
-       `_driveGen`'s belt-and-suspenders `gen.return()` cleanup for that
-       throw path.  Session 106 made `evalToken`'s Name-binding branch
-       a generator that yields up through `_evalValueGen`, so a HALT
-       reached via variable lookup now suspends cleanly — CONT resumes,
-       locals round-trip.  The non-lifted paths (ops that take a Program
-       argument and call `_evalValueSync` directly — IFT / IFTE / MAP /
-       …) still exercise `_driveGen`'s throw-and-close; see the
-       session106 block below for that regression guard. ---- */
+/* ---- HALT inside a Name-reached sub-program suspends cleanly.
+       `evalToken`'s Name-binding branch is a generator that yields up
+       through `_evalValueGen`, so a HALT reached via variable lookup
+       — CONT resumes, locals round-trip.  The non-lifted paths (ops
+       that take a Program argument and call `_evalValueSync` directly
+       — IFT / IFTE / MAP / …) still exercise `_driveGen`'s
+       throw-and-close; see the session106 block below for that
+       regression guard. ---- */
 {
   resetHome(); clearAllHalted();
   const s = new Stack();
   // Define a program in variable P containing HALT inside an `→` body
   // (so a live `runArrow` frame exists at HALT time).  Then EVAL a
-  // wrapper that calls P via variable lookup.  Before session 106 this
-  // threw; now it suspends cleanly.
+  // wrapper that calls P via variable lookup; the HALT must suspend
+  // cleanly through the Name lookup path.
   varStore('P', Program([
     Integer(1n),
     Name('→'), Name('x'), Program([
-      Name('HALT'),  // session 106: suspends through `_evalValueGen`
+      Name('HALT'),  // suspends through `_evalValueGen`
     ]),
   ]));
   s.push(Program([Name('P')]));
@@ -3016,11 +3018,10 @@ import { assert, assertThrows } from './helpers.mjs';
    Session 106 — HALT-inside-named-sub-program lift + SST↓ step-into
    ================================================================ */
 
-/* ---- HALT inside a Name-reached sub-program now suspends cleanly.
+/* ---- HALT inside a Name-reached sub-program suspends cleanly.
         The wrapper EVALs `« P »`; P evaluates to a stored Program whose
-        body contains HALT.  Pre-session-106 this threw via `_driveGen`;
-        session 106 routes the Name lookup through `_evalValueGen`
-        (generator flavor) so the HALT yields up the whole chain. ---- */
+        body contains HALT.  Name lookup runs through `_evalValueGen`
+        (generator flavor), so the HALT yields up the whole chain. ---- */
 {
   resetHome(); clearAllHalted();
   const s = new Stack();
@@ -3099,10 +3100,12 @@ import { assert, assertThrows } from './helpers.mjs';
   varPurge('A'); varPurge('B');
 }
 
-/* ---- IFT / IFTE retain the pre-session-106 reject-on-HALT: they use
-        `_evalValueSync` directly, not `_evalValueGen`, so _driveGen's
-        throw-and-close still fires.  This pins the scope of the lift —
-        only `evalToken`-reached Programs gained HALT support. ---- */
+/* ---- IFT / IFTE reject HALT in their action: they use
+        `_evalValueSync` directly (sync fallback), not `_evalValueGen`,
+        so `_driveGen`'s throw-and-close still fires.  This pins the
+        scope of HALT-through-Name — only `evalToken`-reached Programs
+        propagate HALT cleanly; structural ops with a Program argument
+        do not. ---- */
 {
   resetHome(); clearAllHalted();
   const s = new Stack();
@@ -3225,21 +3228,17 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 111 — caller-aware HALT-rejection messages.
+   Caller-aware HALT-rejection messages.
 
-   Session 106 lifted HALT for sub-programs reached via `evalToken`'s
-   Name-binding branch (the `_evalValueGen` path).  The sync-path
-   callers — IFT / IFTE / MAP / SEQ / DOLIST / DOSUBS / STREAM — still
-   reject a HALT via `_driveGen`, because they call `_evalValueSync`
-   which cannot yield.  Session 111 added a `caller` parameter to
-   `_driveGen` (and `_evalValueSync`) so the rejection names which op
-   was at the boundary.  The pre-session-111 message was
-   `HALT: cannot suspend inside a sub-program call (use EVAL directly)`;
-   it is now `HALT: cannot suspend inside <caller>` with the caller
-   label threaded through from each op's `_evalValueSync` call site.
+   The sync-path callers — IFT / IFTE / MAP / SEQ / DOLIST / DOSUBS /
+   STREAM — reject a HALT via `_driveGen`, because they call
+   `_evalValueSync` which cannot yield.  `_driveGen` accepts a
+   `caller` label so the rejection names which op was at the boundary:
+   `HALT: cannot suspend inside <caller>` with the caller label
+   threaded through from each op's `_evalValueSync` call site.
 
    Each block also pins that `_localFrames` is empty after the
-   rejection — the R-002 belt-and-suspenders `gen.return()` close —
+   rejection — the `gen.return()` close runs the helper's finally —
    so a regression in the cleanup path would surface alongside a
    regression in the message.
    ================================================================ */
@@ -3354,14 +3353,13 @@ import { assert, assertThrows } from './helpers.mjs';
     'session111: failed STREAM leaves no halt and no leaked frames');
 }
 
-/* ---- SESSION 116 — Tagged-wrapped Program EVAL now LIFTS HALT.
-        Session 111 pinned the rejection ("retains default message")
-        for this case; session 116 routed the EVAL handler through
-        `_evalValueGen` so a Tagged wrapper at the entry no longer
-        forces a sync-path call.  The new pin is: HALT inside the
-        Tagged-wrapped Program suspends cleanly, just as it would for
-        the bare Program.  Two assertions cover the lift; a follow-on
-        block exercises CONT to confirm resume works. ---- */
+/* ---- Tagged-wrapped Program EVAL lifts HALT.
+        The EVAL handler routes through `_evalValueGen` so a Tagged
+        wrapper at the entry doesn't force a sync-path call: HALT
+        inside the Tagged-wrapped Program suspends cleanly, just as
+        it would for the bare Program.  Two assertions cover the
+        lift; a follow-on block exercises CONT to confirm resume
+        works. ---- */
 {
   resetHome(); clearAllHalted();
   const s = new Stack();
@@ -3381,11 +3379,10 @@ import { assert, assertThrows } from './helpers.mjs';
     'session116: Tagged-EVAL lift leaves no leaked local frames after resume');
 }
 
-/* ---- Cross-check: the lifted path (evalToken Name-lookup) still
-        suspends cleanly and does NOT produce an error.  Session 106
-        already pins this, but a session-111 assertion re-verifies the
-        scope of the sync-path labeling — we only changed what happens
-        on the rejection path; the success path must be unaffected. ---- */
+/* ---- Cross-check: the lifted path (evalToken Name-lookup) suspends
+        cleanly and does NOT produce an error.  Re-verifies that the
+        sync-path caller-labeling does not change the success path
+        for Name-reached HALTs. ---- */
 {
   resetHome(); clearAllHalted();
   const s = new Stack();
@@ -3636,7 +3633,7 @@ import { assert, assertThrows } from './helpers.mjs';
         Program body* (i.e. the IFT keyword is reached by evalRange's
         intercept) now lifts cleanly.  Reaching IFT via Name dispatch
         ('IFT' EVAL, Tagged-wrapped Name) still rejects with the
-        session-111 "cannot suspend inside IFT action" label.
+        "cannot suspend inside IFT action" label.
      3. Same story for IFTE — both branches.
    ================================================================ */
 
@@ -3705,7 +3702,7 @@ const { getPromptMessage, clearPromptMessage }
   const s = new Stack();
   s.push(Str('hi'));
   // Direct Name dispatch — reaches the registered fallback handler,
-  // not the body intercept.  Same shape as session 073's bare-HALT test.
+  // not the body intercept.  Same shape as the bare-HALT test above.
   assertThrows(() => lookup('PROMPT').fn(s),
     /PROMPT: not inside a running program/,
     'session121: bare PROMPT (Name dispatch) reports outside-program error');
@@ -3825,7 +3822,7 @@ const { getPromptMessage, clearPromptMessage }
   // 'IFT' reached via direct Name lookup → registered fallback handler
   assertThrows(() => lookup('IFT').fn(s),
     /HALT: cannot suspend inside IFT action/,
-    'session121: sync-fallback IFT still rejects HALT with session-111 label');
+    'session121: sync-fallback IFT still rejects HALT with the IFT-action label');
   assert(haltedDepth() === 0 && localFramesDepth() === 0,
     'session121: sync-fallback IFT rejection cleans up halts and frames');
 }
@@ -3888,7 +3885,7 @@ const { getPromptMessage, clearPromptMessage }
   s.push(Program([ Integer(0n) ]));    // f-action
   assertThrows(() => lookup('IFTE').fn(s),
     /HALT: cannot suspend inside IFTE action/,
-    'session121: sync-fallback IFTE still rejects HALT with session-111 label');
+    'session121: sync-fallback IFTE still rejects HALT with the IFTE-action label');
   assert(haltedDepth() === 0 && localFramesDepth() === 0,
     'session121: sync-fallback IFTE rejection cleans up halts and frames');
 }
@@ -3940,8 +3937,8 @@ const { getPromptMessage, clearPromptMessage }
    lives in the generator's stack frame.
 
    Sync fallbacks (Name dispatch — `'SEQ' EVAL`, `'MAP' EVAL`) keep
-   the session-111 reject-with-caller-label behavior — they still
-   throw `HALT: cannot suspend inside SEQ expression` /
+   the reject-with-caller-label behavior — they throw
+   `HALT: cannot suspend inside SEQ expression` /
    `HALT: cannot suspend inside MAP program`.
    ================================================================ */
 
@@ -4064,11 +4061,10 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ---- SEQ: sync fallback (direct register dispatch) still rejects HALT ----
-   Calls `lookup('SEQ').fn(s)` directly — that is the sync entry the
-   session-111 caller-label assertion guards.  The new generator-flavor
-   runSeq is still wrapped by `_driveGen(runSeq(s, 0), 'SEQ expression')`
-   in the register, so a HALT in the body must surface as the same
-   labelled error session 111 codified. */
+   Calls `lookup('SEQ').fn(s)` directly — the sync entry guarded by
+   the caller-label assertion.  The generator-flavor runSeq is wrapped
+   by `_driveGen(runSeq(s, 0), 'SEQ expression')` in the register, so
+   a HALT in the body must surface with that label. */
 {
   resetHome(); clearAllHalted(); clearPromptMessage();
   const s = new Stack();
@@ -4079,7 +4075,7 @@ const { getPromptMessage, clearPromptMessage }
   s.push(Integer(1n));
   assertThrows(() => lookup('SEQ').fn(s),
     /HALT: cannot suspend inside SEQ expression/,
-    'session126: sync-fallback SEQ still rejects HALT with session-111 caller label');
+    'session126: sync-fallback SEQ still rejects HALT with the SEQ caller label');
   assert(haltedDepth() === 0 && localFramesDepth() === 0,
     'session126: sync-fallback SEQ rejection cleans up halts and frames');
 }
@@ -4229,7 +4225,7 @@ const { getPromptMessage, clearPromptMessage }
   s.push(parseEntry('<< HALT >>')[0]);
   assertThrows(() => lookup('MAP').fn(s),
     /HALT: cannot suspend inside MAP program/,
-    'session126: sync-fallback MAP still rejects HALT with session-111 caller label');
+    'session126: sync-fallback MAP still rejects HALT with the MAP caller label');
   assert(haltedDepth() === 0 && localFramesDepth() === 0,
     'session126: sync-fallback MAP rejection cleans up halts and frames');
 }
@@ -4298,24 +4294,23 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ================================================================
-   SESSION 131 — HALT/PROMPT lift through DOLIST / DOSUBS / STREAM
-   bodies via `evalRange` body-intercept paths that delegate to new
+   HALT/PROMPT lift through DOLIST / DOSUBS / STREAM bodies via
+   `evalRange` body-intercept paths that delegate to the
    `runDoList` / `runDoSubs` / `runStream` generator helpers.
 
-   Same shape as the session-126 SEQ/MAP work: each iteration EVAL's
-   the body program through `_evalValueGen` (yieldable), and a HALT
-   inside the body suspends through `yield*` up to the EVAL/CONT
-   driver.  The accumulator (`out` array, current `i`, in-progress
-   STREAM accumulator on the *RPL* stack, NSUB/ENDSUB frame) lives in
-   the helper's stack frame — except STREAM, whose accumulator is on
-   the user-visible RPL stack — so CONT resumes mid-iteration with
-   all state intact.
+   Same shape as SEQ/MAP: each iteration EVAL's the body program
+   through `_evalValueGen` (yieldable), and a HALT inside the body
+   suspends through `yield*` up to the EVAL/CONT driver.  The
+   accumulator (`out` array, current `i`, in-progress STREAM
+   accumulator on the *RPL* stack, NSUB/ENDSUB frame) lives in the
+   helper's stack frame — except STREAM, whose accumulator is on the
+   user-visible RPL stack — so CONT resumes mid-iteration with all
+   state intact.
 
    Sync fallbacks (Name dispatch — `'DOLIST' EVAL`, etc., and direct
-   `lookup('DOLIST').fn(s)` calls) keep the session-111 reject-with-
-   caller-label behavior — they still throw `HALT: cannot suspend
-   inside DOLIST program` / `... DOSUBS program` / `... STREAM
-   program`.
+   `lookup('DOLIST').fn(s)` calls) reject with the caller label —
+   they throw `HALT: cannot suspend inside DOLIST program` /
+   `... DOSUBS program` / `... STREAM program`.
    ================================================================ */
 
 /* ---- DOLIST: HALT inside body (iter 1) suspends mid-iteration ---- */
@@ -4440,7 +4435,7 @@ const { getPromptMessage, clearPromptMessage }
     'session131: KILL of halted DOLIST leaves no local-frame leak');
 }
 
-/* ---- DOLIST: sync fallback still rejects HALT with session-111 label ---- */
+/* ---- DOLIST: sync fallback still rejects HALT with the DOLIST label ---- */
 {
   resetHome(); clearAllHalted(); clearPromptMessage();
   const s = new Stack();
@@ -4448,7 +4443,7 @@ const { getPromptMessage, clearPromptMessage }
   s.push(parseEntry('<< HALT >>')[0]);
   assertThrows(() => lookup('DOLIST').fn(s),
     /HALT: cannot suspend inside DOLIST program/,
-    'session131: sync-fallback DOLIST still rejects HALT with session-111 caller label');
+    'session131: sync-fallback DOLIST still rejects HALT with the DOLIST caller label');
   assert(haltedDepth() === 0 && localFramesDepth() === 0,
     'session131: sync-fallback DOLIST rejection cleans up halts and frames');
 }
@@ -4569,7 +4564,7 @@ const { getPromptMessage, clearPromptMessage }
   s.push(parseEntry('<< HALT >>')[0]);
   assertThrows(() => lookup('DOSUBS').fn(s),
     /HALT: cannot suspend inside DOSUBS program/,
-    'session131: sync-fallback DOSUBS still rejects HALT with session-111 caller label');
+    'session131: sync-fallback DOSUBS still rejects HALT with the DOSUBS caller label');
   assert(haltedDepth() === 0 && localFramesDepth() === 0
       && dosubsStackDepth() === 0,
     'session131: sync-fallback DOSUBS rejection cleans up halts, frames, and DOSUBS frame');
@@ -4644,7 +4639,7 @@ const { getPromptMessage, clearPromptMessage }
     'session131: STREAM completes after PROMPT/CONT (final accumulator = 6)');
 }
 
-/* ---- STREAM: sync fallback still rejects HALT with session-111 label ---- */
+/* ---- STREAM: sync fallback still rejects HALT with the STREAM label ---- */
 {
   resetHome(); clearAllHalted(); clearPromptMessage();
   const s = new Stack();
@@ -4652,7 +4647,7 @@ const { getPromptMessage, clearPromptMessage }
   s.push(parseEntry('<< HALT >>')[0]);
   assertThrows(() => lookup('STREAM').fn(s),
     /HALT: cannot suspend inside STREAM program/,
-    'session131: sync-fallback STREAM still rejects HALT with session-111 caller label');
+    'session131: sync-fallback STREAM still rejects HALT with the STREAM caller label');
   assert(haltedDepth() === 0 && localFramesDepth() === 0,
     'session131: sync-fallback STREAM rejection cleans up halts and frames');
 }
@@ -4732,14 +4727,14 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ================================================================
-   session 136 — auto-close on missing END / NEXT for the
-   counter and condition loops.
+   Auto-close on missing END / NEXT for the counter and condition
+   loops.
 
-   Symmetric with the existing IF / IFERR / CASE auto-close
-   policy and with the parser's auto-close on unterminated `«`,
-   `{`, `[`.  A forward scan inside `runWhile` / `runDo` /
-   `runStart` / `runFor` that falls off the end of the token
-   list is now treated as an implicit closer:
+   Symmetric with the IF / IFERR / CASE auto-close policy and with
+   the parser's auto-close on unterminated `«`, `{`, `[`.  A forward
+   scan inside `runWhile` / `runDo` / `runStart` / `runFor` that
+   falls off the end of the token list is treated as an implicit
+   closer:
 
      « WHILE test REPEAT body »   ≡  « WHILE test REPEAT body END »
      « DO body UNTIL test »       ≡  « DO body UNTIL test END »
@@ -4829,7 +4824,10 @@ const { getPromptMessage, clearPromptMessage }
                            'session136: WHILE without REPEAT still throws');
   assert(/WHILE without REPEAT/.test(err.message),
     'session136: WHILE without REPEAT preserves error message');
-  assert(s.depth === 1, 'session136: stack restored to pre-EVAL depth after WHILE-without-REPEAT error');
+  // EVAL's snapshot is post-pop, so the Program is consumed on the
+  // structural-error throw.  Empty stack at end.
+  assert(s.depth === 0,
+    'ship-prep r3: WHILE-without-REPEAT consumes the Program (post-pop snapshot)');
 }
 
 /* ---- WHILE with a spurious NEXT in the END slot is still an error ---- */
@@ -5117,13 +5115,11 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ================================================================
-   Session 141 — HALT/PROMPT lift through IFERR clauses
+   HALT/PROMPT lift through IFERR clauses
    ================================================================
-   The IFERR runner has been a generator since session 088 and uses
-   `yield* evalRange(...)` for its trap, THEN, and ELSE clauses, so a
-   HALT/PROMPT inside any of those clauses already lifts mechanically
-   through the yield* chain.  The session-088/121 narrative never
-   pinned this behaviour explicitly — these assertions close that gap.
+   The IFERR runner is a generator and uses `yield* evalRange(...)`
+   for its trap, THEN, and ELSE clauses, so a HALT/PROMPT inside any
+   of those clauses lifts mechanically through the yield* chain.
 
    The interesting interaction is the THEN clause: runIfErr saves the
    outer last-error before calling setLastError(caught) and restores
@@ -5749,20 +5745,16 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ================================================================
-   Session 151 — HALT/PROMPT lift through CASE clauses, fully-closed
-   START (NEXT and STEP), and DO/UNTIL.
+   HALT/PROMPT lift through CASE clauses, fully-closed START (NEXT
+   and STEP), and DO/UNTIL.
 
-   None of the runners changed this session — runCase / runStart /
-   runDo have been generators since session 088, and `yield*
-   evalRange(...)` for every clause / body / test means HALT and
-   PROMPT already lift mechanically through the chain.  The session
-   141 narrative pinned the same property for IFERR; this run closes
-   the symmetric gaps for CASE, fully-closed START, and DO/UNTIL.
-   Auto-closed START's body-HALT was pinned at session 136; auto-
-   closed FOR's body-HALT was pinned at session 136; HALT inside an
-   *explicit* START NEXT body, an explicit START STEP body, an
-   explicit DO UNTIL body, and inside an UNTIL test were all
-   un-pinned until this run.
+   runCase / runStart / runDo are generators, and
+   `yield* evalRange(...)` for every clause / body / test means HALT
+   and PROMPT lift mechanically through the chain.  Same property
+   IFERR satisfies, applied to CASE, fully-closed START, and
+   DO/UNTIL — HALT inside an explicit START NEXT body, an explicit
+   START STEP body, an explicit DO UNTIL body, and inside an UNTIL
+   test all suspend cleanly and resume on CONT.
 
    The interesting interactions:
      - CASE: each THEN-clause action is a separate `yield* evalRange`,
@@ -6106,9 +6098,9 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ----------------------------------------------------------------
-   Fully-closed START/NEXT and START/STEP HALT lift
-   (auto-closed forms pinned at session 136 — these pin the
-    explicit-closer forms that runStart routes through closerIdx)
+   Fully-closed START/NEXT and START/STEP HALT lift —
+   pins the explicit-closer forms that runStart routes through
+   closerIdx (the auto-closed forms have their own pins above).
    ---------------------------------------------------------------- */
 
 /* ---- HALT inside fully-closed START/NEXT body: halts each iter ---- */

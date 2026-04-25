@@ -3041,10 +3041,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Session 120 — three widening clusters pinning previously-undertested
-   contracts on already-widened ops (no source-side changes; ops.js,
-   test-algebra, test-matrix, COMMANDS.md, REVIEW.md and logs/ are all
-   lock-held by concurrent session 119 command-support lane).
+   Three widening clusters pinning under-tested contracts on the
+   hyperbolic / list-distribution / V/M-rejection ops.
 
    Cluster 1 — Hyperbolic family (`SINH`/`COSH`/`TANH`/`ASINH`/`ACOSH`/
      `ATANH`) Tagged transparency, List distribution, and Symbolic-lift
@@ -3542,10 +3540,9 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Session 125 — three widening clusters pinning previously-undertested
-   contracts on already-widened ops (no source-side changes; ops.js
-   and other source files are lock-held by concurrent session 124
-   command-support lane).
+   Three widening clusters pinning under-tested contracts on the
+   List-distributing arity-2 numeric family, the unary surface, and
+   the Tagged-of-Vector composition.
 
    Cluster 1 — List distribution on the arity-2 numeric family
      (COMB / PERM / IQUOT / IREMAINDER / GCD / LCM / XROOT / MOD /

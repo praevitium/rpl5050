@@ -137,24 +137,22 @@ import { assert, assertThrows } from './helpers.mjs';
   assert(s.depth === 1 && s.peek().value === 20n, 'QUAD(5) via nested EVAL = 20');
 }
 
-// Atomicity: an error mid-program rolls the stack back to the pre-EVAL state
+// Atomicity: an error mid-program unwinds the body's partial pushes,
+// but the EVAL'd Program itself stays popped (ship-prep 2026-04-25-r3).
 {
   resetHome();
   const s = new Stack();
   s.push(Real(100));               // pre-existing stack content
-  s.push(Real(1));                 // about to be EVAL'd as part of program
+  s.push(Real(1));                 // first operand for the program's +
   // Program: << 1 + 1 0 / >>
   //   pushes 1, runs +, pushes 1, pushes 0, runs /  → division by zero
   s.push(Program([Integer(1), Name('+'), Integer(1), Integer(0), Name('/')]));
   assertThrows(() => lookup('EVAL').fn(s), null, 'program with 1/0 throws');
-  // After error, stack should be exactly as it was before EVAL pop:
-  //   level 2: Real(100), level 1: the Program  — wait, no. We snapshotted
-  //   BEFORE the pop, so the Program is still there along with Real(100)
-  //   and Real(1).
-  assert(s.depth === 3, 'on error, stack restored to pre-EVAL depth (3)');
-  assert(isReal(s.peek(3)) && s.peek(3).value.eq(100), 'level 3 preserved');
-  assert(isReal(s.peek(2)) && s.peek(2).value.eq(1),   'level 2 preserved');
-  assert(isProgram(s.peek(1)),                          'EVAL\u2019d program restored on top');
+  // Post-pop snapshot was [Real(100), Real(1)]; restore() walks back to
+  // that on the throw -- the Program is consumed (ship-prep r3 change).
+  assert(s.depth === 2, 'on error, stack restored to post-pop depth (2)');
+  assert(isReal(s.peek(2)) && s.peek(2).value.eq(100), 'level 2 preserved (Real(100))');
+  assert(isReal(s.peek(1)) && s.peek(1).value.eq(1),   'level 1 preserved (Real(1))');
 }
 
 // EVAL of a Tagged value strips the tag and evaluates the inner value
@@ -179,9 +177,10 @@ import { assert, assertThrows } from './helpers.mjs';
   s.push(Name('LOOP'));
   assertThrows(() => lookup('EVAL').fn(s), /recursion/i,
          'self-recursive program throws "recursion too deep"');
-  // Atomicity also covers this case — LOOP Name should still be on the stack
-  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'LOOP',
-         'after recursion error, original LOOP Name preserved on stack');
+  // EVAL's snapshot is post-pop, so on the recursion-depth throw the
+  // popped LOOP Name stays gone — empty stack.
+  assert(s.depth === 0,
+         'ship-prep r3: recursion error consumes the LOOP Name (post-pop snapshot)');
   resetHome();
 }
 

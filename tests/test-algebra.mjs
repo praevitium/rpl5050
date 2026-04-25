@@ -320,15 +320,12 @@ import { assert, assertThrows } from './helpers.mjs';
          `'SIN(X)' Symbolic.expr round-trip → '${body}'`);
 }
 
-// --- session100: KNOWN_FUNCTIONS round-trip for CONJ/RE/IM/LNP1/EXPM/
-//     XPON/MANT/TRUNC/ZETA/LAMBERT/PSI.  Before session 100 these ops
-//     lifted to `AstFn(NAME, …)` on the stack side (via `_isSymOperand`
-//     in ops.js) but the textual form `'NAME(X)'` failed parseAlgebra
-//     because NAME was not whitelisted.  Round-trip gap: push Symbolic,
-//     format → `NAME(X)`, re-parse as `` `NAME(X)` `` → must land as
-//     Symbolic again, not fall through to a quoted-Name of the literal
-//     text.  One assertion per new KNOWN_FUNCTIONS key plus a control
-//     check that the SIN entry stays ✓.
+// --- KNOWN_FUNCTIONS round-trip for CONJ/RE/IM/LNP1/EXPM/
+//     XPON/MANT/TRUNC/ZETA/LAMBERT/PSI.  Round-trip contract: push
+//     Symbolic, format → `NAME(X)`, re-parse as `` `NAME(X)` `` →
+//     must land as Symbolic again, not fall through to a quoted-Name
+//     of the literal text.  One assertion per KNOWN_FUNCTIONS key
+//     plus a control check that the SIN entry stays ✓.
 {
   const names = ['CONJ', 'RE', 'IM', 'LNP1', 'EXPM', 'XPON', 'MANT',
                  'ZETA', 'LAMBERT'];
@@ -6807,11 +6804,9 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 
 /* ---- LNAME on `5 + SIN(2)` returns empty Vector ------------------ *
  * Constant-expression contract: built-ins applied to numeric literals
- * contribute no names.  The existing session-124 SIN(2)+COS(3) test
- * exercises two adjacent fn calls under a binary `+`; this one
- * exercises a numeric literal under the binary `+` paired with a
- * single built-in — the descent into AstBin.l (Num leaf, no var) is
- * the path that wasn't previously pinned. */
+ * contribute no names.  This pins the descent into AstBin.l (Num
+ * leaf, no var) — a numeric literal under the binary `+` paired with
+ * a single built-in. */
 {
   const s = new Stack();
   s.push(Symbolic(AstBin('+', AstNum(5), AstFn('SIN', [AstNum(2)]))));

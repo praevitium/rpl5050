@@ -1607,3 +1607,88 @@ import { assert, assertThrows } from './helpers.mjs';
       && Math.abs(out.items[1].value - 3) < 1e-10,
     'list-distribute: {8 27} 3 XROOT → {2 3}');
 }
+
+/* ================================================================
+   List EVAL — HP50 AUR §3-77 says EVAL on a List "enters each
+   object: names evaluated, commands evaluated, programs evaluated,
+   other objects put on the stack."  Mechanically equivalent to
+   running the items as the body of an anonymous program.
+
+   Pinning at ship-prep 2026-04-25-r4 to lock the new behavior;
+   pre-r4 List EVAL was a no-op push that fell through to the
+   _evalValueSync catch-all.
+   ================================================================ */
+
+// Empty list EVAL is a no-op.
+{
+  const s = new Stack();
+  s.push(RList([]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 0, 'List EVAL: empty list consumes itself, pushes nothing');
+}
+
+// List with literal numbers and a command — { 1 2 + } EVAL → 3.
+{
+  const s = new Stack();
+  s.push(RList([Integer(1n), Integer(2n), Name('+')]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1, 'List EVAL: { 1 2 + } leaves one value');
+  assert(s.peek().value === 3n, 'List EVAL: { 1 2 + } yields 3');
+}
+
+// List EVAL of pure literals pushes each literal.
+{
+  const s = new Stack();
+  s.push(RList([Integer(10n), Integer(20n), Integer(30n)]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 3, 'List EVAL: { 10 20 30 } pushes three values');
+  assert(s._items[0].value === 10n
+      && s._items[1].value === 20n
+      && s._items[2].value === 30n,
+         'List EVAL: literal items land in order');
+}
+
+// List EVAL evaluates a Name to its bound value.
+{
+  resetHome();
+  varStore('K', Real(99));
+  const s = new Stack();
+  s.push(RList([Name('K')]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value.eq(99),
+    'List EVAL: { K } looks up K and pushes its bound value');
+  resetHome();
+}
+
+// List EVAL runs an embedded Program.
+{
+  const s = new Stack();
+  s.push(RList([Program([Integer(7n), Integer(8n), Name('*')])]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 56n,
+    'List EVAL: { « 7 8 * » } runs the embedded program');
+}
+
+// Quoted Name in a list EVAL stays unevaluated (parallel to program semantics).
+{
+  const s = new Stack();
+  s.push(RList([Name('X', { quoted: true })]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'X' && s.peek().quoted,
+    'List EVAL: quoted Name stays a quoted Name (matches program-body semantics)');
+}
+
+// Error in a list item rolls back to the post-pop snapshot — the list
+// itself is consumed (R-009 generalization), partial pushes unwound.
+{
+  resetHome();
+  const s = new Stack();
+  s.push(Real(100));                 // pre-existing item — should survive
+  s.push(RList([Integer(1n), Integer(0n), Name('/')]));
+  let threw = false;
+  try { lookup('EVAL').fn(s); } catch (_e) { threw = true; }
+  assert(threw, 'List EVAL with 1/0 throws');
+  assert(s.depth === 1 && isReal(s.peek()) && s.peek().value.eq(100),
+    'List EVAL error: list consumed, body pushes unwound, pre-existing Real(100) survives');
+  resetHome();
+}

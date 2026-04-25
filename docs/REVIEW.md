@@ -195,20 +195,43 @@ this version, with this guidance at ship-prep on Saturday afternoon:
 > "The programming features should be given priority.  Also the
 > OBJ→ behavior should be closer to the HP50.  Also, when a soft
 > key and it errors, it should remove the program from the stack."
+>
+> "Actually, any time an app is evaluated, it should be removed
+> from the stack even on error.  Including when the soft key is
+> pressed in VARS menu and the CST menu and when EVAL is called
+> on it."
+>
+> "EVAL also has behavior that should be closer to the HP50."
 
 Translated into ledger items, in priority order:
 
-1. **R-007** `[resolved - ship-prep 2026-04-25]` — soft-key
-   program-error rollback.  Done in app.js; pinned in
+1. **R-009** `[resolved - ship-prep 2026-04-25]` — EVAL post-pop
+   snapshot generalizes the rollback.  ANY EVAL path (entry-line,
+   soft-key VARS, soft-key CST, `→NUM`, DBUG, Name/Tagged
+   dispatch) now consumes the EVAL'd value on error.  Done in
+   `www/src/rpl/ops.js`; seven test sites flipped to match.
+2. **R-007** `[resolved - ship-prep 2026-04-25]` — soft-key
+   program-error rollback at the `app.js` layer.  Belt-and-
+   suspenders alongside R-009.  Pinned in
    `tests/test-variables.mjs`.
-2. **R-008** `[ship-target — programming-features priority]` —
+3. **R-010** `[resolved - ship-prep 2026-04-25]` — List EVAL now
+   evaluates each item per HP50 AUR §3-77 (was a no-op push).
+   `{ 1 2 + } EVAL` now produces `3`, embedded Programs run,
+   embedded Names look up.  Pinned with +9 assertions in
+   `tests/test-lists.mjs`.
+4. **R-011** `[resolved - ship-prep 2026-04-25]` — Tagged EVAL
+   recurse-evaluation deviation documented as **deliberate** in
+   `docs/@!MY_NOTES.md` Intentional Deviations table.  Reverting
+   to AUR-strict semantics would break the session-116 HALT-
+   through-Tagged feature; not in scope for this version.
+5. **R-008** `[ship-target — programming-features priority]` —
    `OBJ→` AUR §3-149 fidelity audit.  Real-branch decomposition
    (mantissa/exponent split) and Tagged-branch tag-as-String are
    the two suspected divergences; AUR re-read needed before edit.
    Owner = `rpl5050-rpl-programming`.
-3. Anything else in the open queue (**C-011**, **X-003**) is
+6. Anything else in the open queue (**C-011**, **X-003**) is
    ship-stretch — nice to land but not blocking.
-4. **O-009** `[deferred - post-ship]` — sandbox cannot delete the
+7. **O-009** `[deferred - post-ship]` — sandbox cannot delete the
    `.bak` files; user-side `rm` after ship.
 
 Lane priority through Sunday close: **`rpl5050-rpl-programming`
@@ -1622,6 +1645,159 @@ the lock system.
 ---
 
 ## Findings — RPL
+
+### R-010  EVAL on a List was a no-op push instead of evaluating each item (HP50 AUR §3-77) — fixed at ship-prep-2026-04-25-r4
+
+- **Classification.** RPL (programming-features priority — List
+  EVAL is the standard "treat data as code" idiom on HP50).
+- **Where.**
+  - `www/src/rpl/ops.js:4384-4400` (`_evalValueGen` List branch).
+  - `www/src/rpl/ops.js:4456-4475` (`_evalValueSync` List branch).
+  - Test pins: `tests/test-lists.mjs` end-of-file block, +9
+    assertions covering empty list, literal pushes, command
+    dispatch, Name binding lookup, embedded-Program execution,
+    quoted-Name pass-through, and error rollback.
+- **What.**  HP50 AUR §3-77 EVAL spec for List type: "Enters
+  each object in the list: Names are evaluated.  Commands are
+  evaluated.  Programs are evaluated.  Other objects are put on
+  the stack."  rpl5050's EVAL fell through to the `_evalValueSync`
+  catch-all `s.push(v)` (no-op repush) — so `{ 1 2 + } EVAL`
+  produced `{ 1 2 + }` again instead of `3`.
+- **Why.**  User instruction at ship-prep 2026-04-25:
+  > "EVAL also has behavior that should be closer to the HP50."
+  AUR-spec'd List EVAL is a foundational HP50 idiom (used for
+  "run this list of operations" patterns and for RPL macro
+  composition).  The no-op fall-through was an unfinished
+  dispatch.
+- **Fix.**  Add explicit List branch to both `_evalValueGen`
+  (yieldable) and `_evalValueSync` (sync, drives evalToken
+  through `_driveGen` for HALT-rejection).  Walk each item and
+  dispatch by type:
+  - **Name** → `evalToken` (built-in op dispatch + local/global
+    var lookup, matching program-body semantics).
+  - **Program** → `_evalValueGen` recursion (HP50 list-EVAL
+    semantics differ from program-body: list items that ARE
+    programs get RUN, while program-body items that are programs
+    push as literals).
+  - **Tagged** → `_evalValueGen` recursion (consistent with the
+    deliberate-deviation Tagged-EVAL behavior; would otherwise
+    just push per AUR strict).
+  - **Other** → `s.push(item)` (Real, Integer, String, Vector,
+    Matrix, nested List literal, etc.).
+- **Path coverage.** Applies to both top-level `EVAL` and any
+  internal call to `_evalValueGen` / `_evalValueSync` that lands
+  on a List (e.g. a list value reached via Name resolution
+  inside a program body).
+- **Confidence.** high — `node tests/test-all.mjs` is **5050 /
+  0** at run-close (was 5040 / 0 at ship-prep r3 close, Δ +10
+  from the new List EVAL pins; one bonus assertion came from a
+  test that newly exercises a path covered by the change).
+  `node --check www/src/rpl/ops.js` clean.  `node tests/test-
+  persist.mjs` 40 / 0; `node tests/sanity.mjs` 22 / 0.
+- **Limitation noted.** The current dispatch does NOT handle
+  control-flow keywords (`IF`/`THEN`/`END`/`FOR`/`WHILE`/etc.)
+  embedded as items in a list — those are an exotic edge case
+  on HP50 that this ship is not pursuing.  Filed for the rpl-
+  programming lane to consider post-ship if the use case
+  surfaces; for now, control-flow inside a list literal is not
+  defined behavior in rpl5050.
+- **Age.** new (filed and resolved in the same ship-prep pass).
+  **Status.** **[resolved - ship-prep 2026-04-25]** — landed
+  under lock owner `ship-prep-2026-04-25-r4`.
+
+### R-011  EVAL on Tagged recurse-evaluates the inner value (deviates from HP50 AUR §3-77 "untag and push only") — documented as deliberate deviation
+
+- **Classification.** RPL.
+- **Where.**  `www/src/rpl/ops.js:4384-4396` (`_evalValueGen`),
+  `:4453-4459` (`_evalValueSync`).  Tests pinning the deviation:
+  `tests/test-eval.mjs:158-167` (Tagged EVAL strips and EVALs);
+  `tests/test-control-flow.mjs:3367-3522` (session-116 HALT-
+  through-Tagged cluster, +71 assertions across 5 sites).
+- **What.**  HP50 AUR §3-77 says EVAL on a non-port Tagged
+  value puts the untagged inner value on the stack — no further
+  evaluation.  rpl5050 recurse-EVALs the inner value so a
+  `:label:Z` EVAL with `Z` bound to `99` produces `99`, and a
+  `:foo:« ... »` EVAL runs the program.  This was deliberately
+  introduced in session 116 to support HALT/PROMPT suspension
+  through Tagged wrappers, which is a useful programming-
+  features feature absent from the base HP50.
+- **Why this finding.**  Documenting the deviation in
+  `docs/@!MY_NOTES.md` "Intentional Deviations" table at
+  ship-prep-2026-04-25-r4 so future sessions / readers don't
+  re-discover it as an AUR bug and try to "fix" it.  Reverting
+  to AUR-strict semantics would require redesigning the HALT-
+  through-Tagged feature (probably introducing a separate op
+  like `EVAL→` for the rpl5050 recurse-evaluate semantics).
+- **Fix.**  Already applied: comment block in `_evalValueGen`
+  Tagged branch citing the deviation rationale and pointing to
+  the documenting line in `docs/@!MY_NOTES.md`; matching block
+  in `_evalValueSync`; new "EVAL on Tagged" row in
+  `@!MY_NOTES.md`'s Intentional Deviations table.
+- **Confidence.** high — comment blocks in place, deviation
+  table updated, all session-116 tests still green at run-close.
+- **Age.** new (filed and resolved in the same ship-prep pass).
+  **Status.** **[resolved - ship-prep 2026-04-25]** — documented
+  as deliberate deviation, no code change.
+
+### R-009  EVAL on any value left it on the stack on error — fixed at ship-prep-2026-04-25-r3 (generalizes R-007)
+
+- **Classification.** RPL (programming-features priority — EVAL
+  semantics are the foundation of every soft-key press, every
+  `'NAME' EVAL`, every `→NUM`, and every DBUG step).
+- **Where.**
+  - `www/src/rpl/ops.js:4570-4633` — `register('EVAL', ...)`.
+  - Test sites updated to match new semantics:
+    `tests/test-eval.mjs:140-158` (1/0 mid-program),
+    `tests/test-eval.mjs:170-184` (recursion-too-deep on
+    self-recursive LOOP Name),
+    `tests/test-control-flow.mjs:425-441` (START div-by-zero),
+    `tests/test-control-flow.mjs:655-671` (malformed IFERR
+    with-END),
+    `tests/test-control-flow.mjs:2100-2118` (malformed IFERR
+    no-END),
+    `tests/test-control-flow.mjs:1365-1383` (→ too-few args),
+    `tests/test-control-flow.mjs:4815-4834` (WHILE without
+    REPEAT),
+    plus the comment block at
+    `tests/test-control-flow.mjs:1164-1170` updated to describe
+    the new RPLAbort exemption shape.
+- **What.**  `EVAL` saved its stack snapshot **before** the pop,
+  so on any error during evaluation `s.restore(snap)` walked
+  back to the pre-pop state — re-pushing the EVAL'd value
+  (Program / Name / Tagged) onto the stack.  Users running a
+  buggy program saw it sitting on level 1 after the error,
+  inviting another press that re-ran the same broken code.
+- **Why.**  User instruction at ship-prep 2026-04-25:
+  > "Actually, any time an app is evaluated, it should be
+  > removed from the stack even on error.  Including when the
+  > soft key is pressed in VARS menu and the CST menu and when
+  > EVAL is called on it."
+  HP50-leaning: an erroring program is consumed, just like a
+  successful one is.  The error message tells the user what
+  broke; the stack does not pile up program literals.
+- **Fix.**  Move the snapshot from pre-pop to **post-pop** in
+  `register('EVAL')`.  On error, `restore(snap)` walks back to
+  the post-pop state, unwinding any partial pushes the body
+  made but leaving the EVAL'd value gone.  RPLAbort still
+  bypasses the restore so HP50 ABORT semantics (preserve the
+  at-abort state) are unchanged.  If `s.pop()` itself throws
+  (empty stack), `snap` stays null and the catch skips
+  `restore` — pop's natural failure semantics already left the
+  stack intact.
+- **Path coverage.** This fix applies uniformly to every EVAL
+  caller: entry-line `EVAL` from `_runOpTagged`, soft-key VARS
+  press (with the round-2 `safeRun`-wrap in `app.js` providing
+  belt-and-suspenders), soft-key CST press (same), `→NUM`
+  (delegates to `OPS.get('EVAL').fn`), `DBUG` (same), and any
+  Name / Tagged / Symbolic dispatch through `_evalValueGen`.
+- **Confidence.** high — `node tests/test-all.mjs` is **5040 /
+  0** at run-close, with seven test sites flipped from the old
+  pre-pop semantics to the new post-pop semantics; `node
+  --check www/src/rpl/ops.js` clean; `node tests/test-persist
+  .mjs` 40 / 0; `node tests/sanity.mjs` 22 / 0.
+- **Age.** new (filed and resolved in the same ship-prep pass).
+  **Status.** **[resolved - ship-prep 2026-04-25]** — landed
+  under lock owner `ship-prep-2026-04-25-r3`.
 
 ### R-007  Soft-key program-error left the program on the stack — fixed at ship-prep-2026-04-25-r2
 

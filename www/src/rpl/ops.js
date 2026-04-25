@@ -41,10 +41,8 @@ import {
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
 } from './units.js';
-// REVIEW.md X-010 closed session 114 — RPLHalt was imported but never
-// referenced; HALT raises via the generator-protocol sentinel now, not
-// via a thrown RPLHalt class.  Only RPLError + RPLAbort + setPushCoerce
-// survive here.
+// HALT raises via the generator-protocol sentinel — not a thrown class
+// — so only RPLError + RPLAbort + setPushCoerce are needed from stack.js.
 import { RPLError, RPLAbort, setPushCoerce } from './stack.js';
 import {
   Var as AstVar, Num as AstNum,
@@ -1939,10 +1937,8 @@ register('EUCLID', (s) => {
 /* ---- INVMOD — modular multiplicative inverse ----------------------
    HP50 AUR §2-58 (CAS-ARITH-MODULO menu).  The HP50 firmware uses
    the global CAS MODULO state variable for the modulus; we take it
-   explicitly on the stack here (INVMOD's own single-arg form that
-   consults `getCasModulo()` is a follow-up; the slot itself landed
-   in session 144 — see MODSTO / ADDTMOD / SUBTMOD / MULTMOD /
-   POWMOD below).
+   explicitly on the stack here.  See MODSTO / ADDTMOD / SUBTMOD /
+   MULTMOD / POWMOD below for the state-slot ops.
 
      a n INVMOD  ( Z Z → Z )    a · result ≡ 1  (mod n)
 
@@ -1952,9 +1948,9 @@ register('EUCLID', (s) => {
    uses for MODULO-style output.  Integer-valued Reals coerce
    through `_intQuotientArg` the same way IQUOT / IREMAINDER do.
 
-   Follow-up: add a single-arg form that consults `getCasModulo()`
-   (the state slot landed in session 144); the two-arg form stays for
-   explicit callers. */
+   TODO: add a single-arg form that consults `getCasModulo()` for
+   parity with the rest of the MODULO menu; the two-arg form stays
+   for explicit callers. */
 
 register('INVMOD', (s) => {
   const [a, n] = s.popN(2);
@@ -1976,7 +1972,7 @@ register('INVMOD', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   MODSTO + ADDTMOD / SUBTMOD / MULTMOD / POWMOD     (session 144)
+   MODSTO + ADDTMOD / SUBTMOD / MULTMOD / POWMOD
 
    The HP50 CAS MODULO ARITH menu (`!Þ MODULO`) — five ops that
    reduce arithmetic results modulo a global state slot.  MODSTO is
@@ -2101,12 +2097,12 @@ register('POWMOD', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   EXPANDMOD / FACTORMOD / GCDMOD / DIVMOD / DIV2MOD     (session 149)
+   EXPANDMOD / FACTORMOD / GCDMOD / DIVMOD / DIV2MOD
 
-   The remaining five !Þ MODULO ARITH ops, completing the menu started
-   in session 144 (MODSTO + ADDTMOD/SUBTMOD/MULTMOD/POWMOD).  All five
-   read the same `state.casModulo` slot via `getCasModulo()`; none of
-   them mutate it.  HP50 AUR §3-80 / §3-83 / §3-96 / §3-63 / §3-62.
+   The remaining five !Þ MODULO ARITH ops (companions to MODSTO +
+   ADDTMOD/SUBTMOD/MULTMOD/POWMOD).  All five read the same
+   `state.casModulo` slot via `getCasModulo()`; none of them mutate
+   it.  HP50 AUR §3-80 / §3-83 / §3-96 / §3-63 / §3-62.
 
    Stack contracts (mirror the AUR — numeric-or-symbolic):
      EXPANDMOD     ( a    → a' )           coefficient-reduce + expand
@@ -2118,8 +2114,8 @@ register('POWMOD', (s) => {
 
    Pure-integer operands (Integer / integer-valued Real on every level)
    take a native BigInt fast path that returns the centered representative
-   `_centerMod(...)` (matches the session-144 ADDTMOD/SUBTMOD/MULTMOD
-   convention).  DIVMOD / DIV2MOD additionally require the divisor to
+   `_centerMod(...)` (matches the ADDTMOD/SUBTMOD/MULTMOD convention).
+   DIVMOD / DIV2MOD additionally require the divisor to
    be invertible mod m (gcd(b, m) = 1) — the HP50 User Guide p.5-14
    examples ("12/8 (mod 12) does not exist") show this rejection
    surfaces as `Bad argument value`.
@@ -3258,7 +3254,7 @@ function _popLocalFrame() { _localFrames.pop(); }
  *                     re-pushes the still-live generator onto the stack
  *                     so the next SST can resume from the next token.
  *                     Clears the flag if the generator finishes.
- *    - SST↓         : step-into (session 106).  Same drive mechanism as
+ *    - SST↓         : step-into.  Same drive mechanism as
  *                     SST but also sets `_stepInto = true` across the
  *                     gen.next() call.  `_evalValueGen` reads the flag
  *                     in its Program branch: with step-into active, it
@@ -3272,7 +3268,7 @@ function _popLocalFrame() { _localFrames.pop(); }
  *  haltedDepth() / state.halted observers. */
 let _singleStepMode = false;
 
-/** Session 106: `_stepInto` modulates whether single-stepping descends
+/** `_stepInto` modulates whether single-stepping descends
  *  into sub-program calls reached via `evalToken` Name lookup.  SST
  *  leaves this `false` (step-over — the sub-program runs at full speed
  *  and we yield once after the call); SST↓ sets it `true` (step-into —
@@ -3283,9 +3279,9 @@ let _singleStepMode = false;
  *  paths don't go through `_evalValueGen`. */
 let _stepInto = false;
 
-/** Session 106: true while `evalRange` is running on a Program body
- *  reached via `evalToken` Name lookup (i.e. inside `_evalValueGen`'s
- *  Program branch).  Post-token yields check `(!_insideSubProgram ||
+/** True while `evalRange` is running on a Program body reached via
+ *  `evalToken` Name lookup (i.e. inside `_evalValueGen`'s Program
+ *  branch).  Post-token yields check `(!_insideSubProgram ||
  *  _stepInto)` — in step-over mode this suppresses yielding inside the
  *  sub-program so one SST advances past the whole call; in step-into
  *  mode the check passes and the user stops on each inner token.  A
@@ -3307,7 +3303,7 @@ export function singleStepMode() { return _singleStepMode; }
  *  See the `_stepInto` docstring above for the distinction. */
 export function stepIntoMode() { return _stepInto; }
 
-/** Restore `_localFrames` to a previously-captured length.  Pops any
+/** Restore `_localFrames` to an earlier captured length.  Pops any
  *  extra entries that accumulated on top.  Used by `register('EVAL')`
  *  / `register('CONT')` in a top-level `finally` so that an abnormal
  *  unwind (non-RPLError throw, JS TypeError from a broken op, or an
@@ -3424,7 +3420,7 @@ function* evalRange(s, toks, from, to, depth) {
       i++;          // resume: advance past HALT
       continue;
     }
-    // PROMPT — session 121.  HP50 AUR p.2-160: pop level 1, stash it
+    // PROMPT.  HP50 AUR p.2-160: pop level 1, stash it
     // as the active prompt banner (state.promptMessage), then halt the
     // program.  Mechanically PROMPT is HALT-with-message: we use the
     // same `yield` channel so CONT/SST/KILL all just work.  Outside a
@@ -3444,13 +3440,13 @@ function* evalRange(s, toks, from, to, depth) {
       i++;          // resume: advance past PROMPT
       continue;
     }
-    // IFT — session 121.  Stack-based conditional.  The action is
-    // EVAL'd via `_evalValueGen` (yieldable) so a HALT/PROMPT inside
-    // it suspends cleanly through this same evalRange chain.  The
+    // IFT — stack-based conditional.  The action is EVAL'd via
+    // `_evalValueGen` (yieldable) so a HALT/PROMPT inside it suspends
+    // cleanly through this same evalRange chain.  The
     // `register('IFT', ...)` handler below stays as a sync fallback
     // for the rare path where IFT is reached via `evalToken` Name
     // dispatch (`'IFT' EVAL`, Tagged-wrapped Name(IFT) on stack);
-    // those still reject HALT through `_driveGen` with the existing
+    // those reject HALT through `_driveGen` with the
     // `IFT action` caller label.
     if (id === 'IFT') {
       yield* runIft(s, depth);
@@ -3458,7 +3454,7 @@ function* evalRange(s, toks, from, to, depth) {
       if (_shouldStepYield()) yield;
       continue;
     }
-    // IFTE — session 121.  Same pattern as IFT, with three pops
+    // IFTE — same pattern as IFT, with three pops
     // (test, t-action, f-action) and the chosen action EVAL'd via
     // `_evalValueGen`.  Sync fallback in `register('IFTE', ...)` below.
     if (id === 'IFTE') {
@@ -3467,9 +3463,9 @@ function* evalRange(s, toks, from, to, depth) {
       if (_shouldStepYield()) yield;
       continue;
     }
-    // SEQ / MAP — session 126.  List combinators whose body is EVAL'd
-    // once per iteration (per-element).  The generator-flavor helpers
-    // below (`runSeq` / `runMap`) drive each iteration through
+    // SEQ / MAP — list combinators whose body is EVAL'd once per
+    // iteration (per-element).  The generator-flavor helpers below
+    // (`runSeq` / `runMap`) drive each iteration through
     // `_evalValueGen` so a HALT/PROMPT inside an iteration's body lifts
     // cleanly through `yield*` up to the EVAL/CONT driver.  CONT
     // resumes inside the same iteration that suspended; the loop's
@@ -3478,8 +3474,8 @@ function* evalRange(s, toks, from, to, depth) {
     // because it lives in the generator's stack frame.  The
     // `register('SEQ', ...)` / `register('MAP', ...)` handlers below
     // stay as sync fallbacks (Name-dispatch, Tagged-wrapped Name, etc.)
-    // and reject HALT through `_driveGen` with the session-111 caller
-    // labels (`'SEQ expression'` / `'MAP program'`).
+    // and reject HALT through `_driveGen` with the caller labels
+    // (`'SEQ expression'` / `'MAP program'`).
     if (id === 'SEQ') {
       yield* runSeq(s, depth);
       i++;
@@ -3492,16 +3488,15 @@ function* evalRange(s, toks, from, to, depth) {
       if (_shouldStepYield()) yield;
       continue;
     }
-    // DOLIST / DOSUBS / STREAM — session 131.  Last three sync-path
-    // callers from session 111's caller-label table.  Same generator-
-    // flavor pattern as MAP / SEQ / IFT / IFTE: each iteration drives
-    // `prog` through `_evalValueGen` so HALT/PROMPT suspends through
-    // `yield*`.  Per-iteration state (`out` accumulator, current `i`,
-    // DOSUBS NSUB/ENDSUB frame) lives in the helper's stack frame, so
-    // CONT resumes mid-iteration with all state intact.  Sync fallbacks
-    // in `register('DOLIST', ...)` / `register('DOSUBS', ...)` /
-    // `register('STREAM', ...)` keep the session-111 caller labels for
-    // the rare Name-dispatch path.
+    // DOLIST / DOSUBS / STREAM — same generator-flavor pattern as
+    // MAP / SEQ / IFT / IFTE: each iteration drives `prog` through
+    // `_evalValueGen` so HALT/PROMPT suspends through `yield*`.
+    // Per-iteration state (`out` accumulator, current `i`, DOSUBS
+    // NSUB/ENDSUB frame) lives in the helper's stack frame, so CONT
+    // resumes mid-iteration with all state intact.  Sync fallbacks in
+    // `register('DOLIST', ...)` / `register('DOSUBS', ...)` /
+    // `register('STREAM', ...)` keep the caller labels for the rare
+    // Name-dispatch path.
     if (id === 'DOLIST') {
       yield* runDoList(s, depth);
       i++;
@@ -3908,31 +3903,29 @@ function* runIfErr(s, toks, openIdx, depth) {
   return autoClosed ? bound : endIdx + 1;
 }
 
-/* Stack-based conditionals — generator flavor (session 121).
+/* Stack-based conditionals — generator flavor.
  *
- * IFT and IFTE evaluate a Program off the stack as their action.  Until
- * session 121 those actions ran through `_evalValueSync`, which rejects
- * HALT/PROMPT inside the body via `_driveGen`.  Now `evalRange` itself
- * intercepts the IFT/IFTE Name tokens and delegates here; the action is
- * EVAL'd through `_evalValueGen` (yieldable), so a HALT/PROMPT inside
- * the action lifts cleanly through `yield*` up to the top-level EVAL/
- * CONT driver — same path that already works for `→` bodies and named
- * sub-program calls (sessions 088 / 106 / 116).
+ * IFT and IFTE evaluate a Program off the stack as their action.
+ * `evalRange` intercepts the IFT/IFTE Name tokens and delegates here;
+ * the action is EVAL'd through `_evalValueGen` (yieldable), so a
+ * HALT/PROMPT inside the action lifts cleanly through `yield*` up to
+ * the top-level EVAL/CONT driver — same path used for `→` bodies and
+ * named sub-program calls.
  *
- * The snap-and-restore wrapper preserves the existing "if the action
- * errors, restore the test+action operands" semantic from the old
- * `register('IFT')` / `register('IFTE')` bodies.  catch fires on RPLError
- * thrown from inside the action; HALT yields don't trigger catch (no
- * exception), so a successful HALT-and-CONT cycle leaves the stack in
- * whatever state the action produced — matching HP50 behavior where the
- * suspended-stack contents are exactly what the program built before
- * suspending.
+ * The snap-and-restore wrapper preserves the "if the action errors,
+ * restore the test+action operands" semantic of the
+ * `register('IFT')` / `register('IFTE')` sync handlers.  catch fires
+ * on RPLError thrown from inside the action; HALT yields don't trigger
+ * catch (no exception), so a successful HALT-and-CONT cycle leaves the
+ * stack in whatever state the action produced — matching HP50 behavior
+ * where the suspended-stack contents are exactly what the program
+ * built before suspending.
  *
- * The original `register('IFT', ...)` / `register('IFTE', ...)` handlers
- * stay as a sync fallback for the rare path where IFT/IFTE is reached
- * via `evalToken` Name dispatch (`'IFT' EVAL`, Tagged-wrapped Name(IFT),
+ * The `register('IFT', ...)` / `register('IFTE', ...)` handlers stay
+ * as a sync fallback for the rare path where IFT/IFTE is reached via
+ * `evalToken` Name dispatch (`'IFT' EVAL`, Tagged-wrapped Name(IFT),
  * etc.).  Those drive these same generators through `_driveGen`, which
- * still rejects HALT with the session-111 caller labels.
+ * rejects HALT with the IFT/IFTE caller labels.
  */
 function* runIft(s, depth) {
   const snap = s.save();
@@ -4276,25 +4269,24 @@ function _symConstantValue(name) {
  *  the generator (so its `finally` blocks run, including any
  *  `_popLocalFrame()` from an enclosing `runArrow`) and then throw.
  *  Program-in-variable calls reached via `evalToken`'s Name-binding
- *  branch do NOT come through this path — session 106 rewired that
- *  path through `_evalValueGen`, which `yield*`s the nested evalRange
- *  up to the top-level EVAL/CONT driver so HALT suspends cleanly.
- *  Everything reached via `_evalValueSync` still rejects here.
+ *  branch do NOT come through this path — that path runs through
+ *  `_evalValueGen`, which `yield*`s the nested evalRange up to the
+ *  top-level EVAL/CONT driver so HALT suspends cleanly.  Everything
+ *  reached via `_evalValueSync` still rejects here.
  *
  *  `caller`, when supplied, is baked into the error message so the
  *  user learns which op blocked the HALT (e.g. "IFT action", "MAP
- *  program") rather than just "a sub-program call".  Session 111:
- *  added.  Callers with no useful label (the recursive Name/Tagged
- *  path inside `_evalValueSync`) pass `caller` through unchanged so
- *  the outermost originator's label sticks.
+ *  program") rather than just "a sub-program call".  Callers with no
+ *  useful label (the recursive Name/Tagged path inside
+ *  `_evalValueSync`) pass `caller` through unchanged so the outermost
+ *  originator's label sticks.
  *
- *  Session 101: belt-and-suspenders close (R-002).  In practice the
- *  outer EVAL handler's `finally { _truncateLocalFrames(framesAtEntry) }`
- *  already restores the compiled-local frame depth before the abandoned
- *  generator reaches GC, so omitting `gen.return()` was not a
- *  correctness defect.  Closing the generator here makes the cleanup
- *  self-contained (no cross-function reasoning needed) and lets the
- *  generator object be reclaimed promptly instead of waiting on GC. */
+ *  We close the generator (`gen.return()`) before throwing so its
+ *  `finally` blocks run and the generator object is reclaimed promptly
+ *  rather than waiting on GC.  The outer EVAL handler's
+ *  `finally { _truncateLocalFrames(framesAtEntry) }` is the backstop
+ *  that restores the compiled-local frame depth in any abnormal
+ *  unwind. */
 function _driveGen(gen, caller) {
   const result = gen.next();
   if (!result.done) {
@@ -4305,13 +4297,12 @@ function _driveGen(gen, caller) {
 }
 
 /** Generator-flavored evaluator for Name-lookup-reached values.
- *  Session 106: narrow lift of the HALT-inside-named-sub-program pilot
- *  limit.  Reachable via `evalToken`'s Name-binding path (and its own
- *  recursion on nested Names / Tagged wrappers).  Session 116: also
- *  driven directly by the top-level EVAL handler so HALT lifts through
- *  Tagged-wrapped Programs and through Name values EVAL'd off the stack.
- *  Other ops that take a Program argument (IFT / IFTE / MAP / SEQ / …)
- *  still use `_evalValueSync`, which rejects HALT via `_driveGen`.
+ *  Reachable via `evalToken`'s Name-binding path (and its own recursion
+ *  on nested Names / Tagged wrappers), and driven directly by the
+ *  top-level EVAL handler so HALT lifts through Tagged-wrapped Programs
+ *  and through Name values EVAL'd off the stack.  Other ops that take
+ *  a Program argument (IFT / IFTE / MAP / SEQ / …) still use
+ *  `_evalValueSync`, which rejects HALT via `_driveGen`.
  *
  *  For Program values this delegates to `evalRange` with `yield*`,
  *  propagating any HALT up through `evalToken` → `evalRange` (the outer
@@ -4353,9 +4344,7 @@ function* _evalValueGen(s, v, depth, isSubProgram = true) {
     } else {
       // Top-level entry — `_insideSubProgram` stays whatever the caller
       // set it to (typically false).  evalRange's per-token yield is
-      // controlled solely by `_singleStepMode` here, matching the
-      // behavior of the pre-session-116 Program-direct path in the EVAL
-      // handler.
+      // controlled solely by `_singleStepMode` here.
       yield* evalRange(s, v.tokens, 0, v.tokens.length, depth);
     }
     return;
@@ -4382,7 +4371,39 @@ function* _evalValueGen(s, v, depth, isSubProgram = true) {
   }
 
   if (isTagged(v)) {
+    // Deliberate deviation from HP50 AUR §3-77: HP50 EVAL on a
+    // (non-port) Tagged value just pushes the untagged inner value
+    // without further evaluation.  rpl5050 recurse-EVALs the inner
+    // value so HALT/PROMPT inside a Tagged-wrapped Program suspends
+    // cleanly through both the wrapper and the program body.
+    // See test-control-flow.mjs HALT-through-Tagged tests for the
+    // contract this branch upholds.
     yield* _evalValueGen(s, v.value, depth + 1, isSubProgram);
+    return;
+  }
+
+  if (isList(v)) {
+    // HP50 AUR §3-77: EVAL on a List enters each object — names
+    // evaluated, commands evaluated, programs evaluated, other
+    // objects pushed.  Note this differs from Program EVAL (where
+    // an embedded Program is pushed as a literal): List EVAL
+    // explicitly RUNS embedded Programs.
+    //
+    // Implementation: walk each item.  Names go through evalToken
+    // (built-in op dispatch + local/global var lookup, matching
+    // program-body semantics).  Programs and Tagged values recurse
+    // through _evalValueGen (Tagged honors the HALT-through-wrappers
+    // deviation noted above).  Everything else pushes literally.
+    // HALT/PROMPT inside a list item lifts cleanly via `yield*`.
+    for (const item of v.items) {
+      if (isName(item)) {
+        yield* evalToken(s, item, depth);
+      } else if (isProgram(item) || isTagged(item)) {
+        yield* _evalValueGen(s, item, depth + 1, isSubProgram);
+      } else {
+        s.push(item);
+      }
+    }
     return;
   }
 
@@ -4444,7 +4465,31 @@ function _evalValueSync(s, v, depth, caller) {
   }
 
   if (isTagged(v)) {
+    // See _evalValueGen's Tagged comment — deliberate deviation from
+    // HP50 AUR §3-77 to support HALT-through-Tagged.
     _evalValueSync(s, v.value, depth + 1, caller);
+    return;
+  }
+
+  if (isList(v)) {
+    // HP50 AUR §3-77: EVAL on a List enters each object — names
+    // evaluated, commands evaluated, programs evaluated, others
+    // pushed.  Sync path: same dispatch as the generator version
+    // above, but Names go through `_driveGen(evalToken(...))` so a
+    // HALT/PROMPT inside a list item is rejected with a clear error
+    // (matching the Program sync-fallback behavior at the top of
+    // this function).  Programs and Tagged values recurse through
+    // `_evalValueSync` (which itself drives evalRange via _driveGen
+    // for Programs).
+    for (const item of v.items) {
+      if (isName(item)) {
+        _driveGen(evalToken(s, item, depth), caller);
+      } else if (isProgram(item) || isTagged(item)) {
+        _evalValueSync(s, item, depth + 1, caller);
+      } else {
+        s.push(item);
+      }
+    }
     return;
   }
 
@@ -4519,7 +4564,9 @@ function _evalValueSync(s, v, depth, caller) {
     return;
   }
 
-  // Numeric / String / List / Vector / Matrix — EVAL is idempotent.
+  // Numeric / String / Vector / Matrix — EVAL is a no-op push per
+  // AUR §3-77's "Other Objects" rule (List has its own branch above
+  // that evaluates each item HP50-style).
   s.push(v);
 }
 
@@ -4568,24 +4615,30 @@ function _angleAwareFnEval(name, args) {
 }
 
 register('EVAL', (s) => {
-  // Snapshot BEFORE the pop so that on error we restore the EVAL'd
-  // value too — the user can re-attempt from the same stack state.
+  // Snapshot AFTER the pop so that on error the EVAL'd value stays
+  // popped — only the body's partial pushes get unwound.  HP50-fidelity
+  // user expectation: pressing a soft key on a buggy program (or running
+  // `« 1 0 / » EVAL` directly) leaves the program *gone*, not waiting
+  // on level 1 to be pressed again.  The same shape applies to every
+  // EVAL path: entry-line `EVAL`, soft-key VARS / CST press (the
+  // surrounding `safeRun` in app.js takes a pre-push snapshot so the
+  // outer rollback is consistent with this inner one), `→NUM`, DBUG,
+  // and `'NAME' EVAL` on a stored Program.
   //
   // RPLAbort (thrown by ABORT) is deliberately NOT restored: HP50
   // ABORT preserves stack state at the point of the abort rather than
-  // rewinding to pre-EVAL, so we let the signal pass through untouched.
+  // rewinding to pre-pop, so we let the signal pass through untouched.
+  // The Program is consumed in the ABORT case as well.
   //
   // HALT inside a Program is handled via the generator mechanism:
   //   1. evalRange is a generator; it yields when a HALT token is hit.
   //   2. _evalValueGen wraps Program/Name/Tagged dispatch in a generator
   //      that `yield*`s evalRange so the yield reaches the driver loop
   //      below intact.
-  //   3. EVAL drives _evalValueGen with gen.next().  Session 116:
-  //      previously the Program case was inlined here and Tagged-wrapped
-  //      Programs / Name-on-stack values fell through to _evalValueSync,
-  //      which rejected HALT.  Going through _evalValueGen lifts HALT
-  //      through both Tagged wrappers and Name-on-stack EVALs so all
-  //      semantically-transparent program references suspend cleanly.
+  //   3. EVAL drives _evalValueGen with gen.next().  Tagged-wrapped
+  //      Programs and Name-on-stack values lift HALT through their
+  //      wrappers so all semantically-transparent program references
+  //      suspend cleanly.
   //   4. If the generator yields (not done), the live generator is stored
   //      in state.haltedStack via setHalted.  We do NOT truncate
   //      _localFrames — the generator is still live and any → frames
@@ -4599,8 +4652,7 @@ register('EVAL', (s) => {
   // here is the *outer* program from the SST/DBUG perspective — the
   // entry point, not a nested call.  This keeps `_insideSubProgram`
   // unflipped at the entry so SST yields per-token at the outer level
-  // (matching the pre-session-116 Program-direct semantics) and
-  // preserves SST↓ step-into semantics for any sub-programs the body
+  // and preserves SST↓ step-into semantics for any sub-programs the body
   // reaches via Name lookup.  See `_evalValueGen`'s docstring for the
   // full rationale.
   //
@@ -4612,10 +4664,14 @@ register('EVAL', (s) => {
   // generator finishes (done=true) or throws.  While halted, leave the
   // frames intact so the generator can see them on resume.
   const framesAtEntry = _localFrames.length;
-  const snap = s.save();
   let halted = false;
+  let snap = null;
   try {
     const v = s.pop();
+    // Snapshot is taken AFTER the pop.  If the pop itself threw (empty
+    // stack), `snap` stays null and the catch below skips restore — the
+    // pop's natural failure semantics already left the stack intact.
+    snap = s.save();
     const gen = _evalValueGen(s, v, 0, /* isSubProgram = */ false);
     const result = gen.next();
     if (!result.done) {
@@ -4625,7 +4681,7 @@ register('EVAL', (s) => {
       return;
     }
   } catch (e) {
-    if (!(e instanceof RPLAbort)) s.restore(snap);
+    if (!(e instanceof RPLAbort) && snap !== null) s.restore(snap);
     throw e;
   } finally {
     if (!halted) _truncateLocalFrames(framesAtEntry);
@@ -4678,15 +4734,15 @@ register('->NUM', (s, entry) => { OPS.get('→NUM').fn(s, entry); });
    expect — IFTE on a pair of Reals is effectively a value-select.
    ------------------------------------------------------------------ */
 
-// Session 121: drive the generator flavor (`runIft` / `runIfte`) so the
-// program-body intercept in `evalRange` and this Name-dispatch fallback
-// share the same evaluation path.  `_driveGen` rejects any yield with
-// the session-111 caller label — HALT/PROMPT inside an IFT/IFTE action
-// reached via `'IFT' EVAL` (sync, not body-intercept) still throws
+// Drive the generator flavor (`runIft` / `runIfte`) so the program-body
+// intercept in `evalRange` and this Name-dispatch fallback share the
+// same evaluation path.  `_driveGen` rejects any yield with the
+// IFT/IFTE caller label — HALT/PROMPT inside an action reached via
+// `'IFT' EVAL` (sync, not body-intercept) throws
 // `HALT: cannot suspend inside IFT action`.  The outer snap/restore
-// preserves the operand-rollback behavior of the prior body for the
-// HALT-rejection path: `gen.return()` runs only finally blocks, not
-// catch, so the helper's own snap/catch can't restore here.
+// preserves operand rollback on the HALT-rejection path:
+// `gen.return()` runs only finally blocks, not catch, so the helper's
+// own snap/catch can't restore here.
 register('IFT', (s) => {
   const snap = s.save();
   try {
@@ -6433,10 +6489,9 @@ register('POS', (s) => {
    ---------------------------------------------------------------- */
 function _stoArith(opSymbol) {
   // Deferred lookup — the arithmetic op registrations live later in this
-  // file (session 099 removed the first-pass shadows, so `lookup(opSymbol)`
-  // at module-load time would find nothing).  Resolving at call time also
-  // means `_stoArith` always picks up the authoritative dispatch, even if
-  // the registry is re-wired in a later session.
+  // file, so `lookup(opSymbol)` at module-load time would find nothing.
+  // Resolving at call time also means `_stoArith` always picks up the
+  // authoritative dispatch even if the registry is re-wired later.
   return (s) => {
     const binop = lookup(opSymbol);
     if (!binop) throw new RPLError(`Bad argument value`);
@@ -6714,7 +6769,7 @@ function _parseStringForObjTo(src) {
    too.
    ---------------------------------------------------------------- */
 function _incrDecrOp(opSymbol) {
-  // Deferred lookup — see _stoArith for rationale (session 099).
+  // Deferred lookup — see _stoArith for rationale.
   return (s) => {
     const binop = lookup(opSymbol);
     if (!binop) throw new RPLError('Bad argument value');
@@ -7143,9 +7198,9 @@ register('STR->', _fromStrOp);
 // list yields the supplied identity value.  The fold leaves the
 // accumulated value on the stack (via the underlying op's dispatch).
 //
-// Lookup is deferred to call time (session 099 — arithmetic `+ *`
-// registrations now live past this factory site; resolving at module
-// load would find undefined).
+// Lookup is deferred to call time — the arithmetic `+ *` registrations
+// live past this factory site, so resolving at module load would find
+// undefined.
 function _foldListOp(opSymbol, identity) {
   return (s) => {
     const binop = lookup(opSymbol);
@@ -7949,14 +8004,12 @@ register('RRB', (s) => { const v = s.pop(); s.push(_rotateRight(v, 8)); });
    not transactional on real firmware either).  Non-container top-of-
    stack throws 'Bad argument type'.
    ---------------------------------------------------------------- */
-// Generator flavor (session 126) — yieldable per-iteration evaluation
-// so a HALT/PROMPT inside `prog` lifts cleanly through the `evalRange`
-// body intercept.  Mirrors the IFT/IFTE pattern from session 121.  The
-// sync `_mapOneValue` helper below stays on for the (now-unused-from-
-// MAP, but still-callable-from-other-callers) sync code path; nothing
-// else in the file references it today, but leaving it in place keeps
-// the helper available for any future op that wants the same shape
-// without committing to a generator caller.
+// Generator flavor — yieldable per-iteration evaluation so a
+// HALT/PROMPT inside `prog` lifts cleanly through the `evalRange`
+// body intercept.  Mirrors the IFT/IFTE pattern.  The sync
+// `_mapOneValue` helper below stays on as a sync analogue for any
+// future op that wants the same shape without committing to a
+// generator caller.
 function* _mapOneValueGen(s, prog, e, depth) {
   const before = s.depth;
   s.push(e);
@@ -7986,7 +8039,7 @@ function _mapOneValue(s, prog, e) {
   return s.pop();
 }
 
-/* MAP — generator flavor (session 126).
+/* MAP — generator flavor.
  *
  * `evalRange` intercepts the MAP token and delegates here so a HALT or
  * PROMPT inside the per-element `prog` body suspends through the same
@@ -7994,8 +8047,7 @@ function _mapOneValue(s, prog, e) {
  * `newRow`) lives in this generator's stack frame, so a CONT after a
  * mid-iteration HALT resumes inside the same iteration with the
  * already-mapped prefix intact.  When the generator finally returns,
- * the resulting container is pushed onto the stack — same semantics as
- * the pre-126 sync path.
+ * the resulting container is pushed onto the stack.
  *
  * Iteration order: list → left-to-right; vector → left-to-right;
  * matrix → row-major (whole row 0 before row 1).  An iteration that
@@ -8006,7 +8058,7 @@ function _mapOneValue(s, prog, e) {
  * The `register('MAP', ...)` handler below stays as a sync fallback
  * for the rare path where MAP is reached via Name dispatch
  * (`'MAP' EVAL`, Tagged-wrapped `Name('MAP')`).  Sync drives this same
- * generator through `_driveGen`, which still rejects a HALT with
+ * generator through `_driveGen`, which rejects a HALT with
  * `HALT: cannot suspend inside MAP program`.
  */
 function* runMap(s, depth) {
@@ -8043,10 +8095,10 @@ function* runMap(s, depth) {
 
 register('MAP', (s) => {
   // Sync fallback — drive the generator and reject a yield with the
-  // session-111 caller label.  An RPLError thrown from inside the body
-  // (validation or partial-eval failure) propagates with whatever stack
-  // state the generator left behind; the original sync MAP did not
-  // snap/restore either, so behavior is preserved.
+  // MAP caller label.  An RPLError thrown from inside the body
+  // (validation or partial-eval failure) propagates with whatever
+  // stack state the generator left behind; this sync path does not
+  // snap/restore.
   _driveGen(runMap(s, 0), 'MAP program');
 });
 
@@ -8475,7 +8527,7 @@ function _toIntCount(v, errLabel) {
   throw new RPLError(errLabel);
 }
 
-/* SEQ — generator flavor (session 126).
+/* SEQ — generator flavor.
  *
  * `evalRange` intercepts the SEQ token and delegates here so a HALT or
  * PROMPT inside the per-iteration `expr` body suspends through the
@@ -8491,7 +8543,7 @@ function _toIntCount(v, errLabel) {
  * The `register('SEQ', ...)` handler below stays as a sync fallback
  * for the rare path where SEQ is reached via Name dispatch
  * (`'SEQ' EVAL`, Tagged-wrapped `Name('SEQ')`).  Sync drives this
- * same generator through `_driveGen`, which still rejects a HALT with
+ * same generator through `_driveGen`, which rejects a HALT with
  * `HALT: cannot suspend inside SEQ expression`.
  */
 function* runSeq(s, depth) {
@@ -8532,14 +8584,13 @@ function* runSeq(s, depth) {
 
 register('SEQ', (s) => {
   // Sync fallback — drive the generator and reject a yield with the
-  // session-111 caller label.  Pre-126 the body popped operands then
-  // ran the loop without snap/restore on RPLError; we preserve that
-  // shape (the generator pops first, so an RPLError mid-iteration
-  // leaves the operands consumed — same as before).
+  // SEQ caller label.  The generator pops operands first, so an
+  // RPLError mid-iteration leaves the operands consumed (no
+  // snap/restore on this path).
   _driveGen(runSeq(s, 0), 'SEQ expression');
 });
 
-/* DOLIST — generator flavor (session 131).
+/* DOLIST — generator flavor.
  *
  * `evalRange` intercepts the DOLIST token and delegates here so a HALT
  * or PROMPT inside the per-iteration `prog` body suspends through the
@@ -8552,7 +8603,7 @@ register('SEQ', (s) => {
  * The `register('DOLIST', ...)` handler below stays as a sync fallback
  * for the rare path where DOLIST is reached via Name dispatch
  * (`'DOLIST' EVAL`, Tagged-wrapped `Name('DOLIST')`).  Sync drives this
- * same generator through `_driveGen`, which still rejects a HALT with
+ * same generator through `_driveGen`, which rejects a HALT with
  * `HALT: cannot suspend inside DOLIST program`.
  */
 function* runDoList(s, depth) {
@@ -8591,10 +8642,9 @@ function* runDoList(s, depth) {
 
 register('DOLIST', (s) => {
   // Sync fallback — drive the generator and reject a yield with the
-  // session-111 caller label.  Pre-131 the body inlined the loop and
-  // ran without snap/restore on RPLError; the generator pops first, so
-  // an RPLError mid-iteration still leaves the operands consumed —
-  // same as before.
+  // DOLIST caller label.  The generator pops operands first, so an
+  // RPLError mid-iteration leaves the operands consumed (no
+  // snap/restore on this path).
   _driveGen(runDoList(s, 0), 'DOLIST program');
 });
 
@@ -8602,25 +8652,21 @@ register('DOLIST', (s) => {
    so NSUB / ENDSUB called inside the window-program can read the
    current window index and the total number of windows.  A JS array
    is used as a stack so nested DOSUBS calls nest the context naturally
-   — NSUB/ENDSUB always read the innermost frame.
-
-   Session 131: the frame is now pushed/popped inside the `runDoSubs`
-   generator's `try/finally`, so a KILL of a halted DOSUBS closes the
-   generator via `gen.return()` and the `finally` tears down the frame.
-   Earlier MAP/SEQ/IFT/IFTE work didn't have a per-call context stack
-   to maintain; DOSUBS's NSUB/ENDSUB frame is the analogous teardown
-   obligation. */
+   — NSUB/ENDSUB always read the innermost frame.  The frame is
+   pushed/popped inside `runDoSubs`'s `try/finally`, so a KILL of a
+   halted DOSUBS closes the generator via `gen.return()` and the
+   `finally` tears down the frame. */
 const _DOSUBS_STACK = [];
 function _currentDosubsFrame() {
   return _DOSUBS_STACK.length === 0
     ? null
     : _DOSUBS_STACK[_DOSUBS_STACK.length - 1];
 }
-// Test-side observer — used by session131 KILL/teardown assertions to
-// pin that the DOSUBS frame stack is empty after a halted-DOSUBS KILL.
+// Test-side observer — pins that the DOSUBS frame stack is empty
+// after a halted-DOSUBS KILL.
 export function dosubsStackDepth() { return _DOSUBS_STACK.length; }
 
-/* DOSUBS — generator flavor (session 131).
+/* DOSUBS — generator flavor.
  *
  * Window-iteration combinator (HP50 AUR §13.5).  Same generator-flavor
  * pattern as runMap / runSeq / runDoList: pop the three operands, push
@@ -8634,8 +8680,8 @@ export function dosubsStackDepth() { return _DOSUBS_STACK.length; }
  *
  * The `register('DOSUBS', ...)` handler below stays as a sync fallback
  * (Name dispatch).  Sync drives this same generator through
- * `_driveGen`, which still rejects a HALT with `HALT: cannot suspend
- * inside DOSUBS program`.
+ * `_driveGen`, which rejects a HALT with `HALT: cannot suspend inside
+ * DOSUBS program`.
  */
 function* runDoSubs(s, depth) {
   if (s.depth < 3) throw new RPLError('Too few arguments');
@@ -8670,7 +8716,7 @@ function* runDoSubs(s, depth) {
 
 register('DOSUBS', (s) => {
   // Sync fallback — drive the generator; reject yields with the
-  // session-111 caller label.
+  // DOSUBS caller label.
   _driveGen(runDoSubs(s, 0), 'DOSUBS program');
 });
 
@@ -8693,28 +8739,26 @@ register('ENDSUB', (s) => {
   s.push(Integer(BigInt(fr.total)));
 });
 
-/* STREAM — generator flavor (session 131).
+/* STREAM — generator flavor.
  *
  * Reduce-over-list combinator (HP50 AUR §13.5).  Pops a list and a
  * binary `prog`, and folds `prog` over the list left-to-right: with
  * items `{a b c d}` the sequence is `a b prog → r1; r1 c prog → r2;
  * r2 d prog → r3` and `r3` is pushed.  Same generator-flavor pattern:
- * the accumulator lives on the *RPL* stack between iterations
- * (matching pre-131 sync semantics), and each `prog` invocation goes
- * through `_evalValueGen` so HALT/PROMPT inside the body suspends
- * through the `yield` channel.  CONT resumes inside the same fold
- * step; the in-progress accumulator is *already on the RPL stack* at
- * suspension time, so the user sees it on the halted-stack display
- * during the suspension — same observability as a HALT inside any
- * other structural op.
+ * the accumulator lives on the *RPL* stack between iterations, and
+ * each `prog` invocation goes through `_evalValueGen` so HALT/PROMPT
+ * inside the body suspends through the `yield` channel.  CONT resumes
+ * inside the same fold step; the in-progress accumulator is *already
+ * on the RPL stack* at suspension time, so the user sees it on the
+ * halted-stack display during the suspension — same observability as
+ * a HALT inside any other structural op.
  *
- * One-element list short-circuits before any HALT can fire (matches
- * pre-131 behavior).  Empty list throws `Invalid dimension` (HP50's
- * own STREAM-on-empty error) — also matches pre-131.
+ * One-element list short-circuits before any HALT can fire.  Empty
+ * list throws `Invalid dimension` (HP50's own STREAM-on-empty error).
  *
  * The `register('STREAM', ...)` handler below stays as a sync fallback
  * (Name dispatch).  Sync drives this generator through `_driveGen`,
- * which still rejects HALT with `HALT: cannot suspend inside STREAM
+ * which rejects HALT with `HALT: cannot suspend inside STREAM
  * program`.
  */
 function* runStream(s, depth) {
@@ -8738,7 +8782,7 @@ function* runStream(s, depth) {
 
 register('STREAM', (s) => {
   // Sync fallback — drive the generator; reject yields with the
-  // session-111 caller label.
+  // STREAM caller label.
   _driveGen(runStream(s, 0), 'STREAM program');
 });
 
@@ -11612,10 +11656,10 @@ register('HALT', () => {
   throw new RPLError('HALT: not inside a running program');
 });
 
-// PROMPT — session 121.  HP50 AUR p.2-160 form: pop level 1 (the prompt
-// message) and halt the program with that message displayed as a
-// banner.  evalRange's intercept handles the inside-a-program case (pop
-// + setPromptMessage + yield).  Reaching this registered handler means
+// PROMPT — HP50 AUR p.2-160 form: pop level 1 (the prompt message) and
+// halt the program with that message displayed as a banner.
+// evalRange's intercept handles the inside-a-program case (pop +
+// setPromptMessage + yield).  Reaching this registered handler means
 // PROMPT was reached via Name dispatch outside a running program (e.g.
 // `'PROMPT' EVAL` from the keypad) — the HP50 has no useful behavior
 // there, and we surface the same "not inside a running program" error
@@ -11626,11 +11670,11 @@ register('PROMPT', () => {
 
 register('CONT', (s) => {
   if (!getHalted()) throw new RPLError('No halted program');
-  // Session 121: CONT consumes the active prompt banner.  PROMPT is
-  // a one-shot: the user has provided whatever input the program
-  // asked for and is resuming.  If the resumed program HALTs again
-  // with a fresh PROMPT, that call sets the message anew; if it HALTs
-  // without one, the banner stays cleared.  We clear up-front (before
+  // CONT consumes the active prompt banner.  PROMPT is a one-shot:
+  // the user has provided whatever input the program asked for and
+  // is resuming.  If the resumed program HALTs again with a fresh
+  // PROMPT, that call sets the message anew; if it HALTs without
+  // one, the banner stays cleared.  We clear up-front (before
   // takeHalted / next()) so the cleared state is visible during
   // resumption — including to any UI subscribers that re-render on
   // every emit.
@@ -11672,33 +11716,30 @@ register('KILL', () => {
   // currently-halted program, or does nothing").  KILL pops one
   // record off the halted stack; older halts are preserved.
   clearHalted();
-  // Session 121: any active PROMPT banner belongs to the killed
-  // program.  Clearing it here keeps the banner from outliving the
-  // program that posted it.  In the multi-slot case where older halts
-  // remain, we still nuke the global banner — we don't track per-slot
-  // prompts, and the next CONT/SST will either re-set or start fresh.
+  // Any active PROMPT banner belongs to the killed program; clearing
+  // it here keeps the banner from outliving the program that posted
+  // it.  In the multi-slot case where older halts remain, we still
+  // clear the global banner — there's no per-slot prompt tracking,
+  // and the next CONT/SST will either re-set or start fresh.
   clearPromptMessage();
 });
 
 /* RUN — AUR p.2-177.  With no DBUG session active, RUN is a synonym
- * for CONT.  When DBUG lands (queue item 2), this handler will grow
- * a branch that disables single-stepping on the resumed program
- * before re-entering evalRange.  For now the body delegates directly
- * to CONT so users typing `RUN` from the keypad get the same resume
- * semantics they'd get from CONT — closes a small HP50 keyword gap
- * without blocking on the full DBUG substrate. */
+ * for CONT, so the body delegates directly to CONT.  TODO: when a
+ * single-stepped program is being resumed, RUN should disable
+ * single-stepping before re-entering evalRange (CONT preserves
+ * whatever step state the program was suspended in). */
 register('RUN', (s) => {
   const contOp = OPS.get('CONT');
   contOp.fn(s);
 });
 
 /* ---------------- SST / SST↓ — single-step debugger ----------------
- * Session 101: single-step substrate built on the session-088
- * generator-based evalRange.  The implementation is a thin wrapper
- * around CONT plus a module-level `_singleStepMode` flag that
- * `evalRange` consults after every token (see the post-token `if
- * (_singleStepMode) yield;` line in evalRange and runControl /
- * runArrow tails).
+ * Single-step substrate built on the generator-based evalRange.  The
+ * implementation is a thin wrapper around CONT plus a module-level
+ * `_singleStepMode` flag that `evalRange` consults after every token
+ * (see the post-token `if (_singleStepMode) yield;` line in evalRange
+ * and runControl / runArrow tails).
  *
  * SST drives the top of the haltedStack forward by exactly one
  * token.  Implementation is symmetrical with CONT:
@@ -11719,18 +11760,15 @@ register('RUN', (s) => {
  *      they call SST again — which sets the flag, runs one token,
  *      and clears it.)
  *
- * Session 106: SST↓ — real step-into semantics.  `_evalValueGen`
- * (the generator flavor of `_evalValueSync`, reached only via
- * `evalToken` Name lookup) consults `_stepInto` around a sub-program
- * body: SST (`_stepInto === false`) clears `_singleStepMode` while
- * the body runs so it completes in one step; SST↓ (`_stepInto ===
- * true`) leaves the flag set so the body's own evalRange also yields
- * after each token, letting the user descend.  The same mechanism
- * also lifted the "HALT inside named sub-program" pilot limit — a
- * HALT anywhere inside a Name-reached Program now yields up through
- * `evalToken` and suspends the top-level EVAL/CONT driver cleanly.
- * Op-argument paths (IFT / IFTE / MAP / …) still go through
- * `_evalValueSync` and retain the reject-on-HALT behavior.
+ * SST↓ adds step-into.  `_evalValueGen` (the generator flavor of
+ * `_evalValueSync`, reached only via `evalToken` Name lookup)
+ * consults `_stepInto` around a sub-program body: SST
+ * (`_stepInto === false`) clears `_singleStepMode` while the body
+ * runs so it completes in one step; SST↓ (`_stepInto === true`)
+ * leaves the flag set so the body's own evalRange also yields
+ * after each token, letting the user descend.  Op-argument paths
+ * (IFT / IFTE / MAP / …) go through `_evalValueSync` and retain
+ * the reject-on-HALT behavior.
  *
  * Errors:
  *   - SST with no halted program → `No halted program` (same as
@@ -11742,11 +11780,11 @@ register('RUN', (s) => {
 
 function _stepOnce(s, into = false) {
   if (!getHalted()) throw new RPLError('No halted program');
-  // Session 121: SST/SST↓ resume the program by one token, which is
-  // enough to advance past a PROMPT.  The prompt banner is consumed by
-  // any form of resumption — same rationale as CONT above.  If the
-  // single step lands on a fresh PROMPT, that intercept will set the
-  // banner anew before the post-step re-suspend.
+  // SST/SST↓ resume the program by one token, which is enough to
+  // advance past a PROMPT.  The prompt banner is consumed by any form
+  // of resumption — same rationale as CONT above.  If the single step
+  // lands on a fresh PROMPT, that intercept will set the banner anew
+  // before the post-step re-suspend.
   clearPromptMessage();
   const h = takeHalted();
   const framesAtEntry = _localFrames.length;
@@ -11771,20 +11809,19 @@ function _stepOnce(s, into = false) {
   }
 }
 
-// Session 106: SST and SST↓ now differ.  SST (step-over) runs a named
-// sub-program call at full speed, yielding once after the call returns.
-// SST↓ (step-into) keeps single-stepping active while descending into
-// the sub-program, stopping on each of its tokens.  The distinction is
-// modulated by the `_stepInto` flag consulted in `_evalValueGen`'s
-// Program branch.
+// SST (step-over) runs a named sub-program call at full speed, yielding
+// once after the call returns.  SST↓ (step-into) keeps single-stepping
+// active while descending into the sub-program, stopping on each of
+// its tokens.  The distinction is modulated by the `_stepInto` flag
+// consulted in `_evalValueGen`'s Program branch.
 register('SST',  (s) => { _stepOnce(s, /* into = */ false); });
 register('SST↓', (s) => { _stepOnce(s, /* into = */ true);  });
 
 /* ---------------- DBUG — start a program in single-step mode --------
- * Session 101.  HP50 AUR p.2-95: DBUG pops a Program off level 1 and
- * begins executing it under the single-step debugger.  The program
- * is not pre-evaluated — it's halted before its first token, so the
- * user can SST through it from the very start.
+ * HP50 AUR p.2-95: DBUG pops a Program off level 1 and begins
+ * executing it under the single-step debugger.  The program is not
+ * pre-evaluated — it's halted before its first token, so the user
+ * can SST through it from the very start.
  *
  * Implementation: pop the Program, set `_singleStepMode = true`,
  * delegate to EVAL.  evalRange yields after the first token (which
@@ -11794,32 +11831,28 @@ register('SST↓', (s) => { _stepOnce(s, /* into = */ true);  });
  * flag is cleared in `finally` so a downstream CONT/RUN won't
  * single-step.  The user drives subsequent steps with SST.
  *
- * Session 116: peek through any Tagged wrappers when validating the
- * argument type.  Tagged values are transparent to EVAL (sessions
- * 088 / 116), and DBUG is just EVAL-with-stepping — a user who can
- * `EVAL` a Tagged-wrapped Program should likewise be able to DBUG
- * one.  We don't pop the Tagged layer; EVAL itself drives
- * _evalValueGen, which recursively peels Tagged on the way in.
+ * Tagged wrappers are peeked through for the type check — Tagged
+ * values are transparent to EVAL, and DBUG is EVAL-with-stepping.
+ * The actual peel happens inside EVAL via _evalValueGen's Tagged
+ * recursion.
  *
  * Errors:
  *   - DBUG on a non-Program (after peeling Tagged) → `Bad argument type`.
  * --------------------------------------------------------------- */
 register('DBUG', (s) => {
   // Peel Tagged wrappers for the type check.  Tagged values are
-  // transparent for EVAL purposes (session 116 lifted HALT through
-  // them); DBUG must accept the same set of arguments.  This is a
-  // pure read-through — the actual peel happens inside EVAL via
-  // _evalValueGen's Tagged recursion.
+  // transparent for EVAL purposes; DBUG must accept the same set of
+  // arguments.  This is a pure read-through — the actual peel happens
+  // inside EVAL via _evalValueGen's Tagged recursion.
   let probe = s.peek();
   while (probe && isTagged(probe)) probe = probe.value;
   if (!isProgram(probe)) throw new RPLError('Bad argument type');
   // EVAL handler does its own pop; we just toggle the flag around it.
   // wasStepping is virtually always false here, but guard against the
   // pathological "DBUG inside a halted single-step program" case.
-  //
-  // Session 106: also reset _stepInto to false — a fresh DBUG session
-  // starts in step-over mode.  Users choose step-into per-step by
-  // driving with SST↓ instead of SST.
+  // _stepInto is reset to false — a fresh DBUG session starts in
+  // step-over mode.  Users choose step-into per-step by driving with
+  // SST↓ instead of SST.
   const wasStepping = _singleStepMode;
   const wasInto = _stepInto;
   _singleStepMode = true;
@@ -15139,7 +15172,7 @@ register('EXLR', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   LNAME    (HP50 AUR §3-136)        session 124
+   LNAME    (HP50 AUR §3-136)
    List variable names contained in a Symbolic expression.
 
      Input :  level 1 = 'symb'
@@ -16093,7 +16126,7 @@ register('LNCOLLECT', (s) => {
   s.push(Symbolic(_lncollectWalk(v.expr)));
 });
 
-/* ---- PROPFRAC / PARTFRAC / COSSIN — session 104 --------------------
+/* ---- PROPFRAC / PARTFRAC / COSSIN -----------------------------------
    Three HP50 ALG / REWRITE menu ops, all thin wrappers over Giac.
 
      PROPFRAC  (HP50 AUR §3-197)
@@ -16183,7 +16216,7 @@ register('COSSIN', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   LIN     (HP50 AUR §3-131)        session 139
+   LIN     (HP50 AUR §3-131)
    Linearize an expression in exponentials.  Giac's `lin(expr)` collapses
    products / powers of exponentials so that, e.g., `e^X * e^Y → e^(X+Y)`
    and `(e^X)^3 → e^(3*X)`.  Single-arg, mirrors PROPFRAC / PARTFRAC /
@@ -16207,7 +16240,7 @@ register('LIN', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   LIMIT / lim    (HP50 AUR §3-131, §lim entry)        session 139
+   LIMIT / lim    (HP50 AUR §3-131, §lim entry)
    Limit of an expression as its variable approaches a value.
 
      ( expr 'var=val' → limit )      explicit equation form
@@ -16225,8 +16258,8 @@ register('LIN', (s) => {
        translate to Giac's `+infinity` / `-infinity`.
    `LIMIT` is the canonical name (HP49 backward-compat); `lim` is
    registered as a thin alias that delegates to LIMIT's fn so any
-   future refinement picks up automatically (mirrors XNUM / XQ from
-   session 086 and CHARPOL from session 114).
+   future refinement picks up automatically (mirrors XNUM / XQ and
+   CHARPOL).
    No-fallback policy: Giac not ready → `CAS not ready`.
    ------------------------------------------------------------------ */
 function _limitPointToGiac(pointArg) {
@@ -16293,7 +16326,7 @@ register('LIMIT', (s) => {
 register('lim', (s) => { OPS.get('LIMIT').fn(s); });
 
 /* ------------------------------------------------------------------
-   Matrix-symbolic ops — PCAR / CHARPOL / EGVL       (session 114)
+   Matrix-symbolic ops — PCAR / CHARPOL / EGVL
 
    Three CAS-backed matrix ops that take an n×n Matrix and route
    through Giac.  Matrix is serialized to Giac's `[[a,b],[c,d]]`
@@ -16370,7 +16403,7 @@ register('PCAR', (s) => {
 /** `CHARPOL` — alias for PCAR.  Some HP-family codebases use the
  *  descriptive name; register as a thin wrapper so it picks up any
  *  future refinement of PCAR automatically (mirrors the XNUM / XQ
- *  alias pattern from session 086). */
+ *  alias pattern XNUM / XQ use). */
 register('CHARPOL', (s) => { OPS.get('PCAR').fn(s); });
 
 register('EGVL', (s) => {
@@ -16392,7 +16425,7 @@ register('EGVL', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   EGV   (HP50 AUR §3-73)        session 119
+   EGV   (HP50 AUR §3-73)
    Eigenvalues + right eigenvectors of a square matrix.
 
      Input :  level 1 = [[ M ]]   (n × n)
@@ -16445,7 +16478,7 @@ register('EGV', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   RSD   (HP50 AUR §3-213)        session 119
+   RSD   (HP50 AUR §3-213)
    Residual command — returns B − A·Z.
 
      Input :  level 3 = B  (vector or matrix)
@@ -16518,7 +16551,7 @@ register('RSD', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   GREDUCE   (HP50 AUR §3-99)        session 119
+   GREDUCE   (HP50 AUR §3-99)
    Reduce a polynomial with respect to a Grœbner basis.
 
      Input :  level 3 = poly      (Symbolic / Name / numeric)
@@ -16571,7 +16604,7 @@ register('GREDUCE', (s) => {
 });
 
 /* ------------------------------------------------------------------
-   GBASIS    (HP50 AUR §3-95)        session 124
+   GBASIS    (HP50 AUR §3-95)
    Compute a Grœbner basis of the ideal generated by a vector of
    polynomials over a given variable list.
 

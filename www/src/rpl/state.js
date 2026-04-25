@@ -921,7 +921,7 @@ export function resetHome() {
   state.current = _home;
   state.halted = null;                   // no-emit direct reset
   state.haltedStack.length = 0;          // drain the LIFO too
-  state.promptMessage = null;            // session 121: clear PROMPT banner
+  state.promptMessage = null;            // clear any PROMPT banner
   _emit();
 }
 

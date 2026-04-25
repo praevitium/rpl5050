@@ -1635,20 +1635,13 @@ function _roundTripProgram(prog) {
 }
 
 /* ================================================================
-   Session 146 — DECOMP → STR→ round-trip for the structural-keyword
-   family that wasn't previously pinned.
-
-   Session 073 pinned DECOMP→STR→ over IF/THEN/ELSE/END only.
-   Sessions 074 / 078 / 083 / 136 added auto-close on missing END /
-   NEXT for the rest of the structural-keyword family (CASE,
-   IFERR, IF, WHILE, DO, START, FOR), and the formatter has long
-   emitted these keywords in their canonical source form, but no
-   test pinned that the resulting source-string round-trips
-   through DECOMP→STR→ for them.  A regression in either the
-   formatter (mis-spelled keyword, dropped delimiter) or the
-   parser (missing tokenisation rule) for any one of these
-   constructs would have slipped through.  These pins close the
-   gap for the full structural family.
+   DECOMP → STR→ round-trip for the structural-keyword family
+   (CASE, IFERR, IF, WHILE, DO, START, FOR + auto-close variants).
+   Pins that the formatter's canonical keyword form parses back
+   through DECOMP→STR→.  A regression in either the formatter
+   (mis-spelled keyword, dropped delimiter) or the parser (missing
+   tokenisation rule) for any one of these constructs would surface
+   here.
    ================================================================ */
 
 /* ---- IFERR / THEN / ELSE / END round-trip ---- */

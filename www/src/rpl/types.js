@@ -17,8 +17,8 @@
      Rational  — exact ratio of integers via Fraction.js; participates in
                  the Integer ⊂ Rational ⊂ Real ⊂ Complex promotion lattice.
                  Stored as { n: BigInt, d: BigInt } in lowest terms with
-                 d ≥ 1n; introduced in session 092.  Fraction.js is
-                 vendored at `www/src/vendor/fraction.js/`.
+                 d ≥ 1n.  Fraction.js is vendored at
+                 `www/src/vendor/fraction.js/`.
      Complex   — { re, im } real pair
      String    — quoted string literal
      Name      — global or local identifier

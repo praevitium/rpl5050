@@ -133,13 +133,10 @@ assert(subDir && isDirectory(subDir), 'SUB restored as Directory');
 assert(subDir.parent === calcState.home, 'SUB.parent relinked to live HOME');
 
 /* --- Unknown-version rejection ---
-     session117: migrated from `let threw = false; try{…}catch{…}` to
-     `assertThrows` + follow-up regex guards that pin the message
-     shape and the rejection surface of adjacent bad-input shapes.
-     Closes queue item #4 from session 112 (the `test-persist.mjs`
-     :118 migration).  Each new assertion is an independent
-     regression guard over distinct branches in `rehydrate()`'s
-     shape check (`persist.js:125-132`). */
+     `assertThrows` + follow-up regex guards pin the message shape
+     and the rejection surface of adjacent bad-input shapes.  Each
+     assertion is an independent regression guard over distinct
+     branches in `rehydrate()`'s shape check (`persist.js:125-132`). */
 const verErr = assertThrows(
   () => rehydrate({ version: 999 }, new Stack()),
   /unsupported version/,
@@ -157,7 +154,7 @@ assertThrows(
   'session117: missing version (snap.version === undefined) is rejected with same shape');
 // Non-object snap: distinct reject path at persist.js:125 — the
 // version check never fires because the object-shape check errors
-// first.  The two branches were previously untested in isolation.
+// first.
 assertThrows(
   () => rehydrate(null, new Stack()),
   /not an object/,
@@ -276,7 +273,7 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value.eq(2) &&
   resetCasVx();
 }
 
-/* --- session 144: MODULO state survives snapshot / rehydrate. --- */
+/* --- MODULO state survives snapshot / rehydrate. --- */
 {
   const { setCasModulo, resetCasModulo, getCasModulo } =
     await import('../www/src/rpl/state.js');

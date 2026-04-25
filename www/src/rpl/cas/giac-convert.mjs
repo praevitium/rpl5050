@@ -22,7 +22,6 @@
 // Only the parseAlgebra entry point is needed at runtime — Num/Var/Neg/
 // Bin/Fn/formatAlgebra appear in the comments above as references to
 // the AST shape but are never constructed or called from this file.
-// (REVIEW.md X-009 closed session 114.)
 import { parseAlgebra } from "../algebra.js";
 import { isValidHpIdentifier } from "../types.js";
 import { RPLError } from "../stack.js";
