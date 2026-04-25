@@ -32,7 +32,7 @@ import { allOps, lookup } from '../rpl/ops.js';
 import {
   state as calcState, subscribe as subscribeState,
   varRecall, varStore, varPurge, goInto, currentPath,
-  getDirectoryByPath, moveCurrentEntry,
+  getDirectoryByPath, moveCurrentEntry, reorderCurrentEntry,
 } from '../rpl/state.js';
 import { TYPES } from '../rpl/types.js';
 import { UNIT_CATALOG } from '../rpl/units.js';
@@ -389,6 +389,134 @@ export class SidePanel {
     subscribeState(() => {
       if (this.tab === 'files' && this.isOpen()) this._render();
     });
+
+    // Drag-and-drop for the Files tab.  Listeners are wired once on
+    // the panel root with delegation; each rendered row sets
+    // `draggable=true` and a `data-drag-name` so dragstart can pick
+    // the moving entry's name out without per-row listeners.  Three
+    // drop semantics share the same plumbing:
+    //   - drop on a sibling file row    → reorder before/after it
+    //   - drop on a directory row mid   → move INTO that directory
+    //   - drop on a breadcrumb segment  → move into that ancestor
+    //   - drop in empty space below the last row → move to end
+    panel.addEventListener('dragstart', (ev) => {
+      const row = ev.target.closest?.('.sp-file-row');
+      if (!row || !row.dataset.dragName) return;
+      this._dragName = row.dataset.dragName;
+      try {
+        ev.dataTransfer.setData('text/plain', row.dataset.dragName);
+        ev.dataTransfer.effectAllowed = 'move';
+      } catch { /* setData rare-failure on Firefox; safe to ignore */ }
+      row.classList.add('sp-dragging');
+    });
+    panel.addEventListener('dragend', () => {
+      this._dragName = null;
+      this._clearDropFeedback();
+    });
+    panel.addEventListener('dragover', (ev) => {
+      if (!this._dragName) return;
+      const target = this._dropTargetAt(ev);
+      this._clearDropFeedback();
+      if (!target) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      target.el.classList.add(`sp-drop-${target.zone}`);
+    });
+    panel.addEventListener('drop', (ev) => {
+      if (!this._dragName) return;
+      const target = this._dropTargetAt(ev);
+      ev.preventDefault();
+      const dragged = this._dragName;
+      this._dragName = null;
+      this._clearDropFeedback();
+      if (!target) return;
+      this._performDrop(dragged, target);
+    });
+  }
+
+  /** Resolve the pointer position into a logical drop target.  Returns
+   *  one of:
+   *    { kind: 'reorder', name, zone: 'before' | 'after' }
+   *    { kind: 'into',    name, zone: 'into',  el }
+   *    { kind: 'crumb',   index, zone: 'into', el }
+   *    { kind: 'end',                 zone: 'before', el }
+   *  …or null when the cursor is outside any drop zone or is hovering
+   *  over the dragged row itself.  `el` is the DOM node to flag with a
+   *  visual cue; for reorder targets it's the row, for crumb it's the
+   *  segment button, for end it's the list container.  Three-zone
+   *  geometry inside a row: top 25%/50% = before, middle 50% (folders
+   *  only) = into, bottom 25% = after.  Non-folder rows use a simple
+   *  top-half / bottom-half split. */
+  _dropTargetAt(ev) {
+    if (!this._dragName) return null;
+    const crumb = ev.target.closest?.('.sp-crumb');
+    if (crumb && this.el.contains(crumb)) {
+      return { kind: 'crumb', index: Number(crumb.dataset.value), zone: 'into', el: crumb };
+    }
+    const row = ev.target.closest?.('.sp-file-row');
+    if (row && this.el.contains(row)) {
+      const name = row.dataset.dragName;
+      if (!name || name === this._dragName) return null;
+      const rect = row.getBoundingClientRect();
+      const frac = rect.height > 0 ? (ev.clientY - rect.top) / rect.height : 0.5;
+      const isDir = row.classList.contains('sp-file-row-dir');
+      if (isDir) {
+        if (frac < 0.25) return { kind: 'reorder', name, zone: 'before', el: row };
+        if (frac > 0.75) return { kind: 'reorder', name, zone: 'after',  el: row };
+        return { kind: 'into', name, zone: 'into', el: row };
+      }
+      return { kind: 'reorder', name, zone: frac < 0.5 ? 'before' : 'after', el: row };
+    }
+    // Empty space inside the file list → drop at end of current dir.
+    const list = ev.target.closest?.('.sp-file-list');
+    if (list && this.el.contains(list)) {
+      return { kind: 'end', zone: 'before', el: list };
+    }
+    return null;
+  }
+
+  _clearDropFeedback() {
+    const cls = ['sp-drop-before', 'sp-drop-after', 'sp-drop-into'];
+    for (const el of this.el.querySelectorAll('.' + cls.join(', .'))) {
+      el.classList.remove(...cls);
+    }
+  }
+
+  _performDrop(name, target) {
+    const { entry } = this.app;
+    if (target.kind === 'crumb') {
+      const segs = currentPath().slice(0, target.index + 1);
+      const dir = getDirectoryByPath(segs);
+      if (!dir) {
+        entry.flashError({ message: `Move: target not found` });
+        return;
+      }
+      try { moveCurrentEntry(name, dir); }
+      catch (e) { entry.flashError({ message: `Move: ${e.message}` }); }
+      return;
+    }
+    if (target.kind === 'into') {
+      const dir = calcState.current.entries.get(target.name);
+      try { moveCurrentEntry(name, dir); }
+      catch (e) { entry.flashError({ message: `Move: ${e.message}` }); }
+      return;
+    }
+    if (target.kind === 'reorder') {
+      let beforeKey = target.name;
+      if (target.zone === 'after') {
+        const keys = [...calcState.current.entries.keys()];
+        const idx = keys.indexOf(target.name);
+        beforeKey = idx >= 0 ? (keys[idx + 1] ?? null) : null;
+      }
+      try { reorderCurrentEntry(name, beforeKey); }
+      catch (e) { entry.flashError({ message: `Reorder: ${e.message}` }); }
+      return;
+    }
+    if (target.kind === 'end') {
+      try { reorderCurrentEntry(name, null); }
+      catch (e) { entry.flashError({ message: `Reorder: ${e.message}` }); }
+      return;
+    }
   }
 
   open(tab = 'commands') {
@@ -728,6 +856,12 @@ export class SidePanel {
       const isDir = value.type === TYPES.DIRECTORY;
       const row = document.createElement('div');
       row.className = 'sp-file-row' + (isDir ? ' sp-file-row-dir' : '');
+      // Drag source.  `data-drag-name` is what the dragstart delegator
+      // pulls out — kept separate from data-action / data-value (used
+      // by clicks) so a click on the row still routes through
+      // _handleAction without touching the drag plumbing.
+      row.draggable = true;
+      row.dataset.dragName = name;
 
       const main = document.createElement('button');
       main.type = 'button';

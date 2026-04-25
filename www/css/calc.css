@@ -1052,6 +1052,24 @@ body.sp-resizing {
   color: #ffd0d4;
 }
 
+/* Drag-and-drop visual feedback for Files-tab rows and breadcrumbs.
+   `sp-dragging` dims the source row.  `sp-drop-before` / `-after`
+   draw a thick accent line above / below the row to mark where the
+   drop will insert.  `sp-drop-into` highlights a directory row or
+   crumb segment to mark a "move into" target. */
+.sp-file-row.sp-dragging { opacity: 0.4; }
+.sp-file-row.sp-drop-before { box-shadow: 0 -2px 0 0 #67e8f9 inset, 0 0 0 1px #67e8f9 inset; }
+.sp-file-row.sp-drop-after  { box-shadow: 0 2px 0 0 #67e8f9 inset, 0 0 0 1px #67e8f9 inset; }
+.sp-file-row.sp-drop-into,
+.sp-crumb.sp-drop-into {
+  background: rgba(103, 232, 249, 0.18);
+  outline: 1px dashed #67e8f9;
+  outline-offset: -2px;
+}
+.sp-file-list.sp-drop-before {
+  box-shadow: 0 2px 0 0 #67e8f9 inset;
+}
+
 /* Short viewports — drop some vertical padding so keys fit. */
 @media (max-height: 640px) {
   .key { padding: 3px; min-height: 28.5px; }

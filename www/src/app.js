@@ -18,7 +18,7 @@ import { format } from './rpl/formatter.js';
 import {
   state as calcState, subscribe as subscribeState,
   cycleAngle, toggleApproxMode, cycleCoordMode, setBinaryBase,
-  varList, varRecall, varStore, currentPath,
+  varOrder, varRecall, varStore, currentPath,
   goInto, goHome, goUp,
 } from './rpl/state.js';
 import { lookup } from './rpl/ops.js';
@@ -456,14 +456,14 @@ class App {
    *  when it ends up past the end of a shrunk var list.
    */
   showVarsMenu(opts = {}) {
-    const names = varList();
+    const names = varOrder();
     const prevPage = this.menuPage;
     const slots = names.map((id) => ({
       label: id,
       // Unshifted: EVAL-or-descend-or-push.  Programs execute; a
       // Directory value descends into that subdirectory (HP50 VARS
       // press-on-a-subdir behavior); everything else is pushed
-      // literally.  Looking up via varList() restricts this to names
+      // literally.  Looking up via varOrder() restricts this to names
       // that live in the CURRENT directory, so descent never walks
       // across parent chains — it always enters a direct child.
       onPress: () => {

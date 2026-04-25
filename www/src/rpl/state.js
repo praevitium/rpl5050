@@ -827,6 +827,41 @@ export function varOrder() {
   return [...state.current.entries.keys()];
 }
 
+/** Move a single entry within the current directory: place `name`
+ *  immediately before `beforeName`, or at the end if `beforeName` is
+ *  null / undefined.  Used by the Files tab's drag-to-reorder.  No-op
+ *  if `name` is missing, if the move would not change the order, or
+ *  if `beforeName` is supplied but doesn't refer to a sibling.  Map
+ *  doesn't expose an in-place reorder so we rebuild the entries Map
+ *  with the new sequence — same approach `reorderCurrentEntries`
+ *  takes for the bulk ORDER op. */
+export function reorderCurrentEntry(name, beforeName) {
+  const dir = state.current;
+  const key = String(name);
+  if (!dir.entries.has(key)) return;
+  const keys = [...dir.entries.keys()];
+  const fromIdx = keys.indexOf(key);
+  let targetIdx;
+  if (beforeName == null) {
+    targetIdx = keys.length;                     // append after removal
+  } else {
+    const beforeKey = String(beforeName);
+    const beforeIdx = keys.indexOf(beforeKey);
+    if (beforeIdx < 0) return;
+    targetIdx = beforeIdx;
+  }
+  // After splicing out `name`, indices > fromIdx shift down by 1; pin
+  // the user's intent ("before this row") through that shift.
+  if (targetIdx > fromIdx) targetIdx--;
+  if (targetIdx === fromIdx) return;
+  keys.splice(fromIdx, 1);
+  keys.splice(targetIdx, 0, key);
+  const rebuilt = new Map();
+  for (const k of keys) rebuilt.set(k, dir.entries.get(k));
+  dir.entries = rebuilt;
+  _emit();
+}
+
 /** Reorder the current directory's entries so that `names` appears
  *  first in that exact order, followed by any remaining entries in
  *  their previous relative order.  Unknown names in `names` are
