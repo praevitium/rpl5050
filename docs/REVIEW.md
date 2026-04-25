@@ -183,7 +183,40 @@ block below).  Released at end of run.
 | **Fix**        | Minimum change that resolves the finding. |
 | **Confidence** | `high` — verified by grep + re-read; `medium` — plausible but needs owner judgment; `low` — style / could-be-deliberate. |
 | **Age**        | `new` / `N runs` (number of review-lane runs since first filed). |
-| **Status**     | `open` / `resolved session-NNN` / `retracted session-NNN` / `partial`. |
+| **Status**     | `open` / `resolved session-NNN` / `retracted session-NNN` / `partial` / `[ship-target]` / `[deferred - post-ship]`. |
+
+---
+
+## Ship priorities — Sunday 2026-04-26
+
+The user set Sunday **2026-04-26** as the last full day of work on
+this version, with this guidance at ship-prep on Saturday afternoon:
+
+> "The programming features should be given priority.  Also the
+> OBJ→ behavior should be closer to the HP50.  Also, when a soft
+> key and it errors, it should remove the program from the stack."
+
+Translated into ledger items, in priority order:
+
+1. **R-007** `[resolved - ship-prep 2026-04-25]` — soft-key
+   program-error rollback.  Done in app.js; pinned in
+   `tests/test-variables.mjs`.
+2. **R-008** `[ship-target — programming-features priority]` —
+   `OBJ→` AUR §3-149 fidelity audit.  Real-branch decomposition
+   (mantissa/exponent split) and Tagged-branch tag-as-String are
+   the two suspected divergences; AUR re-read needed before edit.
+   Owner = `rpl5050-rpl-programming`.
+3. Anything else in the open queue (**C-011**, **X-003**) is
+   ship-stretch — nice to land but not blocking.
+4. **O-009** `[deferred - post-ship]` — sandbox cannot delete the
+   `.bak` files; user-side `rm` after ship.
+
+Lane priority through Sunday close: **`rpl5050-rpl-programming`
+runs take precedence** over the other lanes' work where there is
+contention; they should pull R-008 first, then any other R-bucket
+items.  Other lanes should avoid touching `www/src/rpl/ops.js`
+ranges that overlap `OBJ→` (`:6535-6635`) without coordinating via
+the lock system.
 
 ---
 
@@ -1589,6 +1622,111 @@ block below).  Released at end of run.
 ---
 
 ## Findings — RPL
+
+### R-007  Soft-key program-error left the program on the stack — fixed at ship-prep-2026-04-25-r2
+
+- **Classification.** RPL (programming-features priority — soft-key
+  invocation is the primary user-reachable path for executing a
+  named Program, and its error semantics are part of the language
+  contract).
+- **Where.**
+  - `www/src/app.js:483-494` — `showVarsMenu`'s `onPress` Program
+    branch.
+  - `www/src/app.js:564-578` — `showCustomMenu`'s `onPress` Program
+    / Name branch.
+  - Test pin: `tests/test-variables.mjs` "VARS soft-key error:
+    pushed Program is removed from stack" (+3 assertions).
+- **What.**  Both soft-menu paths used the shape
+  `this.stack.push(v); this.entry.safeRun(() => EVAL.fn(...), 'EVAL')`.
+  `safeRun` saves a stack snapshot at *its* entry — i.e. AFTER the
+  push — so when EVAL throws, `safeRun.restore()` walks back to the
+  post-push state.  The pushed Program survived the rollback, and
+  the user was left with the program literal on level 1 staring at
+  them after a failed press.
+- **Why.**  HP50 soft-key semantics are "press the key, run the
+  program; if it errors, the stack returns to its pre-press state".
+  Leaking the program onto the stack was both a divergence from HP50
+  fidelity and a UX wart — a typo in a stored program meant the
+  next press dumped a `Program → Program` no-op into level 1 every
+  time.
+- **Fix.**  Move the `push(v)` *inside* the `safeRun` body so the
+  snapshot is taken before the push; on rollback the push unwinds
+  with everything else.  Same pattern in both menu paths.  Pure
+  refactor — success path unchanged (EVAL on a Program consumes the
+  Program in the same way it always did).
+- **Confidence.** high — `node tests/test-all.mjs` is **5041 / 0**
+  at run-close (was 5038 / 0 at run-entry; the +3 are the new
+  assertions in `tests/test-variables.mjs`); `node --check
+  www/src/app.js` clean; manual driver simulating
+  `varStore('NEEDARG', Program([Name('DUP')]))` followed by the
+  fixed `onPress` body with an empty stack confirms the program is
+  popped on the throw.
+- **Age.** new (filed and resolved in the same ship-prep pass).
+  **Status.** **[resolved - ship-prep 2026-04-25]** — landed under
+  lock owner `ship-prep-2026-04-25-r2`.
+
+### R-008  `OBJ→` divergence from HP50 AUR §3-149 — Real and Tagged branches need fidelity audit
+
+- **Classification.** RPL (programming-features priority — `OBJ→`
+  is the foundation of Program / List / Vector / Matrix / Symbolic
+  metaprogramming; see ops.js comment at `:6535-6555`).  Owner =
+  `rpl5050-rpl-programming` for ship-target priority; can also
+  ride a `rpl5050-command-support` run since the implementation
+  lives in `www/src/rpl/ops.js`.
+- **Where.**
+  - `www/src/rpl/ops.js:6618-6633` — Real / Integer branch.
+    Currently splits a Real into mantissa-in-`[1,10)` and a
+    `floor(log10(|x|))` exponent and pushes them as
+    `Real(m), Integer(e)`.  Integer branch is a no-op repush.
+  - `www/src/rpl/ops.js:6562-6566` — Tagged branch.  Pushes
+    `value, Str(tag)`.
+- **What — two suspected divergences from HP50 AUR §3-149:**
+  1. **Real.**  HP50 `OBJ→` on a Real returns the same Real
+     unchanged (mantissa/exponent decomposition is `MANT` and
+     `XPON`'s job, separately).  rpl5050 currently does the
+     `MANT`/`XPON` decomposition inline.  Need an AUR re-read
+     under `docs/HP50 Advanced Guide.pdf` §3-149 (`OBJ→`) and
+     a comparison vs. §3-?? (`MANT` / `XPON`) to confirm.  If
+     confirmed, the Real branch should reduce to `s.push(v);
+     return;` matching the Integer branch.
+  2. **Tagged.**  HP50 `OBJ→` on a Tagged object pushes the
+     value and the tag NAME (Name type — prints unquoted as
+     `:tag:` or quoted as `'tag'`), not a String.  rpl5050
+     currently pushes `Str(tag)` which prints with double
+     quotes.  Need an AUR re-read to confirm the canonical
+     output type, then either switch to `Name(tag)` or
+     document the deliberate-deviation rationale in the ops.js
+     header block.
+- **Why.**  User instruction at ship-prep 2026-04-25:
+  "OBJ→ behavior should be closer to the HP50".  Both
+  divergences are observable to a user who runs an HP50 program
+  on rpl5050 expecting AUR semantics — the Real-decomposition
+  case in particular changes stack shape (1-in / 2-out vs.
+  1-in / 1-out) so any program assuming HP50 OBJ→ returns the
+  same Real will misbehave.
+- **Fix.**  Two narrow edits + the AUR re-read:
+  1. Real: drop the mantissa/exponent split, push `v`, return.
+     Adjust the dispatch comment block at `:6535-6555` to
+     reflect the new shape.  Pin both the new Real shape and
+     the existing `MANT` / `XPON` shape with regression-guard
+     assertions in `tests/test-reflection.mjs` (or
+     `tests/test-stack-ops.mjs`, wherever OBJ→'s coverage
+     currently lives).
+  2. Tagged: switch `Str(v.tag)` to `Name(v.tag, true)`
+     (quoted Name) — matches the HP50 form a user sees on the
+     stack as `'tag'`.  Update the dispatch comment block.
+     Update the existing Tagged round-trip pin if any.
+- **Confidence.** medium — the Real divergence is visible on
+  inspection (the code clearly does mantissa/exponent split);
+  AUR re-read is needed to lock in the exact HP50 spec for both
+  branches.  The Tagged divergence reading is from the AUR's
+  general `OBJ→` table; confirm against the PDF before the fix.
+- **Age.** new (filed ship-prep 2026-04-25).  **Status.** open
+  — **[ship-target — programming-features priority]**.  Lane =
+  `rpl5050-rpl-programming` (preferred — programming features
+  take priority through Sunday close per the user's ship-prep
+  instruction); fallback owner `rpl5050-command-support` since
+  the code lives in `www/src/rpl/ops.js`.
 
 ### R-004  `docs/RPL.md` carries no narrative for the session-121 IFT/IFTE generator-flavor lift or the PROMPT mechanism
 
