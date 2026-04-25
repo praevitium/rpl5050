@@ -1695,6 +1695,41 @@ giac._setFixtures({
   giac._clear();
 }
 {
+  // Typed-list reply: some giacwasm builds prefix the list literal
+  // with `list`, returning `list[1]` for `solve(X-1=0, X)`.  The
+  // splitGiacList parser must strip the prefix so SOLVE doesn't fall
+  // through to scalar parsing and choke on "Trailing input at pos 4".
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X - 1 = 0')));
+  s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('solve(X-1-0,X)', 'list[1]');
+  lookup('SOLVE').fn(s);
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 1 &&
+         isSymbolic(top.items[0]) &&
+         formatAlgebra(top.items[0].expr) === 'X = 1',
+         `SOLVE op: typed-list reply list[1] → { X=1 }`);
+  giac._clear();
+}
+{
+  // Typed-list reply with multiple roots — `list[1,2]` shape from the
+  // same build.  Both roots survive the prefix strip and the comma
+  // splitter behaves identically to the bare-list path.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X^2 - 3*X + 2')));
+  s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('solve(X^2-3*X+2,X)', 'list[1,2]');
+  lookup('SOLVE').fn(s);
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 2 &&
+         formatAlgebra(top.items[0].expr) === 'X = 1' &&
+         formatAlgebra(top.items[1].expr) === 'X = 2',
+         `SOLVE op: typed-list reply list[1,2] → { X=1, X=2 }`);
+  giac._clear();
+}
+{
   // Complex conjugate pair.  X^2 + 1 = 0 → {±i}.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 + 1')));

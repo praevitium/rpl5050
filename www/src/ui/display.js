@@ -2,9 +2,9 @@
    Render the stack and command line onto the LCD DOM nodes.
    ================================================================= */
 
-import { formatStackTop, DEFAULT_DISPLAY } from '../rpl/formatter.js';
+import { format, formatStackTop, DEFAULT_DISPLAY } from '../rpl/formatter.js';
 import { astToSvg } from '../rpl/pretty.js';
-import { isSymbolic } from '../rpl/types.js';
+import { isSymbolic, isMatrix, isVector } from '../rpl/types.js';
 import { state as calcState } from '../rpl/state.js';
 
 export class Display {
@@ -145,6 +145,15 @@ export class Display {
         const { svg } = astToSvg(val.expr, { size: 22 });
         inner.innerHTML = svg;
         cell.classList.add('textbook');
+      } else if (calcState.textbookMode && (isMatrix(val) || isVector(val))) {
+        // Textbook 2D matrix/vector: lay rows out as a CSS grid of
+        // monospace cells with bracket pseudo-elements drawn either
+        // side.  Vectors render as a single-row matrix so they pick up
+        // the same bracket styling.  Cell text comes from the regular
+        // formatter so EXACT/APPROX, FIX/SCI/ENG, complex polar form,
+        // etc. all keep working — only the layout changes.
+        inner.innerHTML = this._renderTextbookGrid(val);
+        cell.classList.add('textbook');
       } else {
         inner.textContent = formatStackTop(val, this.displayOpts);
         cell.classList.remove('textbook');
@@ -168,6 +177,78 @@ export class Display {
   setStackScroll(offset, stack) {
     this.stackScroll = offset;
     if (stack) this.renderStack(stack);
+  }
+
+  /** Render a Matrix or Vector as a 2D HTML grid for textbook mode.
+   *  Each cell goes through the regular formatter so display-mode
+   *  knobs (FIX/SCI/ENG, EXACT/APPROX, polar/rect, …) still apply —
+   *  only the wrapping layout changes here.  The outer .matrix-grid
+   *  div carries left/right square-bracket pseudo-elements via CSS
+   *  (calc.css) so the brackets scale with the cell-grid height
+   *  without us measuring fonts at runtime.
+   *
+   *  Vectors fold into a single-row matrix so they share the same
+   *  bracket / spacing styling and the same "pretty matrix" code
+   *  path — saves a parallel renderer.
+   *
+   *  Empty matrix / empty vector still produce a `[]` pair (an empty
+   *  inner grid) so the user sees something rather than a phantom
+   *  blank cell. */
+  _renderTextbookGrid(val) {
+    // Three input shapes land here in textbook mode:
+    //   - Matrix         → use val.rows directly.
+    //   - Vector whose
+    //     items are all
+    //     same-length
+    //     Vectors        → treat as a Matrix laid out by inner rows.
+    //                      Parser produces this when the user types
+    //                      `[[1 2 3][4 5 6]]` because parseVector is
+    //                      structural-only and never promotes nested
+    //                      Vectors to a Matrix.  Without this branch
+    //                      the outer Vector renders as a single row
+    //                      containing three `[ … ]` cells, defeating
+    //                      the 2D layout the user expects.
+    //   - Vector of
+    //     scalars        → single-row matrix.  (No change.)
+    let rows;
+    if (isMatrix(val)) {
+      rows = val.rows.map(r => r.slice());
+    } else if (
+      isVector(val) &&
+      val.items.length > 0 &&
+      val.items.every(it => isVector(it)) &&
+      val.items.every(it => it.items.length === val.items[0].items.length)
+    ) {
+      rows = val.items.map(v => v.items.slice());
+    } else {
+      rows = [val.items.slice()];
+    }
+    const ncols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const cells = rows.map(r => {
+      // Pad short rows with empty cells so a ragged input still lays
+      // out as a rectangle (defensive: the type constructors pin all
+      // rows to the same length, but Matrix(rows)'s inner-array shape
+      // isn't enforced at the boundary).
+      const padded = r.concat(Array(Math.max(0, ncols - r.length)).fill(null));
+      return padded.map(cell => {
+        if (cell === null) return '<span class="mcell"></span>';
+        const text = format(cell, this.displayOpts);
+        // Cells are plain text — escape the four characters that bite
+        // in HTML.  The formatter never emits raw markup, but this
+        // costs nothing and stops a future change from leaking.
+        const safe = text
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return `<span class="mcell">${safe}</span>`;
+      }).join('');
+    });
+    const cls = isMatrix(val) ? 'matrix-grid' : 'matrix-grid vector-grid';
+    const cols = Math.max(1, ncols);
+    return (
+      `<span class="${cls}" style="--mcols:${cols}">` +
+      cells.join('') +
+      `</span>`
+    );
   }
 
   /** Render the command line.

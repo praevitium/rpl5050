@@ -662,7 +662,12 @@ class App {
   commitEntry() {
     this._pendingEditValue = null;
     this.entry.enter();
-    this.entry.blur();
+    // On a failed commit (parse error, undefined op, type error, …) the
+    // buffer is preserved so the user can fix it.  Keep focus in the
+    // editor in that case; only blur when the commit actually went
+    // through, matching "I'm done with this input".
+    if (this.entry.error) this.entry.focus();
+    else this.entry.blur();
   }
 
   /** Copy a stack level's decompiled form into the command-line editor

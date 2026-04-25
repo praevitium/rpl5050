@@ -14,9 +14,13 @@
      MAIN_KEYS — 5 cols × 7 rows row 4 .. row 10 of the calculator
                                  (LASTARG/EVAL/'/UNDO/⌫ .. ON/0/./SPC/ENTER)
 
-   Alpha letters A..Z map sequentially to the first 26 keys of the
-   device (F1=A, F2=B, …, ÷=Z), matching the printed blue alpha
-   labels on a real HP 50g.
+   Alpha letters a..z (lowercase) map sequentially to the first 26 keys
+   of the device (F1=a, F2=b, …, ÷=z).  This is a deliberate deviation
+   from the HP 50g — the real hardware prints UPPERCASE alpha labels
+   and defaults to uppercase typing.  We default to lowercase instead,
+   matching how a modern user expects a PC-style keyboard to behave.
+   Op lookup is case-insensitive on the entry path so `sin` and `SIN`
+   both resolve to the SIN op (see ops.js _resolveOpName).
 
    A "shift state" is tracked so subsequent key presses pick up the
    shifted function.  Shift keys auto-clear after one non-shift press.

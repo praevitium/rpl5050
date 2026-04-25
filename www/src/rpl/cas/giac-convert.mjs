@@ -311,9 +311,26 @@ export function buildGiacCmd(exprAst, buildCmd, extraVars = []) {
  * that expects a homogeneous list of expressions.  The splitter doesn't
  * interpret the elements itself — a `[sqrt(2), -sqrt(2)]` passes
  * through as the two raw strings `"sqrt(2)"` and `"-sqrt(2)"`.
+ *
+ * Accepted shapes:
+ *   `[a, b, c]`         — Xcas default list literal.
+ *   `list[a, b, c]`     — typed-list form some giacwasm builds emit
+ *                          (especially for `solve` results).  The
+ *                          `list` prefix is stripped before splitting.
+ *   `seq[a, b, c]` /
+ *   `set[a, b, c]`      — same shape with a different type tag; folded
+ *                          back to the bare list since downstream
+ *                          callers (SOLVE et al.) don't distinguish.
  */
 export function splitGiacList(giacStr) {
-  const s = String(giacStr).trim();
+  let s = String(giacStr).trim();
+  // Strip Xcas typed-list prefix.  Some builds print `solve` results
+  // as `list[1,2]` instead of the bare `[1,2]`; leaving the prefix in
+  // place causes giacToAst to choke on `list[…]` ("Trailing input at
+  // pos 4: '[1]'").  Recognised tags: list / seq / set / poly1 — all
+  // of which carry the same `[…]` body shape.
+  const m = s.match(/^(list|seq|set|poly1)\[/);
+  if (m) s = s.slice(m[1].length);
   if (!(s.startsWith("[") && s.endsWith("]"))) return null;
   const body = s.slice(1, -1).trim();
   if (body === "") return [];
@@ -403,6 +420,14 @@ export function giacToAst(giacStr) {
     throw new GiacResultError(s || "empty");
   }
   if (s.startsWith("[") && s.endsWith("]")) {
+    throw new GiacResultError(s, "list");
+  }
+  // `list[…]` / `seq[…]` / `set[…]` / `poly1[…]` are typed-list shapes
+  // some giacwasm builds emit instead of bare `[…]` — recognise them
+  // here too so they route to the "list" branch (callers can split via
+  // splitGiacList) rather than falling through to parseAlgebra and
+  // failing with "Trailing input at pos 4: '[…]'".
+  if (/^(list|seq|set|poly1)\[.*\]$/.test(s)) {
     throw new GiacResultError(s, "list");
   }
   if (s.includes("piecewise(")) {

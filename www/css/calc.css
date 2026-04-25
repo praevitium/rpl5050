@@ -272,6 +272,47 @@ body {
   height: auto;
 }
 
+/* Textbook 2D matrix / vector layout.  CSS grid lays the cells in
+   rows of `--mcols` columns; bracket pseudo-elements on the outer
+   .matrix-grid auto-scale to the grid's actual height because they
+   live inside the same flex/grid box as the cells.
+   Vectors get the same treatment via .vector-grid (single row) —
+   the visual difference is just the row count, not the bracket
+   thickness. */
+.stack-row .value.textbook .matrix-grid {
+  display: inline-grid;
+  grid-template-columns: repeat(var(--mcols, 1), max-content);
+  align-items: center;
+  column-gap: 0.9em;
+  row-gap: 0.15em;
+  padding: 0.2em 0.5em;
+  position: relative;
+  font-family: var(--font-lcd, ui-monospace, Menlo, monospace);
+  line-height: 1.15;
+}
+.stack-row .value.textbook .matrix-grid::before,
+.stack-row .value.textbook .matrix-grid::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.45em;
+  border: 1.5px solid currentColor;
+}
+.stack-row .value.textbook .matrix-grid::before {
+  left: 0;
+  border-right: 0;
+}
+.stack-row .value.textbook .matrix-grid::after {
+  right: 0;
+  border-left: 0;
+}
+.stack-row .value.textbook .matrix-grid .mcell {
+  padding: 0 0.05em;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* Blank row that pushes real stack rows upward when the user has
    scrolled up with ▲.  Same height as a normal row; visually empty. */
 .stack-row.scroll-pad { visibility: hidden; }
