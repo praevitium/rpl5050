@@ -32,6 +32,7 @@
 import {
   state, currentPath, goHome, goInto, notify,
   setCasVx, resetCasVx,
+  setCasModulo, resetCasModulo,
 } from './state.js';
 import { TYPES, Decimal } from './types.js';
 
@@ -116,6 +117,11 @@ export function snapshot(stack) {
     // rehydrate below) so older snapshots predating this field still
     // load cleanly and reset VX to the default `'X'`.
     casVx: state.casVx,
+    // CAS MODULO state slot (MODSTO / ADDTMOD / SUBTMOD / MULTMOD /
+    // POWMOD).  BigInt → encoded as `{ __t: 'bigint', v: '<digits>' }`.
+    // Optional on decode — older snapshots predating this field reset
+    // MODULO to the default 13n, matching a fresh boot.
+    casModulo: encode(state.casModulo),
   };
 }
 
@@ -187,6 +193,23 @@ export function rehydrate(snap, stack) {
     catch (e) { console.warn('hp50 persist: bad casVx, ignoring', e); resetCasVx(); }
   } else {
     resetCasVx();
+  }
+
+  // Optional CAS MODULO slot.  Older snapshots that lack this field
+  // reset MODULO to the default 13n — matching what a fresh boot would
+  // do.  Bad payloads (non-bigint after decode, or values that fail
+  // the setCasModulo guard) fall back to the default rather than
+  // pinning the slot to garbage.
+  if (snap.casModulo !== undefined && snap.casModulo !== null) {
+    try {
+      const m = decode(snap.casModulo);
+      if (typeof m === 'bigint') setCasModulo(m);
+      else { console.warn('hp50 persist: bad casModulo type, resetting'); resetCasModulo(); }
+    } catch (e) {
+      console.warn('hp50 persist: bad casModulo, ignoring', e); resetCasModulo();
+    }
+  } else {
+    resetCasModulo();
   }
 
   const items = Array.isArray(snap.stack) ? snap.stack.map(decode) : [];

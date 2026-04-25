@@ -6032,3 +6032,692 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+/* ================================================================
+   session 145 — Cluster 1: Forward trig SIN / COS / TAN EXACT-mode
+   `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic
+   contract on bare scalars.
+
+   Surfaced as a candidate at the end of session 142's log:
+
+     "EXACT-mode Integer-stay-exact path for trig forward family
+      (SIN/COS/TAN) on the bare-scalar axis — `SIN(Integer(0))` →
+      `Integer(0)` is the trivial fold; `SIN(Integer(180))` DEG →
+      `Integer(0)` (round-to-integer through the angle mode); both
+      are already lightly exercised by the test-numerics block but
+      not as a structured stay-exact cluster like Cluster 1 above."
+
+   `_trigFwdCx` (`ops.js:8027`) routes Integer / Rational inputs in
+   EXACT mode through `_exactUnaryLift(name, realFn(toRadians(x)),
+   v)` — distinct from `_unaryCx` because the angle-mode conversion
+   `toRadians` is applied to the Integer / Rational input BEFORE
+   the numeric primitive (Math.sin / Math.cos / Math.tan), and the
+   integer-clean check fires on the raw radian-domain result
+   (since the forward trig family does not invert through
+   `fromRadians`, unlike ASIN / ACOS / ATAN).
+
+   `_exactUnaryLift` (`ops.js:1141`) rounds a finite numeric result
+   to the nearest integer and folds to `Integer(rounded)` when the
+   absolute difference is < 1e-12; otherwise it returns
+   `Symbolic(AstFn(name, [_toAst(v)]))`.  Math.sin / Math.cos /
+   Math.tan at exact integer multiples of π are typically off by
+   IEEE-double drift on the order of 1e-16, which falls under the
+   tolerance — so `SIN(Integer(180))` DEG folds to Integer(0)
+   even though Math.sin(Math.PI) ≈ 1.22e-16.
+
+   This cluster pins the integer-clean fold, the stay-symbolic
+   fall-through, the angle-mode flip on the same operand, the
+   APPROX-mode bypass (which routes through the Real-result path
+   instead of `_exactUnaryLift`), and the Rational stay-symbolic
+   contract.  Mirror of session 142 Cluster 1's inverse-trig +
+   inverse-hyp pattern, extended to the forward-trig axis. */
+{
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+    // RAD-mode integer-clean folds at the trivial zero argument.
+    // sin(0)=0, cos(0)=1, tan(0)=0 — all exact in IEEE-double, so
+    // `_exactUnaryLift`'s round-to-integer check fires trivially.
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session145: SIN(Integer(0)) RAD → Integer(0) (sin(0)=0 trivial integer-clean fold via _exactUnaryLift); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('COS').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 1n,
+        `session145: COS(Integer(0)) RAD → Integer(1) (cos(0)=1 integer-clean; non-zero Integer output pins the fold actually ran); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('TAN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session145: TAN(Integer(0)) RAD → Integer(0) (tan(0)=0 integer-clean; closes SIN/COS/TAN RAD-mode zero trio); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // RAD-mode stay-symbolic on a non-clean operand.  sin(1) ≈
+    // 0.8414…, more than 1e-12 away from 0 or 1, so
+    // `_exactUnaryLift` returns Symbolic(AstFn('SIN', [Num(1)])).
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'SIN'
+          && v.expr.args.length === 1 && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === 1,
+        `session145: SIN(Integer(1)) RAD → Symbolic SIN(1) (sin(1)≈0.841 not integer-clean — stay-symbolic via _exactUnaryLift); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('COS').fn(s);
+      const v = s.peek();
+      assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'COS',
+        `session145: COS(Integer(1)) RAD → Symbolic COS(1) (cos(1)≈0.540 not integer-clean); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+    }
+
+    // Angle-mode flip — same Integer(180) operand, two angle modes,
+    // the EXACT-mode lift falls on opposite sides of the integer-
+    // clean check.  In RAD, sin(180 rad) ≈ -0.801, stay-symbolic.
+    // In DEG, sin(180°) = sin(π) ≈ 1.22e-16 < 1e-12 → Integer(0).
+    {
+      const s = new Stack();
+      s.push(Integer(180n));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'SIN'
+          && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === 180,
+        `session145: SIN(Integer(180)) RAD → Symbolic SIN(180) (sin(180 rad)≈-0.801 not integer-clean — angle-mode flips this branch from the DEG integer-clean case below); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+    }
+
+    setAngle('DEG');
+
+    // DEG-mode integer-clean folds at multiples of 90°.  IEEE-double
+    // drift on Math.sin(Math.PI) is ~1.22e-16, on Math.cos(Math.PI/2)
+    // is ~6.12e-17 — both well under the 1e-12 tolerance, so they
+    // all fold to Integer(0) / Integer(±1).  Pins the contract that
+    // the angle-mode conversion happens INSIDE the EXACT lift's
+    // numeric path (toRadians is applied before realFn).
+    {
+      const s = new Stack();
+      s.push(Integer(180n));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session145: SIN(Integer(180)) DEG → Integer(0) (sin(π)≈1.22e-16 < 1e-12 → round-to-integer; same operand as RAD pin above flips integer-clean under DEG); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(90n));
+      lookup('COS').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session145: COS(Integer(90)) DEG → Integer(0) (cos(π/2)≈6.12e-17 → round-to-integer; pins the cos-zero-multiple-of-90° fold); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(180n));
+      lookup('COS').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === -1n,
+        `session145: COS(Integer(180)) DEG → Integer(-1) (cos(π)=-1 exact in double; non-zero Integer output pins the fold actually ran on the cos arm); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(45n));
+      lookup('TAN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 1n,
+        `session145: TAN(Integer(45)) DEG → Integer(1) (tan(π/4)=1 integer-clean; closes SIN/COS/TAN DEG integer-clean trio); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // DEG-mode stay-symbolic on a fractional output.  sin(30°)=0.5
+    // is the canonical "Integer-input but non-integer output" case
+    // in DEG — the `_exactUnaryLift` integer-clean check fails on
+    // 0.5 (Math.abs(0.5 - 0) = 0.5 ≫ 1e-12), so the symbolic-stay
+    // path fires.  Pins the negative side of the fold contract on
+    // the DEG axis.
+    {
+      const s = new Stack();
+      s.push(Integer(30n));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'SIN'
+          && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === 30,
+        `session145: SIN(Integer(30)) DEG → Symbolic SIN(30) (sin(30°)=0.5 not integer-clean; pins fractional-output stay-symbolic on the DEG axis); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+    }
+
+    setAngle('RAD');
+
+    // Rational stay-symbolic — the Rational arm of the EXACT-mode
+    // path computes `Number(v.n) / Number(v.d)` to feed the
+    // numeric primitive, but the SYMBOLIC payload built by
+    // `_exactUnaryLift` carries the AST shape `Bin('/', Num(1),
+    // Num(2))` so the rational survives in the symbolic result.
+    // Mirror of session 142 Cluster 1's `ASIN(Rational(1,3)) DEG`
+    // pin but on the forward-trig axis where the rational stays
+    // symbolic in RAD too (sin(0.5) ≈ 0.479 is not integer-clean).
+    {
+      const s = new Stack();
+      s.push(Rational(1n, 2n));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'SIN'
+          && v.expr.args.length === 1
+          && v.expr.args[0]?.kind === 'bin' && v.expr.args[0].op === '/'
+          && v.expr.args[0].l?.value === 1 && v.expr.args[0].r?.value === 2,
+        `session145: SIN(Rational(1,2)) RAD → Symbolic SIN(1/2) (Rational arm: numeric path uses 0.5; symbolic payload carries Bin('/', Num(1), Num(2))); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+    }
+
+    // APPROX-mode bypass: `setApproxMode(true)` flips
+    // `getApproxMode()` to true so the EXACT-mode Integer/Rational
+    // branch in `_trigFwdCx` is skipped — Integer(0) routes
+    // straight through `Real(realFn(toRadians(toRealOrThrow(v))))`
+    // and emits Real(0), NOT Integer(0).  Pins the contract that
+    // `_exactUnaryLift` is gated by the EXACT-mode check.
+    setApproxMode(true);
+    try {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(0),
+        `session145: SIN(Integer(0)) RAD APPROX → Real(0) (APPROX-mode bypass; _exactUnaryLift skipped — the same operand under EXACT folds to Integer(0)); got ${v?.type}(${v?.value?.toString?.()})`);
+    } finally {
+      setApproxMode(false);
+    }
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+
+/* ================================================================
+   session 145 — Cluster 2: LN / LOG / EXP / ALOG EXACT-mode
+   `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic
+   contract on bare scalars.
+
+   Surfaced as a candidate at the end of session 142's log:
+
+     "EXACT-mode Integer-stay-exact for `LN(Integer(1))` /
+      `EXP(Integer(0))` / `ALOG(Integer(0))` / `LOG(Integer(1))`
+      — these are mentioned in the `_exactUnaryLift` doc-comment
+      (`ops.js:1130-1137`) as the canonical examples but have no
+      direct stay-exact pin.  Would extend Cluster 1's pattern to
+      the unary-real family."
+
+   LN / LOG / EXP / ALOG dispatch through `_unaryCx`
+   (`ops.js:7984`).  The EXACT-mode Integer / Rational arm calls
+   `_exactUnaryLift(name, realFn(x), v)` where `realFn` is
+   `Math.log` / `Math.log10` / `Math.exp` / `(x) => Math.pow(10, x)`.
+   Distinct from forward trig (Cluster 1 above) — there is no angle-
+   mode conversion: the fold operates directly on the Integer /
+   Rational value.
+
+   `_exactUnaryLift` is the same helper as Cluster 1 — it rounds a
+   finite numeric result to integer if within 1e-12, else returns
+   `Symbolic(AstFn(name, [_toAst(v)]))`.  The four ops in this
+   cluster are the canonical examples called out in the
+   `_exactUnaryLift` doc-comment.  This cluster pins the canonical
+   integer-clean folds (LN(1)=0, LOG(10)=1, EXP(0)=1, ALOG(2)=100),
+   the stay-symbolic fall-through, the APPROX-mode bypass, and the
+   Rational stay-exact / stay-symbolic boundaries. */
+{
+  // LN / LOG / EXP / ALOG do not depend on angle mode — no
+  // try/finally guard needed.  `setApproxMode` is restored
+  // explicitly inside the APPROX block.
+
+  // LN(Integer(1)) → Integer(0).  ln(1)=0 exact in double; the
+  // canonical "trivial" example in the `_exactUnaryLift`
+  // doc-comment.
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session145: LN(Integer(1)) → Integer(0) (ln(1)=0 trivial integer-clean fold via _exactUnaryLift; canonical doc-comment example); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // LN(Integer(2)) → Symbolic LN(2).  ln(2) ≈ 0.693… is not
+  // integer-clean; pins the negative side of the LN fold.
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'LN'
+        && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === 2,
+      `session145: LN(Integer(2)) → Symbolic LN(2) (ln(2)≈0.693 not integer-clean — stay-symbolic via _exactUnaryLift); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+  }
+
+  // LOG(Integer(1)) → Integer(0); LOG(Integer(10)) → Integer(1);
+  // LOG(Integer(100)) → Integer(2); LOG(Integer(1000)) → Integer(3).
+  // Powers-of-ten fold cleanly (Math.log10 returns exact integers
+  // for these inputs), pinning multiple non-zero-output integer-clean
+  // results on the LOG arm.
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session145: LOG(Integer(1)) → Integer(0) (log10(1)=0); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(10n));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 1n,
+      `session145: LOG(Integer(10)) → Integer(1) (log10(10)=1 exact); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(100n));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 2n,
+      `session145: LOG(Integer(100)) → Integer(2) (log10(100)=2 exact); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(1000n));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 3n,
+      `session145: LOG(Integer(1000)) → Integer(3) (log10(1000)=3 exact; closes the powers-of-ten LOG trio); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // LOG(Integer(2)) → Symbolic LOG(2).  log10(2) ≈ 0.301 is not
+  // integer-clean; negative side of the LOG fold.
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'LOG'
+        && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === 2,
+      `session145: LOG(Integer(2)) → Symbolic LOG(2) (log10(2)≈0.301 not integer-clean); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+  }
+
+  // EXP(Integer(0)) → Integer(1).  exp(0)=1 exact; canonical
+  // doc-comment example.
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 1n,
+      `session145: EXP(Integer(0)) → Integer(1) (exp(0)=1 trivial integer-clean fold; canonical doc-comment example); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // EXP(Integer(1)) → Symbolic EXP(1).  e ≈ 2.718… is not
+  // integer-clean; negative side of the EXP fold.  Pins that
+  // EXP(1)=e stays symbolic — a future change that pre-folded e
+  // to a Real or Decimal constant would surface here.
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'EXP'
+        && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === 1,
+      `session145: EXP(Integer(1)) → Symbolic EXP(1) (e≈2.718 not integer-clean — stay-symbolic preserves the unevaluated e); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+  }
+
+  // ALOG(Integer(0)) → Integer(1).  10^0 = 1 exact; canonical
+  // doc-comment example.
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 1n,
+      `session145: ALOG(Integer(0)) → Integer(1) (10^0=1 canonical doc-comment example); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // ALOG(Integer(2)) → Integer(100); ALOG(Integer(3)) →
+  // Integer(1000).  Larger non-zero integer outputs pin that
+  // `_exactUnaryLift` rounds back to BigInt without precision
+  // loss (Math.pow(10, 2) = 100 exact, Math.pow(10, 3) = 1000
+  // exact in double).  Closes the ALOG arm with the LOG inverse
+  // — LOG(100)=2 from above paired with ALOG(2)=100 here.
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 100n,
+      `session145: ALOG(Integer(2)) → Integer(100) (10^2=100 integer-clean — pins the LOG/ALOG inverse: ALOG(2) here mirrors LOG(100)=2 above); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(3n));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 1000n,
+      `session145: ALOG(Integer(3)) → Integer(1000) (10^3=1000 integer-clean; closes ALOG positive-integer trio); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // ALOG(Integer(-1)) → Symbolic ALOG(-1).  10^-1 = 0.1 is not
+  // integer-clean (0.1 cannot collapse to integer 0 — the diff is
+  // exactly 0.1, way over the 1e-12 tolerance); negative side of
+  // the ALOG fold on a negative-integer operand.
+  {
+    const s = new Stack();
+    s.push(Integer(-1n));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'ALOG'
+        && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === -1,
+      `session145: ALOG(Integer(-1)) → Symbolic ALOG(-1) (10^-1=0.1 not integer-clean; pins negative-integer-operand fall-through); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+  }
+
+  // Rational arm — Rational(1,1) → 1.0 (the numeric path divides
+  // numerator by denominator), so LN(Rational(1,1)) → ln(1) = 0
+  // → Integer(0).  Pins that the Rational arm of the EXACT-mode
+  // path can produce an Integer result via `_exactUnaryLift` when
+  // the underlying numeric value happens to be integer-clean.
+  // Distinct from session 142 Cluster 1's ASIN(Rational(1,2))=30
+  // pin — there the angle-mode `fromRadians` produced the integer-
+  // clean output; here it's the Rational value itself collapsing
+  // to 1.0 before the numeric primitive runs.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 1n));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session145: LN(Rational(1,1)) → Integer(0) (Rational arm: 1/1=1.0 → ln(1)=0 → Integer-clean fold; pins that the Rational arm can produce Integer results when the numeric value is integer-clean); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // Rational stay-symbolic on a non-clean Rational value.
+  // Rational(1,2) → 0.5; ln(0.5) ≈ -0.693, not integer-clean →
+  // Symbolic.  The symbolic payload carries the AST shape
+  // `Bin('/', Num(1), Num(2))` so the Rational survives.  Mirror
+  // of Cluster 1's SIN(Rational(1,2)) RAD pin on the LN arm.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'LN'
+        && v.expr.args.length === 1
+        && v.expr.args[0]?.kind === 'bin' && v.expr.args[0].op === '/'
+        && v.expr.args[0].l?.value === 1 && v.expr.args[0].r?.value === 2,
+      `session145: LN(Rational(1,2)) → Symbolic LN(1/2) (ln(0.5)≈-0.693 not integer-clean; symbolic payload preserves Bin('/',1,2)); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+  }
+
+  // APPROX-mode bypass: same operand that folded to Integer(0)
+  // above now routes through the Real-result path and emits
+  // Real(0) (NOT Integer).  Pins that `_exactUnaryLift` is gated
+  // by the `!getApproxMode()` check in `_unaryCx`.
+  setApproxMode(true);
+  try {
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('LN').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(0),
+        `session145: LN(Integer(1)) APPROX → Real(0) (APPROX-mode bypass; _exactUnaryLift skipped — same operand under EXACT folds to Integer(0)); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(100n));
+      lookup('LOG').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(2),
+        `session145: LOG(Integer(100)) APPROX → Real(2) (APPROX bypass on LOG; the integer-clean output value 2 still emerges, but as Real not Integer — pins that APPROX-mode flips the result KIND not the result VALUE); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('EXP').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(1),
+        `session145: EXP(Integer(0)) APPROX → Real(1) (APPROX bypass on EXP; closes the LN/LOG/EXP APPROX trio); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+  } finally {
+    setApproxMode(false);
+  }
+}
+
+/* ================================================================
+   session 145 — Cluster 3: SIN / COS / TAN EXACT-mode integer-
+   stay-exact path under Tagged-V/M wrapper composition + RE / IM
+   M-axis inner-Tagged rejection (closes the ARG/CONJ/RE/IM × V/M
+   inner-Tagged-rejection grid that session 142 Cluster 3 left
+   half-open).
+
+   Surfaced as a candidate at the end of session 142's log:
+
+     "Inner-Tagged-inside-Vector rejection on the M-axis for RE
+      and IM — Cluster 3 above pinned ARG and CONJ on the M-axis
+      but not RE/IM (the V-axis was pinned on all four; the
+      M-axis was pinned on ARG and CONJ since they exercise
+      different per-element handlers).  Adding the RE/IM M-axis
+      pins would close the 4-op × 2-axis grid completely."
+
+   Two halves:
+
+   (a) **Forward trig EXACT-mode integer-stay-exact under
+       Tagged-V/M wrapper composition.**  Session 140 Cluster 1
+       pinned `:v:Vector(0, 0) SIN` → `:v:Vector(0, 0)` (Real
+       inputs, transcendental zero-fold) and session 140 Cluster 1
+       extension also pinned the `_exactUnaryLift` Integer-stay-
+       exact path under Tagged-V on SINH (`:h:Vector(Integer(0),
+       Integer(0)) SINH` → `:h:Vector(Integer(0), Integer(0))`).
+       The forward-trig (`SIN/COS/TAN`) EXACT-mode integer-stay-
+       exact path under the same 3-deep wrapper was unpinned —
+       Cluster 1 above closed the bare-scalar axis but not the
+       Tagged-V/M composition where `_trigFwdCx` runs INSIDE
+       `_withTaggedUnary(_withListUnary(_withVMUnary(...)))` on
+       per-element Integer inputs.  The DEG-mode angle-flip
+       (`SIN(Integer(180))` DEG → Integer(0)) under the wrapper
+       chain pins that the angle-mode-aware integer-clean check
+       composes element-wise across V/M under outer Tagged.
+
+   (b) **RE / IM M-axis inner-Tagged-inside-Matrix rejection.**
+       Session 142 Cluster 3 pinned ARG and CONJ on the M-axis;
+       the per-element handlers `_reScalar` / `_imScalar` are
+       distinct from `_argScalar` / `_conjScalar` so the V-axis
+       pins from session 142 don't transitively cover the M-axis
+       (the bespoke V/M handler for RE / IM dispatches via
+       `v.rows.map(r => r.map(_reScalar))` / `_imScalar`, distinct
+       from the `_argScalar` / `_conjScalar` chains in the ARG /
+       CONJ M-axis pins).  Closes the 4-op × 2-axis grid. */
+{
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+    // ---- (a) Forward trig EXACT-mode integer-stay-exact under
+    // Tagged-V/M wrapper composition. ----
+
+    // SIN :v:Vector(Integer(0), Integer(0)) RAD → :v:Vector(
+    // Integer(0), Integer(0)).  The 3-deep wrapper unwraps the
+    // outer Tagged, distributes the SIN over the Vector via
+    // `_withVMUnary`, and at each Integer(0) leaf the EXACT-mode
+    // arm of `_trigFwdCx` calls `_exactUnaryLift('SIN', 0, v)` →
+    // Integer(0).  Outer tag preserved across the per-element
+    // EXACT-mode integer-clean fold.  Mirror of session 140
+    // Cluster 1's SINH(Integer(0)) Tagged-V pin on the forward-
+    // trig axis.
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Vector([Integer(0n), Integer(0n)])));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 0n,
+        `session145: SIN :v:Vector(Integer(0), Integer(0)) RAD → :v:Vector(Integer(0), Integer(0)) (EXACT-mode _exactUnaryLift Integer-stay-exact composes through 3-deep wrapper-VM under Tagged on the forward-trig axis; mirror of session-140 Cluster 1's SINH Tagged-V Integer-stay-exact pin); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // COS :v:Vector(Integer(0), Integer(0)) RAD → :v:Vector(
+    // Integer(1), Integer(1)).  Non-identity output value pins
+    // the inner handler actually ran (cos(0)=1, distinct from
+    // sin(0)=0 which produces an identity-shaped output that
+    // could be mistaken for a no-op).
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Vector([Integer(0n), Integer(0n)])));
+      lookup('COS').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 1n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 1n,
+        `session145: COS :v:Vector(Integer(0), Integer(0)) RAD → :v:Vector(Integer(1), Integer(1)) (cos(0)=1; non-identity output value pins inner handler ran on COS arm); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // TAN :v:Vector(Integer(0), Integer(0)) RAD → :v:Vector(
+    // Integer(0), Integer(0)).  Closes the SIN/COS/TAN trio on
+    // the forward-trig Tagged-V wrapper composition.
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Vector([Integer(0n), Integer(0n)])));
+      lookup('TAN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 0n,
+        `session145: TAN :v:Vector(Integer(0), Integer(0)) RAD → :v:Vector(Integer(0), Integer(0)) (closes SIN/COS/TAN forward-trig Tagged-V Integer-stay-exact trio); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // DEG-mode angle-flip under Tagged-V wrapper composition: the
+    // per-element handler still goes through `toRadians(v)` →
+    // `Math.sin(...)` → `_exactUnaryLift`, but the angle-mode
+    // shifts the integer-clean check onto a different operand
+    // value.  `:v:Vector(Integer(0), Integer(180)) SIN` DEG →
+    // `:v:Vector(Integer(0), Integer(0))` because sin(0°)=0 AND
+    // sin(180°)≈1.22e-16 < 1e-12 both fold to Integer(0).  The
+    // RAD pin above had Integer(180) stay-symbolic (sin(180 rad)
+    // ≈-0.801 not integer-clean) — but in DEG it folds.  Pins
+    // that the EXACT-mode angle-mode-aware fold composes element-
+    // wise under outer Tagged-V — same angle-mode-flip contract
+    // pinned in Cluster 1 on bare scalars, here extended to the
+    // V-axis through the wrapper chain.
+    setAngle('DEG');
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Vector([Integer(0n), Integer(180n)])));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 0n,
+        `session145: SIN :v:Vector(Integer(0), Integer(180)) DEG → :v:Vector(Integer(0), Integer(0)) (angle-mode-aware integer-clean fold composes element-wise; sin(180°) ≈ 1.22e-16 < 1e-12 folds to Integer(0) in DEG but stays symbolic in RAD — operand-position-1 flips between the two angle modes); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // COS :v:Vector(Integer(0), Integer(90)) DEG → :v:Vector(
+    // Integer(1), Integer(0)).  Mixed integer-clean output values
+    // (cos(0°)=1, cos(90°)≈6.12e-17 → 0) pin that distinct
+    // outputs at distinct positions all fold cleanly under the
+    // wrapper chain.
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Vector([Integer(0n), Integer(90n)])));
+      lookup('COS').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 1n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 0n,
+        `session145: COS :v:Vector(Integer(0), Integer(90)) DEG → :v:Vector(Integer(1), Integer(0)) (mixed integer-clean output values: cos(0°)=1 and cos(90°)≈6.12e-17→0; pins that distinct integer outputs at distinct V positions all fold under the wrapper chain); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // SIN :m:Matrix([[Integer(0), Integer(180)], [Integer(0),
+    // Integer(0)]]) DEG → :m:Matrix([[0,0],[0,0]]).  Matrix-axis
+    // EXACT-mode integer-clean fold under Tagged composition.
+    // Per-entry sin(0°)=0 and sin(180°)→1.22e-16→0 all fold to
+    // Integer(0); outer tag preserved + Matrix kind preserved.
+    // Mirror of session 140 Cluster 1's SINH Tagged-Matrix pin
+    // on the forward-trig axis.
+    {
+      const s = new Stack();
+      s.push(Tagged('m', Matrix([[Integer(0n), Integer(180n)], [Integer(0n), Integer(0n)]])));
+      lookup('SIN').fn(s);
+      const v = s.peek();
+      const okShape = isTagged(v) && v.tag === 'm' && v.value?.type === 'matrix'
+          && v.value.rows.length === 2 && v.value.rows[0].length === 2;
+      const okValues = okShape
+          && isInteger(v.value.rows[0][0]) && v.value.rows[0][0].value === 0n
+          && isInteger(v.value.rows[0][1]) && v.value.rows[0][1].value === 0n
+          && isInteger(v.value.rows[1][0]) && v.value.rows[1][0].value === 0n
+          && isInteger(v.value.rows[1][1]) && v.value.rows[1][1].value === 0n;
+      assert(okShape && okValues,
+        `session145: SIN :m:Matrix([[0,180],[0,0]]) DEG → :m:Matrix([[0,0],[0,0]]) (per-entry integer-clean fold under outer Tagged + M-axis wrapper-VM; closes forward-trig Tagged-M Integer-stay-exact path); got tag=${v?.tag} rows=${v?.value?.rows?.map(r => r.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')).join('|')}`);
+    }
+    setAngle('RAD');
+
+    // ---- (b) RE / IM M-axis inner-Tagged-inside-Matrix rejection.
+    // Closes the 4-op × 2-axis grid that session 142 Cluster 3
+    // half-opened. ----
+
+    // RE on a Matrix containing a Tagged scalar inside an entry —
+    // the bespoke handler iterates `v.rows.map(r => r.map(
+    // _reScalar))`; `_reScalar` is not Tagged-aware and rejects
+    // with 'Bad argument type'.  M-axis mirror of session 142
+    // Cluster 3's V-axis RE pin and ARG / CONJ M-axis pins.
+    {
+      const s = new Stack();
+      s.push(Matrix([[Tagged('x', Complex(3, 4))]]));
+      assertThrows(() => lookup('RE').fn(s), /Bad argument type/i,
+        `session145: Matrix([[:x:Complex(3,4)]]) RE → 'Bad argument type' (M-axis RE inner-Tagged rejection — bespoke _reScalar in r.map(_reScalar) chain not Tagged-aware; closes ARG/CONJ/RE/IM × V/M inner-Tagged-rejection grid alongside session-142 Cluster 3 ARG/CONJ M-axis pins)`);
+    }
+
+    // IM with same shape — `_imScalar` rejects Tagged.  Pins
+    // that the rejection is not specific to the per-element
+    // handler's value-extraction logic (RE returns the real
+    // part, IM returns the imaginary part — distinct numeric
+    // operations but the same Tagged-not-aware contract holds
+    // on both).
+    {
+      const s = new Stack();
+      s.push(Matrix([[Tagged('x', Complex(3, 4))]]));
+      assertThrows(() => lookup('IM').fn(s), /Bad argument type/i,
+        `session145: Matrix([[:x:Complex(3,4)]]) IM → 'Bad argument type' (M-axis IM inner-Tagged rejection; closes the 4-op × 2-axis inner-Tagged-rejection grid)`);
+    }
+
+    // RE on a Matrix where the Tagged element is at a NON-(0,0)
+    // position — the rejection still fires.  Pins that
+    // `_reScalar`'s rejection runs at every iteration of the
+    // `.map(_reScalar)` chain, not only on the first element.
+    // (Without this, a future change that bailed out early
+    // before reaching the inner Tagged could pass the (0,0)-pin
+    // above silently.)
+    {
+      const s = new Stack();
+      s.push(Matrix([[Real(5), Tagged('x', Complex(3, 4))]]));
+      assertThrows(() => lookup('RE').fn(s), /Bad argument type/i,
+        `session145: Matrix([[Real(5), :x:Complex(3,4)]]) RE → 'Bad argument type' (Tagged at row[0][1] still rejects — rejection fires at every entry-position, not only (0,0); contrast pin against an early-bail-out implementation)`);
+    }
+
+    // IM with the Tagged element on a different row — pins
+    // multi-row iteration also reaches the Tagged-rejection
+    // path.  The two preceding pins covered the row[0] axis;
+    // this pin covers the row[1] axis.  Together they pin that
+    // the row-iteration AND column-iteration both reach the
+    // per-element rejection.
+    {
+      const s = new Stack();
+      s.push(Matrix([[Real(5)], [Tagged('x', Complex(3, 4))]]));
+      assertThrows(() => lookup('IM').fn(s), /Bad argument type/i,
+        `session145: Matrix([[Real(5)],[:x:Complex(3,4)]]) IM → 'Bad argument type' (Tagged at row[1][0] still rejects — pins multi-row iteration reaches the per-element rejection on the IM arm)`);
+    }
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+

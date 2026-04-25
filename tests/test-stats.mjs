@@ -550,3 +550,107 @@ function makeXYMatrix() {
   assertThrows(() => lookup('MINS').fn(s), /Bad argument value/,
     'session137: MINS (ASCII) on empty Matrix → Bad argument value (alias inherits MINΣ empty guard)');
 }
+
+/* ================================================================
+   session147: NSIGMA / NΣ + MEAN / VAR / SDEV rejection-path closure
+   + canonical ΣX / ΣX2 col-0-routing positive coverage closure.
+
+   The session-064 / session-127 / session-132 / session-137 sweep
+   between them pin ΣX / ΣX2 / ΣY / ΣY2 / ΣXY / MAXΣ / MINΣ
+   rejection branches under both their canonical Unicode names and
+   the SX/SY/SY2/SXY/MAXS/MINS ASCII aliases.  Three holes remain:
+
+     • NSIGMA / NΣ bottom-of-fn `Bad argument type` fall-through
+       (ops.js:12177) is unpinned for both the canonical-implementation
+       name (NSIGMA, the body) and the symbol-alias (NΣ, the
+       delegating wrapper at ops.js:12179).  A regression that
+       widened NSIGMA's input dispatch but forgot to keep the
+       throw branch for non-Vector / non-Matrix inputs would slip
+       past every existing pin in the file.
+     • NΣ on empty Vector → Bad argument value (ops.js:12168) —
+       only the empty-Matrix branch (ops.js:12173) was pinned at
+       session-064 line 153 (`s.push(Matrix([]))`); the empty-
+       Vector branch is its own conditional and was untested.
+     • MEAN / VAR / SDEV bottom-of-fn `Bad argument type`
+       fall-through is unpinned.  These three ops share a Vector-
+       or-Matrix dispatch (ops.js:10253-10281) but all three
+       reject branches were untested — the file's existing MEAN
+       pin only exercises the positive XY-matrix path.
+     • ΣX / ΣX2 on a 2-column XY Matrix col-0 routing — the
+       *canonical-name* positive path was never pinned.  The file
+       pins `ΣX on Vector → 10` and `ΣX2 on Vector → 30`, and
+       pins the *alias-routed* SX/SX2 on the XY matrix (`SX
+       (ASCII) on XY matrix col-0 → 10` at session-064 line 80,
+       `SX2 (ASCII) on XY matrix col-0 → 30` at session-132 line
+       391).  A refactor that special-cased the alias backend and
+       bypassed canonical ΣX/ΣX2's `_statsVectorOrMatrixCol0`
+       dispatch would slip past both today.  Mirror of session
+       132's alias-positive-coverage closure but in the OTHER
+       direction — canonical-positive-coverage closure.
+   ================================================================ */
+
+/* ---- NSIGMA on Real → Bad argument type (canonical-name fall-through) ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('NSIGMA').fn(s), /Bad argument type/,
+    'session147: NSIGMA on Real → Bad argument type (bottom-of-fn fallthrough at ops.js:12177; canonical-name reject was unpinned)');
+}
+
+/* ---- NΣ on Real → Bad argument type (symbol-alias delegation) ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('NΣ').fn(s), /Bad argument type/,
+    'session147: NΣ on Real → Bad argument type (symbol-alias delegates to NSIGMA at ops.js:12179; alias-arm reject was unpinned)');
+}
+
+/* ---- NΣ on empty Vector → Bad argument value (Vector-arm of empty reject) ---- */
+{
+  const s = new Stack();
+  s.push(Vector([]));
+  assertThrows(() => lookup('NΣ').fn(s), /Bad argument value/,
+    'session147: NΣ on empty Vector → Bad argument value (Vector arm at ops.js:12168 — existing s064 pin only covered the empty-Matrix arm at ops.js:12173)');
+}
+
+/* ---- MEAN on Real → Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('MEAN').fn(s), /Bad argument type/,
+    'session147: MEAN on Real → Bad argument type (bottom-of-fn fallthrough at ops.js:10260; the file only had the positive XY-matrix MEAN pin)');
+}
+
+/* ---- VAR on Real → Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('VAR').fn(s), /Bad argument type/,
+    'session147: VAR on Real → Bad argument type (bottom-of-fn fallthrough at ops.js:10270; VAR rejection was unpinned)');
+}
+
+/* ---- SDEV on Real → Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('SDEV').fn(s), /Bad argument type/,
+    'session147: SDEV on Real → Bad argument type (bottom-of-fn fallthrough at ops.js:10280; SDEV rejection was unpinned — closes MEAN/VAR/SDEV reject trio)');
+}
+
+/* ---- canonical ΣX on XY matrix col-0 → 10 (canonical-arm positive) ---- */
+{
+  const s = new Stack();
+  s.push(makeXYMatrix());
+  lookup('ΣX').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(10),
+    'session147: ΣX (canonical) on XY matrix col-0 → 10 (canonical-name positive coverage; the file only had the SX alias-arm pin and the ΣX-Vector positive)');
+}
+
+/* ---- canonical ΣX2 on XY matrix col-0 → 30 (canonical-arm positive) ---- */
+{
+  const s = new Stack();
+  s.push(makeXYMatrix());
+  lookup('ΣX2').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(30),
+    'session147: ΣX² (canonical) on XY matrix col-0 → 30 (canonical-name positive coverage; the file only had the SX2 alias-arm pin from session-132 + the ΣX² Vector positive)');
+}

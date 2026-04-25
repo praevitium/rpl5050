@@ -21,33 +21,60 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 139 — 2026-04-25)
+## Counts (as of session 144 — 2026-04-25)
 
-- Fully shipped (✓): 437 (this lane's net since session 134 — session
-  139 ships three new ops via Giac: `LIN`, `LIMIT`, `lim` — the last
-  registered as a thin alias delegating to `LIMIT`'s fn, mirroring
-  CHARPOL / XNUM / XQ pattern; row count is 2 because LIMIT and lim
-  share a row.  +3 ✗→✓ transitions and one ✗-side reshape on the
-  "Not yet supported" table)
+- Fully shipped (✓): 442 (this lane's net since session 139 — session
+  144 ships five new ops as a cluster: `MODSTO`, `ADDTMOD`, `SUBTMOD`,
+  `MULTMOD`, `POWMOD` — all five share a new `state.casModulo` BigInt
+  slot persisted via `persist.js`.  +5 ✗→✓ transitions counted as 3
+  rows added on the Polynomials/algebra section because ADDTMOD /
+  SUBTMOD / MULTMOD share a single row, and one ✗-side reshape on
+  the "Not yet supported" table — the standalone `MULTMOD` row is
+  retired and replaced by a `DIVMOD GCDMOD EXPANDMOD FACTORMOD
+  DIV2MOD` row capturing the remaining MODULO-family gaps.)
 - Partially shipped (~): 0
-- Not yet implemented (✗): 1 (down from 3 — `LIMIT` was not actually
-  on the not-yet-supported table because it had been a long-horizon
-  CAS wishlist item rather than an explicit row, but `JORDAN` /
-  `SCHUR` and `MULTMOD` rows remain.  Session 139 doesn't change
-  those rows.)
+- Not yet implemented (✗): 1 (the remaining MODULO-family row plus
+  the `JORDAN` / `SCHUR` matrix-decomp row — session 144 doesn't
+  change those, but the modular row's content shifted from
+  "MULTMOD only" to "DIVMOD / GCDMOD / EXPANDMOD / FACTORMOD /
+  DIV2MOD" since MULTMOD shipped this run.)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" www/src/rpl/ops.js` = **466** at the end of session
-139 (was 463 at the end of session 134, was 458 at the end of session
-129, was 455 at the end of session 124, was 448 at the end of session
-119).  Session 139 added three top-level register sites: `register('LIN',
-…)`, `register('LIMIT', …)`, and `register('lim', …)` (the lim alias
-counts as a real register call — it lives at the top level even though
-its body delegates to `OPS.get('LIMIT').fn(s)`).  The actual top-level
-`register()` *call* count (`grep -cE '^register\(' www/src/rpl/ops.js`)
-is **445** (was 442 from session 129 onward through session 134).
-Session-139 row transitions:
+`grep -c "register(" www/src/rpl/ops.js` = **471** at the end of session
+144 (was 466 at the end of session 139, was 463 at the end of session
+134, was 458 at the end of session 129, was 455 at the end of session
+124, was 448 at the end of session 119).  Session 144 added five
+top-level register sites: `register('MODSTO', …)`, `register('ADDTMOD',
+…)`, `register('SUBTMOD', …)`, `register('MULTMOD', …)`, and
+`register('POWMOD', …)`.  The actual top-level `register()` *call*
+count (`grep -cE '^register\(' www/src/rpl/ops.js`) is **450** (was
+445 at session 139, was 442 from session 129 onward through session 134).
+
+Session-144 row transitions:
+- **5 ops newly shipped** (✗ → ✓): `MODSTO` (HP50 AUR §3-150; new row
+  in Polynomials / algebra), `ADDTMOD` / `SUBTMOD` / `MULTMOD` (HP50
+  AUR §3-9 / §3-243 / §3-153; combined into one row alongside the
+  earlier modular cluster), `POWMOD` (HP50 AUR §3-175; new row).
+  +3 doc rows total — ADDTMOD/SUBTMOD/MULTMOD share a row (mirrors
+  the `STO+ STO- STO* STO/` row style).
+- **1 ✗-side reshape**: the standalone `MULTMOD` "Not yet supported"
+  row is retired (now ✓), and the row reused for the remaining
+  MODULO-family gaps `DIVMOD` / `GCDMOD` / `EXPANDMOD` / `FACTORMOD`
+  / `DIV2MOD` — those build on the same `state.casModulo` slot
+  introduced this run.
+- **State / persistence:** new `casModulo: 13n` field on `state.js`
+  (HP50 factory default 13).  `persist.js` round-trips it as
+  `{ __t: 'bigint', v: '<digits>' }`; older snapshots without the
+  field fall back to the default — same compatibility shape as
+  `casVx` (session 076).  Two new assertions in `tests/test-persist.mjs`
+  (38 → 40).
+- **Comment cleanup:** the INVMOD comment "One-arg MODULO-state
+  form deferred until MODULO lands" stays accurate — INVMOD itself
+  did not switch to the new state slot this run; the deferred
+  upgrade is a follow-up item for a future MODULO-family session.
+
+Session-139 row transitions (carried-forward context):
 - **3 ops newly shipped** (✗ → ✓): `LIN` (HP50 AUR §3-131; new row in
   CAS section between `COSSIN` and `GREDUCE`), `LIMIT`, `lim` (HP50
   AUR §lim entry / §3-131; new combined row between `LIN` and
@@ -382,6 +409,9 @@ DERIV, etc. via Giac).
 | `ISPRIME?` `NEXTPRIME` `PREVPRIME` | ✓ | |
 | `EUCLID` | ✓ | **Session 076** — `( a b → {u v g} )` extended-Euclid / Bezout; `u*a + v*b = g`.  Rejects `(0,0)` ("Bad argument value"), non-Integer ("Bad argument type").  Re-signs u,v for negative inputs. |
 | `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  One-arg MODULO-state form deferred until MODULO lands. |
+| `MODSTO` | ✓ | **Session 144** — `( m → )` set the global CAS MODULO state value (HP50 AUR §3-150).  `state.casModulo` is a BigInt, default 13n; setter normalizes negatives to abs and 0 / 1 to 2 (HP50 firmware contract: modulus is always ≥ 2 positive).  Persisted across reload via `persist.js` (`{ __t: 'bigint', v: '<digits>' }` codec).  Accepts Integer or integer-valued Real; non-integer Real → `Bad argument value`; Vector / Symbolic / etc. → `Bad argument type`. |
+| `ADDTMOD` `SUBTMOD` `MULTMOD` | ✓ | **Session 144** — `( a b → (a±·) mod m )` modular arithmetic against the MODSTO-set modulus (HP50 AUR §3-9 / §3-243 / §3-153).  Pure-Integer / integer-Real inputs reduce natively with BigInt and return the centered representative `[-(m-1)/2, m/2]` — `12 0 ADDTMOD` (m=7) → `Integer(-2)` matching the AUR worked example `(X^2+3X+6)+(9X+3) ≡ X^2-2X+2 (mod 7)`.  Symbolic / Name inputs route through Giac as `((expr1 op expr2)) mod m` and lift the result back via `giacToAst`.  Rejects Vector / Matrix / Complex / List / Tagged / etc. with `Bad argument type` (only number-shaped operands are valid).  No-fallback policy. |
+| `POWMOD` | ✓ | **Session 144** — `( a n → a^n mod m )` modular exponentiation against the MODSTO modulus (HP50 AUR §3-175).  Pure-Integer fast path uses `_powModBig` with BigInt; the result is centered (matches ADDTMOD/SUBTMOD/MULTMOD).  Symbolic / Name path emits `powmod(base,exp,m)` to Giac and round-trips the result.  Negative exponent → `Bad argument value`.  No-fallback policy. |
 | `PA2B2` | ✓ | **Session 114** — `( p → (a,b) )` Fermat sum of two squares for primes with `p=2` or `p ≡ 1 (mod 4)`; native Cornacchia via the existing BigInt helpers (`_isPrimeBig`, `_powModBig`, new `_bigIntSqrtFloor`).  Returns a native Complex Gaussian integer with the smaller component real, larger imag.  Rejects non-prime / `p ≡ 3 (mod 4)` with "Bad argument value".  HP50 AUR §3-162. |
 | `CYCLOTOMIC` | ✓ | **Session 081** — `( n → Φ_n(X) )` n-th cyclotomic polynomial as a Symbolic in X.  BigInt long-division build via `Φ_n = (Xⁿ − 1) / ∏_{d\|n, d<n} Φ_d`.  Capped at n ≤ 200 (MAX_SAFE_INTEGER guard on the descending-degree coefficient array).  Rejects non-Integer and n < 1. |
 | `LNAME` | ✓ | **Session 124** — `( 'expr' → 'expr' [names] )` extract the symbolic Names referenced by an expression.  Native AST walker (no Giac dependency): visits `Var` nodes and `Fn` nodes whose head is not in `KNOWN_FUNCTIONS` (i.e. user-defined function names land in the result), dedups in first-seen order, sorts by length DESC then alpha ASC to match HP50 AUR §3-136.  Preserves the input on level 2 and pushes the Vector of Names on level 1.  Rejects non-Symbolic input ("Bad argument type"). |
@@ -506,7 +536,7 @@ can be picked up as a group.
 | `JORDAN` `SCHUR` | Matrix | low | Advanced decomps.  (`RSD` shipped session 119, `LQD` retired session 134 as a phantom — neither was previously grouped on this row.) |
 | `BARPLOT` `HISTPLOT` `SCATRPLOT` | graphics | ui-lane | (graphics — not in this lane) |
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
-| `MULTMOD` | modular | low | Modular poly multiplication — `EUCLID` / `INVMOD` shipped session 076; this is the last gap (needs MODULO state).  (`POLYEVAL` retired session 134 as a phantom — see session-134 log; the real HP50 polynomial evaluator is `PEVAL`, already ✓ since pre-session-061.) |
+| `DIVMOD` `GCDMOD` `EXPANDMOD` `FACTORMOD` `DIV2MOD` | modular | medium | Remaining MODULO-family ops after the session-144 ship of `MODSTO` / `ADDTMOD` / `SUBTMOD` / `MULTMOD` / `POWMOD`.  All five build on the same `state.casModulo` slot the session-144 ops introduced; route through Giac for polynomial inputs (`gcdmod`, `divmod`, `expandmod`, `factormod` are all valid Xcas calls). |
 
 ## Will-not-support (by design deviation)
 
@@ -531,6 +561,76 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 144** (2026-04-25) — Five ops newly shipped (`MODSTO`,
+  `ADDTMOD`, `SUBTMOD`, `MULTMOD`, `POWMOD`) — the HP50 CAS MODULO
+  ARITH menu (`!Þ MODULO`).  All five share a new `state.casModulo`
+  BigInt slot (default `13n`, HP50 factory default per the CAS Modes
+  input form) introduced this run; persisted across reload via
+  `persist.js` with the same `{ __t: 'bigint', v: '<digits>' }`
+  encoding `prngSeed` already uses.
+
+  1. **`MODSTO`** (HP50 AUR §3-150) — `( m → )` set the modulus.
+     Accepts Integer or integer-valued Real; setter normalizes
+     (negatives → abs, 0 / 1 → 2 — matching HP50 firmware which
+     never stores a modulus below 2).  Non-integer Real →
+     `Bad argument value`; Vector / Symbolic / etc. →
+     `Bad argument type`.
+  2. **`ADDTMOD`** (HP50 AUR §3-9) — `( a b → (a+b) mod m )`.  Pure
+     Integer / integer-Real on both levels: native BigInt with
+     centered representative `[-(m-1)/2, m/2]` — matches the AUR
+     worked example `(X^2+3X+6)+(9X+3) mod 7 = X^2 - 2X + 2`
+     (the `12 → -2` fold).  Symbolic / Name path emits
+     `((expr1+expr2)) mod m` to Giac.  No-fallback policy.
+  3. **`SUBTMOD`** (HP50 AUR §3-243) — same shape as ADDTMOD with
+     the `-` operator.  Centered: `0 3 SUBTMOD` (m=7) →
+     `Integer(-3)`, but `1 5 SUBTMOD` (m=7) → `Integer(3)` (3 sits
+     at the upper boundary of the centered range so it stays
+     positive).
+  4. **`MULTMOD`** (HP50 AUR §3-153) — same shape with `*`.
+  5. **`POWMOD`** (HP50 AUR §3-175) — `( a n → a^n mod m )`.  Pure
+     Integer fast path uses `_powModBig` (already vendored for
+     PA2B2 / Miller-Rabin) and re-centers the result; Symbolic /
+     Name path emits `powmod(base,exp,m)` to Giac.  Negative
+     exponent → `Bad argument value`.
+
+  All five share the helpers `_centerMod(a, m)` (centered-rep
+  reduction) and `_isIntLike(v)` (Integer-or-integer-Real test)
+  introduced at the top of the new MODULO block in
+  `www/src/rpl/ops.js`; ADDTMOD / SUBTMOD / MULTMOD additionally
+  share `_modBinary(s, intOp, giacOp)` since they differ only in
+  the BigInt combiner and the Giac infix operator.  +5 register
+  sites; counts heading bumped 466 → 471 register-comments,
+  445 → 450 top-level register calls.
+
+  Tests:
+    • `tests/test-algebra.mjs` +29 assertions in a new "session 144"
+      block at the file end (defaults + setter normalization;
+      MODSTO accepting Integer / negative / 0 / integer-Real;
+      MODSTO rejecting non-integer Real and Vector; ADDTMOD pure
+      Integer + centered; the AUR worked example via mock fixture;
+      SUBTMOD positive/negative wrap-around; MULTMOD pure +
+      Symbolic via fixture; POWMOD pure + zero-exponent + negative
+      reject + Symbolic via fixture; ADDTMOD rejects Vector + Complex;
+      MODSTO + ADDTMOD round-trip).  1014 → 1014 + 29 = 1043 entries
+      in `test-algebra.mjs` listing, but the framework counts the
+      block as a contiguous run of `assert(...)` calls.  Test-all
+      total: 4734 → 4763 (+29).
+    • `tests/test-persist.mjs` +2 assertions: round-trip pinning
+      `casModulo = 23n` and the legacy-snapshot reset-to-default
+      path.  Test-persist 38 → 40.
+    • `node tests/sanity.mjs` stable at 22 / 0.
+
+  User-reachable demo:
+  ```
+    7 ENTER          → Integer 7
+    ALPHA M O D S T O ENTER     → casModulo := 7n (no stack output)
+    12 ENTER 0 ENTER ALPHA A D D T M O D ENTER  → -2
+    `X^2+3*X+6` ENTER `9*X+3` ENTER ALPHA A D D T M O D ENTER  → `X^2 - 2*X + 2`
+  ```
+  (The Symbolic case requires the browser-side Giac wasm to be
+  ready; from the keypad the modulus persists across reloads via
+  `persist.js`.)
 
 - **session 139** (2026-04-25) — Three ops newly shipped (`LIN`,
   `LIMIT`, `lim`) plus the four loop-row Notes-column amendments

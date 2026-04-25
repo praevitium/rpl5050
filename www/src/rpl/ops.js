@@ -82,6 +82,9 @@ import {
   // setComplexMode, getPrngSeed are all exported from state.js and
   // used directly by tests or other modules; no op handler calls them.
   setCasVx, getCasVx,
+  // Session 144: ADDTMOD / SUBTMOD / MULTMOD / POWMOD / MODSTO consult
+  // and mutate the global CAS MODULO state slot via these helpers.
+  setCasModulo, getCasModulo,
   // Session 121: PROMPT op uses these to publish/clear the prompt banner.
   // getPromptMessage is exported from state.js for tests / UI subscribers.
   setPromptMessage, clearPromptMessage,
@@ -1967,6 +1970,131 @@ register('INVMOD', (s) => {
   let inv = u % bn;
   if (inv < 0n) inv += bn;
   s.push(Integer(inv));
+});
+
+/* ------------------------------------------------------------------
+   MODSTO + ADDTMOD / SUBTMOD / MULTMOD / POWMOD     (session 144)
+
+   The HP50 CAS MODULO ARITH menu (`!Þ MODULO`) — five ops that
+   reduce arithmetic results modulo a global state slot.  MODSTO is
+   the only writer; the other four are pure readers.  HP50 AUR
+   §3-150 / §3-9 / §3-243 / §3-153 / §3-175.
+
+   State slot lives in `state.casModulo` (BigInt, default 13n; see
+   state.js setCasModulo).  Persists across reload via persist.js.
+
+   Stack contracts (all match the AUR — numeric-or-symbolic):
+     MODSTO        ( m → )                          — set the modulus
+     ADDTMOD       ( a b → (a+b) mod m )
+     SUBTMOD       ( a b → (a-b) mod m )
+     MULTMOD       ( a b → (a*b) mod m )
+     POWMOD        ( a n → (a^n) mod m )
+
+   Representative convention:
+     • Pure integer inputs (Integer / integer-Real on both levels)
+       reduce natively with BigInt and return the *centered*
+       representative — `5 mod 7` = `-2`, `2 mod 7` = `2`.  This
+       matches the HP50 AUR worked example for ADDTMOD where
+       `(X^2+3X+6)+(9X+3)` mod 7 lands as `X^2 - 2X + 2` (12 → -2,
+       9 → 2).
+     • Symbolic / Name / Rational inputs route through Giac with
+       `((a) op (b)) mod m` (or `powmod(a,n,m)` for POWMOD).  Giac
+       returns coefficients in its own centered convention which
+       matches HP50.  No-fallback policy: Giac not ready → CAS not
+       ready.
+   ------------------------------------------------------------------ */
+
+/** Return the centered representative of `a` mod `m`, m > 0.
+ *  For odd m the range is [-(m-1)/2, (m-1)/2].
+ *  For even m the range is (-m/2, m/2] (the +m/2 boundary stays). */
+function _centerMod(a, m) {
+  let r = a % m;
+  if (r < 0n) r += m;          // r ∈ [0, m)
+  if (2n * r > m) r -= m;       // shift the upper half into the negative side
+  return r;
+}
+
+/** True when `v` is an Integer-shaped numeric (Integer or integer-Real).
+ *  Used by the modular ops to decide between the native BigInt path
+ *  and the Giac symbolic path. */
+function _isIntLike(v) {
+  if (isInteger(v)) return true;
+  if (isReal(v)) return v.value.isFinite() && v.value.isInteger();
+  return false;
+}
+
+/** Either ADDTMOD / SUBTMOD / MULTMOD shipped through this small
+ *  helper since the three differ only in the BigInt op and the Giac
+ *  command builder.  `intOp` is the native BigInt combiner; `giacOp`
+ *  is the infix operator string (`+`, `-`, `*`). */
+function _modBinary(s, intOp, giacOp) {
+  const [a, b] = s.popN(2);
+  const m = getCasModulo();
+  if (_isIntLike(a) && _isIntLike(b)) {
+    const ba = isInteger(a) ? a.value : BigInt(a.value.toFixed(0));
+    const bb = isInteger(b) ? b.value : BigInt(b.value.toFixed(0));
+    s.push(Integer(_centerMod(intOp(ba, bb), m)));
+    return;
+  }
+  // Symbolic / Name / Rational path — route through Giac.  Either side
+  // may already be a Symbolic; the other coerces to AST via _toAst.
+  // Reject anything _toAst can't handle.
+  const lAst = _toAst(a), rAst = _toAst(b);
+  if (!lAst || !rAst) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const cmd = buildGiacCmd(
+    AstBin(giacOp, lAst, rAst),
+    (e) => `(${e}) mod ${m.toString()}`,
+  );
+  s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+}
+
+register('MODSTO', (s) => {
+  const [v] = s.popN(1);
+  // HP50 AUR §3-150: any integer or integer-valued expression.  Names
+  // and Symbolics that don't fold to a numeric Integer can't define a
+  // valid modulus — reject them at this layer.
+  if (!_isIntLike(v)) throw new RPLError('Bad argument type');
+  const m = isInteger(v) ? v.value : BigInt(v.value.toFixed(0));
+  // setCasModulo handles the abs / 0|1 → 2 normalization (state.js).
+  setCasModulo(m);
+});
+
+register('ADDTMOD', (s) => _modBinary(s, (a, b) => a + b, '+'));
+register('SUBTMOD', (s) => _modBinary(s, (a, b) => a - b, '-'));
+register('MULTMOD', (s) => _modBinary(s, (a, b) => a * b, '*'));
+
+register('POWMOD', (s) => {
+  const [a, e] = s.popN(2);
+  const m = getCasModulo();
+  // Native fast path: both base and exponent integer-typed.  HP50
+  // AUR §3-175 doesn't say what happens for a negative exponent;
+  // _powModBig assumes e ≥ 0, so we reject negatives explicitly to
+  // surface a clean error rather than producing garbage.
+  if (_isIntLike(a) && _isIntLike(e)) {
+    const ba = isInteger(a) ? a.value : BigInt(a.value.toFixed(0));
+    const be = isInteger(e) ? e.value : BigInt(e.value.toFixed(0));
+    if (be < 0n) throw new RPLError('Bad argument value');
+    // _powModBig already reduces into [0, m); re-center afterwards to
+    // match the ADDTMOD/SUBTMOD/MULTMOD convention.
+    const r = _powModBig(ba, be, m);
+    s.push(Integer(_centerMod(r, m)));
+    return;
+  }
+  // Symbolic / Name path — Giac's `powmod(base, exp, m)` does the
+  // polynomial-modular exponentiation (HP50 AUR §3-175 mirror).
+  const lAst = _toAst(a), rAst = _toAst(e);
+  if (!lAst || !rAst) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  // Use buildGiacCmd with a placeholder AstBin('+', l, r) just so the
+  // helper sees both subexpressions through one AST — the resulting
+  // Giac string is discarded by `buildCmd` which rebuilds the actual
+  // `powmod(base,exp,m)` call from the two halves directly.
+  const cmd = buildGiacCmd(
+    AstBin('+', lAst, rAst),
+    (_) => `powmod(${astToGiac(lAst)},${astToGiac(rAst)},${m.toString()})`,
+  );
+  s.push(Symbolic(giacToAst(giac.caseval(cmd))));
 });
 
 /** Log-gamma via the same Lanczos coefficients as _gamma.  Implemented

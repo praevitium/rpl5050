@@ -135,6 +135,16 @@ export const state = {
   // optional `casVx` field on decode so a future version bump is
   // backwards-compatible.
   casVx: 'X',
+  // CAS MODULO state slot (MODSTO / ADDTMOD / SUBTMOD / MULTMOD /
+  // POWMOD family — HP50 AUR §3-150 / §3-9 / §3-243 / §3-153 / §3-175).
+  // BigInt holding the current modulus.  HP50 factory default is 13
+  // (the "Modulo" line of the CAS Modes input form).  MODSTO is the
+  // setter; the modular ops above consult it to reduce results.
+  // Negative inputs are stored as their absolute value, 0 and 1 are
+  // promoted to 2 — matching the HP50 firmware contract that the
+  // modulus is always ≥ 2 and positive.  Persisted across reloads via
+  // persist.js (encoded as { __t: 'bigint', v: '<digits>' }).
+  casModulo: 13n,
   // Suspended-execution slots — a LIFO stack of halted records.
   // Each record shape is
   //   { tokens: Array, ip: number, length: number }
@@ -565,6 +575,42 @@ export function getCasVx() { return state.casVx; }
 export function resetCasVx() {
   if (state.casVx === 'X') return;
   state.casVx = 'X';
+  _emit();
+}
+
+/* ------------------------ CAS modulo (MODSTO) ------------------------
+   Single BigInt slot holding the current MODULO state value.  The
+   ADDTMOD / SUBTMOD / MULTMOD / POWMOD / DIVMOD / GCDMOD / EXPANDMOD /
+   FACTORMOD ops all consult this slot when reducing their result.
+   MODSTO is the only writer; the modular ops are pure readers.
+
+   HP50 contract (AUR p.3-150): the input may be any integer or
+   integer-valued expression.  Negative values are folded to their
+   absolute value, and 0 / 1 are promoted to 2 — the firmware never
+   stores a modulus below 2.  We mirror that normalization here so the
+   modular ops can assume `casModulo >= 2n`.
+
+   Defaults to 13n on a freshly-booted unit (the HP50 factory default
+   per the CAS Modes input form).  The setter rejects non-BigInt input
+   so callers surface a consistent error at their level. */
+
+export function setCasModulo(m) {
+  if (typeof m !== 'bigint') {
+    throw new Error(`setCasModulo: expected BigInt, got ${typeof m}`);
+  }
+  let n = m < 0n ? -m : m;
+  if (n < 2n) n = 2n;
+  if (state.casModulo === n) return;
+  state.casModulo = n;
+  _emit();
+}
+
+export function getCasModulo() { return state.casModulo; }
+
+/** Reset MODULO to the HP50 factory default of 13n.  Test isolation. */
+export function resetCasModulo() {
+  if (state.casModulo === 13n) return;
+  state.casModulo = 13n;
   _emit();
 }
 

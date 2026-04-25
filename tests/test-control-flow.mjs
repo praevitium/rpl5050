@@ -5534,3 +5534,216 @@ const { getPromptMessage, clearPromptMessage }
       `session141: THEN-clause sentinel 999 absent at level ${lvl}`);
   }
 }
+
+/* ================================================================
+   Session 146 — HALT / CONT / KILL through nested `→` (compiled
+   local environment) frames.
+
+   Single-level `→` HALT is pinned by sessions 088 (HALT-inside-→
+   suspends with locals on the stack and frame torn down on CONT)
+   and the matching KILL pin.  But the nested-`→` case — outer `→`
+   whose body opens an inner `→` whose body HALTs — was never
+   pinned.  Two invariants matter:
+
+     1.  At suspension `localFramesDepth() === 2` (both frames are
+         live; the inner frame hasn't popped yet because its body's
+         yield* never returned).
+     2.  CONT drains the generator chain in inner-to-outer order;
+         both `runArrow` finally blocks run; `localFramesDepth()
+         === 0` afterwards.
+     3.  KILL via `gen.return()` runs both finallys in LIFO (inner
+         then outer); same end state.
+     4.  resetHome closes the generator chain before clearing the
+         home directory; same end state.
+     5.  Inner-frame name shadows the outer at suspension time —
+         the local visible during a HALT inside the inner body is
+         the inner binding, not the outer.
+
+   Session 068 already pins outer/inner shadowing without HALT
+   (the « 1 2 → a b « 10 20 → a b « a b » » » nesting test).  This
+   block adds the HALT-aware variants.
+   ================================================================ */
+
+/* ---- Two-level nested → with HALT in the inner body suspends with
+        both frames live; CONT drains both ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // 1 2 → a b « 10 20 → a b « a HALT b » »
+  //
+  //   Outer pops 1,2; binds outer a=1, b=2.
+  //   Inner pops 10,20; binds inner a=10, b=20 (shadowing outer).
+  //   Inner body pushes a (→ 10), HALTs.  At suspension stack = [10],
+  //   both frames live (depth 2), inner a=10 visible.
+  //   CONT pushes b (→ 20).  Inner frame pops, outer frame pops.
+  //   Final stack: [10, 20].
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),
+    Program([
+      Integer(10n), Integer(20n),
+      Name('→'), Name('a'), Name('b'),
+      Program([ Name('a'), Name('HALT'), Name('b') ]),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session146: nested →: HALT in inner body suspends');
+  assert(localFramesDepth() === 2,
+    'session146: nested → HALT: both → frames live at suspension');
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session146: nested → HALT: inner a=10 visible at suspension (shadowing outer a=1)');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session146: nested → HALT: CONT drains the suspended generator chain');
+  assert(s.depth === 2 && s.peek().value === 20n && s._items[0].value === 10n,
+    'session146: nested → HALT: CONT pushes inner b=20 atop a=10');
+  assert(localFramesDepth() === 0,
+    'session146: nested → HALT: both frames torn down after CONT');
+}
+
+/* ---- KILL of a nested-→ HALT runs both finallys in LIFO ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Same shape as above but KILL instead of CONT.
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),
+    Program([
+      Integer(10n), Integer(20n),
+      Name('→'), Name('a'), Name('b'),
+      Program([ Name('a'), Name('HALT'), Name('b') ]),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session146: nested → KILL: precondition halt');
+  assert(localFramesDepth() === 2,
+    'session146: nested → KILL: both frames live pre-KILL');
+  lookup('KILL').fn(s);
+  assert(haltedDepth() === 0,
+    'session146: nested → KILL: halt slot cleared');
+  assert(localFramesDepth() === 0,
+    'session146: nested → KILL: both frames torn down via gen.return() finally chain');
+}
+
+/* ---- Nested → HALT BETWEEN inner-frame open/close — only outer
+        frame live at suspension ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // 1 2 → a b « 10 20 → x y « x y + » HALT a »
+  //
+  //   Outer pops 1,2; binds outer a=1, b=2.
+  //   Inner-→ runs to completion, pushes 30 (10+20), pops its frame.
+  //   HALT fires after the inner frame has been torn down.
+  //   At suspension: stack = [30], localFramesDepth === 1 (only
+  //   outer), outer a=1 still bound.
+  //   CONT pushes outer a=1.  Final stack: [30, 1].
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),
+    Program([
+      Integer(10n), Integer(20n),
+      Name('→'), Name('x'), Name('y'),
+      Program([ Name('x'), Name('y'), Name('+') ]),
+      Name('HALT'),
+      Name('a'),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session146: nested → HALT-after-inner-pops: suspended');
+  assert(localFramesDepth() === 1,
+    'session146: nested → HALT-after-inner-pops: only outer frame live');
+  assert(s.depth === 1 && s.peek().value === 30n,
+    'session146: nested → HALT-after-inner-pops: 30 (10+20) on stack');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session146: nested → HALT-after-inner-pops: CONT drains');
+  assert(s.depth === 2 && s.peek().value === 1n && s._items[0].value === 30n,
+    'session146: nested → HALT-after-inner-pops: CONT pushes outer a=1');
+  assert(localFramesDepth() === 0,
+    'session146: nested → HALT-after-inner-pops: outer frame torn down on CONT');
+}
+
+/* ---- resetHome on a nested-→ HALT closes the generator chain
+        and tears down both frames ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Integer(7n));
+  s.push(Integer(8n));
+  s.push(Program([
+    Name('→'), Name('a'), Name('b'),
+    Program([
+      Integer(70n), Integer(80n),
+      Name('→'), Name('a'), Name('b'),
+      Program([ Name('a'), Name('HALT') ]),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session146: nested → resetHome: precondition halt');
+  assert(localFramesDepth() === 2,
+    'session146: nested → resetHome: both frames live pre-resetHome');
+  resetHome();
+  assert(haltedDepth() === 0,
+    'session146: nested → resetHome: halt slot cleared');
+  assert(localFramesDepth() === 0,
+    'session146: nested → resetHome: both frames torn down via gen.return() finally chain');
+}
+
+/* ---- LIFO: two halts in sequence, second halt is inside an inner
+        → frame, first halt is inside outer → frame.  CONT pops
+        them in LIFO. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 → a « a HALT 2 → b « b HALT a b + » » »
+  //
+  //   Step 1: Outer →: a=1.  Body pushes a (→1), HALTs.  At first
+  //           suspension: stack = [1], one frame live (outer a=1).
+  //   Step 2: CONT.  Push 2.  Inner →: b=2 (pops the 2).  Body
+  //           pushes b (→2), HALTs.  At second suspension:
+  //           stack = [1, 2], two frames live (outer a=1, inner b=2).
+  //   Step 3: CONT.  Push a (→1), push b (→2), +→3.  Stack =
+  //           [1, 2, 3].
+  s.push(Integer(1n));
+  s.push(Program([
+    Name('→'), Name('a'),
+    Program([
+      Name('a'), Name('HALT'),
+      Integer(2n), Name('→'), Name('b'),
+      Program([
+        Name('b'), Name('HALT'),
+        Name('a'), Name('b'), Name('+'),
+      ]),
+    ]),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session146: nested → sequential HALT: first halt fires');
+  assert(localFramesDepth() === 1,
+    'session146: nested → sequential HALT: only outer frame live at first halt');
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session146: nested → sequential HALT: stack [1] at first halt');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 1,
+    'session146: nested → sequential HALT: second halt fires after CONT');
+  assert(localFramesDepth() === 2,
+    'session146: nested → sequential HALT: both frames live at second halt');
+  assert(s.depth === 2 && s.peek().value === 2n && s._items[0].value === 1n,
+    'session146: nested → sequential HALT: stack [1,2] at second halt');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session146: nested → sequential HALT: final CONT drains');
+  assert(s.depth === 3 && s.peek().value === 3n,
+    'session146: nested → sequential HALT: final stack [1,2,3] (a+b=3)');
+  assert(localFramesDepth() === 0,
+    'session146: nested → sequential HALT: both frames torn down at end');
+}

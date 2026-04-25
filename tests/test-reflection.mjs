@@ -1460,3 +1460,403 @@ function _roundTripProgram(prog) {
       'session099: TVARS on empty dir returns {}');
   }
 }
+
+/* ================================================================
+   Session 146 — NEWOB on a Program.
+
+   NEWOB ( obj → obj' ) is the HP50 "force a fresh copy" op.  On the
+   real unit it materialises a value that was recalled by reference
+   into a freshly-allocated copy.  Our implementation rebuilds every
+   composite container (List / Vector / Matrix / Program) so that
+   `===` against the original is false but the structural content
+   round-trips.
+
+   Sessions 047 / 047b pinned NEWOB on Real, List, Matrix.  Program
+   NEWOB has been live since session 067 (the same change that
+   added OBJ→ / →PRG) but no test has pinned the round-trip
+   invariants for it: distinct-object identity, distinct-tokens-
+   array identity, structural equality, EVAL semantics agreement,
+   and structural-program (IF/THEN/ELSE/END) survival.  This
+   block closes that gap.
+
+   The lane-scope rationale for filing these under the rpl-
+   programming lane (vs. the data-types lane that owns the rest of
+   the NEWOB family): Program is the User-RPL programming-lane
+   value type — its tokens carry the structural-keyword vocabulary
+   the lane owns — and the round-trip needs to round-trip that
+   vocabulary correctly.
+   ================================================================ */
+
+/* ---- NEWOB on an empty Program returns a distinct empty Program ---- */
+{
+  const s = new Stack();
+  const orig = Program([]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  assert(s.depth === 1 && isProgram(s.peek()),
+    'session146: NEWOB on empty Program leaves a Program');
+  assert(s.peek() !== orig,
+    'session146: NEWOB on empty Program returns a distinct object');
+  assert(s.peek().tokens.length === 0,
+    'session146: NEWOB on empty Program preserves zero-token shape');
+}
+
+/* ---- NEWOB on a non-empty Program returns a distinct Program with
+        equal token count, distinct tokens-array, equal token shape ---- */
+{
+  const s = new Stack();
+  const orig = Program([Integer(3n), Integer(4n), Name('+')]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isProgram(copy),
+    'session146: NEWOB on non-empty Program leaves a Program');
+  assert(copy !== orig,
+    'session146: NEWOB on non-empty Program returns a distinct object');
+  assert(copy.tokens !== orig.tokens,
+    'session146: NEWOB on Program returns a distinct tokens array (not === to orig.tokens)');
+  assert(copy.tokens.length === orig.tokens.length,
+    'session146: NEWOB on Program preserves token count');
+  assert(copy.tokens[0].type === 'integer' && copy.tokens[0].value === 3n,
+    'session146: NEWOB Program token 0 preserves Integer(3)');
+  assert(copy.tokens[1].type === 'integer' && copy.tokens[1].value === 4n,
+    'session146: NEWOB Program token 1 preserves Integer(4)');
+  assert(copy.tokens[2].type === 'name' && copy.tokens[2].id === '+',
+    'session146: NEWOB Program token 2 preserves Name(+)');
+}
+
+/* ---- NEWOB-produced tokens array is frozen ---- */
+{
+  const s = new Stack();
+  s.push(Program([Integer(1n), Integer(2n)]));
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(Object.isFrozen(copy.tokens),
+    'session146: NEWOB on Program returns a frozen tokens array (matches Program() invariant)');
+}
+
+/* ---- NEWOB on a Program containing nested Program preserves nesting ---- */
+{
+  const s = new Stack();
+  const inner = Program([Name('+')]);
+  const orig = Program([Integer(10n), Integer(20n), inner, Name('EVAL')]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isProgram(copy) && copy !== orig,
+    'session146: NEWOB on nested Program returns a distinct outer Program');
+  assert(copy.tokens.length === 4,
+    'session146: NEWOB nested Program preserves outer token count');
+  assert(isProgram(copy.tokens[2]) && copy.tokens[2].tokens.length === 1,
+    'session146: NEWOB nested Program inner token is still a 1-token Program');
+  // The shallow rebuild policy in `_newObCopy` re-wraps the outer
+  // tokens array but does NOT recurse into nested Programs — the
+  // inner Program shares identity with the original.  HP50 NEWOB
+  // is one-level "decouple", so this is the contract.
+  assert(copy.tokens[2] === inner,
+    'session146: NEWOB on Program is a shallow copy — nested Program object identity preserved');
+}
+
+/* ---- NEWOB on a Program containing a structural-keyword body
+        (IF/THEN/ELSE/END) preserves every keyword token ---- */
+{
+  const s = new Stack();
+  const orig = Program([
+    Integer(5n),
+    Name('IF'), Name('DUP'), Integer(0n), Name('>'),
+    Name('THEN'), Integer(100n), Name('+'),
+    Name('ELSE'), Name('NEG'),
+    Name('END'),
+  ]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isProgram(copy) && copy !== orig,
+    'session146: NEWOB on IF/THEN/ELSE/END Program returns distinct Program');
+  assert(copy.tokens.length === orig.tokens.length,
+    'session146: NEWOB on IF/THEN/ELSE/END Program preserves token count');
+  // Spot-check every structural keyword survives byte-for-byte.
+  const tokIds = copy.tokens.filter(t => t.type === 'name').map(t => t.id);
+  const want = ['IF', 'DUP', '>', 'THEN', '+', 'ELSE', 'NEG', 'END'];
+  let allHave = true;
+  for (const w of want) if (!tokIds.includes(w)) { allHave = false; break; }
+  assert(allHave,
+    'session146: NEWOB preserves IF/THEN/ELSE/END structural keywords');
+}
+
+/* ---- NEWOB result EVALs to the same final stack as the original ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    const orig = Program([Integer(6n), Integer(7n), Name('*'), Integer(2n), Name('-')]);
+    // Evaluate the original.
+    const s0 = new Stack();
+    s0.push(orig);
+    lookup('EVAL').fn(s0);
+    const t0 = s0.peek();
+    const v0 = t0.type === 'integer' ? Number(t0.value)
+             : t0.type === 'real'    ? t0.value.toNumber() : null;
+
+    // Evaluate the NEWOB copy.
+    const s1 = new Stack();
+    s1.push(orig);
+    lookup('NEWOB').fn(s1);
+    const copy = s1.peek();
+    assert(copy !== orig,
+      'session146: NEWOB precondition — copy is a distinct Program object');
+    lookup('EVAL').fn(s1);
+    const t1 = s1.peek();
+    const v1 = t1.type === 'integer' ? Number(t1.value)
+             : t1.type === 'real'    ? t1.value.toNumber() : null;
+
+    assert(v0 === 40 && v1 === 40 && v0 === v1,
+      'session146: NEWOB-then-EVAL agrees with original-EVAL (6 7 * 2 - = 40)');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ---- NEWOB on a Program → DECOMP→STR→ round-trip is invariant ---- */
+{
+  const s = new Stack();
+  const orig = Program([Integer(2n), Name('X', { quoted: true }), Name('*')]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  // Now run DECOMP→STR→ on the NEWOB copy.
+  lookup('DECOMP').fn(s);
+  lookup('STR→').fn(s);
+  const back = s.peek();
+  assert(isProgram(back) && back.tokens.length === 3,
+    'session146: NEWOB→DECOMP→STR→ on Program preserves shape');
+  assert(back.tokens[1].type === 'name' && back.tokens[1].id === 'X' && back.tokens[1].quoted,
+    'session146: NEWOB→DECOMP→STR→ preserves quoted Name token');
+}
+
+/* ================================================================
+   Session 146 — DECOMP → STR→ round-trip for the structural-keyword
+   family that wasn't previously pinned.
+
+   Session 073 pinned DECOMP→STR→ over IF/THEN/ELSE/END only.
+   Sessions 074 / 078 / 083 / 136 added auto-close on missing END /
+   NEXT for the rest of the structural-keyword family (CASE,
+   IFERR, IF, WHILE, DO, START, FOR), and the formatter has long
+   emitted these keywords in their canonical source form, but no
+   test pinned that the resulting source-string round-trips
+   through DECOMP→STR→ for them.  A regression in either the
+   formatter (mis-spelled keyword, dropped delimiter) or the
+   parser (missing tokenisation rule) for any one of these
+   constructs would have slipped through.  These pins close the
+   gap for the full structural family.
+   ================================================================ */
+
+/* ---- IFERR / THEN / ELSE / END round-trip ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // « IFERR 1 0 / THEN 99 ELSE 7 END »  — divide-by-zero trapped,
+    // THEN clause runs and pushes 99.
+    const src = Program([
+      Name('IFERR'), Integer(1n), Integer(0n), Name('/'),
+      Name('THEN'), Integer(99n),
+      Name('ELSE'), Integer(7n),
+      Name('END'),
+    ]);
+    const back = _roundTripProgram(src);
+    assert(back.tokens.length === src.tokens.length,
+      'session146: DECOMP→STR→ preserves IFERR/THEN/ELSE/END token count');
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    const v = top.type === 'integer' ? Number(top.value)
+            : top.type === 'real'    ? top.value.toNumber() : null;
+    assert(v === 99,
+      'session146: DECOMP→STR→ on IFERR program preserves trap-then-THEN semantics');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ---- WHILE / REPEAT / END round-trip ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // « 0 1 WHILE DUP 5 < REPEAT 1 + END SWAP DROP »
+    //   loop var stays on top of stack, increments until ≥ 5,
+    //   then SWAP DROP cleans up the initial 0.  Final: 5.
+    const src = Program([
+      Integer(0n), Integer(1n),
+      Name('WHILE'), Name('DUP'), Integer(5n), Name('<'),
+      Name('REPEAT'), Integer(1n), Name('+'),
+      Name('END'),
+      Name('SWAP'), Name('DROP'),
+    ]);
+    const back = _roundTripProgram(src);
+    assert(back.tokens.length === src.tokens.length,
+      'session146: DECOMP→STR→ preserves WHILE/REPEAT/END token count');
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    const v = top.type === 'integer' ? Number(top.value)
+            : top.type === 'real'    ? top.value.toNumber() : null;
+    assert(v === 5,
+      'session146: DECOMP→STR→ on WHILE program preserves loop semantics (1 → 5)');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ---- DO / UNTIL / END round-trip ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // « 1 DO 2 * DUP 16 ≥ UNTIL END »  — doubles starting from 1
+    // until value ≥ 16.  Trace: 1→2→4→8→16, stop.  Final: 16.
+    const src = Program([
+      Integer(1n),
+      Name('DO'), Integer(2n), Name('*'), Name('DUP'), Integer(16n), Name('≥'),
+      Name('UNTIL'),
+      Name('END'),
+    ]);
+    const back = _roundTripProgram(src);
+    assert(back.tokens.length === src.tokens.length,
+      'session146: DECOMP→STR→ preserves DO/UNTIL/END token count');
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    const v = top.type === 'integer' ? Number(top.value)
+            : top.type === 'real'    ? top.value.toNumber() : null;
+    assert(v === 16,
+      'session146: DECOMP→STR→ on DO/UNTIL program preserves loop semantics (1 → 16)');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ---- START / NEXT round-trip ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // « 0 1 4 START 1 + NEXT »  — counted loop 1..4, body increments
+    // accumulator each iteration.  Final: 4.
+    const src = Program([
+      Integer(0n),
+      Integer(1n), Integer(4n),
+      Name('START'), Integer(1n), Name('+'),
+      Name('NEXT'),
+    ]);
+    const back = _roundTripProgram(src);
+    assert(back.tokens.length === src.tokens.length,
+      'session146: DECOMP→STR→ preserves START/NEXT token count');
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    const v = top.type === 'integer' ? Number(top.value)
+            : top.type === 'real'    ? top.value.toNumber() : null;
+    assert(v === 4,
+      'session146: DECOMP→STR→ on START/NEXT program preserves loop semantics (4 iters → 4)');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ---- FOR / NEXT round-trip ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // « 0 1 4 FOR i i + NEXT »  — sum 1+2+3+4 = 10.
+    const src = Program([
+      Integer(0n),
+      Integer(1n), Integer(4n),
+      Name('FOR'), Name('i'), Name('i'), Name('+'),
+      Name('NEXT'),
+    ]);
+    const back = _roundTripProgram(src);
+    assert(back.tokens.length === src.tokens.length,
+      'session146: DECOMP→STR→ preserves FOR/NEXT token count');
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    const v = top.type === 'integer' ? Number(top.value)
+            : top.type === 'real'    ? top.value.toNumber() : null;
+    assert(v === 10,
+      'session146: DECOMP→STR→ on FOR/NEXT program preserves loop semantics (sum 1..4 = 10)');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ---- CASE / THEN / END / END round-trip ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // « 2 CASE DUP 1 == THEN "one" END DUP 2 == THEN "two" END "other" END »
+    //   Test value 2 → "two" branch fires, picks the matching string.
+    const src = Program([
+      Integer(2n),
+      Name('CASE'),
+        Name('DUP'), Integer(1n), Name('=='), Name('THEN'), Str('one'), Name('END'),
+        Name('DUP'), Integer(2n), Name('=='), Name('THEN'), Str('two'), Name('END'),
+        Str('other'),
+      Name('END'),
+    ]);
+    const back = _roundTripProgram(src);
+    assert(back.tokens.length === src.tokens.length,
+      'session146: DECOMP→STR→ preserves CASE token count');
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    assert(top.type === 'string' && top.value === 'two',
+      'session146: DECOMP→STR→ on CASE program preserves dispatch (2 → "two")');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ---- → (compiled local) round-trip ---- */
+{
+  resetHome();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    // « 3 4 → a b « a b * » »  — multiply locals → 12.
+    const inner = Program([Name('a'), Name('b'), Name('*')]);
+    const src = Program([
+      Integer(3n), Integer(4n),
+      Name('→'), Name('a'), Name('b'),
+      inner,
+    ]);
+    const back = _roundTripProgram(src);
+    assert(back.tokens.length === src.tokens.length,
+      'session146: DECOMP→STR→ preserves → (compiled-local) token count');
+    const s = new Stack();
+    s.push(back);
+    lookup('EVAL').fn(s);
+    const top = s.peek();
+    const v = top.type === 'integer' ? Number(top.value)
+            : top.type === 'real'    ? top.value.toNumber() : null;
+    assert(v === 12,
+      'session146: DECOMP→STR→ on → program preserves local-binding semantics (3 4 → a b → 12)');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}

@@ -4,7 +4,77 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 142 (2026-04-25).  Unit-tests lane run.
+**Last updated.** Session 147 (2026-04-25).  Unit-tests lane run.
+
+Sibling deltas absorbed since the session-142 snapshot (4734 → 4883,
+**+149** over four sibling sessions):
+- Session 143 (code-review) — doc-only run; **0** assertion deltas
+  (REVIEW.md re-aging / open-finding bumps; no source or test edits).
+- Session 144 (command-support) shipped **+29** assertions in
+  `test-algebra.mjs` (985 → 1014) for the HP50 CAS MODULO ARITH
+  cluster (MODSTO + ADDTMOD/SUBTMOD/MULTMOD/POWMOD) plus **+2**
+  assertions in `test-persist.mjs` (38 → 40) for the new
+  `casModulo` BigInt slot persistence round-trip.
+- Session 145 (data-type-support) shipped **+41** assertions in
+  `test-types.mjs` (762 → 803) across three EXACT-mode lift
+  clusters: forward-trig SIN/COS/TAN integer-stay-exact (13);
+  LN/LOG/EXP/ALOG integer-clean / Rational-stay-symbolic (~14);
+  bespoke-V/M inner-Tagged-rejection grid M-axis closure on RE/IM
+  (the remaining 2-axis cells session 142 Cluster 3 left half-open).
+- Session 146 (rpl-programming) shipped **+29** assertions in
+  `test-control-flow.mjs` (675 → 704) plus **+50** in
+  `test-reflection.mjs` (196 → 246) for Program/structural
+  round-trip pins.  No source edits this run.
+
+Session 147 unit-tests deltas:
+- **+7 PICK / PICK3 / UNPICK / NDUPN rejection-path assertions**
+  in `test-stack-ops.mjs` (41 → 48): PICK -1 → Bad argument
+  value (negative-N branch of wrapper k<1 guard, distinct from
+  the existing 0 PICK pin); PICK 5 with depth 2 → Too few
+  arguments (Stack.pick `n<level` guard — closes the PICK
+  depth-overrun branch session 137 left for sibling ops);
+  PICK 1.5 → Bad argument value (`!Number.isInteger` branch of
+  wrapper guard, distinct from negative/zero rejects); PICK
+  String → Bad argument type (`toRealOrThrow` rejection at
+  wrapper, distinct from value-domain rejects); PICK3 on
+  depth-2 stack → Too few arguments (closes PICK3 rejection
+  branch — file previously had only the (100,200,300) happy-
+  path pin); UNPICK -1 → Bad argument value (negative-N branch
+  of `_toPosIntIndex`, distinct from session-137 0-UNPICK pin);
+  NDUPN with only count on stack → Too few arguments (s.depth<1
+  guard at ops.js:7255, distinct from session-137 NDUPN-negative-
+  N reject which fires earlier in `_toNonNegIntCount`).
+- **+8 NSIGMA / NΣ + MEAN / VAR / SDEV rejection-path + canonical
+  ΣX / ΣX2 col-0 positive assertions** in `test-stats.mjs`
+  (47 → 55).  Three reject-arm closures + one positive-arm
+  closure pattern: NSIGMA on Real → Bad argument type
+  (canonical-name fall-through at ops.js:12177, was unpinned);
+  NΣ on Real → Bad argument type (symbol-alias delegates to
+  NSIGMA at ops.js:12179, alias-arm reject was unpinned);
+  NΣ on empty Vector → Bad argument value (Vector arm at
+  ops.js:12168 — existing s064 pin only covered the empty-
+  Matrix arm at ops.js:12173); MEAN / VAR / SDEV on Real → Bad
+  argument type (bottom-of-fn fallthroughs at ops.js:10260 /
+  10270 / 10280, all three reject branches were unpinned);
+  canonical ΣX on XY matrix col-0 → 10 + canonical ΣX² on XY
+  matrix col-0 → 30 (canonical-name positive coverage; the
+  file previously only had the SX / SX2 alias-arm pins from
+  s064 / s132).  Mirror of session 132's alias-positive-
+  coverage closure but in the OTHER direction —
+  canonical-positive-coverage closure.
+- **+5 Unit op surface assertions** in `test-units.mjs`
+  (51 → 56): 5_m - 1_s → Inconsistent units ('-' subtractive-
+  arm reject, distinct from session-064 '+' additive-arm pin);
+  1_kg + 1_m → Inconsistent units (different dim pair than
+  the existing m-vs-s pin; defense against a refactor that
+  special-cased length-vs-time); ABS -1_N → 1_N (composite-
+  uexpr ABS keeps the Newton-alias uexpr intact, only flips
+  sign — mirror of session-137's NEG -1_N pin on the ABS arm);
+  2_m ^ -1 → 0.5_m^-1 (negative-exponent power flips uexpr
+  sign via powerUexpr; existing ^ pin uses positive 3); 2_m ^ 0
+  → Real(1) (zero-exponent collapses uexpr to empty → unwraps
+  to dimensionless Real(1); previously unpinned edge of the ^
+  dispatch).
 
 Sibling deltas absorbed since the session-137 snapshot (4586 → 4711,
 **+125** over four sibling sessions):
@@ -354,7 +424,87 @@ Session 117 unit-tests deltas:
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
 
-## Coverage snapshot (session 142)
+## Coverage snapshot (session 147)
+
+Baseline at session start: `node tests/test-all.mjs` = **4883
+passing / 0 failing** (session-146 close, fully green).  Sibling
+deltas since session-142 close (4734): 0 session-143 (code-review
+doc-only), +29 session-144 (test-algebra MODULO ARITH cluster:
+MODSTO + ADDTMOD/SUBTMOD/MULTMOD/POWMOD) + +2 in test-persist
+(casModulo BigInt slot persistence), +41 session-145 (test-types
+forward-trig + LN/LOG/EXP/ALOG EXACT-mode lift + bespoke-V/M
+inner-Tagged-rejection M-axis closure), +29 session-146
+(test-control-flow Program/structural round-trip pins) + +50
+session-146 (test-reflection round-trip pins).
+`test-persist.mjs` 40 / 0 (was 38 at session-142 close; +2 from
+session 144 casModulo).  `sanity.mjs` 22 / 0.
+
+Final: **4903 passing / 0 failing** — fully green.  The +20
+session-147 deltas land in three files (no test-types touch this
+run; sibling lanes have been carrying that file):
+- `test-stack-ops.mjs` 41 → 48 (**+7**) — PICK / PICK3 / UNPICK /
+  NDUPN rejection-path closure.  PICK -1 (negative-N branch),
+  PICK 1.5 (`!Number.isInteger` branch), PICK String (toRealOrThrow
+  type-side reject — distinct from value-domain rejects), PICK 5
+  with depth 2 (Stack.pick `n<level` guard — closes PICK
+  depth-overrun branch session 137 left for sibling ops),
+  PICK3 on depth-2 (closes PICK3 rejection branch — file
+  previously had only the (100,200,300) happy-path pin),
+  UNPICK -1 (negative-N branch of `_toPosIntIndex`, distinct
+  from session-137 0-UNPICK pin), NDUPN with only count
+  (s.depth<1 guard at ops.js:7255, distinct from session-137
+  NDUPN-negative-N reject earlier in `_toNonNegIntCount`).
+- `test-stats.mjs` 47 → 55 (**+8**) — NSIGMA / NΣ + MEAN / VAR /
+  SDEV rejection-path closure + canonical ΣX / ΣX² col-0
+  positive coverage closure.  NSIGMA on Real (canonical fallthrough);
+  NΣ on Real (symbol-alias delegation reject); NΣ on empty
+  Vector (Vector arm of empty reject — existing s064 pin only
+  covered Matrix arm); MEAN/VAR/SDEV on Real (all three reject
+  branches were unpinned); canonical ΣX / ΣX² on XY-matrix col-0
+  positive (file previously only had the SX/SX2 alias-arm pins
+  from s064 / s132).  Mirror of session 132's alias-positive-
+  coverage closure but in the OTHER direction —
+  canonical-positive-coverage closure.
+- `test-units.mjs` 51 → 56 (**+5**) — Mixed-dim subtraction
+  reject + different-dim-pair add reject + composite-ABS +
+  ^ negative / zero-exponent edge coverage closure.  5_m - 1_s
+  → Inconsistent units ('-' arm distinct from existing '+' arm
+  pin); 1_kg + 1_m → Inconsistent units (different dim pair than
+  the existing m-vs-s pin); ABS -1_N → 1_N (composite-uexpr ABS;
+  mirror of session-137's NEG -1_N pin on the ABS arm); 2_m ^ -1
+  → 0.5_m^-1 (negative-exponent power flips uexpr sign);
+  2_m ^ 0 → Real(1) (zero-exponent collapses uexpr to empty →
+  unwraps to dimensionless Real(1)).
+
+`test-persist.mjs` 40 / 0 (unchanged this run — session 144
+shipped the +2 casModulo persistence pins absorbed in this
+snapshot).  `sanity.mjs` 22 / 0 (unchanged).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1014 | 0    | +25 session-119 (EGV / RSD / GREDUCE), +25 session-124 (LNAME / GBASIS), +9 session-127 (LNAME edge cluster), +13 session-139 (LIN 5 + LIMIT/lim 8), **+29 session-144** (MODSTO + ADDTMOD/SUBTMOD/MULTMOD/POWMOD MODULO ARITH cluster). |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    | session-112 migration snapshot retained. |
+| test-comparisons.mjs        |  111 | 0    | +15 session-107 Rational, +8 session-127 Q × C / Q × R, +8 session-132 Z × Q reverse-direction cluster. |
+| test-control-flow.mjs       |  704 | 0    | +34 s116, +46 s121 PROMPT/KILL, +4 s122, +37 s126 (HALT/PROMPT lift through SEQ+MAP), +65 s131 (DOLIST/DOSUBS/STREAM bodies), +36 session-136 (loop auto-close), +76 session-141 (rpl-programming), **+29 session-146** (Program structural round-trip pins).  Session 147 did not touch this file. |
+| test-entry.mjs              |   90 | 0    | session-112 migration snapshot retained. |
+| test-eval.mjs               |   62 | 0    | session-112 migration snapshot retained. |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  171 | 0    | session-112 migration snapshot retained. |
+| test-matrix.mjs             |  347 | 0    | Remaining 1 site is the negated `assert(!threw, …)` RDZ-0 acceptance check, deliberately untouched. |
+| test-numerics.mjs           |  687 | 0    | +27 session-109 + session-112 LOG-CMPLX-OFF split (retained). |
+| test-reflection.mjs         |  246 | 0    | **+50 session-146** (Program/structural round-trip pins via the `_roundTripProgram` helper, plus 14 incidental session073 fires). |
+| test-stack-ops.mjs          |  **48** | 0    | +9 session-137 edge-path closure, **+7 session-147** (PICK / PICK3 / UNPICK / NDUPN rejection-path closure). |
+| test-stats.mjs              |  **55** | 0    | +11 s127 rejection-path catchup, +9 s132 ASCII-alias positive closure + MAXΣ multi-column positive, +7 session-137 ASCII-alias REJECTION closure, **+8 session-147** (NSIGMA/NΣ + MEAN/VAR/SDEV reject + canonical ΣX/ΣX² col-0 positive). |
+| test-types.mjs              |  803 | 0    | +50 s115, +2 s117, +68 s120, +43 s125, +35 s130, +31 s135, +36 session-140, +23 session-142, **+41 session-145** (forward-trig SIN/COS/TAN + LN/LOG/EXP/ALOG EXACT-mode lift + bespoke-V/M inner-Tagged-rejection M-axis RE/IM closure).  Session 147 did not touch this file. |
+| test-ui.mjs                 |   77 | 0    | session-112 migration snapshot retained. |
+| test-units.mjs              |  **56** | 0    | +12 session-137 symmetric / composite / mixed-dim closure, **+5 session-147** ('-' mixed-dim reject + different-dim-pair '+' reject + composite ABS -1_N + ^ negative-exponent + ^ zero-exponent). |
+| test-variables.mjs          |  248 | 0    | One remaining `let threw` at :446 is the varPurge-doesn't-throw scaffold (followed by a hard PURGE assertThrows); negated form, deliberately left. |
+| **test-all (aggregate)**    | **4903** | **0** | Session 147 close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
+| test-persist.mjs (separate) |   40 | 0    | +2 session-144 (casModulo BigInt slot persistence round-trip) absorbed in this snapshot; session 147 did not touch this file. |
+| sanity.mjs (standalone)     |   22 | 0    | <5 ms smoke suite.                       |
+
+### Prior snapshot — Session 142 (retained for context)
 
 Baseline at session start: `node tests/test-all.mjs` = **4711
 passing / 0 failing** (session-141 close, fully green).  Sibling
@@ -845,7 +995,72 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 142 (2026-04-25) — this run.  Unit-tests lane.  **+23
+- Session 147 (2026-04-25) — this run.  Unit-tests lane.  **+20
+  assertions across 3 substantive clusters** (above the 3-item
+  floor) — distributed across `test-stack-ops.mjs`,
+  `test-stats.mjs`, `test-units.mjs` (no test-types touch this
+  run; siblings have been carrying that file):
+  - **Cluster 1 (7)** — `test-stack-ops.mjs` 41 → 48.  PICK /
+    PICK3 / UNPICK / NDUPN rejection-path closure.  PICK -1 →
+    Bad argument value (negative-N branch of wrapper k<1 guard,
+    distinct from existing 0 PICK pin); PICK 5 with depth 2 →
+    Too few arguments (Stack.pick `n<level` guard — closes the
+    PICK depth-overrun branch session 137 left for sibling
+    ops); PICK 1.5 → Bad argument value (`!Number.isInteger`
+    branch); PICK String → Bad argument type (`toRealOrThrow`
+    type-side reject — distinct branch from value-domain
+    rejects); PICK3 on depth-2 → Too few arguments (closes
+    PICK3 rejection branch — file previously had only the
+    (100,200,300) happy-path pin); UNPICK -1 → Bad argument
+    value (negative-N branch of `_toPosIntIndex`, distinct
+    from session-137 0-UNPICK pin); NDUPN with only count on
+    stack → Too few arguments (s.depth<1 guard at ops.js:7255,
+    distinct from session-137 NDUPN-negative-N reject earlier
+    in `_toNonNegIntCount`).
+  - **Cluster 2 (8)** — `test-stats.mjs` 47 → 55.  NSIGMA / NΣ
+    + MEAN / VAR / SDEV rejection-path closure + canonical ΣX /
+    ΣX² col-0 positive coverage closure.  NSIGMA on Real (1 —
+    canonical-name fall-through at ops.js:12177); NΣ on Real
+    (1 — symbol-alias delegation reject); NΣ on empty Vector
+    (1 — Vector arm of empty reject; existing s064 pin only
+    covered the empty-Matrix arm); MEAN/VAR/SDEV on Real (3 —
+    bottom-of-fn fallthroughs at ops.js:10260 / 10270 / 10280,
+    all three reject branches were unpinned); canonical ΣX on
+    XY matrix col-0 → 10 + canonical ΣX² on XY matrix col-0
+    → 30 (2 — canonical-name positive coverage; the file
+    previously only had the SX / SX2 alias-arm pins from
+    session 064 / 132).  Mirror of session 132's alias-positive
+    -coverage closure but in the OTHER direction —
+    canonical-positive-coverage closure.
+  - **Cluster 3 (5)** — `test-units.mjs` 51 → 56.  Mixed-dim
+    subtraction reject + different-dim-pair add reject +
+    composite-ABS + ^ negative / zero-exponent edge coverage
+    closure.  5_m - 1_s → Inconsistent units ('-' subtractive-
+    arm reject; existing s064 pin only covers '+' additive
+    arm); 1_kg + 1_m → Inconsistent units (different dim pair
+    than the existing m-vs-s pin; defense against a refactor
+    that special-cased length-vs-time); ABS -1_N → 1_N
+    (composite-uexpr ABS keeps the Newton-alias uexpr intact,
+    only flips sign — mirror of session-137's NEG -1_N pin on
+    the ABS arm); 2_m ^ -1 → 0.5_m^-1 (negative-exponent power
+    flips uexpr sign via powerUexpr; existing ^ pin uses
+    positive 3); 2_m ^ 0 → Real(1) (zero-exponent collapses
+    uexpr to empty → unwraps to dimensionless Real(1);
+    previously unpinned edge of the ^ dispatch).
+  - **Did not touch `tests/test-types.mjs`** — sibling lanes
+    140/142/145 between them shipped 803 assertions there over
+    the last few weeks.  No coordination conflict at session-
+    147 entry; all sibling locks released gracefully (sessions
+    143 / 144 / 145 / 146).  Session 148 (code-review)
+    acquired its lock mid-run on `docs/REVIEW.md` only — no
+    overlap with this lane's test scope.
+  - Final test-all **4903 passing / 0 failing** — fully green
+    (entry was 4883 / 0; +20 from this run).  test-persist
+    40 / 0 (unchanged this run; session 144's +2 casModulo
+    pins absorbed in this snapshot).  sanity 22 / 0
+    (unchanged).  Log file: `logs/session-147.md`.
+
+- Session 142 (2026-04-25) — earlier run.  Unit-tests lane.  **+23
   assertions across 3 substantive clusters** (above the 3-item
   floor) — all in `test-types.mjs` (739 → 762):
   - **Cluster 1 (12)** — Inverse-trig + inverse-hyp family

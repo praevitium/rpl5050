@@ -6905,3 +6905,280 @@ giac._setFixtures({
          `session139: lim 1/X at X=1/2 (Rational point) → Real(${s.peek() && s.peek().value}) (want 2)`);
   giac._clear();
 }
+
+// ==================================================================
+// session 144 — MODSTO + ADDTMOD / SUBTMOD / MULTMOD / POWMOD
+// HP50 AUR §3-150 / §3-9 / §3-243 / §3-153 / §3-175
+// ==================================================================
+{
+  const stateMod = await import('../www/src/rpl/state.js');
+  const { setCasModulo, getCasModulo, resetCasModulo } = stateMod;
+
+  /* ---- Default modulus + setter normalization ---- */
+  resetCasModulo();
+  assert(getCasModulo() === 13n,
+         `session144: factory default casModulo === 13n (got ${getCasModulo()})`);
+
+  setCasModulo(7n);
+  assert(getCasModulo() === 7n,
+         `session144: setCasModulo(7n) sticks (got ${getCasModulo()})`);
+
+  setCasModulo(-11n);
+  assert(getCasModulo() === 11n,
+         `session144: setCasModulo(-11n) folds to abs (got ${getCasModulo()})`);
+
+  setCasModulo(0n);
+  assert(getCasModulo() === 2n,
+         `session144: setCasModulo(0n) promoted to 2n (got ${getCasModulo()})`);
+
+  setCasModulo(1n);
+  assert(getCasModulo() === 2n,
+         `session144: setCasModulo(1n) promoted to 2n (got ${getCasModulo()})`);
+
+  /* ---- MODSTO op on Integer / negative Integer / 0 / 1 ---- */
+  resetCasModulo();
+  {
+    const s = new Stack();
+    s.push(Integer(7n));
+    lookup('MODSTO').fn(s);
+    assert(s.depth === 0, `session144: MODSTO consumes its arg`);
+    assert(getCasModulo() === 7n,
+           `session144: MODSTO Integer(7n) sets casModulo=7n (got ${getCasModulo()})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(-23n));
+    lookup('MODSTO').fn(s);
+    assert(getCasModulo() === 23n,
+           `session144: MODSTO Integer(-23n) folds to abs (got ${getCasModulo()})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('MODSTO').fn(s);
+    assert(getCasModulo() === 2n,
+           `session144: MODSTO Integer(0n) promoted to 2n (got ${getCasModulo()})`);
+  }
+
+  /* ---- MODSTO on integer-valued Real ---- */
+  {
+    const s = new Stack();
+    s.push(Real(5));
+    lookup('MODSTO').fn(s);
+    assert(getCasModulo() === 5n,
+           `session144: MODSTO Real(5) integer-valued accepted (got ${getCasModulo()})`);
+  }
+
+  /* ---- MODSTO rejection: non-integer Real ---- */
+  {
+    const s = new Stack();
+    s.push(Real(5.5));
+    assertThrows(() => { lookup('MODSTO').fn(s); }, null,
+                 'session144: MODSTO Real(5.5) → Bad argument value');
+  }
+
+  /* ---- MODSTO rejection: Vector ---- */
+  {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(2)]));
+    assertThrows(() => { lookup('MODSTO').fn(s); }, null,
+                 'session144: MODSTO Vector → Bad argument type');
+  }
+
+  /* ---- ADDTMOD pure Integer, no centering needed ---- */
+  resetCasModulo();
+  setCasModulo(11n);
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    s.push(Integer(7n));
+    lookup('ADDTMOD').fn(s);
+    // (5+7) mod 11 = 12 mod 11 = 1; centered: 1 (since 2*1 = 2 < 11).
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 1n,
+           `session144: 5 7 ADDTMOD (m=11) → Integer(1) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- ADDTMOD pure Integer, centering kicks in ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(12n));
+    s.push(Integer(0n));
+    lookup('ADDTMOD').fn(s);
+    // (12+0) mod 7 = 5 in [0,7); centered: 2*5=10 > 7 → 5-7 = -2.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === -2n,
+           `session144: 12 0 ADDTMOD (m=7) → Integer(-2) centered (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- ADDTMOD Symbolic round-trip via Giac mock ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('X^2+3*X+6')));
+    s.push(Symbolic(parseAlgebra('9*X+3')));
+    giac._clear();
+    giac._setFixture('(X^2+3*X+6+(9*X+3)) mod 7', 'X^2-2*X+2');
+    lookup('ADDTMOD').fn(s);
+    assert(s.depth === 1 && isSymbolic(s.peek()),
+           `session144: ADDTMOD Symbolic returns Symbolic`);
+    assert(formatAlgebra(s.peek().expr) === 'X^2 - 2*X + 2',
+           `session144: ADDTMOD HP50 AUR worked example mod 7 → 'X^2 - 2*X + 2' (got '${formatAlgebra(s.peek().expr)}')`);
+    giac._clear();
+  }
+
+  /* ---- SUBTMOD pure Integer ---- */
+  setCasModulo(11n);
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    s.push(Integer(3n));
+    lookup('SUBTMOD').fn(s);
+    // (5-3) mod 11 = 2; centered: 4 < 11 → 2.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 2n,
+           `session144: 5 3 SUBTMOD (m=11) → Integer(2) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- SUBTMOD pure Integer, wrap-around exercise of _centerMod ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    s.push(Integer(5n));
+    lookup('SUBTMOD').fn(s);
+    // 1 − 5 = −4; −4 mod 7 lifts to 3 in [0,7); 2*3 = 6 < 7 so the
+    // centered representative stays at 3.  The centered range for
+    // m=7 is [-3, 3] — 3 sits at the upper boundary.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 3n,
+           `session144: 1 5 SUBTMOD (m=7) → centered Integer(3) (got ${s.peek() && s.peek().value})`);
+  }
+  /* ---- SUBTMOD where centering does flip the sign ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    s.push(Integer(5n));
+    lookup('SUBTMOD').fn(s);
+    // 0 − 5 = −5; −5 mod 7 lifts to 2 in [0,7); 2*2=4 < 7 → stays 2.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 2n,
+           `session144: 0 5 SUBTMOD (m=7) → centered Integer(2) (got ${s.peek() && s.peek().value})`);
+  }
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    s.push(Integer(3n));
+    lookup('SUBTMOD').fn(s);
+    // 0 − 3 = −3; −3 mod 7 lifts to 4; 2*4=8 > 7 → 4-7 = -3.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === -3n,
+           `session144: 0 3 SUBTMOD (m=7) → centered Integer(-3) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- MULTMOD pure Integer with centering ---- */
+  setCasModulo(11n);
+  {
+    const s = new Stack();
+    s.push(Integer(3n));
+    s.push(Integer(4n));
+    lookup('MULTMOD').fn(s);
+    // (3*4) mod 11 = 12 mod 11 = 1; centered 1.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 1n,
+           `session144: 3 4 MULTMOD (m=11) → Integer(1) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- MULTMOD Symbolic via Giac mock ---- */
+  setCasModulo(5n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('X+2')));
+    s.push(Symbolic(parseAlgebra('X+3')));
+    giac._clear();
+    giac._setFixture('((X+2)*(X+3)) mod 5', 'X^2+1');
+    lookup('MULTMOD').fn(s);
+    assert(s.depth === 1 && isSymbolic(s.peek()) &&
+           formatAlgebra(s.peek().expr) === 'X^2 + 1',
+           `session144: (X+2) (X+3) MULTMOD (m=5) → 'X^2 + 1' Symbolic (got '${s.peek() && formatAlgebra(s.peek().expr)}')`);
+    giac._clear();
+  }
+
+  /* ---- POWMOD pure Integer ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(3n));
+    s.push(Integer(5n));
+    lookup('POWMOD').fn(s);
+    // 3^5 = 243; 243 mod 7 = 5; centered: 2*5=10 > 7 → 5-7 = -2.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === -2n,
+           `session144: 3 5 POWMOD (m=7) → Integer(-2) centered (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- POWMOD pure Integer, exponent 0 ---- */
+  setCasModulo(11n);
+  {
+    const s = new Stack();
+    s.push(Integer(7n));
+    s.push(Integer(0n));
+    lookup('POWMOD').fn(s);
+    // 7^0 = 1; centered: 1.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 1n,
+           `session144: 7 0 POWMOD (m=11) → Integer(1) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- POWMOD rejects negative exponent ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    s.push(Integer(-1n));
+    assertThrows(() => { lookup('POWMOD').fn(s); }, null,
+                 'session144: 2 -1 POWMOD → Bad argument value');
+  }
+
+  /* ---- POWMOD Symbolic via Giac mock ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('X+1')));
+    s.push(Integer(3n));
+    giac._clear();
+    giac._setFixture('powmod(X+1,3,7)', 'X^3+3*X^2+3*X+1');
+    lookup('POWMOD').fn(s);
+    assert(s.depth === 1 && isSymbolic(s.peek()) &&
+           formatAlgebra(s.peek().expr) === 'X^3 + 3*X^2 + 3*X + 1',
+           `session144: (X+1) 3 POWMOD (m=7) → 'X^3 + 3*X^2 + 3*X + 1' Symbolic (got '${s.peek() && formatAlgebra(s.peek().expr)}')`);
+    giac._clear();
+  }
+
+  /* ---- ADDTMOD rejects Vector / Complex ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(2)]));
+    s.push(Integer(3n));
+    assertThrows(() => { lookup('ADDTMOD').fn(s); }, null,
+                 'session144: Vector ADDTMOD → Bad argument type (left)');
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(3n));
+    s.push(Complex(1, 2));
+    assertThrows(() => { lookup('ADDTMOD').fn(s); }, null,
+                 'session144: Complex on right of ADDTMOD → Bad argument type');
+  }
+
+  /* ---- MODSTO + ADDTMOD round-trip: changing the modulus changes results ---- */
+  {
+    const s = new Stack();
+    s.push(Integer(3n));
+    lookup('MODSTO').fn(s);
+    s.push(Integer(2n));
+    s.push(Integer(2n));
+    lookup('ADDTMOD').fn(s);
+    // m=3 now; (2+2) mod 3 = 4 mod 3 = 1; centered: 2*1=2 < 3 → 1.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 1n,
+           `session144: MODSTO 3 then 2 2 ADDTMOD → Integer(1) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- Reset for hygiene ---- */
+  resetCasModulo();
+}

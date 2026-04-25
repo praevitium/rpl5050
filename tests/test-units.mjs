@@ -434,3 +434,91 @@ import { assert, assertThrows } from './helpers.mjs';
   assertThrows(() => lookup('/').fn(s), /Infinite result/,
     `session137: 6_m / 0 → Infinite result (zero-divisor check applies on the Unit/Real branch too)`);
 }
+
+/* ================================================================
+   session147: Unit op surface — mixed-dim subtraction reject +
+   different-dim-pair add reject + composite-ABS + ^ negative-
+   exponent / zero-exponent edge coverage closure.
+
+   The session-prior block has the canonical happy-path pins for
+   `+ - * / ^ NEG ABS INV SQ`, plus error pins for `+` mixed dims
+   (m vs s) and `CONVERT` mixed dims, and session 137 added `-`
+   positive coverage (same-unit + cross-scale).  Four gaps remain:
+
+     • `-` (subtraction) mixed-dim reject was never pinned.
+       The `+` mixed-dim pin at line 144 (`1_m + 1_s` →
+       Inconsistent units) covers the additive arm; the
+       subtractive arm has its own dispatch and a refactor
+       that special-cased the additive sign branch and forgot
+       the subtractive sign branch would slip past today's
+       coverage.
+     • `+` mixed-dim with a *different dim pair* (mass vs
+       length, e.g. `1_kg + 1_m`).  The existing `m vs s`
+       pin only exercises one combination; a defensive second
+       pin guards against a refactor that special-cased the
+       length-vs-time pair.
+     • `ABS` on a composite-uexpr Unit (`-1_N`) — the existing
+       ABS pin at line 207 is `-5_m` (single-atom uexpr); ABS
+       on a Newton-shaped uexpr exercises the path where the
+       value is signed but the multi-factor uexpr stays
+       intact.  Mirror of session 137's `NEG -1_N` composite-
+       NEG pin on the ABS arm.
+     • `Unit ^ negative integer` (`2_m ^ -1`) and `Unit ^ 0`
+       (`2_m ^ 0`).  The existing `^` pin uses a positive
+       exponent (3); negative exponents flip the uexpr sign
+       (closing the inverseUexpr path through the powerUexpr
+       composition), and zero-exponent collapses every uexpr
+       factor to power 0 → empty uexpr → dimensionless
+       result, which the formatter unwraps to a bare Real(1).
+       Both edge cases were unpinned.
+   ================================================================ */
+
+/* ---- Subtraction mixed-dim reject (`-` arm of Inconsistent units) ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('5_m')[0]);
+  s.push(parseEntry('1_s')[0]);
+  assertThrows(() => lookup('-').fn(s), /Inconsistent units/,
+    `session147: 5_m - 1_s → Inconsistent units ('-' subtractive-arm reject; existing s064 pin only covers '+' additive arm)`);
+}
+
+/* ---- Different dim pair: mass + length → Inconsistent units ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('1_kg')[0]);
+  s.push(parseEntry('1_m')[0]);
+  assertThrows(() => lookup('+').fn(s), /Inconsistent units/,
+    `session147: 1_kg + 1_m → Inconsistent units (different dim pair than the existing m-vs-s pin; defense against a refactor that special-cased length-vs-time)`);
+}
+
+/* ---- ABS on composite-uexpr Unit (-1_N → 1_N) ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('-1_N')[0]);
+  lookup('ABS').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - 1) < 1e-12 && r.uexpr[0][0] === 'N',
+    `session147: ABS -1_N → 1_N (composite-uexpr ABS keeps the Newton-alias uexpr intact, only flips sign; mirror of session-137's NEG -1_N pin on the ABS arm)`);
+}
+
+/* ---- Unit ^ negative integer (2_m ^ -1 → 0.5_1/m) ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('2_m')[0]);
+  s.push(Integer(-1n));
+  lookup('^').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && r.value === 0.5 && r.uexpr[0][0] === 'm' && r.uexpr[0][1] === -1,
+    `session147: 2_m ^ -1 → 0.5_m^-1 (negative-exponent power flips uexpr sign via powerUexpr; existing ^ pin uses positive 3)`);
+}
+
+/* ---- Unit ^ 0 → dimensionless Real(1) ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('2_m')[0]);
+  s.push(Integer(0n));
+  lookup('^').fn(s);
+  const r = s.peek();
+  assert(isReal(r) && r.value.eq(1),
+    `session147: 2_m ^ 0 → Real(1) (zero-exponent collapses uexpr to empty → unwraps to dimensionless Real(1); previously unpinned edge of the ^ dispatch)`);
+}

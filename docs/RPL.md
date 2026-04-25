@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 141)
+## Current implementation status (as of session 146)
 
 
 ### Program value — parser & round-trip
@@ -255,7 +255,146 @@ open, and the next-session queue.
 
 ---
 
-## Session 141 (this run) — what shipped
+## Session 146 (this run) — what shipped
+
+This run is a test-pinning + doc-cleanup run.  No source-code logic
+in `www/src/rpl/ops.js` changed; every assertion below corresponds
+to behaviour that has been live for several sessions but was not
+explicitly pinned by the test suite.
+
+1. **R-006 doc-cleanup — stale internal cross-reference at
+   `docs/RPL.md:348` refreshed.**  Item 5 of the session-141
+   chapter cited `:1455` as the location of the Session log
+   pointer prose that R-005 demoted to past tense.  That citation
+   was correct only for a snapshot taken *before* session 141's
+   own +99-line chapter insertion at `:258-356`; the demote target
+   in the current file sits at `:1682`.  Pure-string edit:
+   `prose at \`:1455\`` → `prose at \`:1682\`` plus a one-sentence
+   parenthetical noting the line-number refresh.  R-006 closed.
+
+2. **NEWOB on Program — distinct-object / distinct-tokens-array /
+   structural / EVAL-equivalence pin set.**  NEWOB on Program has
+   been live since session 067 (the same change that added OBJ→ /
+   →PRG), but the existing NEWOB test cluster (session 047, in
+   `tests/test-variables.mjs`) covered Real / List / Matrix only.
+   This run adds a 7-block × ~5-assertion-per-block pin set in
+   `tests/test-reflection.mjs` covering: empty-Program identity
+   reset; non-empty Program with distinct outer object, distinct
+   tokens-array, equal token count, per-token shape-equality (via
+   spot-checks on Integer/Name fields); the tokens-array is
+   `Object.isFrozen(...)` (matching the `Program()` constructor
+   invariant); a nested-Program-inside-Program preserves outer
+   shape *and* preserves inner-Program object identity (the
+   `_newObCopy` switch's Program branch is shallow — one-level
+   "decouple", same as HP50); a Program containing
+   IF/THEN/ELSE/END structural keywords preserves every keyword
+   token byte-for-byte; NEWOB-then-EVAL on `« 6 7 * 2 - »` agrees
+   with original-EVAL (40 = 40); NEWOB-then-DECOMP-then-STR→ on a
+   Program with a quoted Name preserves the quoted-Name token.
+
+3. **DECOMP→STR→ round-trip pin for the structural-keyword family
+   that wasn't previously pinned.**  Session 073 pinned the
+   round-trip for IF/THEN/ELSE/END only.  Sessions 074 / 078 / 083
+   / 136 added auto-close on missing END / NEXT for the rest of
+   the structural family (CASE, IFERR, IF, WHILE, DO, START, FOR),
+   and the formatter has long emitted these keywords in their
+   canonical source form, but no test pinned that the resulting
+   source-string round-trips through DECOMP→STR→ for any of them.
+   This run adds 7 round-trip pins (one per structural construct
+   not previously covered): IFERR/THEN/ELSE/END (trap divide-by-
+   zero + THEN clause runs → 99); WHILE/REPEAT/END (1 → 5
+   counter); DO/UNTIL/END (1 → 16 doubling); START/NEXT (4-iter
+   accumulator → 4); FOR/NEXT (sum 1..4 = 10); CASE (3-clause
+   dispatch with 2 → "two"); → compiled-local (`3 4 → a b « a b *
+   »` → 12).  Each round-trip both preserves token count and runs
+   to the same final value as the original, pinning that the
+   formatter and parser agree on every structural keyword's
+   source-form representation.
+
+4. **HALT / CONT / KILL through *nested* `→` (compiled local)
+   frames pinned.**  Session 088 pinned HALT/CONT/KILL on a
+   single-level `→` frame (HALT inside `→ a « a HALT a a + »`
+   suspends with a=10 visible, frame torn down on CONT).  The
+   nested-`→` case — outer `→` whose body opens an inner `→`
+   whose body HALTs — was never pinned.  Five new blocks in
+   `tests/test-control-flow.mjs`: (a) HALT in inner body
+   suspends with `localFramesDepth() === 2` and inner-binding
+   visible (shadowing outer); CONT drains both frames cleanly.
+   (b) KILL on the same shape closes the generator chain via
+   `gen.return()`, runs both finallys in LIFO, frames torn down.
+   (c) HALT *between* inner-frame open and close — i.e. the inner
+   `→` ran to completion and popped its frame *before* HALT
+   fires — `localFramesDepth() === 1` at suspension, only outer
+   frame live; CONT drains the outer.  (d) `resetHome` on a
+   nested-`→` HALT closes the generator chain, both frames torn
+   down.  (e) Sequential HALTs at different `→` depths — first
+   HALT inside outer-only, second HALT inside inner — confirms
+   LIFO halt-stack semantics interact correctly with frame
+   stacking: at first halt one frame live, at second halt two
+   frames live, final CONT drains everything.
+
+Totals: **65 new session146-labelled assertions** (36 in
+`tests/test-reflection.mjs`, 29 in `tests/test-control-flow.mjs`).
+`test-all.mjs` at **4883 passing / 0 failing** (entry baseline
+this run was 4804, Δ+79 — 65 from session146 labels; 14 from
+incidental fires of the existing session073-labelled
+`_roundTripProgram` helper invoked seven new times by the new
+DECOMP→STR→ structural-family round-trip pins).
+`test-persist.mjs` at **40 passing / 0 failing** (unchanged
+from entry — baseline was 40 after session 144's casModulo
+additions).
+`sanity.mjs` at **22 passing / 5 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`tests/test-reflection.mjs`, `tests/test-control-flow.mjs`).
+`www/src/rpl/ops.js` was not modified this run — every pin
+exercises behaviour that was already live.
+
+User-reachable demo (NEWOB on a Program preserves structural
+keywords + EVAL semantics):
+
+```
+« 5 IF DUP 0 > THEN 100 + ELSE NEG END »   ENTER
+NEWOB                                       (pushes a structurally
+                                            equal but distinct copy)
+EVAL                                        → final result 105
+                                            (5 > 0 → 5 + 100)
+```
+
+User-reachable demo (DECOMP→STR→ round-trip on a FOR loop
+preserves loop semantics):
+
+```
+« 0 1 4 FOR i i + NEXT »   ENTER
+DECOMP                      (pushes the source-string « 0 1 4 FOR i i + NEXT »)
+STR→                        (parses the source back into a Program)
+EVAL                        → 10  (sum 1+2+3+4)
+```
+
+User-reachable demo (HALT/CONT through nested `→` frames):
+
+```
+« 1 2 → a b « 10 20 → a b « a HALT b » » »   ENTER, EVAL
+   → display halts with stack ⟦10⟧.  Inner a=10 visible to
+     name-recall (shadowing outer a=1).  Two `→` frames live.
+   Press CONT → inner b=20 pushes; inner frame pops; outer
+     frame pops.  Final stack ⟦10 20⟧.
+```
+
+User-reachable demo (KILL of a nested-`→` HALT closes the
+generator chain via gen.return()):
+
+```
+« 1 2 → a b « 10 20 → a b « a HALT b » » »   ENTER, EVAL
+   → halts as above with two `→` frames live.
+   Press KILL → halt slot cleared; gen.return() runs the
+     inner runArrow finally (pops inner frame), then the
+     outer runArrow finally (pops outer frame).  No frame
+     leak.
+```
+
+---
+
+## Session 141 — what shipped
 
 This run is a test-pinning + doc-cleanup run.  No source-code logic
 in `www/src/rpl/ops.js` changed; the IFERR ⇄ suspension-substrate
@@ -345,9 +484,12 @@ keypress sequence a real user can type from the keypad.
    demotes those three to plain `## Session NNN — what shipped`,
    and adds the present session-141 chapter as the new `(this
    run)` holder.  Same run also updates the Session log pointer
-   prose at `:1455` to demote `Session 131 is this run …` to
+   prose at `:1682` to demote `Session 131 is this run …` to
    past tense and append session-136 / session-141 footnotes,
-   per R-005's two pure-string edit list.
+   per R-005's two pure-string edit list.  (Session 146 R-006
+   close: line number refreshed from the original `:1455` to the
+   current `:1682` after session 141's own +99-line chapter
+   insertion pushed the demote target down by ~227 lines.)
 
 Totals: **76 new session141-labelled assertions** in
 `tests/test-control-flow.mjs` (control-flow file 599 → 675).
@@ -1553,6 +1695,25 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
     then-DOERR-after-CONT triggers the catch correctly.  No
     `www/src/rpl/ops.js` source change this run.
 
+12. **[shipped session 146]** R-006 doc-cleanup (line-number
+    refresh `:1455` → `:1682` inside session 141's chapter at
+    `docs/RPL.md:348`); **NEWOB on Program** distinct-object /
+    distinct-tokens-array / structural / EVAL-equivalence pin
+    set in `tests/test-reflection.mjs` (live since session 067,
+    not previously pinned — the existing NEWOB cluster covered
+    Real/List/Matrix only); **DECOMP→STR→ round-trip pin** for
+    every structural-keyword construct not previously covered —
+    IFERR / WHILE / DO / START / FOR / CASE / → (compiled local)
+    — pinning that the formatter and parser agree on each
+    construct's source-form representation; **HALT/CONT/KILL
+    through *nested* `→` frames** pin set in
+    `tests/test-control-flow.mjs` (single-level pinned at
+    session 088, nested case never pinned).  +65 session146
+    assertions split 36 / 29 across the two test files; +14
+    incidental fires of the existing session073-labelled
+    `_roundTripProgram` helper invoked by the new round-trip
+    pins.  No `www/src/rpl/ops.js` source change this run.
+
 ### Medium priority
 5. **`CONT` across a `resetHome` — UI signal** — `resetHome`
    now closes generators correctly (session 088). Follow-up
@@ -1693,17 +1854,32 @@ the log file is `logs/session-131.md`.  Session 136 was this lane
 `START`, and `FOR` — symmetric with the existing IF / IFERR / CASE
 auto-close policy and with the parser's auto-close on unterminated
 `«` / `{` / `[`); test-file prefix is `session136:` and the log
-file is `logs/session-136.md`.  Session 141 is this run (HALT/
+file is `logs/session-136.md`.  Session 141 was this lane (HALT/
 PROMPT lift through `IFERR` clauses pinned: trap, THEN, ELSE — both
 fully-terminated and auto-closed forms; nested-IFERR last-error
 save/restore chain across nested `finally`s on CONT and KILL;
 sentinel pin that yield is not a thrown exception so IFERR's catch
 must not capture HALT; demote of stale `(this run)` headings in
 this file per R-005); test-file prefix is `session141:` and the log
-file is `logs/session-141.md`.
+file is `logs/session-141.md`.  Session 146 is this run (R-006
+internal cross-reference refresh `:1455` → `:1682` at item 5 of
+the session 141 chapter; **NEWOB on Program** distinct-object /
+distinct-tokens-array / structural / EVAL-equivalence pin set in
+`tests/test-reflection.mjs` (live since session 067, not previously
+pinned); **DECOMP→STR→ round-trip** pin for IFERR / WHILE / DO /
+START / FOR / CASE / → constructs that weren't in session 073's
+IF/THEN/ELSE/END-only round-trip set; **HALT/CONT/KILL through
+*nested* `→` frames** pin set in `tests/test-control-flow.mjs`
+(single-level pinned at session 088, nested case never pinned);
++65 session146 assertions split 36 / 29 across the two test files;
+no `www/src/rpl/ops.js` source change this run); test-file prefix
+is `session146:` and the log file is `logs/session-146.md`.
 
 (Footnote — sessions 074 / 078 / 088 / 106 / 116 / 121 / 126 / 131
-used the historical "is this run" wording in their authoring
+/ 141 used the historical "is this run" wording in their authoring
 session; that label has since been demoted to plain past tense as
 the lane runs forward.  Demotion to plain past tense for sessions
-121 / 126 / 131 / 136 was bundled into this run, per R-005.)
+121 / 126 / 131 / 136 was bundled into session 141 per R-005;
+demotion of session 141's own `(this run)` heading is bundled into
+this session 146 run as part of the new session-146 chapter
+becoming the sole `(this run)` holder.)

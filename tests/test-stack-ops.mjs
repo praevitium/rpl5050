@@ -16,7 +16,7 @@
 
 import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
-import { Real, Integer, isInteger, isReal } from '../www/src/rpl/types.js';
+import { Real, Integer, Str, isInteger, isReal } from '../www/src/rpl/types.js';
 import { assert, assertThrows } from './helpers.mjs';
 
 /* Helper: return an array of .value fields from level-N-down to level-1.
@@ -464,4 +464,111 @@ function vals(s) {
   s.push(Integer(-1n));                     // N=-1 (illegal)
   assertThrows(() => lookup('NDUPN').fn(s), /Bad argument value/,
     'session137: x -1 NDUPN → Bad argument value (_toNonNegIntCount rejects negative N)');
+}
+
+/* ================================================================
+   session147: PICK / PICK3 / UNPICK / NDUPN rejection-path closure.
+
+   The session-064 happy-path block + session-137 edge-path block
+   between them pin most of the {ROLL, ROLLD, DROPN, DUPN, UNPICK,
+   NDUPN, DUPDUP} surface.  PICK and PICK3 still have unverified
+   rejection branches:
+
+     • PICK rejects via a wrapper guard `!Number.isInteger(k) || k<1`
+       (ops.js:174–179).  The session-064 block pins the `k===0`
+       case, but the *negative* case and the *non-integer Real* case
+       (e.g. 1.5) follow distinct `< 1` / `!Number.isInteger`
+       branches inside the same `if`; both go untested.
+     • PICK on a non-Real stack value (e.g. String) routes to
+       `toRealOrThrow` which throws 'Bad argument type' — this
+       wrapper-side branch was unpinned (only Bad argument *value*
+       paths were exercised).
+     • PICK with N>depth dispatches into stack.js:129's
+       `n < level` guard ('Too few arguments').  The session-064
+       block has happy-path PICK pins (`3 PICK`, `1 PICK ≡ DUP`)
+       and a `0 PICK` reject, but the depth-overrun branch was
+       only pinned for ROLL / ROLLD / UNPICK / DROPN / DUPN
+       (session 137), never for PICK itself.
+     • PICK3 is registered as a thin wrapper `s.pick(3)` (ops.js
+       :7213); the session-064 block has only the happy-path pin
+       (`(100 200 300) PICK3 → 100`).  When depth<3 the
+       `s.pick(3)` call hits the same `n < level` guard — the
+       reject branch is unpinned for PICK3.
+     • UNPICK -1: session-137 added 0-UNPICK and N>depth UNPICK
+       reject pins, but the *negative-N* branch of
+       `_toPosIntIndex` was never specifically exercised.  -1
+       and 0 share the same `n < 1` rejection but going through
+       different code paths (the `!Number.isInteger` branch
+       takes the same exit, so a refactor that only checked
+       `n === 0` would slip past the existing 0-UNPICK pin —
+       the negative-N pin guards against that).
+     • NDUPN with depth=1 (only the count on the stack, no `x`
+       below it) hits the `if (s.depth < 1)` guard at
+       `ops.js:7255` — distinct from session-137's NDUPN -1
+       reject (which fires earlier at `_toNonNegIntCount`).
+       Pinning this branch closes NDUPN's rejection grid.
+   ================================================================ */
+
+/* ---- PICK -1 → Bad argument value (negative-N branch of `k<1` guard) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(9n));
+  s.push(Integer(-1n));                     // N=-1
+  assertThrows(() => lookup('PICK').fn(s), /Bad argument value/,
+    'session147: -1 PICK → Bad argument value (negative-N branch of PICK wrapper k<1 guard; distinct from existing 0 PICK pin)');
+}
+
+/* ---- PICK 5 with depth 2 → Too few arguments (s.depth<level guard in stack.pick) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Integer(5n));                      // N=5 > depth-after-pop=2
+  assertThrows(() => lookup('PICK').fn(s), /Too few/,
+    'session147: 5 PICK with only 2 items left → Too few arguments (Stack.pick n<level guard; closes PICK depth-overrun branch session-137 left for siblings)');
+}
+
+/* ---- PICK with non-integer Real (1.5) → Bad argument value ---- */
+{
+  const s = new Stack();
+  s.push(Integer(9n));
+  s.push(Real(1.5));                        // non-integer Real
+  assertThrows(() => lookup('PICK').fn(s), /Bad argument value/,
+    'session147: 1.5 PICK → Bad argument value (!Number.isInteger branch of PICK wrapper guard; distinct branch from negative/zero rejects)');
+}
+
+/* ---- PICK with String → Bad argument type (toRealOrThrow rejection at wrapper) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(9n));
+  s.push(Str('foo'));                       // non-Real, non-Integer
+  assertThrows(() => lookup('PICK').fn(s), /Bad argument type/,
+    'session147: "foo" PICK → Bad argument type (toRealOrThrow rejection at wrapper; distinct from value-domain rejects)');
+}
+
+/* ---- PICK3 on depth<3 → Too few arguments ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(20n));                     // depth = 2 < 3
+  assertThrows(() => lookup('PICK3').fn(s), /Too few/,
+    'session147: PICK3 on depth-2 stack → Too few arguments (closes PICK3 rejection branch — file previously had only the (100,200,300) happy-path pin)');
+}
+
+/* ---- UNPICK -1 → Bad argument value (negative-N branch of _toPosIntIndex) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(99n));                     // value to write
+  s.push(Integer(-1n));                     // N = -1 (illegal)
+  assertThrows(() => lookup('UNPICK').fn(s), /Bad argument value/,
+    'session147: -1 UNPICK → Bad argument value (negative-N branch of _toPosIntIndex; distinct from session-137 0-UNPICK pin — guards against a future refactor that only checks n===0)');
+}
+
+/* ---- NDUPN with only count on stack (depth=1 after pop) → Too few arguments ---- */
+{
+  const s = new Stack();
+  s.push(Integer(2n));                      // count alone, no x below
+  assertThrows(() => lookup('NDUPN').fn(s), /Too few/,
+    'session147: NDUPN with only count on stack → Too few arguments (s.depth<1 guard at ops.js:7255 — distinct from session-137 NDUPN-negative-N reject which fires earlier in _toNonNegIntCount)');
 }

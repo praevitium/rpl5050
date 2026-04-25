@@ -274,5 +274,31 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value.eq(2) &&
   resetCasVx();
 }
 
+/* --- session 144: MODULO state survives snapshot / rehydrate. --- */
+{
+  const { setCasModulo, resetCasModulo, getCasModulo } =
+    await import('../www/src/rpl/state.js');
+  resetCasModulo();
+  setCasModulo(23n);                              // pin to 23 so the 13 default is clearly rejected
+  const s6 = new Stack();
+  s6.push(Integer(1n));
+  const snap6 = snapshot(s6);
+  const json6 = JSON.parse(JSON.stringify(snap6));
+  resetCasModulo();                                // wipe back to 13n
+  rehydrate(json6, new Stack());
+  assert(getCasModulo() === 23n,
+    `session144: casModulo restored to 23n after snapshot round-trip (got ${getCasModulo()})`);
+
+  // Old snapshot missing casModulo rehydrates to the 13n default.
+  const legacy6 = { ...snap6 };
+  delete legacy6.casModulo;
+  setCasModulo(31n);                               // pin to 31 so the default reset is observable
+  rehydrate(legacy6, new Stack());
+  assert(getCasModulo() === 13n,
+    `session144: snapshot missing casModulo resets to default 13n (got ${getCasModulo()})`);
+
+  resetCasModulo();
+}
+
 console.log(failed ? `\n${failed} FAIL(s)` : '\nALL PERSIST TESTS PASSED');
 process.exit(failed ? 1 : 0);
