@@ -535,15 +535,37 @@ export class SidePanel {
       return container;
     }
 
+    // Each row is a flex pair: a wide "recall" button on the left
+    // (clicking it pulls the text back into the command line, same as
+    // before) and a narrow × delete button on the right.  Wrapping in
+    // a row gives delete its own click target without making the recall
+    // button a nested-button parent (which is invalid HTML and breaks
+    // event delegation).  Click delegation in _handleAction routes
+    // 'recall' / 'history-delete' independently.
     for (const text of matched) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'sp-hist';
-      b.dataset.action = 'recall';
-      b.dataset.value  = text;
-      b.textContent = text;
-      b.title = `Recall into the command line`;
-      container.appendChild(b);
+      const row = document.createElement('div');
+      row.className = 'sp-hist-row';
+
+      const recall = document.createElement('button');
+      recall.type = 'button';
+      recall.className = 'sp-hist';
+      recall.dataset.action = 'recall';
+      recall.dataset.value  = text;
+      recall.textContent = text;
+      recall.title = 'Recall into the command line';
+      row.appendChild(recall);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'sp-hist-del';
+      del.dataset.action = 'history-delete';
+      del.dataset.value  = text;
+      del.textContent = '×';
+      del.title = 'Delete this history entry';
+      del.setAttribute('aria-label', 'Delete history entry');
+      row.appendChild(del);
+
+      container.appendChild(row);
     }
     return container;
   }
@@ -707,6 +729,14 @@ export class SidePanel {
       entry.recall(value);
       // Leave the panel open — user typically wants to see the list so
       // they can pick another entry if they got the wrong one.
+      return;
+    }
+    if (action === 'history-delete') {
+      // Drop the matching history entry and repaint the History tab so
+      // the row disappears immediately.  The recall buffer in the entry
+      // line is untouched — a user mid-edit doesn't lose their typing.
+      entry.removeHistory(value);
+      this._render();
       return;
     }
     if (action === 'dir') {

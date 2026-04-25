@@ -845,7 +845,10 @@ body.sp-resizing {
 
 /* History list */
 .sp-history { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
+.sp-hist-row { display: flex; gap: 3px; align-items: stretch; }
 .sp-hist {
+  flex: 1 1 auto;
+  min-width: 0;            /* let the recall text shrink + ellipsis */
   background: #2a2f3d;
   border: 1px solid #3a4252;
   color: #e7ebf2;
@@ -860,6 +863,25 @@ body.sp-resizing {
   white-space: nowrap;
 }
 .sp-hist:hover { background: #353b4c; border-color: #4e586d; }
+.sp-hist-del {
+  flex: 0 0 auto;
+  width: 26px;
+  background: #2a2f3d;
+  border: 1px solid #3a4252;
+  color: #9aa3b5;
+  font-family: var(--font-lcd);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: center;
+}
+.sp-hist-del:hover {
+  background: #4a2a30;
+  border-color: #7a3a40;
+  color: #ffd0d4;
+}
 
 .sp-empty {
   color: #7d8596;

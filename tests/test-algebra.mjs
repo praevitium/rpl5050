@@ -1642,18 +1642,56 @@ giac._setFixtures({
   giac._clear();
 }
 {
-  // Linear via equation form.
+  // Linear via equation form.  SOLVE rewrites `lhs = rhs` to the
+  // unambiguous expression form `lhs - rhs` before handing off to Giac
+  // (see ops.js SOLVE) so that build-mode differences in how `=` is
+  // parsed by caseval can't silently swallow the equation.  Fixture
+  // therefore matches the rewritten command.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('2*X + 6 = 0')));
   s.push(Name('X'));
   giac._clear();
-  giac._setFixture('solve(2*X+6=0,X)', '[-3]');
+  giac._setFixture('solve(2*X+6-0,X)', '[-3]');
   lookup('SOLVE').fn(s);
   const top = s.peek();
   assert(top && top.type === 'list' && top.items.length === 1 &&
          isSymbolic(top.items[0]) &&
          formatAlgebra(top.items[0].expr) === 'X = -3',
          `SOLVE op: 2X+6=0 → X=-3`);
+  giac._clear();
+}
+{
+  // Bare equation form `X-1=0` — the smallest reproducer of the user-
+  // reported "SOLVE returns { }" bug.  After the equation→expression
+  // rewrite, Giac sees `solve(X-1-0,X)` and gives `[1]`.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X - 1 = 0')));
+  s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('solve(X-1-0,X)', '[1]');
+  lookup('SOLVE').fn(s);
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 1 &&
+         isSymbolic(top.items[0]) &&
+         formatAlgebra(top.items[0].expr) === 'X = 1',
+         `SOLVE op: X-1=0 → X=1`);
+  giac._clear();
+}
+{
+  // Bare-scalar reply (some builds elide the [...] for a single root).
+  // SOLVE should still wrap it as `{ X = root }` rather than collapse
+  // to `{ }`.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X - 7')));
+  s.push(Name('X'));
+  giac._clear();
+  giac._setFixture('solve(X-7,X)', '7');
+  lookup('SOLVE').fn(s);
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 1 &&
+         isSymbolic(top.items[0]) &&
+         formatAlgebra(top.items[0].expr) === 'X = 7',
+         `SOLVE op: bare-scalar reply 7 → { X=7 }`);
   giac._clear();
 }
 {

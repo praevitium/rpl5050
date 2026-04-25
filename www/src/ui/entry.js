@@ -30,6 +30,93 @@ import {
 // padded).  Parameterised here so tests can reset it if needed.
 const HISTORY_MAX = 20;
 
+/* ------------------------------------------------------------------
+   Alpha-case flip transactionFilter.
+
+   Walks every `input.type` (user keyboard typing) transaction and
+   inverts the case of A-Z letters in the inserted text — but only when
+   the insertion point sits OUTSIDE a `"..."` string literal in the
+   current doc.  String state is tracked across the chunk: a `"` inside
+   the inserted text toggles the flag mid-walk, so paste-style multi-
+   char inserts (rare on physical typing but possible) still split
+   correctly between code and string regions.
+
+   Skips non-`input.type` events (programmatic dispatches, paste,
+   drag-drop, undo/redo) so virtual-keypad letters, soft-menu function
+   names like `SIN(`, and clipboard data keep their literal case.
+   ------------------------------------------------------------------ */
+function _flipLetter(ch) {
+  // Pure A-Z / a-z swap.  Locale-specific upper/lower (Turkish dotted
+  // i, German ß) deliberately fall through unchanged — the HP50 alpha
+  // surface is ASCII-only, so anything outside that range is either a
+  // pasted string literal or non-keyboard input that we pass through.
+  const code = ch.charCodeAt(0);
+  if (code >= 0x41 && code <= 0x5a) return String.fromCharCode(code + 32);
+  if (code >= 0x61 && code <= 0x7a) return String.fromCharCode(code - 32);
+  return ch;
+}
+
+const _alphaCaseFlipFilter = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged) return tr;
+  if (!tr.isUserEvent || !tr.isUserEvent('input.type')) return tr;
+
+  const startDoc = tr.startState.doc;
+  const newChanges = [];
+  let didFlip = false;
+
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+    if (inserted.length === 0) {
+      newChanges.push({ from: fromA, to: toA });
+      return;
+    }
+    const insStr = inserted.toString();
+    // Count `"` characters before the insertion point — odd count means
+    // the cursor is inside a string literal.  Slice once and count, so a
+    // long doc doesn't pay per-char doc lookup costs.
+    const prefix = startDoc.sliceString(0, fromA);
+    let inString = false;
+    for (let i = 0; i < prefix.length; i++) {
+      if (prefix.charCodeAt(i) === 0x22 /* " */) inString = !inString;
+    }
+    let out = '';
+    let changed = false;
+    for (let i = 0; i < insStr.length; i++) {
+      const ch = insStr[i];
+      if (ch === '"') {
+        // The quote itself never gets flipped (no case), but it does
+        // toggle the in-string flag for any subsequent letters in the
+        // same insertion chunk.
+        inString = !inString;
+        out += ch;
+        continue;
+      }
+      if (!inString) {
+        const flipped = _flipLetter(ch);
+        if (flipped !== ch) changed = true;
+        out += flipped;
+      } else {
+        out += ch;
+      }
+    }
+    if (changed) didFlip = true;
+    newChanges.push({ from: fromA, to: toA, insert: out });
+  });
+
+  if (!didFlip) return tr;
+  // Re-emit the transaction with the rewritten insertions.  `selection`
+  // is forwarded as-is — CM recomputes head positions against our new
+  // changes since insertion lengths are identical (1:1 letter swap).
+  // Annotations (incl. the userEvent) are preserved so downstream
+  // consumers still see this as a typing event for history grouping.
+  return [{
+    changes: newChanges,
+    selection: tr.selection,
+    effects: tr.effects,
+    annotations: tr.annotations,
+    scrollIntoView: tr.scrollIntoView,
+  }];
+});
+
 export class Entry {
   static HISTORY_MAX = HISTORY_MAX;
 
@@ -142,6 +229,27 @@ export class Entry {
         extensions: [
           history(),
           drawSelection(),
+          // HP50-style alpha-case flip: any letter the user types on a
+          // physical keyboard arrives in the buffer with its case
+          // inverted — typing `s` lands `S`, typing `S` (shift) lands
+          // `s`.  Mirrors how the HP50 alpha key defaults to uppercase
+          // and shift gives lowercase, so users hitting a PC keyboard
+          // unshifted get the canonical-uppercase forms (X, SIN, FACT)
+          // that round-trip cleanly through op lookup, and shift gives
+          // them the rare lowercase forms when they actually need them.
+          //
+          // Exception: the flip is suspended inside a `"…"` string so
+          // string literals preserve as-typed case (`"hello world"`
+          // doesn't become `"HELLO WORLD"`).  Detected by counting `"`
+          // characters in the doc up to the insertion point — odd
+          // count means we're inside a string.
+          //
+          // Only triggers on `input.type` user events: paste, drag-drop,
+          // and the programmatic transactions our virtual-keypad / soft-
+          // menu code dispatches (typing `SIN ` etc.) all bypass the
+          // flip so function-name insertions and clipboard data keep
+          // their literal case.
+          _alphaCaseFlipFilter,
           appKeys,                                        // higher priority
           keymap.of([...historyKeymap, ...defaultKeymap]),// CM defaults
           // Deliberately NO lineWrapping: long content scrolls
@@ -351,6 +459,25 @@ export class Entry {
    *  as a fresh array so callers can't mutate the internal buffer. */
   getHistory() {
     return this._history.slice();
+  }
+
+  /** Remove a single history entry by its exact text.  Removes only the
+   *  first match — duplicates are already collapsed at record time, so
+   *  there should be at most one anyway.  Returns true if anything was
+   *  removed; false when the text wasn't found.  Used by the side-panel
+   *  History tab's per-row × button. */
+  removeHistory(text) {
+    const idx = this._history.indexOf(String(text ?? ''));
+    if (idx < 0) return false;
+    this._history.splice(idx, 1);
+    return true;
+  }
+
+  /** Drop every entry from the command-line history ring buffer.
+   *  Companion to removeHistory for the "clear all" affordance the
+   *  side-panel exposes when there's at least one entry. */
+  clearHistory() {
+    this._history.length = 0;
   }
 
   /** Clear the command line and fill it with `text`, positioning the

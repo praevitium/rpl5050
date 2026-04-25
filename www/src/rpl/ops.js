@@ -5359,6 +5359,18 @@ register('SOLVE', (s) => {
   else if (isInteger(exprArg))    ast = AstNum(Number(exprArg.value));
   else throw new RPLError('Bad argument type');
 
+  // Normalise equation form `lhs = rhs` to expression form `lhs - rhs`
+  // before handing to Giac.  Giac's `solve` accepts both shapes, but the
+  // bare-expression form is unambiguous regardless of caseval mode flags
+  // (Xcas vs Maple/Mupad parsing of `=`), so we can stop worrying about
+  // a future build of giacwasm.js shipping with a different default.
+  // `=` is the only comparison form HP50 SOLVE recognises (≠/≥/… aren't
+  // equation roots in the textbook sense); anything else passes through
+  // unchanged and Giac will reject it the same way it does today.
+  if (ast && ast.kind === 'bin' && ast.op === '=') {
+    ast = AstBin('-', ast.l, ast.r);
+  }
+
   // Route through Giac: `solve(expr,var)` returns a list literal like
   // `[r1,r2,…]`.  We split the list (nesting-aware via splitGiacList),
   // parse each root, and wrap each as an equation `var = root` —
@@ -5366,10 +5378,16 @@ register('SOLVE', (s) => {
   if (!giac.isReady()) throw new RPLError('CAS not ready');
   const cmd = buildGiacCmd(ast, (e) => `solve(${e},${varName})`, [varName]);
   const raw = giac.caseval(cmd);
-  const parts = splitGiacList(raw);
-  // Giac returns `[]` for "no solutions", or (on some inputs) a bare
-  // expression when it didn't treat the input as an equation.  Both
-  // cases collapse to an empty list — SOLVE stays composable.
+  let parts = splitGiacList(raw);
+  // Giac returns `[]` for "no solutions", or — on some inputs / build
+  // configurations — a bare scalar when it has a single root and didn't
+  // wrap it in a list.  Treat the bare-scalar case as a one-element list
+  // so `'X-1' 'X' SOLVE` doesn't collapse to `{ }` in builds that elide
+  // the brackets.  Genuine no-solution stays `[]` → empty list.
+  if (parts === null) {
+    const trimmed = String(raw).trim();
+    if (trimmed.length > 0) parts = [trimmed];
+  }
   if (parts === null || parts.length === 0) {
     s.push(RList([]));
     return;
