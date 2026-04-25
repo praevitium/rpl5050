@@ -367,10 +367,11 @@ export class SidePanel {
       this._saveUIState();
     });
 
-    // Expand/collapse-all toggle (Commands tab only).  When ANY section
-    // is open the button collapses all; when all are closed it expands
-    // all.  Operates on the rendered DOM directly AND on the persisted
-    // _collapsedSections set so the choice survives re-renders + reloads.
+    // Expand/collapse-all toggle (Commands and Characters tabs).  When
+    // ANY section is open the button collapses all; when all are closed
+    // it expands all.  Operates on the rendered DOM directly AND on the
+    // persisted _collapsedSections set so the choice survives re-renders
+    // + reloads.
     panel.querySelector('.sp-expand').addEventListener('click', () => {
       this._toggleAllSections();
     });
@@ -546,9 +547,10 @@ export class SidePanel {
     });
     // Sort toggle only relevant for History
     this.el.querySelector('.sp-sort').classList.toggle('hidden', tab !== 'history');
-    // Expand/collapse-all toggle only relevant for Commands (the only
-    // tab with category sections worth bulk-toggling).
-    this.el.querySelector('.sp-expand').classList.toggle('hidden', tab !== 'commands');
+    // Expand/collapse-all toggle relevant for tabs with category sections
+    // worth bulk-toggling (Commands and Characters).
+    this.el.querySelector('.sp-expand').classList.toggle(
+      'hidden', tab !== 'commands' && tab !== 'chars');
     // Clear the filter input when switching tabs so stale text from the
     // Commands filter doesn't hide every History entry.
     const filterInput = this.el.querySelector('.sp-filter');

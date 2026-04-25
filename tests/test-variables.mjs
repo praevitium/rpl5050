@@ -597,6 +597,39 @@ import { assert, assertThrows } from './helpers.mjs';
   resetHome();
 }
 
+// Program-with-error rolls the stack back so the program does NOT
+// remain on the stack after a failed soft-key press.  This pins the
+// ship-prep-2026-04-25-r2 fix to showVarsMenu's onPress handler:
+// the push and EVAL share one safeRun snapshot, so a thrown error
+// during EVAL restores the pre-push state.  The stand-in mirrors the
+// real handler's body and applies the same save/restore pattern.
+{
+  resetHome();
+  // « DUP » wants one item on the stack; with an empty stack it
+  // throws "Too few arguments".  Cheap, deterministic error path.
+  varStore('NEEDARG', Program([Name('DUP')]));
+  const s = new Stack();
+  const v = varRecall('NEEDARG');
+  assert(isProgram(v), 'NEEDARG is a Program');
+  // Stand-in for showVarsMenu.onPress program branch under the new
+  // wrapper.  safeRun's contract is `save() → body → on-throw
+  // restore()`.
+  const snap = s.save();
+  let threw = false;
+  try {
+    s.push(v);
+    lookup('EVAL').fn(s);
+  } catch (_e) {
+    threw = true;
+    s.restore(snap);
+  }
+  assert(threw,
+         'VARS soft-key on a Program with a runtime error throws');
+  assert(s.depth === 0,
+         'VARS soft-key error: pushed Program is removed from stack');
+  resetHome();
+}
+
 // After descent the new current dir has its own var list
 {
   resetHome();

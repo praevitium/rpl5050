@@ -481,8 +481,16 @@ class App {
           return;
         }
         if (isProgram(v)) {
-          this.stack.push(v);
-          this.entry.safeRun(() => lookup('EVAL').fn(this.stack, this.entry), 'EVAL');
+          // Push + EVAL inside one safeRun snapshot.  HP50 behavior:
+          // a soft-key invocation that errors should leave the stack
+          // exactly as it was before the press — including dropping
+          // the program itself.  safeRun captures the snapshot at
+          // entry, so pushing the program inside the body means a
+          // rollback also unwinds the push.
+          this.entry.safeRun(() => {
+            this.stack.push(v);
+            lookup('EVAL').fn(this.stack, this.entry);
+          }, 'EVAL');
           return;
         }
         this.stack.push(v);
@@ -555,9 +563,18 @@ class App {
         label,
         onPress: () => {
           if (this.entry.buffer.trim().length > 0) this.entry.enter();
-          this.stack.push(target);
           if (isProgram(target) || isName(target)) {
-            this.entry.safeRun(() => lookup('EVAL').fn(this.stack, this.entry), 'EVAL');
+            // Push + EVAL inside one safeRun snapshot so a runtime
+            // error from the program (or an unbound name) rolls the
+            // stack back to its pre-press state — see the matching
+            // VARS soft-key comment in showVarsMenu.
+            this.entry.safeRun(() => {
+              this.stack.push(target);
+              lookup('EVAL').fn(this.stack, this.entry);
+            }, 'EVAL');
+          } else {
+            // Non-evaluable item: push literally, no rollback needed.
+            this.stack.push(target);
           }
         },
         // Left-shift: type the item's label into the command line —
