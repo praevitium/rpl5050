@@ -387,7 +387,19 @@ block below).  Released at end of run.
   lane has not been spun up since this finding was filed (the
   giac/cas work continues to be threaded through command-support
   sessions instead, and none has chosen to fold this hygiene edit
-  into their pass).
+  into their pass).  **[resolved - ship-prep 2026-04-25]** — ship-
+  day cleanup pass (lock owner = `ship-prep-2026-04-25`) rewrote
+  the top block at `www/src/rpl/cas/giac-convert.mjs:234-256`.  The
+  22-line "purge free variables first" narrative has been replaced
+  with a 25-line block that accurately describes the preamble-
+  free behaviour, folds in the post-return comment block (now
+  removed) so the contradiction is gone, and preserves the
+  future-reintroduction guidance as a guard-rail paragraph.
+  Verified at run-close: `grep -n "purge free variables first"
+  www/src/rpl/cas/giac-convert.mjs` returns zero hits; `node
+  --check` on the file is clean; `node tests/test-all.mjs` =
+  5038 / 0; `node tests/test-persist.mjs` = 40 / 0; `node
+  tests/sanity.mjs` = 22 / 0.
 
 ### O-008  Session 106 shipped substantive changes without writing `logs/session-106.md`
 
@@ -1563,7 +1575,16 @@ block below).  Released at end of run.
   one-line shape as the test message rewrite.  Owner for the
   remainder: any lane touching `persist.js`; pure-comment
   edit, `node --check` safety net.  Test gate status at
-  session-152 close: 40 / 0 (re-greened).
+  session-152 close: 40 / 0 (re-greened).  **[resolved - ship-
+  prep 2026-04-25]** — verified at ship-prep entry that
+  `www/src/rpl/persist.js:126` already reads "load cleanly and
+  reset VX to the default \`'x'\`" (lowercase) — the comment
+  fix landed silently between session 152 close and ship-prep
+  entry, so all three call-sites cited in the finding (state.js
+  factory default, test-persist assertion, persist.js block
+  comment) are now consistent at lowercase `'x'`.  No further
+  edits required to close.  Ship-prep test gates: test-all =
+  5038 / 0, test-persist = 40 / 0, sanity = 22 / 0.
 
 ---
 
@@ -2635,7 +2656,16 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   working under an interactive (non-scheduled) Claude session
   takes the chore in passing.  Pure hygiene — the runner
   doesn't pick up `.bak*` files (`test-all.mjs` walks
-  `tests/*.mjs` explicitly), so no behavior risk.
+  `tests/*.mjs` explicitly), so no behavior risk.  Re-attempted
+  ship-prep 2026-04-25 (lock owner = `ship-prep-2026-04-25`):
+  `rm tests/test-control-flow.mjs.bak tests/test-control-flow.mjs.bak2`
+  again returned `Operation not permitted`, and the
+  `mcp__cowork__allow_cowork_file_delete` prompt was
+  unavailable in unsupervised mode.  **Deferred to user-side
+  manual cleanup post-ship** — recommend adding `*.bak` /
+  `*.bak2` to `.gitignore` at the same time so future spillover
+  is silently excluded.  Marking **[deferred - post-ship]**:
+  no behavior risk for the release.
 
 ### O-010  Session 121 shipped substantive changes without writing `logs/session-121.md`, COMMANDS.md update, RPL.md narrative, or tests
 

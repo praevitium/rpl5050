@@ -232,71 +232,52 @@ function emitFn(ast) {
 }
 
 /* ------------------------------------------------------------------
-   Safe caseval command builder — purge free variables first.
+   Caseval command builder.
 
-   Giac's `caseval` resolves bare identifiers through its global symbol
-   table before handing them to commands like `factor`.  A handful of
-   two-letter uppercase names collide with Xcas built-ins (`UI`, `GF`,
-   `IS`, `DO`, `IF`, …) — when the user stacks `'UI^2+1' FACTOR`,
-   Giac tries to evaluate `UI`, finds the built-in needs a runtime
-   context we haven't set up, and returns `"UI is not defined"`
-   instead of keeping the symbol free.
+   Hands a pure expression-string to a caller-supplied `buildCmd`
+   wrapper.  No `purge(v1);purge(v2);…` preamble is emitted: rpl5050's
+   CAS flow never assigns values to Giac-side variables, so free
+   identifiers like `X`, `Y`, … arrive at Xcas in their default
+   unassigned `DOM_IDENT` state and stay symbolic without prompting.
+   Adding a `purge(X)` preamble would be actively harmful — Xcas
+   raises `No such variable X` when `purge` runs for an unassigned
+   name — so the builder stays preamble-free.
 
-   `purge(v)` in Xcas reverts `v` to an undefined symbolic name
-   regardless of whether Giac pre-loaded it as a command or the user
-   assigned it in a prior session.  Prepending `purge(v1);purge(v2);…`
-   to every caseval inoculates us against the whole class of
-   name-collision bugs.  Giac's semicolon-sequence returns the value
-   of the last expression, so `purge(X);factor(X^2+2*X+1)` still yields
-   the factored form as the outer result.
+   `extraVars` are validated here (so a bad name surfaces the same
+   `Invalid name: <id>` RPLError regardless of caller); names inside
+   `exprAst` are validated by `astToGiac`.
 
-   Keeping the builder pure (string in / string out, no engine ref) so
-   tests can pin the exact command text — the mock engine's fixtures
-   are keyed on the full caseval string.
+   Pure (string in / string out, no engine ref) so tests can pin the
+   exact command text — the mock engine's fixtures are keyed on the
+   full caseval string.
+
+   If future ops start assigning Giac-side state or using names that
+   collide with Xcas built-ins (`UI`, `GF`, `IS`, …), reintroduce a
+   targeted purge for the specific colliding names only, and guard
+   each with a Giac-level try/catch so an unassigned-variable error
+   doesn't abort the semicolon-sequence.
    ------------------------------------------------------------------ */
 
 /**
- * Build a Giac caseval command that first purges every free variable
- * in `exprAst`, then runs `buildCmd(giacExprString)`.
+ * Build a Giac caseval command from `exprAst` and a wrapper.
  *
  * @param {object}   exprAst    rpl5050 AST whose free variables should
  *                              be treated as undefined symbolic names.
  * @param {function} buildCmd   given the astToGiac string, return the
  *                              Giac command to evaluate, e.g.
  *                              `(e) => \`factor(${e})\``.
- * @param {string[]} [extraVars] additional names to purge.  Use for ops
- *                              that take a standalone variable
- *                              argument (DERIV, INTEG, SOLVE, …) — the
- *                              derivative/integration/solve variable
- *                              goes here so it's purged even when it
- *                              doesn't appear free in the expression.
+ * @param {string[]} [extraVars] additional names to validate.  Use for
+ *                              ops that take a standalone variable
+ *                              argument (DERIV, INTEG, SOLVE, …) so a
+ *                              bad name surfaces the same RPLError
+ *                              shape as a bad name inside `exprAst`.
  *                              Also handy for SUBST's replacement ASTs.
  * @returns {string}            full caseval command string.
- *
- * Variable order is alphabetical so the command string is
- * deterministic across calls (mock-fixture friendly).
  */
 export function buildGiacCmd(exprAst, buildCmd, extraVars = []) {
-  // extraVars come straight from the user (e.g. DERIV's variable
-  // argument) — validate them here so a bad name surfaces the same
-  // "Invalid name: <id>" RPLError regardless of which op is calling.
-  // astToGiac validates names inside `exprAst` itself.
   for (const v of extraVars) assertValidCasName(v);
   const giacExpr = astToGiac(exprAst);
   return buildCmd(giacExpr);
-  // No `purge(v1);purge(v2);…` preamble is emitted. rpl5050's CAS flow
-  // never assigns values to variables inside Giac's session — every op
-  // passes the symbolic AST and treats the returned string as symbolic.
-  // Xcas therefore treats free variables like `X`, `Y`, … as symbolic
-  // by default (their initial state is unassigned `DOM_IDENT`), so a
-  // preamble is both unnecessary and actively harmful: Xcas raises
-  // `No such variable X` when `purge(X)` runs for unassigned X.
-  //
-  // If future ops start assigning Giac-side state or using names that
-  // collide with Xcas built-ins (UI, GF, IS, …), reintroduce the purge
-  // — but only for the specific colliding names, and guard each with a
-  // Giac-level try/catch so an unassigned-variable error doesn't abort
-  // the semicolon-sequence.
 }
 
 /**
