@@ -6377,3 +6377,249 @@ giac._setFixtures({
                /Invalid dimension/,
                'session119: GREDUCE empty vars → Invalid dimension');
 }
+
+
+/* ==================================================================
+   session 124 — LNAME / GBASIS
+   LNAME is a native AST walker (no Giac dependency); GBASIS is
+   Giac-backed (uses fixture mocks).
+   ================================================================== */
+
+// ---- LNAME — list variable names in a Symbolic --------------------
+
+/* ---- LNAME on the AUR worked example ----------------------------- *
+ * AUR p.3-136 (paraphrased — we construct the post-parse AST directly
+ * since the project's algebra parser turns INV(T) into 1/T at parse
+ * time, which is exactly the AUR's documented result form anyway):
+ *   LNAME( COS(B)/2*A + MYFUNC(PQ) + 1/T )
+ *     →  Level 2 : the original expression
+ *        Level 1 : [MYFUNC, PQ, A, B, T]
+ * COS is a known built-in (drop the function name, keep its argument);
+ * MYFUNC is user-defined (keep the function name).  Sort: length DESC,
+ * alpha ASC within equal length. */
+{
+  const s = new Stack();
+  const expr = AstBin('+',
+    AstBin('+',
+      AstBin('*',
+        AstBin('/', AstFn('COS', [AstVar('B')]), AstNum(2)),
+        AstVar('A')),
+      AstFn('MYFUNC', [AstVar('PQ')])),
+    AstBin('/', AstNum(1), AstVar('T')));
+  const before = Symbolic(expr);
+  s.push(before);
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  const orig = s.pop();
+  assert(orig === before,
+         'session124: LNAME preserves the original Symbolic on level 2');
+  assert(isVector(v) && v.items.length === 5,
+         `session124: LNAME returns a 5-element Vector (got ${v && v.items && v.items.length})`);
+  const ids = v.items.map((n) => isName(n) ? n.id : `<${n.type}>`);
+  assert(ids[0] === 'MYFUNC',
+         `session124: LNAME longest-first → MYFUNC (got ${ids[0]})`);
+  assert(ids[1] === 'PQ',
+         `session124: LNAME second by length → PQ (got ${ids[1]})`);
+  assert(ids[2] === 'A' && ids[3] === 'B' && ids[4] === 'T',
+         `session124: LNAME equal-length alpha sort → A,B,T (got ${ids.slice(2).join(',')})`);
+}
+
+/* ---- LNAME on a single bare variable ----------------------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();
+  assert(isVector(v) && v.items.length === 1 && isName(v.items[0]) && v.items[0].id === 'X',
+         'session124: LNAME on lone X → [X]');
+}
+
+/* ---- LNAME on a constant returns an empty Vector ----------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('SIN(2)+COS(3)')));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();
+  assert(isVector(v) && v.items.length === 0,
+         `session124: LNAME on constant expr → [] (got length ${v && v.items && v.items.length})`);
+}
+
+/* ---- LNAME deduplicates repeated occurrences -------------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X^2 + 2*X + 1 + Y*X')));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();
+  assert(isVector(v) && v.items.length === 2,
+         `session124: LNAME dedupes X — returns 2 names (got ${v && v.items && v.items.length})`);
+  const ids = v.items.map((n) => n.id).sort();
+  assert(ids.join(',') === 'X,Y',
+         `session124: LNAME dedupes X,Y from polynomial (got ${ids.join(',')})`);
+}
+
+/* ---- LNAME alpha tiebreak with length-3 names -------------------- */
+{
+  const s = new Stack();
+  // Build manually: parser would treat ABC, BAC, AAB as known fns or
+  // multi-letter idents — algebra.js parses Idents, no problem with
+  // multi-letter names.
+  s.push(Symbolic(parseAlgebra('ABC + BAC + AAB')));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();
+  assert(isVector(v) && v.items.length === 3,
+         'session124: LNAME 3-name length-3 input gives 3 names');
+  const ids = v.items.map((n) => n.id);
+  assert(ids[0] === 'AAB' && ids[1] === 'ABC' && ids[2] === 'BAC',
+         `session124: LNAME alpha tiebreak (AAB,ABC,BAC) → got ${ids.join(',')}`);
+}
+
+/* ---- LNAME on a Real rejects with Bad argument type -------------- */
+{
+  const s = new Stack();
+  s.push(Real(3.14));
+  assertThrows(() => { lookup('LNAME').fn(s); },
+               /Bad argument type/,
+               'session124: LNAME on Real → Bad argument type');
+}
+
+/* ---- LNAME on a Vector rejects with Bad argument type ----------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n), Integer(2n)]));
+  assertThrows(() => { lookup('LNAME').fn(s); },
+               /Bad argument type/,
+               'session124: LNAME on Vector → Bad argument type');
+}
+
+/* ---- LNAME walks under negation and binary ops ------------------ */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('-(A*B + C^D)')));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();
+  assert(isVector(v) && v.items.length === 4,
+         'session124: LNAME walks under Neg + Bin (4 names)');
+  const ids = v.items.map((n) => n.id).join(',');
+  assert(ids === 'A,B,C,D',
+         `session124: LNAME under Neg/Bin canonical order → A,B,C,D (got ${ids})`);
+}
+
+
+// ---- GBASIS — Grœbner basis of an ideal --------------------------
+
+/* ---- GBASIS on the AUR worked example ---------------------------- *
+ * AUR p.3-95:
+ *   GBASIS( [X^2 + 2*X*Y^2, X*Y + 2*Y^3 - 1], [X,Y] )  →  [X, 2*Y^3-1]
+ * Symbolic entries lift via _scalarToGiacStr → "(astToGiac(expr))",
+ * so the exact Giac command emitted is:
+ *   gbasis([(X^2+2*X*Y^2),(X*Y+2*Y^3-1)],[X,Y]) */
+{
+  const s = new Stack();
+  s.push(Vector([
+    Symbolic(parseAlgebra('X^2 + 2*X*Y^2')),
+    Symbolic(parseAlgebra('X*Y + 2*Y^3 - 1')),
+  ]));
+  s.push(Vector([Name('X'), Name('Y')]));
+  giac._clear();
+  giac._setFixture(
+    'gbasis([(X^2+2*X*Y^2),(X*Y+2*Y^3-1)],[X,Y])',
+    '[X,2*Y^3-1]');
+  lookup('GBASIS').fn(s);
+  const v = s.pop();
+  assert(isVector(v) && v.items.length === 2,
+         `session124: GBASIS AUR worked example → 2-element basis (got ${v && v.items && v.items.length})`);
+  // First entry is bare X — _astToRplValue lifts Var('X') into a Name.
+  const e0 = v.items[0];
+  assert((isName(e0) && e0.id === 'X') ||
+         (isSymbolic(e0) && formatAlgebra(e0.expr) === 'X'),
+         `session124: GBASIS basis[0] = X (got ${e0.type})`);
+  const e1 = v.items[1];
+  assert(isSymbolic(e1) && formatAlgebra(e1.expr) === '2*Y^3 - 1',
+         `session124: GBASIS basis[1] = 2*Y^3-1 (got ${isSymbolic(e1) ? formatAlgebra(e1.expr) : e1.type})`);
+  giac._clear();
+}
+
+/* ---- GBASIS — single-poly basis with a constant result ----------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(7n)]));            // ideal generated by 7 (a unit-like int)
+  s.push(Vector([Name('X')]));
+  giac._clear();
+  giac._setFixture('gbasis([7],[X])', '[1]');  // ideal = whole ring
+  lookup('GBASIS').fn(s);
+  const v = s.pop();
+  // _astToRplValue lifts Num(1) to Real(1) — that's the post-Giac numeric path.
+  assert(isVector(v) && v.items.length === 1 &&
+         isReal(v.items[0]) && v.items[0].value.eq(1),
+         `session124: GBASIS unit ideal → [1] (got ${v && v.items && v.items[0] && v.items[0].type})`);
+  giac._clear();
+}
+
+/* ---- GBASIS rejects non-Vector polys ----------------------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));    // not a Vector
+  s.push(Vector([Name('X')]));
+  assertThrows(() => { lookup('GBASIS').fn(s); },
+               /Bad argument type/,
+               'session124: GBASIS on non-Vector polys → Bad argument type');
+}
+
+/* ---- GBASIS rejects non-Vector vars ------------------------------ */
+{
+  const s = new Stack();
+  s.push(Vector([Symbolic(parseAlgebra('X'))]));
+  s.push(Name('X'));                      // not a Vector
+  assertThrows(() => { lookup('GBASIS').fn(s); },
+               /Bad argument type/,
+               'session124: GBASIS on non-Vector vars → Bad argument type');
+}
+
+/* ---- GBASIS rejects empty polys list ----------------------------- */
+{
+  const s = new Stack();
+  s.push(Vector([]));
+  s.push(Vector([Name('X')]));
+  assertThrows(() => { lookup('GBASIS').fn(s); },
+               /Invalid dimension/,
+               'session124: GBASIS empty polys → Invalid dimension');
+}
+
+/* ---- GBASIS rejects empty vars list ------------------------------ */
+{
+  const s = new Stack();
+  s.push(Vector([Symbolic(parseAlgebra('X'))]));
+  s.push(Vector([]));
+  assertThrows(() => { lookup('GBASIS').fn(s); },
+               /Invalid dimension/,
+               'session124: GBASIS empty vars → Invalid dimension');
+}
+
+/* ---- GBASIS rejects non-Name elements in vars vector ----------- */
+{
+  const s = new Stack();
+  s.push(Vector([Symbolic(parseAlgebra('X'))]));
+  s.push(Vector([Symbolic(parseAlgebra('X+1'))]));   // Symbolic, not Name
+  assertThrows(() => { lookup('GBASIS').fn(s); },
+               /Bad argument type/,
+               'session124: GBASIS on Symbolic-in-vars → Bad argument type');
+}
+
+/* ---- GBASIS rejects when Giac returns a non-list result --------- */
+{
+  const s = new Stack();
+  s.push(Vector([Symbolic(parseAlgebra('X'))]));
+  s.push(Vector([Name('X')]));
+  giac._clear();
+  // Symbolic 'X' lifts to "(X)"; the exact emitted command is:
+  giac._setFixture('gbasis([(X)],[X])', 'X');   // bare scalar — not a list
+  assertThrows(() => { lookup('GBASIS').fn(s); },
+               /Bad argument value/,
+               'session124: GBASIS non-list Giac output → Bad argument value');
+  giac._clear();
+}

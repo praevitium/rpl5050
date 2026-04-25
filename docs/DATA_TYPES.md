@@ -5,7 +5,50 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 120 (2026-04-24) — three hard-assertion
+**Last updated.** Session 125 (2026-04-24) — three more hard-assertion
+widening clusters pinning previously-undertested contracts on
+already-widened ops (no source-side changes; ops.js + most other
+source files are lock-held by concurrent session 124 command-support
+lane).  (1) **List distribution on the arity-2 numeric family**
+(`COMB`/`PERM`/`IQUOT`/`IREMAINDER`/`GCD`/`LCM`/`XROOT`/`MOD`/`MIN`/
+`MAX`) — all ten ops are wrapped in `_withListBinary` and listed
+`L ✓` since session 064 / 105, but no direct test pinned scalar×List,
+List×scalar, or pairwise distribution on this sub-family (session
+115 Cluster 3 covered the axes on `+`/`-`/`*` and the rounding family
+but stopped short of the combinatorial / divmod / GCD / LCM / XROOT /
+MOD / MIN / MAX surface where the inner handler does a different
+domain check); (2) **Tagged-of-List composition on the rounding /
+sign / abs family** (`FLOOR`/`CEIL`/`IP`/`FP`/`SIGN`/`ABS`) — the
+wrapper composition `_withTaggedUnary(_withListUnary(handler))` makes
+`:lbl:{a b}` unwrap Tagged, distribute across the list, then re-tag
+the resulting list.  Session 110 / 120 pinned bare-Tagged on these
+ops and session 115 Cluster 3 pinned bare-List on NEG / FLOOR; this
+cluster covers the *composition* on a different unary subfamily,
+the deliberate inner-Tagged-inside-List rejection, and the bespoke
+`:v:Vector(3,4) ABS` → `:v:Real(5)` cross-kind pin (the Frobenius
+bespoke runs *inside* `_withTaggedUnary`, so the outer tag is
+preserved across the V→R kind change at the inner handler);
+(3) **Rational `Q→R` degradation contract on `MIN`/`MAX`/`MOD`** —
+distinct from the arithmetic family (`+ - * / ^`) which preserves Q
+via `promoteNumericPair`'s `'rational'` kind, the `_minMax` and MOD
+inner handlers do NOT route through the rational-kind branch — they
+fall through `toRealOrThrow` and emit `Real`.  This is by design
+(MIN / MAX / MOD have always been Real-valued for non-Integer
+inputs) and pinning it documents the current behavior so a future
+widening pass that adds a Q column on these rows will know whether
+to preserve or flip the contract.  +43 assertions in
+`tests/test-types.mjs` (594 → 637; ops.js / test-algebra /
+test-symbolic / COMMANDS.md / logs/ are lock-held by concurrent
+session 124 command-support lane).  See "Resolved this session
+(125)" below.  Session 120 was the prior widening pass (Hyperbolic
+Tagged transparency, percent-family Tagged tag-drop, Rational unary
+stay-exact).  Session 115 was the prior pass before that (Binary
+Tagged tag-drop on `+ - * / ^` plus Rational arithmetic end-to-end
+plus List distribution edge cases).  Session 110 covered BinInt
+mixed arithmetic + Tagged round-trip on rounding / sign / arg +
+Rational cross-family compare.
+
+**Last updated (prior).** Session 120 (2026-04-24) — three hard-assertion
 widening clusters pinning previously-undertested contracts on
 already-widened ops:
 (1) Hyperbolic family (`SINH` / `COSH` / `TANH` / `ASINH` /
@@ -135,7 +178,7 @@ follow-on candidates and listed at the bottom.
 | INV    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | ✓ | ✓ | ✓ | ✗ | ✗ | V = · (no standard vector-inverse); M = matrix inverse. Session 064 added T. Session 120 pinned Q stay-exact: `INV Rational(2,3)` → `Rational(3,2)`; `INV Rational(1,5)` → `Integer(5)` (Rational(5,1) collapses to Integer); APPROX-mode collapses to Real. |
 | SQ     | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | · | ✓ | ✓ | ✗ | ✗ | V/M deliberately · — `SQ/V` = dot product, `SQ/M` = matmul, handled by `*`. Session 064 added T. Session 120 pinned Q stay-exact: `SQ Rational(-3,4)` → `Rational(9,16)`; deliberately does NOT d=1 collapse on `SQ Rational(2,1)` (stays Rational(4,1) — different code path from INV); APPROX-mode collapses to Real. |
 | SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. Session 120 pinned Q routing: perfect-square stays Q (`SQRT Rational(9,16)` → `Rational(3,4)`) with `Rational(0,1)` collapsing to `Integer(0)`; non-square Q lifts to Symbolic in EXACT (`SQRT Rational(2,1)` → Symbolic, no implicit Real coercion); negative Q lifts to Complex (`SQRT Rational(-1,1)` → `Complex(0, 1)`, principal branch). |
-| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. Session 120 pinned Q stay-exact: `ABS Rational(-3,4)` → `Rational(3,4)`. |
+| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. Session 120 pinned Q stay-exact: `ABS Rational(-3,4)` → `Rational(3,4)`. Session 125 pinned Tagged-of-List composition (`:v:{Real(3) Real(-4)} ABS` → `:v:{Real(3) Real(4)}`) and the bespoke Tagged-of-Vector cross-kind path (`:v:Vector(3,4) ABS` → `:v:Real(5)` Frobenius norm — confirms the bespoke V-handler runs *inside* the `_withTaggedUnary` wrapper, so the tag is preserved across the kind-changing op). |
 | SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. Session 120 pinned hyperbolic (SINH/COSH/TANH/ASINH/ACOSH/ATANH) Tagged transparency, List distribution, and Symbolic-lift through Tagged — including the `ATANH(:v:Real(2))` → `Tagged(v, Complex)` principal-branch lift where the inner handler picks Real-vs-Complex after the Tagged unwrap. |
 | FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). Session 120 pinned `Q ✗` rejection: `FACT Rational(5,1)` → 'Bad argument type' even at integer-valued Q (Q is not silently coerced to Real on FACT — deliberate Q-as-first-class-type stance). |
 | LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). Session 100: Sy round-trip verified; `defaultFnEval` folds via `Math.log1p` / `Math.expm1` (LNP1 returns null outside `x > -1`). |
@@ -144,27 +187,27 @@ follow-on candidates and listed at the bottom.
 
 | Op    | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| FLOOR | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U (`1.5_m FLOOR` → `1_m`, uexpr preserved). Session 087 added B (no-op — BinInt always integer). Complex ✗ — no total order. Session 110 pinned T transparency (`:x:Real(7.2) FLOOR` → `:x:7` + `:x:Real(-1.5) FLOOR` → `:x:-2` + `:n:Integer(5) FLOOR` → `:n:5` pass-through). Session 120 pinned Q→Z collapse: `FLOOR Rational(7,2)` → `Integer(3)` and `FLOOR Rational(-7,2)` → `Integer(-4)` (round toward -∞); APPROX-mode collapses to Real(3) instead of Integer. |
-| CEIL  | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Session 110 pinned T transparency (`:y:Real(7.2)` → `:y:8`, `:y:Real(-1.5)` → `:y:-1`). Session 120 pinned Q→Z collapse: `CEIL Rational(7,2)` → `Integer(4)` and `CEIL Rational(-7,2)` → `Integer(-3)`. |
-| IP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Compound uexpr (`m/s^2`) round-trips. Session 110 pinned T transparency (`:z:Real(-7.2) IP` → `:z:-7`, sign-preserving trunc toward zero). Session 120 pinned Q→Z collapse: `IP Rational(7,2)` → `Integer(3)` and `IP Rational(-7,2)` → `Integer(-3)` (trunc toward zero, NOT -4). |
-| FP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B (`FP #Xb` = `#0b`, same base). `FP(-1.8_m)` = `-0.8_m` (sign preserved). Session 110 pinned T transparency (`:w:Real(7.2) FP` → `:w:0.2`). Session 120 pinned Q stay-exact for non-integer Q (`FP Rational(7,2)` → `Rational(1,2)`, `FP Rational(-7,2)` → `Rational(-1,2)` sign preserved); integer-valued Q (e.g. `Rational(6,3)` canonicalises to 2/1) collapses to `Integer(0)` because there's no fractional part. |
-| SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. Session 110 pinned T transparency (`:u:Real(-5) SIGN` → `:u:-1`, `:u:Real(0) SIGN` → `:u:0`, `:p:Real(42) SIGN` → `:p:1`). Session 120 pinned Q→Z collapse: `SIGN Rational(-3,4)` → `Integer(-1)`, `SIGN Rational(0,1)` → `Integer(0)`, `SIGN Rational(3,4)` → `Integer(1)`. |
+| FLOOR | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U (`1.5_m FLOOR` → `1_m`, uexpr preserved). Session 087 added B (no-op — BinInt always integer). Complex ✗ — no total order. Session 110 pinned T transparency (`:x:Real(7.2) FLOOR` → `:x:7` + `:x:Real(-1.5) FLOOR` → `:x:-2` + `:n:Integer(5) FLOOR` → `:n:5` pass-through). Session 120 pinned Q→Z collapse: `FLOOR Rational(7,2)` → `Integer(3)` and `FLOOR Rational(-7,2)` → `Integer(-4)` (round toward -∞); APPROX-mode collapses to Real(3) instead of Integer. Session 125 pinned Tagged-of-List composition (`_withTaggedUnary` ∘ `_withListUnary`): `:lbl:{Real(7.2) Real(-1.5)} FLOOR` → `:lbl:{Real(7) Real(-2)}` (tag re-applied around per-element FLOOR), and the nested form `:lbl:{{1.5 2.5}{3.5 4.5}} FLOOR` → `:lbl:{{1 2}{3 4}}` (recursion through inner Lists). |
+| CEIL  | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Session 110 pinned T transparency (`:y:Real(7.2)` → `:y:8`, `:y:Real(-1.5)` → `:y:-1`). Session 120 pinned Q→Z collapse: `CEIL Rational(7,2)` → `Integer(4)` and `CEIL Rational(-7,2)` → `Integer(-3)`. Session 125 pinned Tagged-of-List composition: `:lbl:{Real(7.2) Real(-1.5)} CEIL` → `:lbl:{Real(8) Real(-1)}`. |
+| IP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Compound uexpr (`m/s^2`) round-trips. Session 110 pinned T transparency (`:z:Real(-7.2) IP` → `:z:-7`, sign-preserving trunc toward zero). Session 120 pinned Q→Z collapse: `IP Rational(7,2)` → `Integer(3)` and `IP Rational(-7,2)` → `Integer(-3)` (trunc toward zero, NOT -4). Session 125 pinned Tagged-of-List composition: `:a:{Real(7.2) Real(-7.2)} IP` → `:a:{Real(7) Real(-7)}` (sign-preserving trunc, per element). |
+| FP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B (`FP #Xb` = `#0b`, same base). `FP(-1.8_m)` = `-0.8_m` (sign preserved). Session 110 pinned T transparency (`:w:Real(7.2) FP` → `:w:0.2`). Session 120 pinned Q stay-exact for non-integer Q (`FP Rational(7,2)` → `Rational(1,2)`, `FP Rational(-7,2)` → `Rational(-1,2)` sign preserved); integer-valued Q (e.g. `Rational(6,3)` canonicalises to 2/1) collapses to `Integer(0)` because there's no fractional part. Session 125 pinned Tagged-of-List composition: `:a:{Real(7.2)} FP` → `:a:{Real(0.2)}`. |
+| SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. Session 110 pinned T transparency (`:u:Real(-5) SIGN` → `:u:-1`, `:u:Real(0) SIGN` → `:u:0`, `:p:Real(42) SIGN` → `:p:1`). Session 120 pinned Q→Z collapse: `SIGN Rational(-3,4)` → `Integer(-1)`, `SIGN Rational(0,1)` → `Integer(0)`, `SIGN Rational(3,4)` → `Integer(1)`. Session 125 pinned Tagged-of-List composition: `:u:{Real(-3) Real(0) Real(5)} SIGN` → `:u:{Integer(-1) Integer(0) Integer(1)}` (per-element Real→Integer collapse, tag re-applied). |
 | ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. Session 110 pinned T transparency (`ARG(:v:Complex(3,4))` → `:v:<atan2(4,3)>`). |
 
 ### Binary — MOD / MIN / MAX
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 068 confirmed V/M rejection (HP50 AUR §3 scalar-only).  Session 105 pinned Sy round-trip + MOD(10,3)=1, MOD(-7,3)=2 floor-div sign, MOD(n,0) → null. |
-| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MIN(3,5)=3 fold. |
-| MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MAX(3,5)=5 fold. |
+| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 068 confirmed V/M rejection (HP50 AUR §3 scalar-only).  Session 105 pinned Sy round-trip + MOD(10,3)=1, MOD(-7,3)=2 floor-div sign, MOD(n,0) → null. Session 125 pinned `_withListBinary` distribution (`{10 7} {3 2} MOD` → `{1 1}`) and the Rational `Q→R` degradation contract: `MOD Rational(7,2) Rational(1,3)` → `Real(≈1/6)` (NOT stay-exact — distinct from `+ - * / ^` which preserves Q via the rational kind).  Q×Z and Q×R both degrade through `toRealOrThrow`; Complex(im≠0) rejection still wins over Q. |
+| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MIN(3,5)=3 fold. Session 125 pinned `_withListBinary` distribution (`{1 5 3} 2 MIN` → `{1 2 2}` Real branch; `{1 5 3} {4 2 8} MAX`-shape pairwise on Integer-typed lists keeps Integer fast path) and the `Q→R` degradation contract: `MIN Rational(1,2) Rational(1,3)` → `Real(0.333)`; `MIN Rational(1,2) Integer(1)` → `Real(0.5)` (operand-order symmetric); `MIN Rational(1,2) Name(X)` → `Symbolic` (Sy lift wins over numeric routing — Q survives in the AST). |
+| MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MAX(3,5)=5 fold. Session 125 pinned `_withListBinary` distribution on Integer-typed lists (`{1 5 3} {4 2 8} MAX` → `{Integer(4) Integer(5) Integer(8)}` — pairwise Integer fast path fires when both operands are Integer) and the `Q→R` degradation: `MAX Rational(1,2) Rational(1,3)` → `Real(0.5)`; `MAX Rational(3,2) Real(0.7)` → `Real(1.5)`; `MAX Rational(1,2) Complex(0,2)` → `'Bad argument type'` (Q does NOT bypass C rejection). |
 
 ### Binary — GCD / LCM
 
 | Op  | R* | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|----|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| GCD | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added N/Sy/L/T. R accepted only when integer-valued (non-integer Real = Bad argument value).  Session 105 pinned Sy round-trip + GCD(12,18)=6, GCD(0,7)=7, GCD(1.5,3) → null fold. |
-| LCM | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same as GCD.  Session 105 pinned Sy round-trip + LCM(4,6)=12, LCM(0,n)=0 fold. |
+| GCD | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added N/Sy/L/T. R accepted only when integer-valued (non-integer Real = Bad argument value).  Session 105 pinned Sy round-trip + GCD(12,18)=6, GCD(0,7)=7, GCD(1.5,3) → null fold. Session 125 pinned pairwise `_withListBinary` distribution: `{12 15} {18 10} GCD` → `{6 5}`. |
+| LCM | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same as GCD.  Session 105 pinned Sy round-trip + LCM(4,6)=12, LCM(0,n)=0 fold. Session 125 pinned scalar×List distribution: `4 {6 9} LCM` → `{12 36}`. |
 
 *`~` on Real = accepted only when `Number.isInteger(value)`.
 
@@ -247,11 +290,11 @@ NaN.
 
 | Op         | R* | Z | C | N | Sy | L | V | M | T | Notes |
 |------------|----|---|---|---|----|---|---|---|---|-------|
-| COMB       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Binomial coefficient C(n, m).  Rejects m > n, negative args.  Session 105 pinned Sy round-trip + COMB(5,2)=10, COMB(5,0)=1, COMB(5,6)→null, COMB(-1,2)→null. |
-| PERM       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Falling factorial P(n, m).  Same rejections as COMB.  Session 105 pinned Sy round-trip + PERM(5,2)=20, PERM(5,0)=1, PERM(5,6)→null. |
-| IQUOT      | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Integer division (truncates towards 0).  Session 105 pinned Sy round-trip + IQUOT(17,5)=3, IQUOT(-17,5)=-3, IQUOT(10,0)→null. |
-| IREMAINDER | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | IREMAINDER(a, b) = a - IQUOT(a,b)·b; same sign as dividend.  Session 105 pinned Sy round-trip + IREMAINDER(17,5)=2, IREMAINDER(-17,5)=-2, IREMAINDER(10,0)→null. |
-| XROOT      | ~  | ✓ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | XROOT(y, x) = y^(1/x).  Session 105 pinned Sy round-trip + XROOT(27,3)=3, XROOT(2,2)=√2, XROOT(-8,3)→null, XROOT(8,0)→null. |
+| COMB       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Binomial coefficient C(n, m).  Rejects m > n, negative args.  Session 105 pinned Sy round-trip + COMB(5,2)=10, COMB(5,0)=1, COMB(5,6)→null, COMB(-1,2)→null. Session 125 pinned all three `_withListBinary` distribution axes (scalar×List `5 COMB {0 2 5}` → `{1 10 1}`; List×scalar `{5 6 7} 2 COMB` → `{10 15 21}`; pairwise `{5 6} {2 3} COMB` → `{10 20}`) plus the size-mismatch rejection (`{5} {2 3} COMB` → `'Invalid dimension'`). |
+| PERM       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Falling factorial P(n, m).  Same rejections as COMB.  Session 105 pinned Sy round-trip + PERM(5,2)=20, PERM(5,0)=1, PERM(5,6)→null. Session 125 pinned List×scalar distribution: `{5 6} 2 PERM` → `{20 30}`. |
+| IQUOT      | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Integer division (truncates towards 0).  Session 105 pinned Sy round-trip + IQUOT(17,5)=3, IQUOT(-17,5)=-3, IQUOT(10,0)→null. Session 125 pinned pairwise distribution: `{17 20} {5 3} IQUOT` → `{3 6}`. |
+| IREMAINDER | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | IREMAINDER(a, b) = a - IQUOT(a,b)·b; same sign as dividend.  Session 105 pinned Sy round-trip + IREMAINDER(17,5)=2, IREMAINDER(-17,5)=-2, IREMAINDER(10,0)→null. Session 125 pinned scalar×List distribution: `17 {5 3} IREMAINDER` → `{2 2}`. |
+| XROOT      | ~  | ✓ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | XROOT(y, x) = y^(1/x).  Session 105 pinned Sy round-trip + XROOT(27,3)=3, XROOT(2,2)=√2, XROOT(-8,3)→null, XROOT(8,0)→null. Session 125 pinned List×scalar distribution on the Real-radicand path: `{8 27} 3 XROOT` → `{Real(2) Real(3)}` (real path emits Real even at clean integer cube roots). |
 
 *`~` on Real (COMB/PERM/IQUOT/IREMAINDER/XROOT) = accepted only when the stack op's integer-or-finite-real domain check passes.
 
@@ -325,6 +368,135 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (125)
+
+- **Cluster 1 — List distribution on the arity-2 numeric family
+  (`COMB` / `PERM` / `IQUOT` / `IREMAINDER` / `GCD` / `LCM` / `XROOT` /
+  `MOD` / `MIN` / `MAX`).**  All ten ops are wrapped in
+  `_withListBinary` and listed `L ✓` in their respective rows since
+  session 064 (Combinatorial / integer-divmod family) and session 105
+  (Sy round-trip pass), but no direct test pinned the
+  `_withListBinary` distribution axes (scalar × List, List × scalar,
+  pairwise same-size, size mismatch).  Session 115 Cluster 3 covered
+  these axes on `NEG` / `FLOOR` and `+` / `-` / `*` but stopped short
+  of the combinatorial / divmod / GCD / LCM / XROOT / MOD / MIN / MAX
+  surface, where the inner handler does its own domain check
+  (`integer-or-finite-real-with-rejection` for COMB / PERM / GCD /
+  LCM, `integer-or-Real` for IQUOT / IREMAINDER / MOD, real-positive
+  radicand for XROOT).  14 hard assertions:
+  - **COMB axes:** scalar×List `5 COMB {0 2 5}` → `{1 10 1}`;
+    List×scalar `{5 6 7} 2 COMB` → `{10 15 21}`; pairwise same-size
+    `{5 6} {2 3} COMB` → `{10 20}`; size-mismatch
+    `{5} {2 3} COMB` → `'Invalid dimension'`.
+  - **PERM:** List×scalar `{5 6} 2 PERM` → `{20 30}`.
+  - **IQUOT:** pairwise `{17 20} {5 3} IQUOT` → `{3 6}`.
+  - **IREMAINDER:** scalar×List `17 {5 3} IREMAINDER` → `{2 2}`.
+  - **GCD:** pairwise `{12 15} {18 10} GCD` → `{6 5}`.
+  - **LCM:** scalar×List `4 {6 9} LCM` → `{12 36}`.
+  - **XROOT:** List×scalar (Real-radicand path) `{8 27} 3 XROOT` →
+    `{Real(2) Real(3)}` (real path emits Real even at clean integer
+    cube roots).
+  - **MOD:** pairwise `{10 7} {3 2} MOD` → `{1 1}` (integer fast
+    path emits Integer).
+  - **MIN:** List×scalar `{1 5 3} 2 MIN` → `{Real(1) Real(2) Real(2)}`
+    (Real branch — Real(2) broadcast forces Real result).
+  - **MAX:** pairwise on Integer-typed lists `{1 5 3} {4 2 8} MAX`
+    → `{Integer(4) Integer(5) Integer(8)}` (Integer fast path
+    fires when *both* operands are Integer).
+
+- **Cluster 2 — Tagged-of-List composition on the rounding / sign /
+  abs family (`FLOOR` / `CEIL` / `IP` / `FP` / `SIGN` / `ABS`).**
+  The wrapper composition `_withTaggedUnary(_withListUnary(handler))`
+  makes `:lbl:{a b} OP` → `:lbl:{OP(a) OP(b)}` — Tagged unwraps first,
+  list distributes inside, outer tag re-applies on the resulting
+  list.  Session 110 / 120 pinned bare-Tagged on these ops and
+  session 115 Cluster 3 pinned bare-List on `NEG` / `FLOOR`; this
+  cluster covers the *composition* on a different unary subfamily,
+  plus the deliberate inner-Tagged-inside-List rejection, plus the
+  bespoke ABS-Tagged-Vector cross-kind pin.  10 hard assertions:
+  - **Tagged-outer-of-List, scalar-elementwise:**
+    `:lbl:{Real(7.2) Real(-1.5)} FLOOR` → `:lbl:{Real(7) Real(-2)}`
+    (round toward -∞);
+    `:lbl:{Real(7.2) Real(-1.5)} CEIL` → `:lbl:{Real(8) Real(-1)}`;
+    `:a:{Real(7.2) Real(-7.2)} IP` → `:a:{Real(7) Real(-7)}` (trunc
+    toward zero, NOT -8 — contrast with FLOOR);
+    `:a:{Real(7.2)} FP` → `:a:{Real(0.2 ± 1e-16 IEEE drift)}`;
+    `:u:{Real(-3) Real(0) Real(5)} SIGN` →
+    `:u:{Real(-1) Real(0) Real(1)}` (Real branch emits Real, NOT
+    Integer — distinct from the Q→Z collapse path pinned in session
+    120 Cluster 3);
+    `:v:{Real(3) Real(-4)} ABS` → `:v:{Real(3) Real(4)}` (scalar
+    elementwise — NOT Frobenius, contrast with the Vector pin
+    below).
+  - **Bespoke ABS-Tagged-Vector cross-kind pin:**
+    `:v:Vector(Real(3), Real(4)) ABS` → `:v:Real(5)` — Frobenius
+    runs *inside* `_withTaggedUnary`, so the outer tag survives the
+    V→R kind change at the inner handler.  Pins that the bespoke V
+    branch (which bypasses `_withVMUnary`) still composes with the
+    Tagged wrapper correctly.
+  - **Nested list inside Tagged:**
+    `:lbl:{{Real(1.5) Real(2.5)} {Real(3.5) Real(4.5)}} FLOOR` →
+    `:lbl:{{Real(1) Real(2)} {Real(3) Real(4)}}` (the list wrapper
+    recurses; outer Tagged preserved on the doubly-nested result).
+  - **Deliberate inner-Tagged-inside-List rejection:**
+    `:v:{:x:Real(1) :y:Real(-2)} NEG` → `'Bad argument type'`.  The
+    list wrapper recurses into the inner scalar handler, which is
+    NOT Tagged-aware (the `_withTaggedUnary` wrapper sits OUTSIDE
+    `_withListUnary` in the composition chain — same-shape pin as
+    session 115 Cluster 3's `{:x:1 :y:-2} NEG` rejection but with an
+    additional outer Tagged confirming both directions of wrapper
+    composition order: outer-Tagged-then-List works, inner-Tagged-
+    inside-List doesn't).
+
+- **Cluster 3 — Rational `Q→R` degradation contract on
+  `MIN` / `MAX` / `MOD`.**  Distinct from the arithmetic family
+  (`+ - * / ^`) which preserves Q via `promoteNumericPair`'s
+  `'rational'` kind (session 115 Cluster 2 pinned the full surface),
+  the `_minMax` and MOD inner handlers do NOT route through the
+  rational-kind branch — they check `isInteger(a) && isInteger(b)`
+  for the integer fast path and fall through `toRealOrThrow` for
+  everything else, including Q.  Result: `MIN Rational(1,2)
+  Rational(1,3)` returns `Real(0.333…)`, NOT `Rational(1,3)`.  This
+  is by design (MIN / MAX / MOD have always been Real-valued for
+  non-Integer inputs) and pinning it documents the current behavior
+  so a future widening pass that adds a Q column on these rows
+  knows whether to preserve or flip the contract.  10 hard
+  assertions:
+  - **Q × Q degrades to Real:** `MIN Rational(1,2) Rational(1,3)`
+    → `Real(≈0.333)`; `MAX Rational(1,2) Rational(1,3)` →
+    `Real(0.5)`; `MOD Rational(7,2) Rational(1,3)` →
+    `Real(≈1/6 ± 1e-16)` (the Real path drifts off 1/6 because
+    1/3 isn't exactly representable as a 64-bit float).
+  - **Q × Z degrades to Real (operand-order symmetric):**
+    `MIN Rational(1,2) Integer(1)` → `Real(0.5)`;
+    `MIN Integer(1) Rational(1,2)` → `Real(0.5)` (integer-fast-path
+    guard `isInteger(a) && isInteger(b)` fails on the Q operand).
+  - **Q × R degrades to Real:** `MAX Rational(3,2) Real(0.7)` →
+    `Real(1.5)`.
+  - **Q × Z on MOD:** `MOD Rational(7,2) Integer(2)` → `Real(1.5)`
+    (3.5 mod 2 = 1.5 via `_hp50ModReal`).
+  - **Symbolic lift wins over numeric routing:**
+    `MIN Rational(1,2) Name(X)` → `Symbolic` — the `_isSymOperand`
+    check runs *before* the numeric Q→R degradation, so Q survives
+    in the AST as `Bin('/', Num(1), Num(2))` per the Sy convention
+    from session 092 (no Q→R degradation in the symbolic path).
+  - **Complex(im≠0) rejection wins over Q:**
+    `MAX Rational(1,2) Complex(0,2)` → `'Bad argument type'`;
+    `MOD Rational(1,2) Complex(0,2)` → `'Bad argument type'`.  Q is
+    a peer of Real / Integer in the rejection path — it does NOT
+    bypass the `isComplex(a) || isComplex(b)` rejection guard.
+  - **Contrast pin:** `+ Rational(1,2) Rational(1,3)` →
+    `Rational(5,6)` (arithmetic stays Q — single contrast assertion
+    documenting that the Q-degrading behaviour above is specific to
+    MIN / MAX / MOD, not a property of the Q type itself).
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`, or
+  `formatter.js` this session (all held by concurrent session 124
+  command-support lane).  `tests/test-types.mjs`: +43 assertions
+  (594 → 637).  Test gates green: `test-all` 4300/0; `test-persist`
+  38/0; `sanity` 22/0.  See `logs/session-125.md` for user-reachable
+  demos and exact gate counts.
 
 ### Resolved this session (120)
 

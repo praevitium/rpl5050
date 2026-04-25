@@ -3540,3 +3540,525 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     'session120: MANT Rational(1,2) → Bad argument type (Q not in MANT domain)'
   );
 }
+
+/* ================================================================
+   Session 125 — three widening clusters pinning previously-undertested
+   contracts on already-widened ops (no source-side changes; ops.js
+   and other source files are lock-held by concurrent session 124
+   command-support lane).
+
+   Cluster 1 — List distribution on the arity-2 numeric family
+     (COMB / PERM / IQUOT / IREMAINDER / GCD / LCM / XROOT / MOD /
+     MIN / MAX).  All ten ops are wrapped in `_withListBinary` and
+     show `L ✓` in their matrix rows since session 064 / 105, but
+     no direct test pinned scalar×List, List×scalar, or pairwise
+     distribution on this sub-family — session 115 Cluster 3 did
+     pin these axes on `+` / `-` / `*` and the rounding family but
+     not on the combinatorial / divmod / GCD / LCM / XROOT / MOD /
+     MIN / MAX surface, where the inner handler routes through a
+     different domain check (integer-or-finite-real-with-rejection
+     for COMB / PERM / GCD / LCM, integer-or-Real for the others).
+
+   Cluster 2 — Tagged-of-List on the rounding / sign / abs family
+     (FLOOR / CEIL / IP / FP / SIGN / ABS) — the wrapper composition
+     `_withTaggedUnary(_withListUnary(handler))` causes `:lbl:{a b}`
+     to unwrap Tagged, distribute across the list, then re-tag the
+     resulting list.  Session 110 / 120 pinned bare-Tagged on these
+     ops and session 115 pinned bare-List on NEG / FLOOR; this
+     cluster pins the composition on a *different* unary subfamily
+     (rounding / sign-magnitude) and adds the negative-case
+     deliberate-inner-Tagged rejection (`:lbl:{:x:1 :y:-2} NEG` →
+     'Bad argument type', mirror of session 115 Cluster 3 on a
+     different op) and the bespoke ABS-Tagged-Vector pin
+     (`:v:Vector(3,4) ABS` → `:v:Real(5)` — the Frobenius bespoke
+     handler runs *inside* `_withTaggedUnary`, so the outer tag is
+     preserved across the V→R kind change).
+
+   Cluster 3 — Rational `Q→R` degradation contract on
+     `MIN`/`MAX`/`MOD`.  Distinct from the arithmetic family
+     (`+ - * / ^`) which preserves Q via `promoteNumericPair`'s
+     `'rational'` kind: `_minMax` and the MOD inner handler do NOT
+     route through the rational-kind branch — they fall through
+     `toRealOrThrow` and return `Real`.  This is by design (MIN /
+     MAX / MOD have always been Real-valued for non-Integer inputs)
+     and pinning it is important because the matrix rows for these
+     ops (under "Binary — MOD / MIN / MAX") have `R ✓` and don't
+     carry a Q column — a future widening pass that adds a Q column
+     will need to decide whether to flip to stay-exact, and this
+     pin documents the current behavior so the change is visible.
+   ================================================================ */
+{
+  /* ---------- Cluster 1: List distribution on arity-2 numeric family ---------- */
+
+  // COMB scalar × List — broadcasts the scalar n across list of m's.
+  // `5 COMB {0 2 5}` → {C(5,0)=1, C(5,2)=10, C(5,5)=1}.
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    s.push(RList([Integer(0n), Integer(2n), Integer(5n)]));
+    lookup('COMB').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items.length === 3,
+      `session125: 5 COMB {0 2 5} returns 3-element list (got len=${v?.items?.length})`);
+    assert(isInteger(v.items[0]) && v.items[0].value === 1n
+        && isInteger(v.items[1]) && v.items[1].value === 10n
+        && isInteger(v.items[2]) && v.items[2].value === 1n,
+      `session125: 5 COMB {0 2 5} → {1 10 1} (got ${v.items.map(x => x.value).join(',')})`);
+  }
+
+  // COMB List × scalar — broadcasts the scalar m across list of n's.
+  // `{5 6 7} 2 COMB` → {10 15 21}.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(5n), Integer(6n), Integer(7n)]));
+    s.push(Integer(2n));
+    lookup('COMB').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && isInteger(v.items[0]) && v.items[0].value === 10n
+        && isInteger(v.items[1]) && v.items[1].value === 15n
+        && isInteger(v.items[2]) && v.items[2].value === 21n,
+      `session125: {5 6 7} 2 COMB → {10 15 21} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // COMB pairwise — same-length lists distribute element-by-element.
+  // `{5 6} {2 3} COMB` → {C(5,2)=10, C(6,3)=20}.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(5n), Integer(6n)]));
+    s.push(RList([Integer(2n), Integer(3n)]));
+    lookup('COMB').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items.length === 2 && v.items[0].value === 10n && v.items[1].value === 20n,
+      `session125: {5 6} {2 3} COMB → {10 20} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // COMB pairwise size-mismatch — `_withListBinary` rejects with 'Invalid dimension'.
+  assertThrows(
+    () => {
+      const s = new Stack();
+      s.push(RList([Integer(5n)]));
+      s.push(RList([Integer(2n), Integer(3n)]));
+      lookup('COMB').fn(s);
+    },
+    /Invalid dimension/,
+    'session125: COMB pairwise size mismatch → Invalid dimension (1 vs 2 element lists)'
+  );
+
+  // PERM List × scalar — `{5 6} 2 PERM` → {P(5,2)=20, P(6,2)=30}.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(5n), Integer(6n)]));
+    s.push(Integer(2n));
+    lookup('PERM').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items[0].value === 20n && v.items[1].value === 30n,
+      `session125: {5 6} 2 PERM → {20 30} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // IQUOT pairwise — `{17 20} {5 3} IQUOT` → {3 6}.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(17n), Integer(20n)]));
+    s.push(RList([Integer(5n), Integer(3n)]));
+    lookup('IQUOT').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items[0].value === 3n && v.items[1].value === 6n,
+      `session125: {17 20} {5 3} IQUOT → {3 6} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // IREMAINDER scalar × List — `17 {5 3} IREMAINDER` → {2 2}.
+  {
+    const s = new Stack();
+    s.push(Integer(17n));
+    s.push(RList([Integer(5n), Integer(3n)]));
+    lookup('IREMAINDER').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items[0].value === 2n && v.items[1].value === 2n,
+      `session125: 17 {5 3} IREMAINDER → {2 2} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // GCD pairwise — `{12 15} {18 10} GCD` → {6 5}.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(12n), Integer(15n)]));
+    s.push(RList([Integer(18n), Integer(10n)]));
+    lookup('GCD').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items[0].value === 6n && v.items[1].value === 5n,
+      `session125: {12 15} {18 10} GCD → {6 5} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // LCM scalar × List — `4 {6 9} LCM` → {12 36}.
+  {
+    const s = new Stack();
+    s.push(Integer(4n));
+    s.push(RList([Integer(6n), Integer(9n)]));
+    lookup('LCM').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items[0].value === 12n && v.items[1].value === 36n,
+      `session125: 4 {6 9} LCM → {12 36} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // XROOT List × scalar — `{8 27} 3 XROOT` → {2 3} (real path, returns Real).
+  {
+    const s = new Stack();
+    s.push(RList([Real(8), Real(27)]));
+    s.push(Integer(3n));
+    lookup('XROOT').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items.length === 2,
+      `session125: {8 27} 3 XROOT returns 2-element list (got len=${v?.items?.length})`);
+    assert(isReal(v.items[0]) && Math.abs(v.items[0].value.toNumber() - 2) < 1e-12
+        && isReal(v.items[1]) && Math.abs(v.items[1].value.toNumber() - 3) < 1e-12,
+      `session125: {8 27} 3 XROOT → {≈2 ≈3} (got ${v?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // MOD pairwise — `{10 7} {3 2} MOD` → {1 1}.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(10n), Integer(7n)]));
+    s.push(RList([Integer(3n), Integer(2n)]));
+    lookup('MOD').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items[0].value === 1n && v.items[1].value === 1n,
+      `session125: {10 7} {3 2} MOD → {1 1} (got ${v?.items?.map(x => x.value).join(',')})`);
+  }
+
+  // MIN List × scalar — `{1 5 3} 2 MIN` → {1 2 2}.  Element-wise MIN
+  // against the broadcast scalar.  Result types are Real because at
+  // least one side of every pair is Real (Real(2) broadcast).  Real
+  // path of _minMax always emits Real even when the value is integer-
+  // valued — so the result is Real(1)/Real(2)/Real(2), not Integer.
+  {
+    const s = new Stack();
+    s.push(RList([Real(1), Real(5), Real(3)]));
+    s.push(Real(2));
+    lookup('MIN').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items.length === 3,
+      `session125: {1 5 3} 2 MIN returns 3-element list (got len=${v?.items?.length})`);
+    assert(isReal(v.items[0]) && v.items[0].value.eq(1)
+        && isReal(v.items[1]) && v.items[1].value.eq(2)
+        && isReal(v.items[2]) && v.items[2].value.eq(2),
+      `session125: {1 5 3} 2 MIN → {1 2 2} (got ${v?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // MAX pairwise on Integer-typed lists stays Integer (the inner
+  // _minMax integer branch fires when both operands are Integer).
+  // `{1 5 3} {4 2 8} MAX` → Integer(4)/Integer(5)/Integer(8).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(1n), Integer(5n), Integer(3n)]));
+    s.push(RList([Integer(4n), Integer(2n), Integer(8n)]));
+    lookup('MAX').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && isInteger(v.items[0]) && v.items[0].value === 4n
+        && isInteger(v.items[1]) && v.items[1].value === 5n
+        && isInteger(v.items[2]) && v.items[2].value === 8n,
+      `session125: {1 5 3} {4 2 8} MAX → {Integer(4) Integer(5) Integer(8)} (got types=${v?.items?.map(x => x.type).join(',')})`);
+  }
+
+  /* ---------- Cluster 2: Tagged-of-List on rounding / sign / abs ---------- */
+
+  // FLOOR :lbl:{7.2 -1.5} → :lbl:{Real(7) Real(-2)} — Tagged unwraps
+  // first, list distributes inside, outer tag re-applies on the
+  // resulting list (mirror of session 115 Cluster 3 NEG variant on
+  // a different unary inner handler).
+  {
+    const s = new Stack();
+    s.push(Tagged('lbl', RList([Real(7.2), Real(-1.5)])));
+    lookup('FLOOR').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'lbl' && v.value.type === 'list' && v.value.items.length === 2,
+      `session125: :lbl:{7.2 -1.5} FLOOR preserves outer tag + list shape (got tag=${v?.tag} inner=${v?.value?.type})`);
+    assert(isReal(v.value.items[0]) && v.value.items[0].value.eq(7)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(-2),
+      `session125: :lbl:{7.2 -1.5} FLOOR → :lbl:{Real(7) Real(-2)} (round toward -∞, got ${v?.value?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // CEIL :lbl:{7.2 -1.5} → :lbl:{Real(8) Real(-1)}.
+  {
+    const s = new Stack();
+    s.push(Tagged('lbl', RList([Real(7.2), Real(-1.5)])));
+    lookup('CEIL').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'lbl' && v.value.type === 'list'
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(8)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(-1),
+      `session125: :lbl:{7.2 -1.5} CEIL → :lbl:{Real(8) Real(-1)} (round toward +∞)`);
+  }
+
+  // IP :a:{7.2 -7.2} → :a:{Real(7) Real(-7)} — trunc toward zero,
+  // contrast with FLOOR's -8 / CEIL's -7.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', RList([Real(7.2), Real(-7.2)])));
+    lookup('IP').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'a' && v.value.type === 'list'
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(7)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(-7),
+      `session125: :a:{7.2 -7.2} IP → :a:{Real(7) Real(-7)} (trunc toward zero, NOT -8)`);
+  }
+
+  // FP :a:{7.2} → :a:{Real(0.2 ± IEEE drift)}.  FP uses the
+  // `x - Math.trunc(x)` real path (matches session 110 Cluster 2
+  // tolerance — the value is approximately 0.2 with sub-1e-12 drift).
+  {
+    const s = new Stack();
+    s.push(Tagged('a', RList([Real(7.2)])));
+    lookup('FP').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'a' && v.value.type === 'list' && v.value.items.length === 1
+        && isReal(v.value.items[0]),
+      `session125: :a:{7.2} FP preserves tag + list shape with Real inner`);
+    assert(Math.abs(v.value.items[0].value.toNumber() - 0.2) < 1e-12,
+      `session125: :a:{7.2} FP → :a:{≈0.2} (got ${v?.value?.items?.[0]?.value?.toString()})`);
+  }
+
+  // SIGN :u:{Real(-3) Real(0) Real(5)} → :u:{Real(-1) Real(0) Real(1)}.
+  // The Real branch of SIGN emits Real (NOT Integer) — distinct from
+  // the Q→Z collapse path pinned in session 120 Cluster 3.
+  {
+    const s = new Stack();
+    s.push(Tagged('u', RList([Real(-3), Real(0), Real(5)])));
+    lookup('SIGN').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'u' && v.value.type === 'list' && v.value.items.length === 3,
+      `session125: :u:{-3 0 5} SIGN preserves tag + 3-element list (got tag=${v?.tag} len=${v?.value?.items?.length})`);
+    assert(isReal(v.value.items[0]) && v.value.items[0].value.eq(-1)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0)
+        && isReal(v.value.items[2]) && v.value.items[2].value.eq(1),
+      `session125: :u:{-3 0 5} SIGN → :u:{Real(-1) Real(0) Real(1)} (Real branch; not Integer)`);
+  }
+
+  // ABS :v:{3 -4} → :v:{Real(3) Real(4)} (element-wise scalar ABS,
+  // NOT Frobenius — Frobenius applies only when the inner is a Vector,
+  // pinned separately below).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', RList([Real(3), Real(-4)])));
+    lookup('ABS').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && v.value.type === 'list'
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(3)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(4),
+      `session125: :v:{3 -4} ABS → :v:{Real(3) Real(4)} (element-wise, NOT Frobenius)`);
+  }
+
+  // Bespoke ABS on Tagged Vector — Frobenius runs *inside* the
+  // Tagged wrapper, so :v:Vector(3,4) → :v:Real(5).  Pins that the
+  // outer tag is preserved across a V→R kind change at the inner
+  // handler (the Vector cell on ABS's row is bespoke — not the
+  // _withVMUnary wrapper — so Tagged sees the bespoke result).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(3), Real(4)])));
+    lookup('ABS').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && isReal(v.value),
+      `session125: :v:Vector(3,4) ABS preserves outer tag + V→R kind change (got tag=${v?.tag} inner=${v?.value?.type})`);
+    assert(v.value.value.eq(5),
+      `session125: :v:Vector(3,4) ABS inner = Real(5) Frobenius (got ${v?.value?.value?.toString()})`);
+  }
+
+  // Nested Tagged-of-List-of-List — :lbl:{{1.5 2.5}{3.5 4.5}} FLOOR
+  // → :lbl:{{1 2}{3 4}}.  The list wrapper recurses, so nested lists
+  // FLOOR element-by-element inside the outer Tagged.
+  {
+    const s = new Stack();
+    s.push(Tagged('lbl', RList([
+      RList([Real(1.5), Real(2.5)]),
+      RList([Real(3.5), Real(4.5)]),
+    ])));
+    lookup('FLOOR').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'lbl' && v.value.type === 'list'
+        && v.value.items.length === 2
+        && v.value.items[0].type === 'list' && v.value.items[1].type === 'list',
+      `session125: :lbl:{{...}{...}} FLOOR preserves tag + nested-list shape`);
+    assert(v.value.items[0].items[0].value.eq(1) && v.value.items[0].items[1].value.eq(2)
+        && v.value.items[1].items[0].value.eq(3) && v.value.items[1].items[1].value.eq(4),
+      `session125: :lbl:{{1.5 2.5}{3.5 4.5}} FLOOR → :lbl:{{1 2}{3 4}} (nested distribute, tag preserved)`);
+  }
+
+  // Deliberate inner-Tagged rejection — `{:x:Real(1) :y:Real(-2)} NEG`
+  // throws 'Bad argument type' because `_withTaggedUnary` sits OUTSIDE
+  // `_withListUnary` in the wrapper composition: the list distributes
+  // first, then the inner scalar handler runs *without* a Tagged
+  // unwrapper in scope.  Mirror of session 115 Cluster 3 final pin
+  // but on a Tagged-wrapped *outer* (:v:{...}) — verifies the wrapper
+  // composition order both ways.  When the Tagged is OUTSIDE the
+  // List, things work (every test above); when it's INSIDE the List,
+  // the inner scalar handler doesn't unwrap.
+  assertThrows(
+    () => {
+      const s = new Stack();
+      s.push(Tagged('v', RList([Tagged('x', Real(1)), Tagged('y', Real(-2))])));
+      lookup('NEG').fn(s);
+    },
+    /Bad argument type/,
+    'session125: :v:{:x:Real(1) :y:Real(-2)} NEG → Bad argument type (inner Tagged inside List has no unwrapper at the scalar handler)'
+  );
+
+  /* ---------- Cluster 3: Q→R degradation on MIN/MAX/MOD ---------- */
+
+  // MIN Q Q — both operands Rational, but the inner _minMax handler
+  // does NOT route through the rational-kind branch.  It checks
+  // `isInteger(a) && isInteger(b)` for the integer fast path and
+  // falls through `toRealOrThrow` for everything else, including Q.
+  // Result: Real(1/3 ≈ 0.333…), NOT Rational(1, 3).  Distinct from
+  // the arithmetic family (session 115 Cluster 2) which preserves Q.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Rational(1n, 3n));
+    lookup('MIN').fn(s);
+    const v = s.peek();
+    assert(isReal(v),
+      `session125: MIN Rational(1,2) Rational(1,3) → Real (Q→R degradation, NOT stay-exact; got ${v?.type})`);
+    assert(Math.abs(v.value.toNumber() - 1/3) < 1e-12,
+      `session125: MIN Rational(1,2) Rational(1,3) → Real(≈0.333) (got ${v?.value?.toString()})`);
+  }
+
+  // MAX Q Q → Real(1/2).
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Rational(1n, 3n));
+    lookup('MAX').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && Math.abs(v.value.toNumber() - 0.5) < 1e-12,
+      `session125: MAX Rational(1,2) Rational(1,3) → Real(0.5) (Q→R degradation; got ${v?.type}(${v?.value}))`);
+  }
+
+  // MOD Q Q — `7/2 mod 1/3`.  Routes through `_hp50ModReal` on
+  // toRealOrThrow-coerced operands: 3.5 mod 0.333… ≈ 0.166… (= 1/6
+  // mathematically; the Real path drifts slightly off 1/6 because
+  // 1/3 is not exactly representable as a 64-bit float).  Pinning
+  // this Q→R degradation distinguishes MOD from `MOD Integer Integer`
+  // which stays exact via `_hp50ModBigInt`.
+  {
+    const s = new Stack();
+    s.push(Rational(7n, 2n));
+    s.push(Rational(1n, 3n));
+    lookup('MOD').fn(s);
+    const v = s.peek();
+    assert(isReal(v),
+      `session125: MOD Rational(7,2) Rational(1,3) → Real (Q→R degradation, NOT stay-exact; got ${v?.type})`);
+    // 7/2 mod 1/3 = 1/6 mathematically; the Real-path coercion of
+    // 1/3 introduces O(1e-16) drift, so allow 1e-10 tolerance.
+    assert(Math.abs(v.value.toNumber() - 1/6) < 1e-10,
+      `session125: MOD Rational(7,2) Rational(1,3) → Real(≈1/6) (got ${v?.value?.toString()})`);
+  }
+
+  // Q × Z cross-family on MIN — Z widens to Real here (NOT Integer
+  // fast path), because the integer-fast-path guard is `isInteger(a)
+  // && isInteger(b)` and the Q operand fails that test.  Result is
+  // Real(0.5).
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Integer(1n));
+    lookup('MIN').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && Math.abs(v.value.toNumber() - 0.5) < 1e-12,
+      `session125: MIN Rational(1,2) Integer(1) → Real(0.5) (Q×Z falls to Real branch; got ${v?.type}(${v?.value}))`);
+  }
+
+  // Operand-order symmetry — Z × Q routes through the same Real
+  // fall-through branch.
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    s.push(Rational(1n, 2n));
+    lookup('MIN').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && Math.abs(v.value.toNumber() - 0.5) < 1e-12,
+      `session125: MIN Integer(1) Rational(1,2) → Real(0.5) (Z×Q symmetric)`);
+  }
+
+  // Q × R on MAX — `3/2 ≈ 1.5` vs `0.7`, max is 1.5 as Real.  Pins
+  // that Real-side wins typewise too.
+  {
+    const s = new Stack();
+    s.push(Rational(3n, 2n));
+    s.push(Real(0.7));
+    lookup('MAX').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && Math.abs(v.value.toNumber() - 1.5) < 1e-12,
+      `session125: MAX Rational(3,2) Real(0.7) → Real(1.5) (Q×R degrades to Real; got ${v?.type}(${v?.value}))`);
+  }
+
+  // Q × Z on MOD — `7/2 mod 2`.  Coerces Q to Real(3.5), Z to
+  // Real(2), `_hp50ModReal(3.5, 2) = 1.5`.
+  {
+    const s = new Stack();
+    s.push(Rational(7n, 2n));
+    s.push(Integer(2n));
+    lookup('MOD').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && Math.abs(v.value.toNumber() - 1.5) < 1e-12,
+      `session125: MOD Rational(7,2) Integer(2) → Real(1.5) (Q→R coercion; got ${v?.type}(${v?.value}))`);
+  }
+
+  // Symbolic lift through Q on MIN — `_isSymOperand` runs before the
+  // numeric routing, so MIN Q + Name(X) lifts to a Symbolic
+  // `MIN(1/2, X)` (the Q operand survives the AST as
+  // `Bin('/', Num(1), Num(2))` per the Sy convention from session
+  // 092).  No Q→R degradation in the symbolic path.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Name('X'));
+    lookup('MIN').fn(s);
+    const v = s.peek();
+    assert(v.type === 'symbolic',
+      `session125: MIN Rational(1,2) Name(X) → Symbolic (Sy lift wins over numeric routing; got ${v?.type})`);
+  }
+
+  // Complex(im≠0) rejection on MAX — Q vs C(im≠0) hits the
+  // `isComplex(a) || isComplex(b)` rejection guard before routing,
+  // so the result is 'Bad argument type' regardless of the Q side.
+  // (This pins that Q is a peer of Real / Integer in the rejection
+  // path — it doesn't bypass the Complex rejection.)
+  assertThrows(
+    () => {
+      const s = new Stack();
+      s.push(Rational(1n, 2n));
+      s.push(Complex(0, 2));
+      lookup('MAX').fn(s);
+    },
+    /Bad argument type/,
+    'session125: MAX Rational(1,2) Complex(0,2) → Bad argument type (C rejection wins, Q does not bypass)'
+  );
+
+  // Same rejection on MOD.
+  assertThrows(
+    () => {
+      const s = new Stack();
+      s.push(Rational(1n, 2n));
+      s.push(Complex(0, 2));
+      lookup('MOD').fn(s);
+    },
+    /Bad argument type/,
+    'session125: MOD Rational(1,2) Complex(0,2) → Bad argument type (C rejection wins on MOD too)'
+  );
+
+  // Contrast pin — `+` on Q×Q stays-exact (session 115 Cluster 2 pin
+  // mirrored here for the contrast).  This is the *arithmetic*
+  // family's Q-preserving behavior versus the MIN/MAX/MOD family's
+  // Q-degrading behavior.  Single assertion documenting the contrast
+  // alongside the pins above; the full + on Q is pinned in session
+  // 115's block.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Rational(1n, 3n));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(isRational(v) && v.n === 5n && v.d === 6n,
+      `session125 (contrast): + Rational(1,2) Rational(1,3) → Rational(5,6) (arithmetic stays Q — contrast with MIN/MAX/MOD's Q→R)`);
+  }
+}
+

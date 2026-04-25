@@ -21,20 +21,32 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 119 — 2026-04-24)
+## Counts (as of session 124 — 2026-04-24)
 
-- Fully shipped (✓): 431
+- Fully shipped (✓): 433 (this lane's net since session 119; other
+  lanes may have shipped additional ops between sessions 119 and 124
+  without bumping this counter — see register() delta below)
 - Partially shipped (~): 0
-- Not yet implemented (✗): 7 (see "Not yet supported" below)
+- Not yet implemented (✗): 4 (see "Not yet supported" below)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" www/src/rpl/ops.js` = **448** at the end of session 119
-(was 445 at the end of session 114).  The +3 loose-count delta reflects
-three new op registrations this session (`EGV`, `RSD`, `GREDUCE` —
-right-eigenvector matrix + eigenvalue vector via Giac; native residual
-B − A·Z over Real/Integer entries; Grœbner reduction via Giac).  Row
-transitions this session:
+`grep -c "register(" www/src/rpl/ops.js` = **455** at the end of session 124
+(was 448 at the end of session 119).  +2 from this session (`LNAME`,
+`GBASIS`); the remaining +5 between sessions 119 and 124 came from
+intervening lanes (e.g. session 121's `PROMPT` op for the rpl-programming
+lane).  Row transitions this session:
+- **2 ops newly shipped** (✗ → ✓): `LNAME` (new row in Polynomials /
+  algebra), `GBASIS` (new row in CAS, paired with the session-119
+  `GREDUCE` row).
+- **1 phantom row retired**: `ACKER CTRB OBSV` (not HP50 commands —
+  zero hits across the AUR, User Guide, and User Manual when run
+  through `pdftotext`).
+- **Not-yet-supported reshape**: the standalone `GXROOT` row stays,
+  with its Notes column updated (GBASIS now ships, so GXROOT is the
+  last CAS gap on the row).
+
+Prior baseline (session 119):
 - **3 ops newly shipped** (✗ → ✓): `EGV` (new row in Vectors / Matrices /
   Arrays — paired note with the session-114 `PCAR` / `CHARPOL` / `EGVL`
   cluster), `RSD` (new row in Vectors / Matrices / Arrays), `GREDUCE`
@@ -269,6 +281,7 @@ DERIV, etc. via Giac).
 | `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  One-arg MODULO-state form deferred until MODULO lands. |
 | `PA2B2` | ✓ | **Session 114** — `( p → (a,b) )` Fermat sum of two squares for primes with `p=2` or `p ≡ 1 (mod 4)`; native Cornacchia via the existing BigInt helpers (`_isPrimeBig`, `_powModBig`, new `_bigIntSqrtFloor`).  Returns a native Complex Gaussian integer with the smaller component real, larger imag.  Rejects non-prime / `p ≡ 3 (mod 4)` with "Bad argument value".  HP50 AUR §3-162. |
 | `CYCLOTOMIC` | ✓ | **Session 081** — `( n → Φ_n(X) )` n-th cyclotomic polynomial as a Symbolic in X.  BigInt long-division build via `Φ_n = (Xⁿ − 1) / ∏_{d\|n, d<n} Φ_d`.  Capped at n ≤ 200 (MAX_SAFE_INTEGER guard on the descending-degree coefficient array).  Rejects non-Integer and n < 1. |
+| `LNAME` | ✓ | **Session 124** — `( 'expr' → 'expr' [names] )` extract the symbolic Names referenced by an expression.  Native AST walker (no Giac dependency): visits `Var` nodes and `Fn` nodes whose head is not in `KNOWN_FUNCTIONS` (i.e. user-defined function names land in the result), dedups in first-seen order, sorts by length DESC then alpha ASC to match HP50 AUR §3-136.  Preserves the input on level 2 and pushes the Vector of Names on level 1.  Rejects non-Symbolic input ("Bad argument type"). |
 
 ## CAS (symbolic)
 
@@ -304,6 +317,7 @@ not fallbacks.  Migration is incremental — rows below are flagged
 | `PARTFRAC` | ✓ | **Session 104 [Giac]** — partial-fraction decomposition via `partfrac(...)`.  Symbolic routed through Giac; Real/Integer/Rational/Name pass-through (no non-trivial decomp on a bare number). HP50 AUR §3-180.  No-fallback policy. |
 | `COSSIN` | ✓ | **Session 104 [Giac]** — rewrite in SIN/COS basis via Giac `tan2sincos(...)` (TAN(x) → SIN(x)/COS(x)).  Symbolic routed through Giac; Real/Integer/Rational/Name pass-through.  HP50 AUR §3-64.  No-fallback policy. |
 | `GREDUCE` | ✓ | **Session 119 [Giac]** — `( poly basis vars → reduced )` Grœbner reduction via `greduce(p,[basis],[vars])`.  HP50 AUR §3-99.  Level 1 must be a Vector of bare Names; level 2 a Vector of polynomials (Symbolic / Name / Integer / Real / Rational); level 3 the polynomial to reduce.  Empty basis or empty vars list → `Invalid dimension`.  Result lifts back through `giacToAst` + `_astToRplValue` so a numeric remainder lands as Real and a polynomial remainder stays Symbolic (`_astToRplValue`'s session-119 `Neg(Num)` unwrap fixes the AUR `-1` worked example).  No-fallback policy. |
+| `GBASIS` | ✓ | **Session 124 [Giac]** — `( polys vars → basis )` Grœbner basis via `gbasis([polys],[vars])`.  HP50 AUR §3-92.  Level 1 must be a Vector of bare Names; level 2 a Vector of polynomials (Symbolic / Name / Integer / Real / Rational).  Empty polys or empty vars list → `Invalid dimension`; non-Vector args → `Bad argument type`; non-Name in vars → `Bad argument type`; non-list Giac output (e.g. unit ideal `[1]` is still a list — but `gbasis(...)` errors come back as bare strings) → `Bad argument value`.  Result Vector items lift through `giacToAst` + `_astToRplValue` (Names stay Names, numeric polynomials become Symbolic, scalar `1` lifts to `Real(1)`).  No-fallback policy. |
 
 ## Statistics
 
@@ -380,9 +394,8 @@ can be picked up as a group.
 
 | Command | Cluster | Priority | Notes |
 |---------|---------|----------|-------|
-| `GXROOT` | CAS | low | Variant of `GBASIS` extracting common roots — deferred until `GBASIS` itself ships (separate row not yet listed; `GREDUCE` shipped session 119 so the standalone-reduce path is live but `GBASIS` is still pending). |
+| `GXROOT` | CAS | low | Variant of `GBASIS` extracting common roots — `GBASIS` itself shipped session 124 and `GREDUCE` shipped session 119, so this is the last CAS Grœbner-family gap.  Giac's `gbasis` already returns the basis; `gxroot` is the common-root extractor that needs a separate wrapper. |
 | `JORDAN` `SCHUR` `LQD` | Matrix | low | Advanced decomps.  (`RSD` shipped session 119 — was previously grouped on this row.) |
-| `ACKER` `CTRB` `OBSV` | Matrix | low | Control-theory. |
 | `BARPLOT` `HISTPLOT` `SCATRPLOT` | graphics | ui-lane | (graphics — not in this lane) |
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
 | `POLYEVAL` `MULTMOD` | modular | low | Modular poly ops — `EUCLID` / `INVMOD` shipped session 076; these two remain (need MODULO state). |
@@ -411,6 +424,42 @@ If a user asks for one of these, the correct response is to point at
 
 Maintain chronologically, most recent first.
 
+- **session 124** (2026-04-24) — `LNAME` + `GBASIS` ship as two new ops,
+  plus a phantom-row retire.  `LNAME` (HP50 AUR §3-136) is a native AST
+  walker — no Giac dependency — that visits `Var` and `Fn` nodes,
+  treats user-defined function names (heads not in `KNOWN_FUNCTIONS`)
+  as names alongside variables, dedups in first-seen order, then sorts
+  length DESC then alpha ASC to match the AUR's worked example
+  `LNAME('COS(B)/2*A + MYFUNC(PQ) + 1/T') → [MYFUNC PQ A B T]`.  Pushes
+  the resulting Vector of Names without consuming the input.  Rejects
+  non-Symbolic with `Bad argument type`.  `GBASIS` (HP50 AUR §3-92)
+  wraps Giac `gbasis([polys],[vars])`: level 2 Vector of polynomials,
+  level 1 Vector of bare Names.  Reuses session-119 plumbing
+  (`_scalarToGiacStr`, `splitGiacList`, `_astToRplValue`, `giacToAst`)
+  and the `giac.isReady()` no-fallback gate.  Empty polys or empty
+  vars list → `Invalid dimension`; non-Vector args or non-Name in
+  vars → `Bad argument type`; non-list Giac output (caseval error
+  string) → `Bad argument value`.  Worked example: `[X^2+2*X*Y^2
+  X*Y+2*Y^3-1] [X Y] GBASIS → [X 2*Y^3-1]` (matches AUR p.3-92 with
+  the smaller basis first); the unit-ideal case `[X-1 X+1] [X]
+  GBASIS → [1]` lifts to a one-element Vector of `Real(1)` because
+  `_astToRplValue` lifts `Num(v)` to `Real`.  `register()` count
+  448 → 450 (+2).  2 rows newly shipped (✗ → ✓): `LNAME` (new row in
+  Polynomials / algebra), `GBASIS` (new row in CAS).  Phantom retire:
+  the `ACKER CTRB OBSV` row dropped from "Not yet supported" — all
+  three names return zero hits when run through `pdftotext` against
+  the HP50 AUR, User Guide, and User Manual, so they were never HP50
+  commands to begin with.  The `GXROOT` row's Notes column updated:
+  GBASIS now ships, so GXROOT is the last CAS Grœbner-family gap.
+  `register()` count 448 → 455 (+2 from this session, +5 from
+  intervening lanes since session 119).  +23 assertions in
+  `tests/test-algebra.mjs` (15 LNAME, 8 GBASIS).  4234 → 4257
+  passing (sanity 22, persist 34 unchanged).  See `logs/session-124.md`.  User-reachable keypress demo: at the
+  calculator web page (`http://localhost:8080`) type `'COS(B)/2*A +
+  MYFUNC(PQ) + 1/T'` ENTER then `LNAME` ENTER → level 2 holds the
+  original Symbolic, level 1 = `[MYFUNC PQ A B T]`; for GBASIS push
+  `[X^2+2*X*Y^2 X*Y+2*Y^3-1]` ENTER `[X Y]` ENTER then `GBASIS`
+  ENTER → `[X 2*Y^3-1]`.
 - **session 119** (2026-04-24) — `EGV` + `RSD` + `GREDUCE` ship as
   three new ops in the Matrix and CAS sections, plus a small lift to
   the shared `_astToRplValue` helper that benefits every Giac-backed
