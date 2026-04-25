@@ -123,7 +123,7 @@ export function snapshot(stack) {
     // CAS main variable (VX / SVX) survives a page reload.  Plain
     // string — no encoding helper needed.  Optional on decode (see
     // rehydrate below) so older snapshots predating this field still
-    // load cleanly and reset VX to the default `'X'`.
+    // load cleanly and reset VX to the default `'x'`.
     casVx: state.casVx,
     // CAS MODULO state slot (MODSTO / ADDTMOD / SUBTMOD / MULTMOD /
     // POWMOD).  BigInt → encoded as `{ __t: 'bigint', v: '<digits>' }`.
@@ -196,8 +196,16 @@ export function rehydrate(snap, stack) {
   // field reset VX to the default — matching what a fresh boot would
   // do.  Non-string / empty values are treated as "not present" so a
   // bad payload can't stash garbage into the slot.
+  //
+  // One-time migration: snapshots written before commit b227846
+  // ("everything lowercase by default") have casVx === 'X' baked in
+  // because that was the default at save time.  We rewrite that single
+  // pre-migration value to the new default 'x' so users who never
+  // explicitly ran SVX don't keep seeing the old uppercase.  Anyone
+  // who genuinely wants 'X' can re-run SVX after the upgrade.
   if (typeof snap.casVx === 'string' && snap.casVx.length > 0) {
-    try { setCasVx(snap.casVx); }
+    const incoming = snap.casVx === 'X' ? 'x' : snap.casVx;
+    try { setCasVx(incoming); }
     catch (e) { console.warn('hp50 persist: bad casVx, ignoring', e); resetCasVx(); }
   } else {
     resetCasVx();

@@ -338,6 +338,8 @@ export class SidePanel {
       </div>
       <div class="side-panel-filter">
         <input type="search" class="sp-filter" placeholder="Filter…" aria-label="Filter" />
+        <button type="button" class="sp-expand hidden"
+                title="Expand or collapse all sections">⊟ Collapse all</button>
         <button type="button" class="sp-sort hidden" title="Toggle sort">⇅ Newest</button>
       </div>
       <div class="side-panel-body" role="tabpanel"></div>
@@ -363,6 +365,14 @@ export class SidePanel {
       lbl.textContent = this.historySort === 'newest' ? '⇅ Newest' : '⇅ Oldest';
       this._render();
       this._saveUIState();
+    });
+
+    // Expand/collapse-all toggle (Commands tab only).  When ANY section
+    // is open the button collapses all; when all are closed it expands
+    // all.  Operates on the rendered DOM directly AND on the persisted
+    // _collapsedSections set so the choice survives re-renders + reloads.
+    panel.querySelector('.sp-expand').addEventListener('click', () => {
+      this._toggleAllSections();
     });
 
     // Delegated click for body items.
@@ -408,6 +418,9 @@ export class SidePanel {
     });
     // Sort toggle only relevant for History
     this.el.querySelector('.sp-sort').classList.toggle('hidden', tab !== 'history');
+    // Expand/collapse-all toggle only relevant for Commands (the only
+    // tab with category sections worth bulk-toggling).
+    this.el.querySelector('.sp-expand').classList.toggle('hidden', tab !== 'commands');
     // Clear the filter input when switching tabs so stale text from the
     // Commands filter doesn't hide every History entry.
     const filterInput = this.el.querySelector('.sp-filter');
@@ -429,6 +442,7 @@ export class SidePanel {
     else if (this.tab === 'history') body.appendChild(this._renderHistory(filter));
     else if (this.tab === 'files')   body.appendChild(this._renderFiles(filter));
     else body.appendChild(this._renderChars(filter));
+    this._refreshExpandLabel();
   }
 
   /** Build a collapsible `<details>` section with an `.sp-cat` header.
@@ -440,6 +454,7 @@ export class SidePanel {
     const collapsed = this._collapsedSections && this._collapsedSections.has(key);
     const section = document.createElement('details');
     section.className = 'sp-section';
+    section.dataset.sectionKey = key;
     if (!collapsed) section.open = true;
     const summary = document.createElement('summary');
     summary.className = 'sp-cat';
@@ -452,9 +467,36 @@ export class SidePanel {
     section.addEventListener('toggle', () => {
       if (section.open) this._collapsedSections.delete(key);
       else this._collapsedSections.add(key);
+      this._refreshExpandLabel();
       this._saveUIState();
     });
     return { section, grid };
+  }
+
+  /** Bulk expand/collapse every rendered section in the current tab.
+   *  Decides direction by the live DOM: if any section is open we
+   *  collapse all, otherwise we expand all.  Updates `_collapsedSections`
+   *  in lockstep so the choice survives a re-render. */
+  _toggleAllSections() {
+    const sections = this.el.querySelectorAll('.side-panel-body details.sp-section');
+    if (!sections.length) return;
+    const anyOpen = [...sections].some(d => d.open);
+    const expand = !anyOpen;
+    for (const d of sections) {
+      d.open = expand;                               // fires `toggle` → updates set
+    }
+    this._refreshExpandLabel();
+  }
+
+  /** Sync the expand/collapse-all button label with the live state of
+   *  the rendered sections.  Called after a render and after every
+   *  per-section toggle. */
+  _refreshExpandLabel() {
+    const btn = this.el.querySelector('.sp-expand');
+    if (!btn) return;
+    const sections = this.el.querySelectorAll('.side-panel-body details.sp-section');
+    const anyOpen = [...sections].some(d => d.open);
+    btn.textContent = anyOpen ? '⊟ Collapse all' : '⊞ Expand all';
   }
 
   _renderCommands(filter) {

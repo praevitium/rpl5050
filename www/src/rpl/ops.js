@@ -15220,7 +15220,8 @@ register('LNAME', (s) => {
    shape; no numeric evaluation.  Input non-Symbolic ⇒ Bad argument
    type.  Note that the HP50 firmware uses the CAS VX variable —
    we mirror that by picking the single free variable in the
-   input (fall back to `X` when the input is a constant). */
+   input (fall back to the current `getCasVx()` — default `x` — when
+   the input is a constant). */
 
 function _lapVarName(ast) {
   const vx = getCasVx();

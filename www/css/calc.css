@@ -793,7 +793,7 @@ body.sp-resizing {
   outline: none;
 }
 .sp-filter:focus { border-color: rgba(103, 232, 249, .5); }
-.sp-sort {
+.sp-sort, .sp-expand {
   background: #20242c;
   border: 1px solid #3a4252;
   color: #cdd3de;
@@ -801,9 +801,10 @@ body.sp-resizing {
   padding: 4px 8px;
   border-radius: 4px;
   cursor: pointer;
+  white-space: nowrap;
 }
-.sp-sort:hover { background: #2b313c; color: #fff; }
-.sp-sort.hidden { display: none; }
+.sp-sort:hover, .sp-expand:hover { background: #2b313c; color: #fff; }
+.sp-sort.hidden, .sp-expand.hidden { display: none; }
 
 .side-panel-body {
   flex: 1 1 auto;
