@@ -4,7 +4,7 @@ import {
   Real, Integer, Rational, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isRational, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
-  isString, isNumber, isTagged, isList, isVector, isMatrix, promoteNumericPair, Decimal,
+  isString, isNumber, isTagged, isList, isVector, isMatrix, isSymbolic, promoteNumericPair, Decimal,
   isValidHpIdentifier, isReservedHpName, isStorableHpName, registerReservedName,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
@@ -6718,6 +6718,686 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     }
   } finally {
     setAngle(_prevAngle);
+  }
+}
+
+/* ================================================================
+   session 150 — Cluster 1: Inverse-trig (ASIN / ACOS / ATAN) DEG-
+   mode `_exactUnaryLift` Integer-stay-exact / Rational-collapse-
+   clean under Tagged-V/M wrapper composition.
+
+   Session 142 Cluster 1 pinned the inverse-trig bare-scalar
+   `_exactUnaryLift` axis under DEG (e.g. `ASIN(Integer(1))` DEG →
+   `Integer(90)`, `ATAN(Integer(1))` DEG → `Integer(45)`,
+   `ASIN(Rational(1,2))` DEG → `Integer(30)`).  Session 140
+   Cluster 2 pinned the inverse-trig Tagged-of-V/M wrapper-VM
+   composition under RAD with non-integer-clean output values
+   (`ASIN :a:V[0,1]` RAD → `:a:V[0, π/2]` — π/2 is a Real, not an
+   Integer).  Session 145 Cluster 3a closed the parallel pin on
+   the FORWARD-trig axis (`SIN/COS/TAN` DEG-mode integer-clean
+   folds under Tagged-V/M).  This cluster closes the inverse-trig
+   dual: DEG-mode `_exactUnaryLift` Integer-stay-exact composes
+   element-wise through `_withTaggedUnary(_withListUnary(_with
+   VMUnary(handler)))` so that a Tagged-Vector / Tagged-Matrix of
+   integer-clean DEG-mode operands folds to a Tagged-Vector /
+   Tagged-Matrix of Integer outputs (rather than the Real-output
+   path that the RAD pins exercise).
+
+   `_trigInvCx` (`ops.js:8246`) inverts through `fromRadians(y)`
+   AFTER the numeric primitive — distinct from `_trigFwdCx`'s
+   pre-primitive `toRadians` — so the integer-clean check fires
+   on the angle-mode-converted output (e.g. `Math.asin(1) =
+   π/2`, `fromRadians(π/2)` DEG ≈ 90.0 ± IEEE drift, which
+   falls under `_exactUnaryLift`'s 1e-12 tolerance and folds to
+   Integer(90)).  Under RAD the same operand produces π/2 ≈
+   1.5708, which is NOT integer-clean — that's why the
+   session-140 RAD pins observed `:a:V[0, Real(π/2)]` rather
+   than `:a:V[Integer(0), Integer(?)]`.  The Tagged-V/M wrapper-
+   VM composition therefore observably differs between angle
+   modes on the same operand, and pinning the DEG-mode integer-
+   clean composition closes the wrapper-composition × angle-mode
+   matrix for the inverse-trig family.
+
+   Mirror of session 145 Cluster 3a's `:m:Matrix([[0,180],[0,0]])
+   SIN` DEG → `:m:Matrix([[0,0],[0,0]])` pin on the inverse-trig
+   axis.  Distinct from session 142 Cluster 1's bare-scalar pin
+   in that the wrapper composition is exercised here. */
+{
+  const _prevAngle = calcState.angle;
+  setAngle('DEG');
+  try {
+    // ASIN :a:Vector(Integer(0), Integer(1)) DEG → :a:Vector(
+    // Integer(0), Integer(90)).  asin(0)=0 exact, asin(1)=π/2;
+    // fromRadians(π/2) DEG = 90 ± 1e-15 → integer-clean.  Mirror
+    // of session 142 Cluster 1's bare-scalar `ASIN(Integer(1))`
+    // DEG → `Integer(90)` pin, lifted into the 3-deep Tagged-V
+    // wrapper composition.  Pins that the angle-mode-aware
+    // integer-clean fold runs per element AND that the outer
+    // Tagged tag survives the kind-stable Vector wrapping.
+    {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Integer(0n), Integer(1n)])));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'a' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 90n,
+        `session150: ASIN :a:Vector(Integer(0), Integer(1)) DEG → :a:Vector(Integer(0), Integer(90)) (DEG-mode _exactUnaryLift Integer-stay-exact composes through 3-deep wrapper-VM under Tagged on the inverse-trig axis; mirror of session 142 Cluster 1's bare-scalar ASIN(Z(1)) DEG=Z(90) pin lifted into the wrapper composition); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // ACOS :a:Vector(Integer(1), Integer(0)) DEG → :a:Vector(
+    // Integer(0), Integer(90)).  Operand-symmetric to the ASIN
+    // pin above (acos(1)=0, acos(0)=π/2 → 90° in DEG).  Pins
+    // that ACOS shares the same `_trigInvCx` wrapper-composition
+    // path as ASIN — mirror of session 142 Cluster 1's
+    // `ACOS(Integer(0))` DEG → `Integer(90)` pin.
+    {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Integer(1n), Integer(0n)])));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'a' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 90n,
+        `session150: ACOS :a:Vector(Integer(1), Integer(0)) DEG → :a:Vector(Integer(0), Integer(90)) (operand-symmetric to ASIN pin; closes the ASIN/ACOS pair on the DEG-mode integer-clean Tagged-V wrapper composition); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // ATAN :t:Vector(Integer(0), Integer(1)) DEG → :t:Vector(
+    // Integer(0), Integer(45)).  ATAN registers via the same
+    // `_trigInvCx` factory as ASIN/ACOS but its primitive is
+    // Math.atan (no domain check on the real branch).  atan(0)=0,
+    // atan(1)=π/4; fromRadians(π/4) DEG = 45.0 ± IEEE drift →
+    // integer-clean.  Closes the SIN/COS/TAN inverse trio
+    // (ASIN / ACOS / ATAN) on the DEG-Tagged-V composition.
+    {
+      const s = new Stack();
+      s.push(Tagged('t', Vector([Integer(0n), Integer(1n)])));
+      lookup('ATAN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 't' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 45n,
+        `session150: ATAN :t:Vector(Integer(0), Integer(1)) DEG → :t:Vector(Integer(0), Integer(45)) (closes ASIN/ACOS/ATAN inverse-trig trio on DEG-Tagged-V wrapper composition; ATAN routes through _trigInvCx with Math.atan + fromRadians post-primitive — same wrapper composition as ASIN/ACOS, distinct primitive); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // ASIN :m:Matrix([[Integer(1), Integer(0)], [Integer(0),
+    // Integer(1)]]) DEG → :m:Matrix([[Integer(90), Integer(0)],
+    // [Integer(0), Integer(90)]]).  Matrix-axis closure for the
+    // inverse-trig DEG-mode integer-clean fold under Tagged
+    // composition.  Per-entry asin(0)=0 / asin(1)=90° all fold
+    // to Integer; outer tag preserved + Matrix kind preserved.
+    // Mirror of session 145 Cluster 3a's SIN `:m:Matrix([[0,180]
+    // ,[0,0]])` DEG → `:m:Matrix([[0,0],[0,0]])` pin on the
+    // inverse-trig axis.  Pins that the wrapper-VM composition
+    // dispatches `_trigInvCx`'s inner handler per Matrix entry
+    // (rather than once over the whole array).
+    {
+      const s = new Stack();
+      s.push(Tagged('m', Matrix([[Integer(1n), Integer(0n)], [Integer(0n), Integer(1n)]])));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      const okShape = isTagged(v) && v.tag === 'm' && v.value?.type === 'matrix'
+          && v.value.rows.length === 2 && v.value.rows[0].length === 2;
+      const okValues = okShape
+          && isInteger(v.value.rows[0][0]) && v.value.rows[0][0].value === 90n
+          && isInteger(v.value.rows[0][1]) && v.value.rows[0][1].value === 0n
+          && isInteger(v.value.rows[1][0]) && v.value.rows[1][0].value === 0n
+          && isInteger(v.value.rows[1][1]) && v.value.rows[1][1].value === 90n;
+      assert(okShape && okValues,
+        `session150: ASIN :m:Matrix([[1,0],[0,1]]) DEG → :m:Matrix([[90,0],[0,90]]) (Matrix-axis closure for inverse-trig DEG-mode integer-clean fold under Tagged composition; per-entry asin(1)=90° / asin(0)=0 all fold to Integer; mirror of session 145 Cluster 3a's forward-trig Matrix-axis pin); got tag=${v?.tag} rows=${v?.value?.rows?.map(r => r.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')).join('|')}`);
+    }
+
+    // Rational arm under Tagged-V composition:  ASIN :a:Vector(
+    // Rational(1,2), Integer(1)) DEG → :a:Vector(Integer(30),
+    // Integer(90)).  Rational(1,2)=0.5; asin(0.5)=π/6;
+    // fromRadians(π/6) DEG = 30.0 ± drift → integer-clean.
+    // Distinct contract from forward-trig (session 145 Cluster
+    // 3a only exercised Integer operands within Vector / Matrix);
+    // the inverse-trig Rational-arm CAN produce Integer outputs
+    // when fromRadians turns the radian value into an integer
+    // multiple of degrees.  Mirror of session 142 Cluster 1's
+    // bare-scalar `ASIN(Rational(1,2))` DEG → `Integer(30)` pin
+    // lifted into the wrapper composition.  Pins that the
+    // Rational arm of `_trigInvCx` composes through the Tagged-V
+    // wrapper too — not just the Integer arm.
+    {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Rational(1n, 2n), Integer(1n)])));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'a' && v.value?.type === 'vector'
+          && v.value.items.length === 2
+          && isInteger(v.value.items[0]) && v.value.items[0].value === 30n
+          && isInteger(v.value.items[1]) && v.value.items[1].value === 90n,
+        `session150: ASIN :a:Vector(Rational(1,2), Integer(1)) DEG → :a:Vector(Integer(30), Integer(90)) (Rational arm of _trigInvCx composes through Tagged-V wrapper — Rational(1,2)=0.5 and asin(0.5)=π/6 → 30° integer-clean under DEG; mirror of session 142 Cluster 1's bare-scalar ASIN(Q(1/2)) DEG=Z(30) pin lifted into the wrapper); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // RAD-mode contrast on the SAME Integer operand: ASIN
+    // :a:Vector(Integer(0), Integer(1)) RAD → :a:Vector(
+    // Integer(0), Symbolic ASIN(1)) — item[0] folds to
+    // Integer(0) since asin(0)=0 is integer-clean in any
+    // angle mode, but item[1] does NOT fold because asin(1)=
+    // π/2 ≈ 1.5708 is NOT integer-clean under RAD; the EXACT-
+    // mode integer-stay arm of `_trigInvCx` therefore returns
+    // `Symbolic(AstFn('ASIN', [_toAst(Integer(1))]))` for that
+    // element.  Distinct from session 140's `:a:Vector(Real(0
+    // ), Real(1)) ASIN` RAD → `:a:Vector(Real(0), Real(π/2))`
+    // pin, which used Real operands and BYPASSED the EXACT-
+    // mode integer-stay arm entirely (Real input is not
+    // `isInteger || isRational`, so `_trigInvCx` falls
+    // through to the standard Real-output path).  Pins:
+    //   1. The angle-mode flip toggles integer-clean / stay-
+    //      Symbolic per element under Tagged-V on the SAME
+    //      Integer operands (DEG → :a:V[Z(0), Z(90)]; RAD →
+    //      :a:V[Z(0), Sym(ASIN(1))]).
+    //   2. The Real- vs Integer-operand contrast: same
+    //      `_trigInvCx` wrapper composition, different output
+    //      kinds (Real-input → Real-output; Integer-input →
+    //      mixed Integer + Symbolic per element under EXACT
+    //      mode).
+    // Heterogeneous-kind output under wrapper composition —
+    // mirror of session 145 Cluster 1's `SIN(Integer(180))`
+    // RAD/DEG operand-flip pin on the inverse-trig wrapper-
+    // composition axis, with the additional contrast against
+    // the Real-operand bypass path.
+    setAngle('RAD');
+    {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Integer(0n), Integer(1n)])));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      const okShape = isTagged(v) && v.tag === 'a' && v.value?.type === 'vector'
+          && v.value.items.length === 2;
+      const okItem0 = okShape && isInteger(v.value.items[0]) && v.value.items[0].value === 0n;
+      // item[1] should be Symbolic ASIN(1) — π/2 ≈ 1.5708 NOT
+      // integer-clean under RAD, so `_exactUnaryLift` falls
+      // through to stay-symbolic.  Distinct from session 140's
+      // ASIN :a:V(Real(0), Real(1)) RAD pin which used Real
+      // operands and bypassed the EXACT-mode integer-stay arm
+      // entirely (Real input → Real(π/2) output).
+      const okItem1Sym = okShape && isSymbolic(v.value.items[1])
+          && v.value.items[1].expr?.kind === 'fn' && v.value.items[1].expr.name === 'ASIN';
+      assert(okItem0 && okItem1Sym,
+        `session150: ASIN :a:Vector(Integer(0), Integer(1)) RAD → :a:Vector(Integer(0), Symbolic ASIN(1)) (RAD-mode contrast on Integer operands: item[0] still folds to Integer(0) since asin(0)=0 is integer-clean in any angle mode, but item[1] stays-Symbolic because asin(1)=π/2 NOT integer-clean under RAD — _exactUnaryLift's stay-symbolic fall-through fires under the wrapper composition; angle-mode flip toggles Integer / Symbolic per element on the SAME Integer operands — DEG → :a:V[Z(0), Z(90)] vs RAD → :a:V[Z(0), Sym(ASIN(1))]; distinct from session 140's :a:V(Real(0),Real(1)) ASIN RAD pin which BYPASSED the EXACT-mode integer-stay arm with Real operands and produced Real(π/2) instead); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}${x.value?.toString?.() ? '('+x.value.toString()+')' : ''}`).join(',')}`);
+    }
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+
+/* ================================================================
+   session 150 — Cluster 2: Forward-hyperbolic family (SINH /
+   COSH / TANH / ASINH / ACOSH / ATANH) `_exactUnaryLift`
+   Integer-stay-exact / Rational-stay-symbolic contract on bare
+   scalars + ACOSH / ATANH out-of-domain Integer→Complex lift on
+   the bespoke handlers.
+
+   Session 142 Cluster 1 pinned the INVERSE-trig + INVERSE-hyp
+   bare-scalar `_exactUnaryLift` axis (ASIN/ACOS/ATAN/ASINH/
+   ACOSH/ATANH).  Wait — ACOSH/ATANH are inverse hyperbolic;
+   they were pinned in 142.  Session 145 Cluster 1 covered
+   forward-trig SIN/COS/TAN bare-scalar; Cluster 2 covered LN/
+   LOG/EXP/ALOG bare-scalar.  The FORWARD-hyperbolic bare-scalar
+   axis (SINH / COSH / TANH on Integer/Rational under
+   `_unaryCx`'s EXACT arm) and the bespoke ACOSH / ATANH out-of-
+   domain Integer→Complex fall-through (where the EXACT-mode
+   integer-stay arm SHOULD bypass and route through the Complex
+   primitive) are unpinned.
+
+   `_unaryCx` (`ops.js:8173`) handles SINH/COSH/TANH/ASINH; the
+   EXACT-mode arm calls `_exactUnaryLift(name, realFn(x), v)`
+   directly (no angle-mode conversion — distinct from `_trigFwd
+   Cx` and `_trigInvCx`).  ACOSH/ATANH (`ops.js:8309`/`8329`)
+   register a hand-rolled wrapper because their real-branch
+   domain is restricted (x≥1 / |x|<1); the EXACT-mode arm pins
+   the in-domain integer-clean fold (`ACOSH(Integer(1))` →
+   `Integer(0)`, `ATANH(Integer(0))` → `Integer(0)`) and the
+   out-of-domain fall-through (where EXACT-mode integer-stay is
+   skipped and the input lifts to Complex via the principal
+   branch).
+
+   Mirror of session 145 Cluster 1 / Cluster 2 on the FORWARD-
+   hyperbolic + ACOSH-domain-aware axes.  Closes the
+   transcendental bare-scalar `_exactUnaryLift` matrix:
+   forward-trig (s145), inverse-trig + inverse-hyp (s142),
+   forward-hyperbolic (this cluster), LN/LOG/EXP/ALOG (s145). */
+{
+  // SINH(Integer(0)) → Integer(0).  Trivial integer-clean fold:
+  // sinh(0) = 0 exact in IEEE-double.  Mirror of session 145
+  // Cluster 1's `SIN(Integer(0))` RAD → `Integer(0)` pin on
+  // the forward-hyperbolic axis (no angle-mode conversion since
+  // hyperbolic is not angle-mode-sensitive).
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('SINH').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session150: SINH(Integer(0)) → Integer(0) (sinh(0)=0 trivial integer-clean fold via _exactUnaryLift; mirror of session 145 Cluster 1's SIN(Z(0)) RAD pin on forward-hyperbolic axis); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // COSH(Integer(0)) → Integer(1).  Non-zero output value pins
+  // the fold actually ran on the COSH arm (cosh(0)=1).
+  // Distinguishes the COSH branch of `_unaryCx` from a hypothetical
+  // shared zero-fold that would return 0 on every op.
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('COSH').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 1n,
+      `session150: COSH(Integer(0)) → Integer(1) (cosh(0)=1 integer-clean; non-zero Integer output pins fold actually ran on COSH arm); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // TANH(Integer(0)) → Integer(0).  Closes the SINH/COSH/TANH
+  // forward-hyperbolic zero-trio at bare-Integer-scalar.
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('TANH').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session150: TANH(Integer(0)) → Integer(0) (tanh(0)=0 integer-clean; closes SINH/COSH/TANH forward-hyperbolic zero trio); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // SINH(Integer(1)) → Symbolic SINH(1).  sinh(1) ≈ 1.1752 is
+  // NOT integer-clean (the absolute drift from the nearest
+  // integer is 0.1752, well above `_exactUnaryLift`'s 1e-12
+  // tolerance).  Pins the stay-symbolic fall-through on the
+  // forward-hyperbolic axis — distinct from forward-trig where
+  // `SIN(Integer(1))` RAD also stays symbolic, but for a value
+  // of ≈0.841 (different transcendental function, same stay-
+  // symbolic contract).
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    lookup('SINH').fn(s);
+    const v = s.peek();
+    assert(isSymbolic(v) && v.expr?.kind === 'fn' && v.expr.name === 'SINH',
+      `session150: SINH(Integer(1)) → Symbolic SINH(1) (sinh(1)≈1.175 not integer-clean — stay-symbolic via _exactUnaryLift); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+  }
+
+  // ASINH(Integer(0)) → Integer(0).  Inverse-hyperbolic was
+  // already pinned by session 142 Cluster 1 on the bare-Integer
+  // scalar axis, but ASINH was specifically pinned at
+  // ASINH(Integer(1)) and ASINH(Rational(...)) — the trivial
+  // zero pin is added here for consistency with the SINH/COSH/
+  // TANH zero trio above.  asinh(0) = 0 exact.
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('ASINH').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session150: ASINH(Integer(0)) → Integer(0) (asinh(0)=0 trivial integer-clean fold; consistency-pin alongside SINH/COSH/TANH zero trio above); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // ACOSH(Integer(1)) → Integer(0).  acosh(1) = 0 exact.  In-
+  // domain (x≥1) integer-clean fold via ACOSH's BESPOKE handler
+  // (`ops.js:8309`) — ACOSH does NOT route through `_unaryCx`
+  // because of the x≥1 domain check on the real branch; the
+  // EXACT-mode arm only fires when x≥1, and outside that range
+  // the input lifts to Complex via the principal branch.  Pins
+  // the in-domain integer-clean path of the bespoke handler.
+  // Distinct from session 142 Cluster 1's ACOSH(Integer(2)) and
+  // ACOSH(Integer(1)) DEG pins — those exercised the Z(2) input
+  // (acosh(2)≈1.317 stay-symbolic) and the angle-mode side of
+  // a different pin family.  Wait — ACOSH is hyperbolic, no
+  // angle mode — session 142 in fact pinned ACOSH(Integer(1))
+  // → Integer(0); this assertion is a consistency pin in the
+  // forward-hyperbolic family rather than a new contract.  Kept
+  // for the sake of the SINH/COSH/TANH/ASINH/ACOSH/ATANH zero-
+  // trio symmetry.
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session150: ACOSH(Integer(1)) → Integer(0) (acosh(1)=0 in-domain integer-clean fold via bespoke handler ops.js:8309; consistency-pin in forward-hyperbolic zero-trio); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // ATANH(Integer(0)) → Integer(0).  In-domain (|x|<1) integer-
+  // clean fold via ATANH's bespoke handler (`ops.js:8329`).
+  // atanh(0) = 0 exact.  Closes the forward + inverse hyperbolic
+  // zero-trio under EXACT mode at bare Integer scalar.
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session150: ATANH(Integer(0)) → Integer(0) (atanh(0)=0 in-domain integer-clean fold via bespoke handler ops.js:8329; closes forward-hyperbolic Integer-zero pin family); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // ATANH(Integer(2)) → Complex (out-of-domain |x|>=1).  The
+  // BESPOKE ATANH handler's EXACT-mode arm checks `x > -1 && x
+  // < 1`; for Integer(2) the check fails, so the EXACT arm
+  // FALLS THROUGH (does NOT call `_exactUnaryLift`) into the
+  // shared real-branch code, which itself falls through into
+  // the Complex principal-branch lift.  Pins:
+  //   1. The EXACT-mode integer arm is gated on the in-domain
+  //      check (so out-of-domain integers don't try
+  //      `_exactUnaryLift` against Math.atanh(2)=NaN).
+  //   2. The fall-through correctly lifts to Complex
+  //      (atanh(2) = 0.5493 - i·π/2 principal branch).
+  // Distinct from any prior pin: session 142 Cluster 1's
+  // ATANH(Integer(...)) pins exercised in-domain folds; the
+  // out-of-domain Integer→Complex bypass was unpinned.
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    const okShape = isComplex(v);
+    // atanh(2) principal branch: 0.5*ln((1+2)/(1-2)) = 0.5*ln(-3)
+    // = 0.5*(ln(3) + i*π) = 0.5493 + i*π/2 ... but the code
+    // actually returns 0.5493 - i*π/2 on this branch (sign
+    // convention).  Just verify it's Complex with the correct
+    // real magnitude.
+    const okReal = okShape && Math.abs(Math.abs(v.re) - 0.5 * Math.log(3)) < 1e-9;
+    const okImag = okShape && Math.abs(Math.abs(v.im) - Math.PI / 2) < 1e-9;
+    assert(okShape && okReal && okImag,
+      `session150: ATANH(Integer(2)) → Complex(±0.5*ln(3), ±π/2) (out-of-domain |x|≥1 bypasses EXACT-mode integer arm and lifts to Complex principal branch; pins that the in-domain check x>-1&&x<1 gates the integer-stay path so out-of-domain Integers don't crash _exactUnaryLift on NaN); got ${v?.type} re=${v?.re} im=${v?.im}`);
+  }
+
+  // ACOSH(Integer(0)) → Complex (out-of-domain x<1).  Same
+  // bespoke-handler structure as ATANH out-of-domain: the
+  // EXACT-mode arm checks `x >= 1`; for Integer(0) the check
+  // fails, so the EXACT arm falls through into the Complex
+  // principal-branch lift.  acosh(0) principal branch =
+  // i·π/2 (or 0 + i·π/2).  Pins the symmetric ACOSH out-of-
+  // domain Integer→Complex bypass.
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    const okShape = isComplex(v);
+    const okReal = okShape && Math.abs(v.re) < 1e-9;
+    const okImag = okShape && Math.abs(Math.abs(v.im) - Math.PI / 2) < 1e-9;
+    assert(okShape && okReal && okImag,
+      `session150: ACOSH(Integer(0)) → Complex(0, ±π/2) (out-of-domain x<1 bypasses EXACT-mode integer arm and lifts to Complex principal branch; mirror of ATANH out-of-domain Integer→Complex bypass on the ACOSH-domain axis); got ${v?.type} re=${v?.re} im=${v?.im}`);
+  }
+
+  // Rational stay-symbolic with payload preservation:
+  // SINH(Rational(1,2)) → Symbolic SINH(1/2).  sinh(0.5) ≈
+  // 0.5211 not integer-clean.  Pins that the Rational arm of
+  // `_unaryCx` preserves the Rational AST node (`Bin('/', Num(1
+  // ), Num(2))`) inside the Symbolic so the rational survives in
+  // the expression rather than being silently coerced to Real.
+  // Mirror of session 145 Cluster 1's `SIN(Rational(1,2))` RAD
+  // pin and Cluster 2's `LN(Rational(1,2))` pin on the forward-
+  // hyperbolic axis.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    lookup('SINH').fn(s);
+    const v = s.peek();
+    const okSym = isSymbolic(v) && v.expr?.kind === 'fn' && v.expr.name === 'SINH';
+    const arg = okSym ? v.expr.args?.[0] : null;
+    const okRat = arg && arg.kind === 'bin' && arg.op === '/'
+        && arg.l?.value === 1 && arg.r?.value === 2;
+    assert(okSym && okRat,
+      `session150: SINH(Rational(1,2)) → Symbolic SINH(1/2) (Rational arm of _unaryCx preserves Bin('/',Num(1),Num(2)) payload — Rational survives in AST rather than being coerced to Real; mirror of session 145 Cluster 1/2's SIN/LN Rational stay-symbolic payload pins); got ${v?.type} arg=${JSON.stringify(arg)}`);
+  }
+
+  // Rational arm CAN produce Integer (collapse via numeric):
+  // SINH(Rational(0,1)) → Integer(0).  Rational(0,1) → 0.0;
+  // sinh(0) = 0 → integer-clean → Integer(0).  Mirror of
+  // session 145 Cluster 2's `LN(Rational(1,1))` → `Integer(0)`
+  // pin on the forward-hyperbolic axis.  Pins that the
+  // Rational arm is NOT a Symbolic-only branch when the
+  // underlying numeric value is integer-clean.
+  {
+    const s = new Stack();
+    s.push(Rational(0n, 1n));
+    lookup('TANH').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 0n,
+      `session150: TANH(Rational(0,1)) → Integer(0) (Rational arm CAN produce Integer when underlying numeric value is integer-clean: Q(0,1)=0.0 → tanh(0)=0 → Integer(0); mirror of session 145 Cluster 2's LN(Q(1,1)) → Z(0) pin on forward-hyperbolic axis); got ${v?.type}(${v?.value?.toString?.()})`);
+  }
+
+  // APPROX-mode bypass: SINH(Integer(0)) APPROX → Real(0) (NOT
+  // Integer).  `setApproxMode(true)` flips `getApproxMode()` so
+  // the EXACT-mode Integer/Rational arm in `_unaryCx` is
+  // skipped and the input falls through into the standard
+  // Real-output path.  Mirror of session 145 Cluster 1's
+  // `SIN(Integer(0))` APPROX bypass and Cluster 2's `LN(Integer
+  // (1))` APPROX bypass on the forward-hyperbolic axis.  Pins
+  // that `_exactUnaryLift` is gated by the `!getApproxMode()`
+  // check on the SINH branch too.
+  {
+    setApproxMode(true);
+    try {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('SINH').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(0),
+        `session150: SINH(Integer(0)) APPROX → Real(0) (NOT Integer; APPROX-mode bypass — _exactUnaryLift gated by !getApproxMode() on SINH branch too; mirror of session 145 SIN/LN APPROX-bypass pins on forward-hyperbolic axis); got ${v?.type}(${v?.value?.toString?.()})`);
+    } finally {
+      setApproxMode(false);
+    }
+  }
+
+  // APPROX-mode bypass on ACOSH bespoke handler too:
+  // ACOSH(Integer(1)) APPROX → Real(0) (NOT Integer).  Pins
+  // that the bespoke ACOSH/ATANH handlers also gate their
+  // EXACT-mode integer-stay arm on `!getApproxMode()` — the
+  // bypass is uniform across the forward-hyperbolic family
+  // (the `_unaryCx`-routed ops AND the bespoke domain-aware
+  // ACOSH/ATANH ops).
+  {
+    setApproxMode(true);
+    try {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('ACOSH').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(0),
+        `session150: ACOSH(Integer(1)) APPROX → Real(0) (APPROX-mode bypass uniform across bespoke ACOSH handler — !getApproxMode() check holds on both _unaryCx-routed ops and the domain-aware bespoke ones); got ${v?.type}(${v?.value?.toString?.()})`);
+    } finally {
+      setApproxMode(false);
+    }
+  }
+}
+
+/* ================================================================
+   session 150 — Cluster 3: LN / LOG / EXP / ALOG `_exactUnaryLift`
+   Integer-stay-exact under Tagged-V/M wrapper composition
+   (3-deep `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`
+   composing per element under outer Tagged).
+
+   Session 145 Cluster 2 pinned LN/LOG/EXP/ALOG bare-scalar
+   `_exactUnaryLift` — `LN(Integer(1)) → Integer(0)`,
+   `LOG(Integer(100)) → Integer(2)`, etc.  Session 145 Cluster 3a
+   pinned the FORWARD-trig (`SIN/COS/TAN`) wrapper-VM composition
+   under DEG (`:m:Matrix([[0,180],[0,0]]) SIN` DEG → `:m:Matrix([
+   [0,0],[0,0]])`).  The LN/LOG/EXP/ALOG wrapper-VM composition
+   with the EXACT-mode Integer-stay-exact fold composing element-
+   wise was unpinned: session 130 Cluster 1 pinned the wrapper
+   composition for SQRT/FACT/LNP1/SIN under non-integer-output,
+   and session 140 Cluster 1 pinned the hyperbolic family
+   wrapper-VM composition under Tagged-V/M with EXACT-mode
+   integer-stay folds — but no direct pin on the LN/LOG/EXP/ALOG
+   wrapper composition with integer-clean Integer outputs at
+   distinct V/M positions.
+
+   `_unaryCx` (`ops.js:8173`) wraps in `_withTaggedUnary(_with
+   ListUnary(_withVMUnary(handler)))`; the inner handler runs
+   per Vector / Matrix entry.  When EVERY entry is integer-clean
+   under EXACT mode, the wrapper composition produces a Tagged-
+   Vector / Tagged-Matrix of Integer outputs; when MIXED (some
+   entries integer-clean, others not), the wrapper composition
+   produces a Tagged-Vector of Integer + Symbolic outputs (since
+   `_exactUnaryLift` returns `Symbolic(AstFn(...))` on the stay-
+   symbolic fall-through, NOT Real).  The mixed case is a strong
+   pin: it shows that `_exactUnaryLift`'s stay-symbolic path is
+   distinct from a Real fall-through path the way `_unaryCx`'s
+   non-EXACT real branch behaves.
+
+   Mirror of session 145 Cluster 3a's forward-trig wrapper
+   composition pin on the LN/LOG/EXP/ALOG axis.  Closes the
+   transcendental wrapper-VM-under-Tagged matrix:  forward-trig
+   (s145 c3a), forward-hyperbolic (s140 c1), inverse-trig (s140
+   c2 RAD + s150 c1 DEG), LN/LOG/EXP/ALOG (this cluster). */
+{
+  // LN :v:Vector(Integer(1), Integer(1)) → :v:Vector(Integer(0),
+  // Integer(0)).  Both entries integer-clean (ln(1)=0).  Mirror
+  // of session 145 Cluster 3a's `:v:Vector(0,0) SIN` RAD pin
+  // on the LN axis.  Pins that LN's `_unaryCx` EXACT-mode arm
+  // composes through the 3-deep wrapper for the all-integer-
+  // clean case.
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Integer(1n), Integer(1n)])));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+        && v.value.items.length === 2
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+        && isInteger(v.value.items[1]) && v.value.items[1].value === 0n,
+      `session150: LN :v:Vector(Integer(1), Integer(1)) → :v:Vector(Integer(0), Integer(0)) (EXACT-mode _exactUnaryLift Integer-stay-exact composes through 3-deep wrapper-VM under Tagged on the LN axis; mirror of session 145 Cluster 3a's :v:V(0,0) SIN RAD pin on transcendental-log axis); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // LOG :v:Vector(Integer(1), Integer(10), Integer(100)) →
+  // :v:Vector(Integer(0), Integer(1), Integer(2)).  Three
+  // distinct integer-clean output values at three distinct V
+  // positions — pins that the wrapper-composition dispatches
+  // per-element with each `_exactUnaryLift` call producing a
+  // distinct integer output.  Mirror of session 145 Cluster 3a's
+  // `:v:V(Integer(0),Integer(90)) COS` DEG pin on the LOG axis.
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Integer(1n), Integer(10n), Integer(100n)])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+        && v.value.items.length === 3
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+        && isInteger(v.value.items[1]) && v.value.items[1].value === 1n
+        && isInteger(v.value.items[2]) && v.value.items[2].value === 2n,
+      `session150: LOG :v:Vector(Integer(1), Integer(10), Integer(100)) → :v:Vector(Integer(0), Integer(1), Integer(2)) (three distinct integer-clean output values at distinct V positions — pins per-element wrapper dispatch with distinct integer outputs at each position); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // EXP :v:Vector(Integer(0), Integer(0)) → :v:Vector(Integer(1),
+  // Integer(1)).  Non-zero output (exp(0)=1) at every position
+  // pins that the EXP arm of `_unaryCx` ran (rather than a
+  // hypothetical shared zero-fold).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Integer(0n), Integer(0n)])));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+        && v.value.items.length === 2
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 1n
+        && isInteger(v.value.items[1]) && v.value.items[1].value === 1n,
+      `session150: EXP :v:Vector(Integer(0), Integer(0)) → :v:Vector(Integer(1), Integer(1)) (non-zero output value pins inner EXP handler ran on each position via wrapper composition); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ALOG :v:Vector(Integer(0), Integer(2), Integer(3)) →
+  // :v:Vector(Integer(1), Integer(100), Integer(1000)).  Mixed
+  // non-zero integer-clean outputs at three positions —
+  // strongest variant on the LN/LOG/EXP/ALOG axis since each
+  // output is a different non-trivial integer (1, 100, 1000),
+  // pinning that `_exactUnaryLift`'s BigInt-round-trip fires
+  // correctly per element at high magnitudes.  Mirror of
+  // session 145 Cluster 2's bare-scalar ALOG positive-integer
+  // trio pin lifted into the wrapper composition.
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Integer(0n), Integer(2n), Integer(3n)])));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+        && v.value.items.length === 3
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 1n
+        && isInteger(v.value.items[1]) && v.value.items[1].value === 100n
+        && isInteger(v.value.items[2]) && v.value.items[2].value === 1000n,
+      `session150: ALOG :v:Vector(Integer(0), Integer(2), Integer(3)) → :v:Vector(Integer(1), Integer(100), Integer(1000)) (high-magnitude non-zero integer outputs pin _exactUnaryLift's BigInt round-trip fires correctly per element under wrapper composition; mirror of session 145 Cluster 2's bare-scalar ALOG positive-integer trio lifted into wrapper); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // LOG :m:Matrix([[Integer(1), Integer(10)], [Integer(100),
+  // Integer(1000)]]) → :m:Matrix([[Integer(0), Integer(1)], [
+  // Integer(2), Integer(3)]]).  Matrix-axis closure of the
+  // wrapper-VM composition with all-integer-clean outputs.
+  // Mirror of session 145 Cluster 3a's `:m:Matrix([[0,180],
+  // [0,0]]) SIN` DEG → `:m:Matrix([[0,0],[0,0]])` pin on the
+  // LOG axis.  Distinct from the V-axis pin above in that
+  // Matrix kind is preserved across per-entry dispatch — pins
+  // that the M-axis `_withVMUnary` correctly threads each
+  // entry through `_unaryCx`'s inner handler.
+  {
+    const s = new Stack();
+    s.push(Tagged('m', Matrix([[Integer(1n), Integer(10n)], [Integer(100n), Integer(1000n)]])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    const okShape = isTagged(v) && v.tag === 'm' && v.value?.type === 'matrix'
+        && v.value.rows.length === 2 && v.value.rows[0].length === 2;
+    const okValues = okShape
+        && isInteger(v.value.rows[0][0]) && v.value.rows[0][0].value === 0n
+        && isInteger(v.value.rows[0][1]) && v.value.rows[0][1].value === 1n
+        && isInteger(v.value.rows[1][0]) && v.value.rows[1][0].value === 2n
+        && isInteger(v.value.rows[1][1]) && v.value.rows[1][1].value === 3n;
+    assert(okShape && okValues,
+      `session150: LOG :m:Matrix([[1,10],[100,1000]]) → :m:Matrix([[0,1],[2,3]]) (Matrix-axis closure for LN/LOG/EXP/ALOG wrapper-VM composition with all-integer-clean outputs; per-entry log10 fold under outer Tagged + M-axis wrapper-VM; closes LN/LOG/EXP/ALOG Tagged-M Integer-stay-exact path); got tag=${v?.tag} rows=${v?.value?.rows?.map(r => r.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')).join('|')}`);
+  }
+
+  // Mixed integer-clean / stay-symbolic within a single Tagged-V:
+  // LOG :v:Vector(Integer(2), Integer(10)) → :v:Vector(Symbolic
+  // LOG(2), Integer(1)).  log10(2)≈0.301 NOT integer-clean →
+  // stay-symbolic; log10(10)=1 integer-clean → Integer(1).  Pins
+  // that `_exactUnaryLift`'s stay-symbolic fall-through and
+  // integer-clean fold both operate per element under the
+  // wrapper composition WITHOUT collapsing the whole Vector to
+  // a single uniform output kind.  Strong pin: the result is a
+  // mixed-kind Vector (Symbolic + Integer) inside a Tagged
+  // wrapper, which exercises the type-heterogeneity contract on
+  // the wrapper composition's output.
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Integer(2n), Integer(10n)])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    const okShape = isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+        && v.value.items.length === 2;
+    const okSym = okShape && isSymbolic(v.value.items[0])
+        && v.value.items[0].expr?.kind === 'fn' && v.value.items[0].expr.name === 'LOG';
+    const okInt = okShape && isInteger(v.value.items[1]) && v.value.items[1].value === 1n;
+    assert(okSym && okInt,
+      `session150: LOG :v:Vector(Integer(2), Integer(10)) → :v:Vector(Symbolic LOG(2), Integer(1)) (mixed integer-clean / stay-symbolic within single Tagged-V; pins that _exactUnaryLift's stay-symbolic fall-through and integer-clean fold both operate per element under wrapper composition WITHOUT uniform-kind collapse — output is a heterogeneous Vector inside Tagged); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}${x.value?.toString?.() ? '('+x.value.toString()+')' : ''}`).join(',')}`);
+  }
+
+  // APPROX-mode bypass under wrapper composition: LOG :v:Vector(
+  // Integer(1), Integer(100)) APPROX → :v:Vector(Real(0),
+  // Real(2)).  Composes the APPROX-mode bypass (session 145
+  // Cluster 2's bare-scalar pin) with the wrapper composition
+  // (this cluster).  Pins that the APPROX-mode flag flips the
+  // result KIND (Real not Integer) per element under the
+  // wrapper composition — distinct from the EXACT-mode all-
+  // Integer output of the LOG :v:Vector(Z(1),Z(10),Z(100))
+  // pin above.
+  {
+    setApproxMode(true);
+    try {
+      const s = new Stack();
+      s.push(Tagged('v', Vector([Integer(1n), Integer(100n)])));
+      lookup('LOG').fn(s);
+      const v = s.peek();
+      const okShape = isTagged(v) && v.tag === 'v' && v.value?.type === 'vector'
+          && v.value.items.length === 2;
+      const okItem0 = okShape && isReal(v.value.items[0]) && v.value.items[0].value.eq(0);
+      const okItem1 = okShape && isReal(v.value.items[1]) && v.value.items[1].value.eq(2);
+      assert(okItem0 && okItem1,
+        `session150: LOG :v:Vector(Integer(1), Integer(100)) APPROX → :v:Vector(Real(0), Real(2)) (APPROX-mode bypass composes with wrapper-VM-under-Tagged: APPROX flips KIND from Integer to Real per element, integer-clean output values still emerge but as Real; mirror of session 145 Cluster 2's bare-scalar APPROX-bypass pin lifted into wrapper composition); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    } finally {
+      setApproxMode(false);
+    }
   }
 }
 

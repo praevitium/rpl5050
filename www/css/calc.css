@@ -966,7 +966,18 @@ body.sp-resizing {
   flex-direction: column;
   gap: 3px;
 }
+/* A row holds the main name button plus inline action buttons
+   (download / move / delete).  The action buttons are siblings —
+   nesting <button> inside .sp-file would be invalid HTML and would
+   break event delegation. */
+.sp-file-row {
+  display: flex;
+  gap: 3px;
+  align-items: stretch;
+}
 .sp-file {
+  flex: 1 1 auto;
+  min-width: 0;            /* let the label shrink + ellipsis */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1001,6 +1012,37 @@ body.sp-resizing {
   text-transform: uppercase;
 }
 .sp-file-dir .sp-file-type { color: #9aa8c4; }
+
+/* Inline action buttons on each Files row.  Match the height of the
+   main .sp-file via stretch alignment so the row reads as one unit;
+   keep them narrow so the variable name still owns the row. */
+.sp-file-act {
+  flex: 0 0 auto;
+  width: 26px;
+  background: #2a2f3d;
+  border: 1px solid #3a4252;
+  color: #9aa3b5;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: center;
+}
+.sp-file-act:hover {
+  background: #353b4c;
+  border-color: #4e586d;
+  color: #e7ebf2;
+}
+.sp-file-act:active { background: #1f2330; }
+/* Delete carries the destructive accent on hover so an accidental
+   click is at least visually flagged before it lands. */
+.sp-file-act-del:hover {
+  background: #4a2a30;
+  border-color: #7a3a40;
+  color: #ffd0d4;
+}
 
 /* Short viewports — drop some vertical padding so keys fit. */
 @media (max-height: 640px) {

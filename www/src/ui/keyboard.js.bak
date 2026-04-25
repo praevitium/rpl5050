@@ -19,9 +19,8 @@
    from the HP 50g — the real hardware prints UPPERCASE alpha labels
    and defaults to uppercase typing.  We default to lowercase instead,
    matching how a modern user expects a PC-style keyboard to behave.
-   Op lookup is case-insensitive (ops.js `lookup` upper-cases the name
-   before consulting the registry), so `sin` typed in alpha mode and
-   `SIN` typed via the SIN function key both dispatch the same op.
+   Op lookup is case-insensitive on the entry path so `sin` and `SIN`
+   both resolve to the SIN op (see ops.js _resolveOpName).
 
    A "shift state" is tracked so subsequent key presses pick up the
    shifted function.  Shift keys auto-clear after one non-shift press.
@@ -77,12 +76,12 @@ const typeExecName = op =>          (e) => e.typeOrExecName(op);
 
 /* --------------------- Row 1: soft-menu keys (6) --------------------- */
 export const SOFT_KEYS = [
-  mk('F1', { alpha: 'a', className: 'menu', action: (e, s, app) => app.pressSoftKey(0) }),
-  mk('F2', { alpha: 'b', className: 'menu', action: (e, s, app) => app.pressSoftKey(1) }),
-  mk('F3', { alpha: 'c', className: 'menu', action: (e, s, app) => app.pressSoftKey(2) }),
-  mk('F4', { alpha: 'd', className: 'menu', action: (e, s, app) => app.pressSoftKey(3) }),
-  mk('F5', { alpha: 'e', className: 'menu', action: (e, s, app) => app.pressSoftKey(4) }),
-  mk('F6', { alpha: 'f', className: 'menu', action: (e, s, app) => app.pressSoftKey(5) }),
+  mk('F1', { alpha: 'A', className: 'menu', action: (e, s, app) => app.pressSoftKey(0) }),
+  mk('F2', { alpha: 'B', className: 'menu', action: (e, s, app) => app.pressSoftKey(1) }),
+  mk('F3', { alpha: 'C', className: 'menu', action: (e, s, app) => app.pressSoftKey(2) }),
+  mk('F4', { alpha: 'D', className: 'menu', action: (e, s, app) => app.pressSoftKey(3) }),
+  mk('F5', { alpha: 'E', className: 'menu', action: (e, s, app) => app.pressSoftKey(4) }),
+  mk('F6', { alpha: 'F', className: 'menu', action: (e, s, app) => app.pressSoftKey(5) }),
 ];
 
 /* --------- Rows 2-3: nav/app keys (6) + 4-way arrow diamond --------- */
@@ -95,12 +94,12 @@ export const SOFT_KEYS = [
 // STO/RCL invoke their namesake ops, PREV/NEXT page the soft-menu.
 // The MODES soft-menu is reachable via the side-panel Commands tab.)
 export const NAV_KEYS = [
-  mk('VARS', { alpha: 'g', action: (e, s, app) => app.showVarsMenu() }),
-  mk('PREV', { alpha: 'h', action: (e, s, app) => app.prevMenuPage() }),
-  mk('NEXT', { alpha: 'i', action: (e, s, app) => app.nextMenuPage() }),
-  mk('HOME', { alpha: 'j', action: typeExecName('HOME') }),
-  mk('STO',  { alpha: 'k', action: typeExecName('STO') }),
-  mk('RCL',  { alpha: 'l', action: typeExecName('RCL') }),
+  mk('VARS', { alpha: 'G', action: (e, s, app) => app.showVarsMenu() }),
+  mk('PREV', { alpha: 'H', action: (e, s, app) => app.prevMenuPage() }),
+  mk('NEXT', { alpha: 'I', action: (e, s, app) => app.nextMenuPage() }),
+  mk('HOME', { alpha: 'J', action: typeExecName('HOME') }),
+  mk('STO',  { alpha: 'K', action: typeExecName('STO') }),
+  mk('RCL',  { alpha: 'L', action: typeExecName('RCL') }),
 ];
 
 // Arrow-diamond cluster — 4 keys, positioned N/S/E/W by className
@@ -176,17 +175,17 @@ export const MAIN_KEYS = [
   //                              people reach for; shift-L is REDO so
   //                              the reverse is right there too.)
   //   ⌫:     DEL   / CLEAR      (delete / clear stack)
-  mk('LASTARG', { alpha: 'm', action: typeExecName('LASTARG') }),
+  mk('LASTARG', { alpha: 'M', action: typeExecName('LASTARG') }),
   // EVAL has no shift-L/R actions — PRG keywords and the char palette
   // both live in the side panel.  Unshifted EVAL runs the EVAL op.
-  mk('EVAL',  { alpha: 'n', action: typeExecName('EVAL') }),
+  mk('EVAL',  { alpha: 'N', action: typeExecName('EVAL') }),
   // ` key — backtick-quote (primary), this app's remap of the HP50 `'`
   // key.  Backticks open/close algebraic entry; a literal `'` is typed
   // via the shift-R on the `3` digit key.  Shift affordances stay as
   // HP50 had them on the original tick key:
   //   shift-L  i   imaginary-unit constant (for Complex literals)
   //   shift-R  |   the "where" substitution operator (``X+1 | X=5``)
-  mk('`',     { alpha: 'o', shiftL: 'i', shiftR: '|',
+  mk('`',     { alpha: 'O', shiftL: 'i', shiftR: '|',
                 action:       type('`'),
                 shiftLAction: type('i'),
                 shiftRAction: type('|') }),
@@ -197,7 +196,7 @@ export const MAIN_KEYS = [
   // their name as a token so the user can build a program that calls
   // UNDO / REDO; on a bare line they jump straight to performUndo /
   // performRedo which walk the multi-level history cleanly.
-  mk('UNDO',  { alpha: 'p', shiftL: 'REDO',
+  mk('UNDO',  { alpha: 'P', shiftL: 'REDO',
                 action: (e) => {
                   if (e.isEditing()) { e.type('UNDO '); return; }
                   try { e.performUndo(); } catch (err) { e.flashError(err); }
@@ -222,7 +221,7 @@ export const MAIN_KEYS = [
   //   COS:  ACOS  / ∂           (arccos / partial derivative — CAS)
   //   TAN:  ATAN  / ∫           (arctan / integral — CAS)
   // Hyperbolics live in the MTH menu, NOT on these keys.
-  mk('yˣ',  { alpha: 'q', shiftL: 'eˣ',   shiftR: 'LN',
+  mk('yˣ',  { alpha: 'Q', shiftL: 'eˣ',   shiftR: 'LN',
               action: typeExec('^', '^'),
               shiftLAction: typeExecFn('EXP'),
               shiftRAction: typeExecFn('LN') }),
@@ -230,17 +229,17 @@ export const MAIN_KEYS = [
   // path yet — ⁿ√y has no textual glyph in our parser, so the key
   // only makes sense on two stack numbers.  User presses `y ENTER
   // x ⁿ√y` to get the x-th root of y.
-  mk('√x',  { alpha: 'r', shiftL: 'x²',   shiftR: 'ⁿ√y',
+  mk('√x',  { alpha: 'R', shiftL: 'x²',   shiftR: 'ⁿ√y',
               action:       typeExecFn('SQRT'),
               shiftLAction: typeExecFn('SQ'),
               shiftRAction: typeExecFn('XROOT') }),
-  mk('SIN', { alpha: 's', shiftL: 'ASIN', shiftR: 'Σ',
+  mk('SIN', { alpha: 'S', shiftL: 'ASIN', shiftR: 'Σ',
               action: typeExecFn('SIN'), shiftLAction: typeExecFn('ASIN'),
               shiftRAction: typeExecFn('SUM') }),
-  mk('COS', { alpha: 't', shiftL: 'ACOS', shiftR: '∂',
+  mk('COS', { alpha: 'T', shiftL: 'ACOS', shiftR: '∂',
               action: typeExecFn('COS'), shiftLAction: typeExecFn('ACOS'),
               shiftRAction: typeExecFn('DERIV') }),
-  mk('TAN', { alpha: 'u', shiftL: 'ATAN', shiftR: '∫',
+  mk('TAN', { alpha: 'U', shiftL: 'ATAN', shiftR: '∫',
               action: typeExecFn('TAN'), shiftLAction: typeExecFn('ATAN'),
               shiftRAction: typeExecFn('INTEG') }),
 
@@ -251,30 +250,29 @@ export const MAIN_KEYS = [
   //   X:    ≤     / <
   //   1/x:  ≥     / >
   //   ÷:    ABS   / ARG         (magnitude / argument of complex)
-  mk('EEX', { alpha: 'v', shiftL: '10ˣ', shiftR: 'LOG',
+  mk('EEX', { alpha: 'V', shiftL: '10ˣ', shiftR: 'LOG',
               action: eex, shiftLAction: typeExecFn('ALOG'),
               shiftRAction: typeExecFn('LOG') }),
   // +/- shift-L ≠ types '≠' inside '…' or runs the ≠ op on the
   // stack.  Same typeExec pattern that +,−,×,÷ already use for
   // algebraic reroute.
-  mk('+/-', { alpha: 'w', shiftL: '≠',   shiftR: '=',
+  mk('+/-', { alpha: 'W', shiftL: '≠',   shiftR: '=',
               action:       chs,
               shiftLAction: typeExec('≠', '≠'),
               shiftRAction: type(' = ') }),
-  // x key: unshifted types the letter x; shift-L ≤ and shift-R <
+  // X key: unshifted types the letter X; shift-L ≤ and shift-R <
   // route through typeExec so they either type the character into an
   // algebraic entry or run the comparison on the stack.  Same for
-  // 1/x on the next row (≥ / >).  Primary label is lowercase to match
-  // the lowercase-default keyboard convention (see header comment).
-  mk('x',   { alpha: 'x', shiftL: '≤',   shiftR: '<',
-              action:       type('x'),
+  // 1/x on the next row (≥ / >).
+  mk('X',   { alpha: 'X', shiftL: '≤',   shiftR: '<',
+              action:       type('X'),
               shiftLAction: typeExec('≤', '≤'),
               shiftRAction: typeExec('<', '<') }),
-  mk('1/x', { alpha: 'y', shiftL: '≥',   shiftR: '>',
+  mk('1/x', { alpha: 'Y', shiftL: '≥',   shiftR: '>',
               action:       typeExecFn('INV'),
               shiftLAction: typeExec('≥', '≥'),
               shiftRAction: typeExec('>', '>') }),
-  mk('÷',   { alpha: 'z', shiftL: 'ABS', shiftR: 'ARG',
+  mk('÷',   { alpha: 'Z', shiftL: 'ABS', shiftR: 'ARG',
               action: typeExec('/', '/'),
               shiftLAction: typeExecFn('ABS'),
               shiftRAction: typeExecFn('ARG') }),

@@ -5,7 +5,104 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 145 (2026-04-25) — three more hard-assertion
+**Last updated.** Session 150 (2026-04-25) — three more hard-assertion
+widening clusters pinning previously-undertested wrapper-VM
+composition + bare-scalar EXACT-mode contracts on already-widened
+ops (no source-side changes; lane held only `tests/test-types.mjs`,
+`docs/DATA_TYPES.md`, `logs/session-150.md`).  (1) **Inverse-trig
+ASIN / ACOS / ATAN DEG-mode `_exactUnaryLift` Integer-stay-exact
+/ Rational-collapse-clean under Tagged-V/M wrapper composition** —
+session 142 Cluster 1 pinned the inverse-trig bare-scalar
+`_exactUnaryLift` axis under DEG; session 140 Cluster 2 pinned the
+inverse-trig Tagged-of-V/M wrapper-VM composition under RAD with
+Real operands (which BYPASS the EXACT-mode integer-stay arm).  This
+cluster closes the inverse-trig DEG-mode integer-clean fold under
+the 3-deep Tagged-V/M wrapper composition: `:a:Vector(Integer(0),
+Integer(1)) ASIN` DEG → `:a:Vector(Integer(0), Integer(90))`; ACOS
+operand-symmetric; ATAN closes the trio (`:t:V(Z(0),Z(1)) ATAN` DEG
+→ `:t:V(Z(0), Z(45))`).  Matrix-axis closure on ASIN (`:m:Matrix([[
+1,0],[0,1]]) ASIN` DEG → `:m:Matrix([[90,0],[0,90]])`).  Rational
+arm composes through Tagged-V (`:a:V(Rational(1,2), Integer(1))
+ASIN` DEG → `:a:V(Z(30), Z(90))` — pins that the Rational arm of
+`_trigInvCx` composes through the wrapper too, distinct from the
+forward-trig wrapper-composition pin in session 145 Cluster 3a
+which only exercised Integer operands).  Plus a heterogeneous-kind
+RAD-mode contrast on the SAME Integer operand (`:a:V(Integer(0),
+Integer(1)) ASIN` RAD → `:a:V(Integer(0), Symbolic ASIN(1))` —
+asin(0)=0 stays integer-clean in any angle mode but asin(1)=π/2 is
+NOT integer-clean under RAD, so `_exactUnaryLift` falls through to
+stay-symbolic for that element; angle-mode flip toggles Integer /
+Symbolic per element on the same operands and contrasts against
+session 140's Real-operand bypass path).
+(2) **Forward-hyperbolic family (SINH / COSH / TANH / ASINH /
+ACOSH / ATANH) `_exactUnaryLift` Integer-stay-exact / Rational-
+stay-symbolic on bare scalars + ACOSH / ATANH out-of-domain
+Integer→Complex bypass** — session 145 Cluster 1 covered forward-
+trig bare-scalar; Cluster 2 covered LN/LOG/EXP/ALOG bare-scalar;
+session 142 Cluster 1 covered inverse-trig + inverse-hyp bare-
+scalar.  Forward-hyperbolic SINH / COSH / TANH on Integer/Rational
+through `_unaryCx`'s EXACT arm AND the bespoke ACOSH / ATANH out-
+of-domain Integer→Complex fall-through (where the EXACT-mode
+integer-stay arm is gated by the in-domain check `x ≥ 1` /
+`x > -1 && x < 1` and out-of-domain Integers correctly bypass to
+Complex via the principal branch) were unpinned.  Pins SINH/COSH/
+TANH/ASINH zero trio (Integer(0) → Integer(0/1/0/0)), SINH(Integer
+(1)) → Symbolic stay-symbolic, ACOSH(Integer(1)) and ATANH(Integer
+(0)) in-domain integer-clean, ATANH(Integer(2)) and ACOSH(Integer
+(0)) out-of-domain Integer→Complex (pins that the in-domain check
+gates `_exactUnaryLift` so out-of-domain Integers don't crash on
+`Math.atanh(2)=NaN` / `Math.acosh(0)=NaN`), Rational stay-symbolic
+with `Bin('/', Num(1), Num(2))` payload preservation on SINH (Q
+arm of `_unaryCx`), Rational arm CAN produce Integer (`TANH(
+Rational(0,1))` → `Integer(0)` — Q(0,1)=0.0 → tanh(0)=0 →
+integer-clean; mirror of session 145 Cluster 2's `LN(Rational(1,
+1))` → `Integer(0)` pin), and APPROX-mode bypass uniform across
+both `_unaryCx`-routed (SINH) AND bespoke domain-aware (ACOSH)
+handlers — the `!getApproxMode()` gate holds on both.  Closes the
+transcendental bare-scalar `_exactUnaryLift` matrix:  forward-
+trig (s145 c1), inverse-trig + inverse-hyp (s142 c1), forward-
+hyperbolic (this cluster), LN/LOG/EXP/ALOG (s145 c2).
+(3) **LN / LOG / EXP / ALOG `_exactUnaryLift` Integer-stay-exact
+under Tagged-V/M wrapper composition** — session 145 Cluster 2
+pinned LN/LOG/EXP/ALOG bare-scalar `_exactUnaryLift`; session 145
+Cluster 3a pinned the FORWARD-trig wrapper-VM composition.  The
+LN/LOG/EXP/ALOG wrapper-VM composition was unpinned: session 130
+Cluster 1 pinned the wrapper composition for SQRT/FACT/LNP1/SIN
+under non-integer outputs; session 140 Cluster 1 pinned the
+hyperbolic family wrapper-VM composition with EXACT integer-stay
+folds; but no direct pin on the LN/LOG/EXP/ALOG wrapper
+composition with integer-clean Integer outputs at distinct V/M
+positions.  Pins `:v:V(Z(1), Z(1)) LN` → `:v:V(Z(0), Z(0))` (zero
+trio under Tagged-V), `:v:V(Z(1), Z(10), Z(100)) LOG` → `:v:V(Z(0
+), Z(1), Z(2))` (three distinct integer-clean output values at
+distinct V positions), `:v:V(Z(0), Z(0)) EXP` → `:v:V(Z(1), Z(1))`,
+`:v:V(Z(0), Z(2), Z(3)) ALOG` → `:v:V(Z(1), Z(100), Z(1000))`
+(high-magnitude non-zero integer outputs pin `_exactUnaryLift`'s
+BigInt round-trip per element under the wrapper), Matrix-axis
+closure (`:m:M[[1,10],[100,1000]] LOG` → `:m:M[[0,1],[2,3]]`),
+mixed integer-clean / stay-symbolic within a single Tagged-V
+(`:v:V(Z(2), Z(10)) LOG` → `:v:V(Symbolic LOG(2), Integer(1))` —
+strong heterogeneous-kind pin on the wrapper composition's
+output: the result is a mixed-kind Vector (Symbolic + Integer)
+inside a Tagged wrapper, which exercises the type-heterogeneity
+contract on the wrapper composition and pins that
+`_exactUnaryLift`'s stay-symbolic fall-through fires per element
+WITHOUT collapsing the Vector to a uniform output kind), and
+APPROX-mode bypass under the wrapper composition (`:v:V(Z(1),
+Z(100)) LOG` APPROX → `:v:V(Real(0), Real(2))` — APPROX flips
+KIND from Integer to Real per element under the wrapper; mirror
+of session 145 Cluster 2's bare-scalar APPROX-bypass pin lifted
+into the wrapper composition).  Closes the transcendental
+wrapper-VM-under-Tagged matrix:  forward-trig (s145 c3a),
+forward-hyperbolic (s140 c1), inverse-trig (s140 c2 RAD + s150
+c1 DEG), LN/LOG/EXP/ALOG (this cluster).  +26 assertions in
+`tests/test-types.mjs` (803 → 829).  See "Resolved this session
+(150)" below.  Session 145 was the prior data-types lane pass
+(forward-trig + LN/LOG/EXP/ALOG bare-scalar `_exactUnaryLift`
++ forward-trig DEG-Tagged-V/M wrapper composition + RE/IM
+M-axis inner-Tagged rejection).
+
+**Last updated (prior).** Session 145 (2026-04-25) — three more hard-assertion
 widening clusters pinning previously-undertested EXACT-mode
 `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic
 contracts on already-widened ops, plus closing the bespoke-V/M
@@ -104,7 +201,7 @@ inverse-trig family Tagged-of-V/M wrapper-VM composition; ARG
 bare V/M + CONJ/RE/IM Tagged-of-V/M through 2-deep-bespoke
 wrapper).
 
-**Last updated (prior).** Session 140 (2026-04-25) — three more hard-assertion
+**Last updated (prior pass before 145).** Session 140 (2026-04-25) — three more hard-assertion
 widening clusters pinning previously-undertested wrapper-VM
 composition contracts on already-widened ops (no source-side
 changes; lane held only `tests/test-types.mjs`, `docs/DATA_TYPES.md`,
@@ -440,9 +537,9 @@ follow-on candidates and listed at the bottom.
 | SQ     | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | · | ✓ | ✓ | ✗ | ✗ | V/M deliberately · — `SQ/V` = dot product, `SQ/M` = matmul, handled by `*`. Session 064 added T. Session 120 pinned Q stay-exact: `SQ Rational(-3,4)` → `Rational(9,16)`; deliberately does NOT d=1 collapse on `SQ Rational(2,1)` (stays Rational(4,1) — different code path from INV); APPROX-mode collapses to Real. |
 | SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. Session 120 pinned Q routing: perfect-square stays Q (`SQRT Rational(9,16)` → `Rational(3,4)`) with `Rational(0,1)` collapsing to `Integer(0)`; non-square Q lifts to Symbolic in EXACT (`SQRT Rational(2,1)` → Symbolic, no implicit Real coercion); negative Q lifts to Complex (`SQRT Rational(-1,1)` → `Complex(0, 1)`, principal branch). Session 130 pinned the `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))` composition on Tagged-of-Vector and Tagged-of-Matrix: `:v:Vector(4, 9) SQRT` → `:v:Vector(2, 3)` and `:m:Matrix([[4,9],[16,25]]) SQRT` → `:m:Matrix([[2,3],[4,5]])` (outer tag preserved across element-wise V/M dispatch). |
 | ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. Session 120 pinned Q stay-exact: `ABS Rational(-3,4)` → `Rational(3,4)`. Session 125 pinned Tagged-of-List composition (`:v:{Real(3) Real(-4)} ABS` → `:v:{Real(3) Real(4)}`) and the bespoke Tagged-of-Vector cross-kind path (`:v:Vector(3,4) ABS` → `:v:Real(5)` Frobenius norm — confirms the bespoke V-handler runs *inside* the `_withTaggedUnary` wrapper, so the tag is preserved across the kind-changing op). Session 130 extended the bespoke cross-kind pin to the Matrix axis: `:m:Matrix([[3,0],[0,4]]) ABS` → `:m:Real(5)` (Frobenius on Matrix; M → R kind change preserves the outer tag — same shape as the V-axis pin). |
-| SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. Session 120 pinned hyperbolic (SINH/COSH/TANH/ASINH/ACOSH/ATANH) Tagged transparency, List distribution, and Symbolic-lift through Tagged — including the `ATANH(:v:Real(2))` → `Tagged(v, Complex)` principal-branch lift where the inner handler picks Real-vs-Complex after the Tagged unwrap. Session 130 pinned Tagged-of-Vector composition for the trig wrapper-VM path: `SIN :v:Vector(0, 0)` → `:v:Vector(0, 0)` (3-deep wrapper composition `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))` — outer tag preserved across element-wise transcendental dispatch). Session 140 pinned the hyperbolic 3-deep wrapper-VM composition on Tagged-Vector (SINH `:h:V[Z(0),Z(0)]` → `:h:V[Z(0),Z(0)]` EXACT-mode integer-stay-exact via `_exactUnaryLift`; COSH `:v:V[0,0]` → `:v:V[Real(1),Real(1)]` non-identity output value; ASINH/ACOSH/ATANH `:h:V[…]` → `:h:V[0,0]`) and on Tagged-Matrix (SINH/TANH `:m:M[[0,0],[0,0]]` → `:m:M[[0,0],[0,0]]`). Inner-Tagged-inside-Vector rejection on SINH (`V[:x:Real(0), :y:Real(0)] SINH` → 'Bad argument type', mirror of session 130 Cluster 3's inner-Tagged-inside-List rejection on the hyperbolic axis). Inverse-trig family (ASIN/ACOS/ATAN) Tagged-of-V/M composition pinned in RAD with explicit `setAngle('RAD')` + try/finally restore: ASIN `:a:V[0,1]` → `:a:V[0,π/2]` (item[0] clean asin(0)=0, item[1] within 1e-12 of π/2), ACOS `:a:V[1,0]` → `:a:V[0,π/2]` operand-symmetric, ATAN `:a:V[0,0]` → `:a:V[0,0]` (routes through `_trigInvCx`, distinct helper from ASIN/ACOS but same 3-deep wrapper), ASIN/ACOS Matrix-axis closes the inverse-trig pair on M. Session 142 (carried by unit-tests lane) pinned the inverse-trig + inverse-hyp `_exactUnaryLift` Integer-stay-exact bare-scalar contract on the ASIN/ACOS/ATAN/ASINH/ACOSH/ATANH axis (e.g. `ASIN(Integer(1))` DEG → `Integer(90)`, `ATAN(Integer(1))` RAD stays-symbolic vs DEG → `Integer(45)` angle-mode flip, `ASIN(Rational(1,2))` DEG → `Integer(30)`). Session 145 pinned the **forward-trig (`SIN`/`COS`/`TAN`) `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic contract** on bare scalars (extends session 142's pattern to `_trigFwdCx`, where `toRadians` is applied to the Integer/Rational input BEFORE the numeric primitive — distinct from inverse-trig's post-primitive `fromRadians`): trivial zeros (`SIN/COS/TAN(0)` RAD), DEG-mode multiples-of-180°/90° folding through IEEE-double drift (`SIN(180)` DEG → Integer(0); `COS(90)` DEG → Integer(0); `COS(180)` DEG → Integer(-1) non-zero output; `TAN(45)` DEG → Integer(1)), stay-symbolic on non-clean (`SIN(1)`/`COS(1)` RAD; `SIN(30)` DEG = 0.5 not int-clean), the angle-mode flip on identical operand (`SIN(180)` RAD stays-symbolic, `SIN(180)` DEG folds), Rational stay-symbolic with `Bin('/', Num(n), Num(d))` payload preservation (`SIN(Rational(1,2))` RAD), and the APPROX-mode bypass (`SIN(Integer(0))` APPROX → `Real(0)` not Integer). Session 145 also pinned the forward-trig `_exactUnaryLift` Integer-stay-exact path **under the Tagged-V/M wrapper composition** (`:v:Vector(Integer(0), Integer(0)) SIN/COS/TAN` RAD; `:v:Vector(Integer(0), Integer(180)) SIN` DEG → `:v:Vector(0, 0)` angle-flip composes element-wise; `:m:Matrix([[0,180],[0,0]]) SIN` DEG → `:m:Matrix([[0,0],[0,0]])` Matrix-axis closure). |
+| SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. Session 120 pinned hyperbolic (SINH/COSH/TANH/ASINH/ACOSH/ATANH) Tagged transparency, List distribution, and Symbolic-lift through Tagged — including the `ATANH(:v:Real(2))` → `Tagged(v, Complex)` principal-branch lift where the inner handler picks Real-vs-Complex after the Tagged unwrap. Session 130 pinned Tagged-of-Vector composition for the trig wrapper-VM path: `SIN :v:Vector(0, 0)` → `:v:Vector(0, 0)` (3-deep wrapper composition `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))` — outer tag preserved across element-wise transcendental dispatch). Session 140 pinned the hyperbolic 3-deep wrapper-VM composition on Tagged-Vector (SINH `:h:V[Z(0),Z(0)]` → `:h:V[Z(0),Z(0)]` EXACT-mode integer-stay-exact via `_exactUnaryLift`; COSH `:v:V[0,0]` → `:v:V[Real(1),Real(1)]` non-identity output value; ASINH/ACOSH/ATANH `:h:V[…]` → `:h:V[0,0]`) and on Tagged-Matrix (SINH/TANH `:m:M[[0,0],[0,0]]` → `:m:M[[0,0],[0,0]]`). Inner-Tagged-inside-Vector rejection on SINH (`V[:x:Real(0), :y:Real(0)] SINH` → 'Bad argument type', mirror of session 130 Cluster 3's inner-Tagged-inside-List rejection on the hyperbolic axis). Inverse-trig family (ASIN/ACOS/ATAN) Tagged-of-V/M composition pinned in RAD with explicit `setAngle('RAD')` + try/finally restore: ASIN `:a:V[0,1]` → `:a:V[0,π/2]` (item[0] clean asin(0)=0, item[1] within 1e-12 of π/2), ACOS `:a:V[1,0]` → `:a:V[0,π/2]` operand-symmetric, ATAN `:a:V[0,0]` → `:a:V[0,0]` (routes through `_trigInvCx`, distinct helper from ASIN/ACOS but same 3-deep wrapper), ASIN/ACOS Matrix-axis closes the inverse-trig pair on M. Session 142 (carried by unit-tests lane) pinned the inverse-trig + inverse-hyp `_exactUnaryLift` Integer-stay-exact bare-scalar contract on the ASIN/ACOS/ATAN/ASINH/ACOSH/ATANH axis (e.g. `ASIN(Integer(1))` DEG → `Integer(90)`, `ATAN(Integer(1))` RAD stays-symbolic vs DEG → `Integer(45)` angle-mode flip, `ASIN(Rational(1,2))` DEG → `Integer(30)`). Session 145 pinned the **forward-trig (`SIN`/`COS`/`TAN`) `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic contract** on bare scalars (extends session 142's pattern to `_trigFwdCx`, where `toRadians` is applied to the Integer/Rational input BEFORE the numeric primitive — distinct from inverse-trig's post-primitive `fromRadians`): trivial zeros (`SIN/COS/TAN(0)` RAD), DEG-mode multiples-of-180°/90° folding through IEEE-double drift (`SIN(180)` DEG → Integer(0); `COS(90)` DEG → Integer(0); `COS(180)` DEG → Integer(-1) non-zero output; `TAN(45)` DEG → Integer(1)), stay-symbolic on non-clean (`SIN(1)`/`COS(1)` RAD; `SIN(30)` DEG = 0.5 not int-clean), the angle-mode flip on identical operand (`SIN(180)` RAD stays-symbolic, `SIN(180)` DEG folds), Rational stay-symbolic with `Bin('/', Num(n), Num(d))` payload preservation (`SIN(Rational(1,2))` RAD), and the APPROX-mode bypass (`SIN(Integer(0))` APPROX → `Real(0)` not Integer). Session 145 also pinned the forward-trig `_exactUnaryLift` Integer-stay-exact path **under the Tagged-V/M wrapper composition** (`:v:Vector(Integer(0), Integer(0)) SIN/COS/TAN` RAD; `:v:Vector(Integer(0), Integer(180)) SIN` DEG → `:v:Vector(0, 0)` angle-flip composes element-wise; `:m:Matrix([[0,180],[0,0]]) SIN` DEG → `:m:Matrix([[0,0],[0,0]])` Matrix-axis closure). Session 150 closed the **inverse-trig (ASIN/ACOS/ATAN) DEG-mode `_exactUnaryLift` Integer-stay-exact under Tagged-V/M wrapper composition** (mirror of session 145's forward-trig DEG-Tagged-V/M pin on the inverse-trig axis; closes the bare-scalar pin from session 142 Cluster 1 lifted into the wrapper composition): `:a:Vector(Integer(0), Integer(1)) ASIN` DEG → `:a:Vector(Integer(0), Integer(90))`, `:a:Vector(Integer(1), Integer(0)) ACOS` DEG → `:a:Vector(Integer(0), Integer(90))` operand-symmetric, `:t:Vector(Integer(0), Integer(1)) ATAN` DEG → `:t:Vector(Integer(0), Integer(45))` (closes ASIN/ACOS/ATAN trio under wrapper composition); ASIN Matrix-axis (`:m:Matrix([[1,0],[0,1]]) ASIN` DEG → `:m:Matrix([[90,0],[0,90]])`); Rational arm composes through Tagged-V (`:a:V(Rational(1,2), Integer(1)) ASIN` DEG → `:a:V(Z(30), Z(90))` — Rational arm of `_trigInvCx` composes through wrapper, distinct from session 145 Cluster 3a forward-trig wrapper-comp pin which only exercised Integer operands); RAD-mode contrast on the SAME Integer operand (`:a:Vector(Integer(0), Integer(1)) ASIN` RAD → `:a:Vector(Integer(0), Symbolic ASIN(1))` — heterogeneous-kind output under wrapper composition: asin(0)=0 stays integer-clean any angle mode, asin(1)=π/2 NOT integer-clean RAD so `_exactUnaryLift` falls through to stay-symbolic; angle-mode flip toggles Integer / Symbolic per element on the SAME operands; contrasts against session 140's `:a:V(Real,Real) ASIN` RAD pin which BYPASSED the EXACT integer-stay arm). Session 150 also pinned the **forward-hyperbolic family (SINH/COSH/TANH/ASINH/ACOSH/ATANH) `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic on bare scalars** (closes the transcendental bare-scalar matrix: forward-trig s145 + LN/LOG/EXP/ALOG s145 + inverse-trig+inverse-hyp s142 + forward-hyp s150). SINH/COSH/TANH zero trio (Integer(0) → Integer(0/1/0)), ASINH/ACOSH/ATANH zero/one folds (`ACOSH(Integer(1))` → Integer(0) in-domain; `ATANH(Integer(0))` → Integer(0) in-domain), SINH(Integer(1)) → Symbolic stay-symbolic, **out-of-domain Integer→Complex bypass on bespoke handlers** (`ATANH(Integer(2))` → Complex principal branch; `ACOSH(Integer(0))` → Complex(0, ±π/2) — pins the in-domain check `x>-1&&x<1` / `x≥1` gates the EXACT-mode integer-stay arm so out-of-domain Integers don't crash `_exactUnaryLift` against `Math.atanh(2)=NaN` / `Math.acosh(0)=NaN`), Rational stay-symbolic with `Bin('/', Num(1), Num(2))` payload on SINH (`SINH(Rational(1,2))` → Symbolic preserving the rational AST), Rational arm CAN produce Integer (`TANH(Rational(0,1))` → `Integer(0)` — Q(0,1)=0.0 → tanh(0)=0 → Integer; mirror of session 145 LN(Q(1,1))=Z(0) pin), APPROX-mode bypass uniform across `_unaryCx`-routed (SINH) AND bespoke (ACOSH) handlers. |
 | FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). Session 120 pinned `Q ✗` rejection: `FACT Rational(5,1)` → 'Bad argument type' even at integer-valued Q (Q is not silently coerced to Real on FACT — deliberate Q-as-first-class-type stance). Session 130 pinned the Tagged-of-Vector wrapper-VM composition: `FACT :v:Vector(0, 5)` → `:v:Vector(Integer(1), Integer(120))` (integer-domain inner handler composes through `_withVMUnary` per element under outer Tagged). |
-| LN, LOG, EXP, ALOG | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Logarithmic / exponential family — dispatch through `_unaryCx` (`ops.js:7984`); Complex via `_cxLn` / `_cxExp` etc.; same Tagged / List / V/M wrapping as the trig / hyperbolic family. The matrix didn't carry these as a dedicated row through session 142 — they were considered covered by the "elementary functions" umbrella and the convention text. Session 145 broke them out and pinned the **EXACT-mode `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic contract** on bare scalars (the canonical examples called out in `_exactUnaryLift`'s doc-comment at `ops.js:1130-1137`): `LN(Integer(1))` → `Integer(0)`, `LN(Integer(2))` → Symbolic; `LOG(1)/LOG(10)/LOG(100)/LOG(1000)` = Integer(0/1/2/3) — full powers-of-ten quartet; `LOG(Integer(2))` → Symbolic; `EXP(Integer(0))` → `Integer(1)`, `EXP(Integer(1))` → Symbolic (preserves e unevaluated); `ALOG(Integer(0))` → `Integer(1)`, `ALOG(Integer(2))` → `Integer(100)`, `ALOG(Integer(3))` → `Integer(1000)` — non-zero integer outputs pin BigInt round-trip without precision loss; `ALOG(Integer(-1))` → Symbolic (10⁻¹=0.1 not integer-clean). Rational arm: `LN(Rational(1,1))` → `Integer(0)` (Rational arm CAN produce Integer when 1/1=1.0 → ln(1)=0 integer-clean — distinct from session 142 Cluster 1's ASIN(Rational) where the angle-mode `fromRadians` produced the integer-clean output, here it's the Rational value itself collapsing to 1.0 before the numeric primitive); `LN(Rational(1,2))` → Symbolic with `Bin('/', Num(1), Num(2))` payload preservation. APPROX-mode bypass on `LN(Integer(1))` / `LOG(Integer(100))` / `EXP(Integer(0))` → Real not Integer (pins APPROX flips KIND not VALUE). |
+| LN, LOG, EXP, ALOG | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Logarithmic / exponential family — dispatch through `_unaryCx` (`ops.js:7984`); Complex via `_cxLn` / `_cxExp` etc.; same Tagged / List / V/M wrapping as the trig / hyperbolic family. The matrix didn't carry these as a dedicated row through session 142 — they were considered covered by the "elementary functions" umbrella and the convention text. Session 145 broke them out and pinned the **EXACT-mode `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic contract** on bare scalars (the canonical examples called out in `_exactUnaryLift`'s doc-comment at `ops.js:1130-1137`): `LN(Integer(1))` → `Integer(0)`, `LN(Integer(2))` → Symbolic; `LOG(1)/LOG(10)/LOG(100)/LOG(1000)` = Integer(0/1/2/3) — full powers-of-ten quartet; `LOG(Integer(2))` → Symbolic; `EXP(Integer(0))` → `Integer(1)`, `EXP(Integer(1))` → Symbolic (preserves e unevaluated); `ALOG(Integer(0))` → `Integer(1)`, `ALOG(Integer(2))` → `Integer(100)`, `ALOG(Integer(3))` → `Integer(1000)` — non-zero integer outputs pin BigInt round-trip without precision loss; `ALOG(Integer(-1))` → Symbolic (10⁻¹=0.1 not integer-clean). Rational arm: `LN(Rational(1,1))` → `Integer(0)` (Rational arm CAN produce Integer when 1/1=1.0 → ln(1)=0 integer-clean — distinct from session 142 Cluster 1's ASIN(Rational) where the angle-mode `fromRadians` produced the integer-clean output, here it's the Rational value itself collapsing to 1.0 before the numeric primitive); `LN(Rational(1,2))` → Symbolic with `Bin('/', Num(1), Num(2))` payload preservation. APPROX-mode bypass on `LN(Integer(1))` / `LOG(Integer(100))` / `EXP(Integer(0))` → Real not Integer (pins APPROX flips KIND not VALUE). Session 150 lifted the bare-scalar pin into the **Tagged-V/M wrapper composition** (closes the LN/LOG/EXP/ALOG axis on the wrapper composition; mirror of session 145 Cluster 3a's forward-trig wrapper composition pin on the LN/LOG/EXP/ALOG family): `:v:V(Z(1), Z(1)) LN` → `:v:V(Z(0), Z(0))` (zero trio), `:v:V(Z(1), Z(10), Z(100)) LOG` → `:v:V(Z(0), Z(1), Z(2))` (three distinct integer outputs at distinct V positions — pins per-element wrapper dispatch), `:v:V(Z(0), Z(0)) EXP` → `:v:V(Z(1), Z(1))` non-zero output, `:v:V(Z(0), Z(2), Z(3)) ALOG` → `:v:V(Z(1), Z(100), Z(1000))` (high-magnitude integers pin BigInt round-trip per element under wrapper), `:m:M[[1,10],[100,1000]] LOG` → `:m:M[[0,1],[2,3]]` Matrix-axis closure, **mixed integer-clean / stay-symbolic within a single Tagged-V** (`:v:V(Z(2), Z(10)) LOG` → `:v:V(Symbolic LOG(2), Integer(1))` — strong heterogeneous-kind pin: result is mixed-kind Vector inside Tagged wrapper, exercises type-heterogeneity contract on wrapper composition), and APPROX-mode bypass under wrapper composition (`:v:V(Z(1), Z(100)) LOG` APPROX → `:v:V(Real(0), Real(2))` — APPROX flips KIND from Integer to Real per element under wrapper). |
 | LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). Session 100: Sy round-trip verified; `defaultFnEval` folds via `Math.log1p` / `Math.expm1` (LNP1 returns null outside `x > -1`). Session 130 pinned Tagged-of-Vector wrapper-VM composition on LNP1: `LNP1 :v:Vector(0, 0)` → `:v:Vector(0, 0)` (stable-near-zero log per element through outer Tagged). Session 140 pinned EXPM Tagged-of-Vector and Tagged-of-Matrix wrapper-VM composition (`EXPM :e:V[0,0]` → `:e:V[0,0]`, `EXPM :e:M[[0,0],[0,0]]` → `:e:M[[0,0],[0,0]]`) — closes the LNP1/EXPM dual pair on the Tagged-V/M axis (LNP1 was pinned on V in session 130 but EXPM and the M axis on both ops were unpinned). |
 
 ### Unary — rounding / sign / arg
@@ -630,6 +727,210 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (150)
+
+- **Cluster 1 — Inverse-trig (ASIN / ACOS / ATAN) DEG-mode
+  `_exactUnaryLift` Integer-stay-exact / Rational-collapse-clean
+  under Tagged-V/M wrapper composition.**  `_trigInvCx`
+  (`ops.js:8246`) inverts through `fromRadians(y)` AFTER the
+  numeric primitive — distinct from `_trigFwdCx`'s pre-primitive
+  `toRadians`.  Session 142 Cluster 1 pinned the bare-scalar
+  inverse-trig DEG `_exactUnaryLift` (`ASIN(Integer(1))` DEG →
+  `Integer(90)`); session 140 Cluster 2 pinned the inverse-trig
+  Tagged-of-V/M wrapper composition under RAD with Real
+  operands (which BYPASS the EXACT-mode integer-stay arm).
+  Session 145 Cluster 3a closed the FORWARD-trig wrapper-VM
+  composition under DEG.  This cluster closes the inverse-trig
+  dual: DEG-mode integer-clean folds composing element-wise
+  through the 3-deep `_withTaggedUnary(_withListUnary(_with
+  VMUnary(handler)))` wrapper.  6 hard assertions:
+  - **DEG-mode Tagged-V trio:** `:a:Vector(Integer(0),
+    Integer(1)) ASIN` DEG → `:a:Vector(Integer(0), Integer(
+    90))`; `:a:Vector(Integer(1), Integer(0)) ACOS` DEG →
+    `:a:Vector(Integer(0), Integer(90))` (operand-symmetric);
+    `:t:Vector(Integer(0), Integer(1)) ATAN` DEG → `:t:Vector(
+    Integer(0), Integer(45))` (closes ASIN/ACOS/ATAN trio
+    under wrapper composition; ATAN routes through
+    `_trigInvCx` with `Math.atan` + `fromRadians` post-
+    primitive, distinct primitive from ASIN/ACOS but same
+    wrapper composition).
+  - **Matrix-axis closure (ASIN):** `:m:Matrix([[Integer(1),
+    Integer(0)], [Integer(0), Integer(1)]]) ASIN` DEG →
+    `:m:Matrix([[Integer(90), Integer(0)], [Integer(0),
+    Integer(90)]])` (per-entry asin(1)=90° / asin(0)=0 all
+    fold to Integer; outer tag preserved + Matrix kind
+    preserved across per-entry dispatch).
+  - **Rational arm composes through Tagged-V:**
+    `:a:Vector(Rational(1,2), Integer(1)) ASIN` DEG →
+    `:a:Vector(Integer(30), Integer(90))` — Rational(1,2)=0.5,
+    asin(0.5)=π/6, fromRadians(π/6) DEG = 30 ± drift
+    integer-clean.  Distinct contract from session 145
+    Cluster 3a's forward-trig wrapper-composition pin which
+    only exercised Integer operands within Vector / Matrix;
+    the inverse-trig Rational-arm CAN produce Integer
+    outputs when `fromRadians` turns the radian value into
+    an integer multiple of degrees.
+  - **RAD-mode contrast on the SAME Integer operand
+    (heterogeneous-kind output under wrapper composition):**
+    `:a:Vector(Integer(0), Integer(1)) ASIN` RAD →
+    `:a:Vector(Integer(0), Symbolic ASIN(1))` — item[0] still
+    folds to Integer(0) since asin(0)=0 is integer-clean in
+    any angle mode, but item[1] does NOT fold because
+    asin(1)=π/2 ≈ 1.5708 is NOT integer-clean under RAD; the
+    EXACT-mode integer-stay arm of `_trigInvCx` therefore
+    returns Symbolic(AstFn('ASIN', [_toAst(Integer(1))]))
+    for that element.  Distinct from session 140's
+    `:a:Vector(Real(0), Real(1)) ASIN` RAD →
+    `:a:Vector(Real(0), Real(π/2))` pin, which used Real
+    operands and BYPASSED the EXACT-mode integer-stay arm
+    entirely (Real input is not `isInteger || isRational`,
+    so `_trigInvCx` falls through to the standard Real-
+    output path).  Pins (a) the angle-mode flip toggles
+    integer-clean / stay-Symbolic per element under Tagged-V
+    on the SAME Integer operands (DEG → :a:V[Z(0), Z(90)];
+    RAD → :a:V[Z(0), Sym(ASIN(1))]) and (b) the Real- vs
+    Integer-operand contrast: same `_trigInvCx` wrapper
+    composition, different output kinds (Real input → Real
+    output; Integer input → mixed Integer + Symbolic per
+    element under EXACT mode).
+
+- **Cluster 2 — Forward-hyperbolic family (SINH / COSH / TANH /
+  ASINH / ACOSH / ATANH) `_exactUnaryLift` Integer-stay-exact /
+  Rational-stay-symbolic on bare scalars + ACOSH / ATANH
+  out-of-domain Integer→Complex bypass on the bespoke handlers.**
+  Session 145 Cluster 1 covered forward-trig bare-scalar; Cluster
+  2 covered LN/LOG/EXP/ALOG bare-scalar; session 142 Cluster 1
+  covered inverse-trig + inverse-hyp bare-scalar.  Forward-
+  hyperbolic SINH/COSH/TANH/ASINH on Integer/Rational through
+  `_unaryCx`'s EXACT arm AND the bespoke ACOSH/ATANH out-of-
+  domain Integer→Complex fall-through were unpinned.  13 hard
+  assertions:
+  - **SINH/COSH/TANH zero trio:** `SINH(Integer(0))` →
+    `Integer(0)`; `COSH(Integer(0))` → `Integer(1)` (non-zero
+    output pins fold ran on COSH arm); `TANH(Integer(0))` →
+    `Integer(0)` (closes SINH/COSH/TANH zero trio at bare-
+    Integer).
+  - **SINH stay-symbolic:** `SINH(Integer(1))` → `Symbolic
+    SINH(1)` (sinh(1) ≈ 1.175 NOT integer-clean — stay-
+    symbolic via `_exactUnaryLift`'s fall-through; mirror
+    of session 145 Cluster 1's forward-trig stay-symbolic
+    on the forward-hyperbolic axis).
+  - **ASINH/ACOSH/ATANH zero/one folds:** `ASINH(Integer(
+    0))` → `Integer(0)` (consistency-pin); `ACOSH(Integer(
+    1))` → `Integer(0)` (in-domain integer-clean fold via
+    bespoke handler `ops.js:8309`; consistency-pin in
+    forward-hyperbolic zero-trio); `ATANH(Integer(0))` →
+    `Integer(0)` (in-domain integer-clean fold via bespoke
+    handler `ops.js:8329`).
+  - **Out-of-domain Integer→Complex bypass on bespoke
+    handlers:** `ATANH(Integer(2))` → Complex principal
+    branch (out-of-domain |x|≥1 — the bespoke EXACT-mode
+    arm checks `x > -1 && x < 1`; for Integer(2) the check
+    fails, so the EXACT arm FALLS THROUGH (does NOT call
+    `_exactUnaryLift`) into the shared real-branch code
+    which itself falls through into the Complex principal-
+    branch lift; pins that the in-domain check gates the
+    integer-stay path so out-of-domain Integers don't crash
+    `_exactUnaryLift` against `Math.atanh(2)=NaN`).
+    `ACOSH(Integer(0))` → `Complex(0, ±π/2)` (out-of-domain
+    x<1 — symmetric to ATANH out-of-domain Integer→Complex
+    bypass on the ACOSH-domain axis).
+  - **Rational stay-symbolic with payload preservation:**
+    `SINH(Rational(1,2))` → `Symbolic SINH(1/2)` — sinh(0.5)
+    ≈ 0.521 NOT integer-clean; symbolic payload carries
+    `Bin('/', Num(1), Num(2))` so the Rational survives in
+    the AST.  Mirror of session 145 Cluster 1/2's `SIN`
+    /`LN`(Rational(1,2)) stay-symbolic payload pins on the
+    forward-hyperbolic axis.
+  - **Rational arm CAN produce Integer (collapse via
+    numeric):** `TANH(Rational(0,1))` → `Integer(0)` —
+    Rational(0,1) → 0.0; tanh(0) = 0 → integer-clean →
+    Integer(0).  Mirror of session 145 Cluster 2's
+    `LN(Rational(1,1))` → `Integer(0)` pin on the forward-
+    hyperbolic axis.  Pins that the Rational arm is NOT a
+    Symbolic-only branch when the underlying numeric value
+    is integer-clean.
+  - **APPROX-mode bypass uniform across `_unaryCx`-routed
+    AND bespoke domain-aware handlers:** `SINH(Integer(0))`
+    APPROX → `Real(0)` (NOT Integer; pins `_exactUnaryLift`
+    is gated by `!getApproxMode()` on the SINH branch too).
+    `ACOSH(Integer(1))` APPROX → `Real(0)` (pins that the
+    bespoke ACOSH/ATANH handlers also gate their EXACT-mode
+    integer-stay arm on `!getApproxMode()` — the bypass is
+    UNIFORM across the forward-hyperbolic family, the
+    `_unaryCx`-routed ops AND the bespoke domain-aware
+    ones).
+
+- **Cluster 3 — LN / LOG / EXP / ALOG `_exactUnaryLift`
+  Integer-stay-exact under Tagged-V/M wrapper composition.**
+  Session 145 Cluster 2 pinned LN/LOG/EXP/ALOG bare-scalar;
+  session 145 Cluster 3a pinned the FORWARD-trig wrapper-VM
+  composition.  The LN/LOG/EXP/ALOG wrapper-VM composition with
+  EXACT-mode Integer-stay-exact folds composing element-wise
+  was unpinned.  7 hard assertions:
+  - **LN Tagged-V zero pin:** `:v:Vector(Integer(1),
+    Integer(1)) LN` → `:v:Vector(Integer(0), Integer(0))`
+    (mirror of session 145 Cluster 3a's `:v:V(Z(0),Z(0))
+    SIN` RAD pin on the LN axis).
+  - **LOG Tagged-V three distinct integer outputs at three
+    positions:** `:v:Vector(Integer(1), Integer(10),
+    Integer(100)) LOG` → `:v:Vector(Integer(0), Integer(1),
+    Integer(2))` — pins per-element wrapper dispatch with
+    distinct integer outputs at each V position.
+  - **EXP Tagged-V non-zero output:** `:v:Vector(Integer(0
+    ), Integer(0)) EXP` → `:v:Vector(Integer(1),
+    Integer(1))` (exp(0)=1; non-zero output pins inner EXP
+    handler ran on each position via wrapper composition).
+  - **ALOG Tagged-V high-magnitude trio:** `:v:Vector(
+    Integer(0), Integer(2), Integer(3)) ALOG` →
+    `:v:Vector(Integer(1), Integer(100), Integer(1000))` —
+    high-magnitude non-zero integer outputs pin
+    `_exactUnaryLift`'s BigInt round-trip per element under
+    the wrapper.  Mirror of session 145 Cluster 2's bare-
+    scalar ALOG positive-integer trio lifted into wrapper.
+  - **LOG Matrix-axis closure:** `:m:Matrix([[Integer(1),
+    Integer(10)], [Integer(100), Integer(1000)]]) LOG` →
+    `:m:Matrix([[Integer(0), Integer(1)], [Integer(2),
+    Integer(3)]])` (Matrix-axis wrapper-VM composition with
+    all-integer-clean outputs; mirror of session 145 Cluster
+    3a's forward-trig Matrix-axis pin on the LN/LOG/EXP/
+    ALOG axis).
+  - **Mixed integer-clean / stay-symbolic within a single
+    Tagged-V:** `:v:Vector(Integer(2), Integer(10)) LOG` →
+    `:v:Vector(Symbolic LOG(2), Integer(1))` — strong
+    heterogeneous-kind pin: log10(2)≈0.301 NOT integer-
+    clean → stay-symbolic per `_exactUnaryLift`; log10(10)=
+    1 integer-clean → Integer(1).  Pins that
+    `_exactUnaryLift`'s stay-symbolic fall-through and
+    integer-clean fold both operate per element under the
+    wrapper composition WITHOUT collapsing the whole Vector
+    to a single uniform output kind.  Result is a mixed-
+    kind Vector (Symbolic + Integer) inside a Tagged
+    wrapper, exercising the type-heterogeneity contract on
+    the wrapper composition's output.
+  - **APPROX-mode bypass under wrapper composition:**
+    `:v:Vector(Integer(1), Integer(100)) LOG` APPROX →
+    `:v:Vector(Real(0), Real(2))` — APPROX-mode bypass
+    composes with the wrapper-VM-under-Tagged: APPROX flips
+    KIND from Integer to Real per element under wrapper;
+    integer-clean output values still emerge but as Real.
+    Mirror of session 145 Cluster 2's bare-scalar APPROX-
+    bypass pin lifted into the wrapper composition.
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`,
+  or `formatter.js` this session — `ops.js` was lock-held by
+  concurrent session 149 command-support lane.
+  `tests/test-types.mjs`: +26 assertions (803 → 829).  Test
+  gates green: `test-all`, `test-persist`, `sanity` (counts in
+  `logs/session-150.md`).  Surfaced findings (deferred —
+  outside this lane's scope, ops.js locked):  COMB / PERM
+  throw an unwrapped TypeError on Rational input via
+  `_combPermArgs`'s `v.value.isFinite()` call (Rational.value
+  is `{n,d}` BigInts, not a Decimal — `.isFinite` is
+  undefined; should throw `RPLError('Bad argument type')` like
+  IQUOT/IREMAINDER do).  See `logs/session-150.md` for user-
+  reachable demos and exact gate counts.
 
 ### Resolved this session (145)
 

@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 146)
+## Current implementation status (as of session 151)
 
 
 ### Program value — parser & round-trip
@@ -255,7 +255,129 @@ open, and the next-session queue.
 
 ---
 
-## Session 146 (this run) — what shipped
+## Session 151 (this run) — what shipped
+
+This run is a test-pinning run.  No source-code logic in
+`www/src/rpl/ops.js` changed; every assertion below corresponds to
+behaviour that has been live since session 088 (the generator-based
+substrate) but was not explicitly pinned by the test suite.
+
+The session 141 chapter pinned HALT/PROMPT lift through IFERR
+clauses (trap, THEN, ELSE — full-form and auto-closed); session 146
+pinned HALT/CONT/KILL through nested `→` frames.  This run closes
+the symmetric gaps for the remaining structural runners: **CASE
+clauses** (test, action, default, auto-closed), the **explicit-
+closer forms of START** (NEXT and STEP), **DO/UNTIL** (body and
+UNTIL test), and the explicit-STEP path of **FOR/STEP** (loop-var
+save/restore under KILL).
+
+1. **HALT/PROMPT lift through CASE clauses pinned.**  `runCase`
+   (`ops.js:3654`) has been a generator since session 088 and uses
+   `yield* evalRange(...)` for every clause range — clause test,
+   clause action, default clause.  Eight new blocks (~26
+   assertions) cover: HALT in clause action with later-clause
+   short-circuit holding across HALT/CONT (sentinel: `« 5 CASE 1
+   THEN 10 HALT 11 END 1 THEN 999 END END »` lands `⟦5 10 11⟧`,
+   never includes `999`); HALT in clause test expression; HALT in
+   default clause (`if (scan.kind === 'END')` branch); HALT in
+   auto-closed CASE (no outer END); PROMPT in clause action
+   (banner set / cleared on CONT); KILL of halted CASE (no
+   `localFramesDepth` leak); sentinel pin against any future
+   refactor that loses the post-clause `pending`/`nest` skip
+   bookkeeping when a clause action yields mid-stream.
+
+2. **HALT/PROMPT lift through DO/UNTIL pinned.**  `runDo`
+   (`ops.js:4002`) is a generator and uses `yield*` for both the
+   body range and the UNTIL test range.  Four new blocks (~14
+   assertions): HALT inside DO body (`« 0 DO 1 + HALT UNTIL DUP 2
+   ≥ END »` halts twice, exits when 2 ≥ 2); HALT inside UNTIL
+   test (DUP residue visible at suspension, loop continues if
+   test is false after CONT); KILL of halted DO; PROMPT inside DO
+   body.
+
+3. **HALT lift through fully-closed START/NEXT and START/STEP
+   pinned.**  Session 136 pinned HALT in *auto-closed* START's
+   body (the `closeScan === null` path).  The *fully-closed*
+   paths — explicit NEXT, explicit STEP — were never pinned for
+   HALT lift.  Three new blocks (~13 assertions): HALT in
+   START/NEXT body (3 iters, final stack `⟦7 7 7⟧`); HALT in
+   START/STEP body where STEP value is popped at end-of-iteration
+   (sentinel `« 1 5 START HALT 100 2 STEP »` runs three iters at
+   step=2, final stack `⟦100 100 100⟧`).  Pins that the
+   `s.pop()` for the STEP value at `runLoopBody:4159` fires after
+   the body's `yield* evalRange(...)` completes — body-HALT must
+   not interfere with the STEP-value bookkeeping.
+
+4. **HALT lift through fully-closed FOR/STEP + KILL with prior
+   loop-var binding pinned.**  Symmetric to (3) for FOR.  Two new
+   blocks (~18 assertions): HALT in FOR/STEP body with loop var
+   `i` visible at every suspension (1/2/3/4); finally purges `i`
+   on completion when no prior binding existed.  KILL of halted
+   FOR/STEP with a *prior* binding for the loop var — establishes
+   `varStore('i', Integer(99n))` before EVAL, body shadows it
+   (i=1 visible), KILL closes the generator and runs the FOR's
+   `finally` chain → `varRecall('i').value === 99n` (prior
+   binding restored).  Pins runFor's save/restore symmetry
+   (`ops.js:4111-4117`) under the KILL-via-`gen.return()` path.
+
+Totals: **71 new session151-labelled assertions** in
+`tests/test-control-flow.mjs` (file 5749 → 6238 lines).
+`test-all.mjs` at **5034 passing / 0 failing** (entry baseline
+4963, Δ+71 — entirely this lane this run).
+`test-persist.mjs` at **40 passing / 1 failing** — the failure
+(`session076: snapshot missing casVx resets to default 'X' (got
+'x')`) is **pre-existing at session 151 entry** and out-of-lane:
+`state.js:139` defaults `casVx` to lowercase `'x'` (deliberate
+deviation per the comment block at `:125-139`), but the test and
+`persist.js:118` block comment still claim `'X'`.  Drift is
+data-types / CAS lane territory — not touched this run.
+`sanity.mjs` at **22 passing / ~6 ms** (unchanged).
+`node --check tests/test-control-flow.mjs` clean.
+`www/src/rpl/ops.js` was not modified this run.
+
+User-reachable demo (HALT inside a CASE clause action, with CONT
+short-circuiting past later clauses):
+
+```
+« 5 CASE 1 THEN 10 HALT 11 END 1 THEN 999 END END »   ENTER
+EVAL
+   → display halts with stack ⟦5 10⟧.
+   Press CONT → final stack ⟦5 10 11⟧
+                (the 999 in the second clause never appears —
+                 short-circuit holds across HALT/CONT).
+```
+
+User-reachable demo (HALT inside DO body and UNTIL test):
+
+```
+« 0 DO 1 + HALT UNTIL DUP 2 ≥ END »   ENTER, EVAL
+   → halts with ⟦1⟧.  CONT runs UNTIL (1≥2 false), re-enters body,
+     halts with ⟦2⟧.  CONT runs UNTIL (2≥2 true), loop exits.
+     Final stack ⟦2⟧.
+```
+
+User-reachable demo (HALT inside fully-closed START/STEP):
+
+```
+« 1 5 START HALT 100 2 STEP »   ENTER, EVAL
+   → halts (counter=1, body hasn't pushed yet).
+   3× CONT — each iteration pushes 100, STEP pops 2, counter→3→5→7.
+     Final stack ⟦100 100 100⟧.
+```
+
+User-reachable demo (KILL of halted FOR/STEP restores prior i):
+
+```
+99 'i' STO              (prior binding: i = 99)
+« 1 5 FOR i i HALT 1 STEP »   ENTER, EVAL
+   → halts with ⟦1⟧; 'i' RCL shows 1 (loop var shadows prior 99).
+   Press KILL → halt slot clears, FOR's finally restores i=99.
+     'i' RCL now shows 99.
+```
+
+---
+
+## Session 146 — what shipped
 
 This run is a test-pinning + doc-cleanup run.  No source-code logic
 in `www/src/rpl/ops.js` changed; every assertion below corresponds

@@ -263,13 +263,15 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value.eq(2) &&
   assert(getCasVx() === 'T',
     `session076: casVx restored to 'T' after snapshot round-trip (got '${getCasVx()}')`);
 
-  // Old snapshot without casVx rehydrates to default 'X'.
+  // Old snapshot without casVx rehydrates to the rpl5050 default of
+  // lowercase 'x' (deliberate deviation from the HP50 factory 'X' —
+  // see state.js casVx comment).
   const legacy = { ...snap4 };
   delete legacy.casVx;
   setCasVx('Q');                                  // pin to Q so the default reset is observable
   rehydrate(legacy, new Stack());
-  assert(getCasVx() === 'X',
-    `session076: snapshot missing casVx resets to default 'X' (got '${getCasVx()}')`);
+  assert(getCasVx() === 'x',
+    `session076: snapshot missing casVx resets to default 'x' (got '${getCasVx()}')`);
 
   resetCasVx();
 }
@@ -298,6 +300,168 @@ assert(isReal(mat.rows[0][1]) && mat.rows[0][1].value.eq(2) &&
     `session144: snapshot missing casModulo resets to default 13n (got ${getCasModulo()})`);
 
   resetCasModulo();
+}
+
+/* --- Single-variable export / import (Files-tab Download / Upload).
+       snapshotVariable + rehydrateVariable round-trip one named entry
+       at a time, distinct from the full-tree snapshot above.  Tests
+       cover Real, BigInt-backed Integer, a Directory subtree (so the
+       parent-relink contract is exercised), and the rejection paths
+       on malformed input — the wire format must stay distinguishable
+       from the full snapshot so the right rehydrate fires. --- */
+{
+  const { snapshotVariable, rehydrateVariable } =
+    await import('../www/src/rpl/persist.js');
+
+  resetHome();
+  const realVar = Real(3.14159);
+  const sn = snapshotVariable('PI3', realVar);
+  assert(sn.kind === 'variable' && sn.name === 'PI3',
+    'session-files: snapshotVariable carries kind/name fields');
+  const round = rehydrateVariable(JSON.parse(JSON.stringify(sn)));
+  assert(round.name === 'PI3' && isReal(round.value) && round.value.value.eq(3.14159),
+    'session-files: Real round-trips through snapshotVariable / rehydrateVariable');
+
+  // BigInt-valued Integer keeps its precision through the encoder.
+  const big = Integer(2n ** 90n);
+  const bsn = JSON.parse(JSON.stringify(snapshotVariable('BIG', big)));
+  const brec = rehydrateVariable(bsn);
+  assert(isInteger(brec.value) && brec.value.value === (2n ** 90n),
+    'session-files: BigInt-valued Integer round-trips');
+
+  // Directory subtree: a Directory containing Real + nested Directory.
+  // After rehydrate the .parent is null at the top (the caller relinks
+  // before installing); the inner directory's parent points at the
+  // newly-decoded outer dir.
+  resetHome();
+  const outer = makeSubdir('OUTER');
+  goInto('OUTER');
+  varStore('LEAF', Real(7));
+  const inner = makeSubdir('INNER');
+  goInto('INNER');
+  varStore('TIP', Real(99));
+  // Snap to HOME so the snapshotVariable picks up OUTER as a value.
+  calcState.current = calcState.home;
+  const dsn = JSON.parse(JSON.stringify(snapshotVariable('OUTER', outer)));
+  const drec = rehydrateVariable(dsn);
+  assert(isDirectory(drec.value) && drec.value.parent === null,
+    'session-files: Directory rehydrates with null top-level parent');
+  const reInner = drec.value.entries.get('INNER');
+  assert(reInner && isDirectory(reInner) && reInner.parent === drec.value,
+    'session-files: nested Directory parent re-linked to its rehydrated parent');
+  const reTip = reInner.entries.get('TIP');
+  assert(reTip && isReal(reTip) && reTip.value.eq(99),
+    'session-files: deeply-nested Real survives the variable-export round-trip');
+
+  // Malformed inputs are rejected with shape-pinned messages so the
+  // Files-tab error toast is meaningful.
+  assertThrows(() => rehydrateVariable(null),
+    /not an object/,
+    'session-files: null variable snapshot rejected');
+  assertThrows(() => rehydrateVariable({ version: 999, kind: 'variable', name: 'x', value: null }),
+    /unsupported version/,
+    'session-files: wrong-version variable snapshot rejected');
+  assertThrows(() => rehydrateVariable({ version: 1, kind: 'snapshot', name: 'x', value: null }),
+    /unsupported kind/,
+    'session-files: full-snapshot mistakenly fed to rehydrateVariable rejected');
+  assertThrows(() => rehydrateVariable({ version: 1, kind: 'variable', name: '', value: null }),
+    /missing name/,
+    'session-files: empty variable name rejected');
+}
+
+/* --- getDirectoryByPath: walks HOME-rooted segments to a Directory.
+       Accepts both shapes the Files tab might hand it: ['HOME', 'A']
+       (matching currentPath()) and bare ['A'] (no leading HOME).
+       Returns null on misses and on names that resolve to non-Directory
+       values — the Files-tab Move action relies on the null sentinel
+       to flash an error rather than throwing. --- */
+{
+  const { getDirectoryByPath } = await import('../www/src/rpl/state.js');
+
+  resetHome();
+  makeSubdir('A');
+  goInto('A');
+  makeSubdir('B');
+  varStore('LEAF', Real(1));
+  calcState.current = calcState.home;
+
+  assert(getDirectoryByPath([])?.name === 'HOME',
+    'session-files: empty path lands on HOME');
+  assert(getDirectoryByPath(['HOME'])?.name === 'HOME',
+    'session-files: leading HOME segment lands on HOME');
+  assert(getDirectoryByPath(['A'])?.name === 'A',
+    'session-files: bare A walks from HOME');
+  assert(getDirectoryByPath(['HOME', 'A', 'B'])?.name === 'B',
+    'session-files: HOME/A/B resolves to nested directory');
+  assert(getDirectoryByPath(['HOME', 'A', 'NOPE']) === null,
+    'session-files: missing segment returns null');
+  assert(getDirectoryByPath(['HOME', 'A', 'LEAF']) === null,
+    'session-files: non-Directory segment returns null');
+  assert(getDirectoryByPath('not-array') === null,
+    'session-files: non-array argument returns null');
+}
+
+/* --- moveCurrentEntry: relocates a variable from state.current to a
+       target Directory.  Append-to-end semantics preserve the "order
+       added" contract the Files tab promises.  Guards: missing source,
+       collision in target, moving a directory into itself. --- */
+{
+  const { moveCurrentEntry, getDirectoryByPath } =
+    await import('../www/src/rpl/state.js');
+
+  resetHome();
+  makeSubdir('SRC');
+  makeSubdir('DST');
+  goInto('SRC');
+  varStore('A', Real(1));
+  varStore('B', Real(2));
+  // SRC/B will move to DST.
+  const dst = getDirectoryByPath(['HOME', 'DST']);
+  moveCurrentEntry('B', dst);
+  assert(!calcState.current.entries.has('B'),
+    'session-files: B removed from source dir after moveCurrentEntry');
+  assert(calcState.current.entries.has('A'),
+    'session-files: A still in source dir');
+  assert(dst.entries.has('B') && dst.entries.get('B').value.eq(2),
+    'session-files: B now lives in DST with original value');
+
+  // Move a Directory and confirm its .parent re-links to the new home.
+  calcState.current = calcState.home;
+  const movedDir = makeSubdir('PORTABLE');
+  const oldParent = movedDir.parent;
+  assert(oldParent === calcState.home, 'pre: PORTABLE parent is HOME');
+  const dstAgain = getDirectoryByPath(['DST']);
+  moveCurrentEntry('PORTABLE', dstAgain);
+  assert(movedDir.parent === dstAgain,
+    'session-files: moved Directory.parent re-linked to new parent');
+
+  // Collision on target name throws "Name conflict".
+  varStore('CLASH', Real(7));
+  dstAgain.entries.set('CLASH', Real(99));
+  assertThrows(() => moveCurrentEntry('CLASH', dstAgain),
+    /Name conflict/,
+    'session-files: moving onto an existing target name throws Name conflict');
+
+  // Moving an entry that doesn't exist throws Undefined name.
+  assertThrows(() => moveCurrentEntry('GHOST', dstAgain),
+    /Undefined name/,
+    'session-files: missing source entry throws Undefined name');
+
+  // Cycle guard: moving a directory into itself (or into a descendant)
+  // is rejected.  Build HOME/X/Y so we can try to move X into Y.
+  resetHome();
+  const X = makeSubdir('X');
+  goInto('X');
+  const Y = makeSubdir('Y');
+  calcState.current = calcState.home;
+  assertThrows(() => moveCurrentEntry('X', Y),
+    /into itself/,
+    'session-files: moving a directory into one of its descendants throws cycle error');
+
+  // Bad target type — pass a non-Directory.
+  assertThrows(() => moveCurrentEntry('X', Real(5)),
+    /not a directory/,
+    'session-files: non-Directory target rejected');
 }
 
 console.log(failed ? `\n${failed} FAIL(s)` : '\nALL PERSIST TESTS PASSED');

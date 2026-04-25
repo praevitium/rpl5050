@@ -31,10 +31,14 @@
 import { allOps, lookup } from '../rpl/ops.js';
 import {
   state as calcState, subscribe as subscribeState,
-  varRecall, goInto, currentPath,
+  varRecall, varStore, varPurge, goInto, currentPath,
+  getDirectoryByPath, moveCurrentEntry,
 } from '../rpl/state.js';
 import { TYPES } from '../rpl/types.js';
 import { UNIT_CATALOG } from '../rpl/units.js';
+import {
+  exportVariableToFile, parseVariableFile,
+} from '../rpl/persist.js';
 
 /* -----------------------------------------------------------------
    Command categories.  Keys are the display names; values are arrays
@@ -600,27 +604,34 @@ export class SidePanel {
     const wrap = document.createElement('div');
     wrap.className = 'sp-files';
 
-    // IO toolbar: Export downloads the full HOME tree + stack as JSON;
-    // Import replaces them from a JSON file the user picks.  Lives
-    // here rather than in the page header so the calculator bezel
-    // stays purely keypad.  Click delegation goes through
-    // _handleAction('export' | 'import').
+    // IO toolbar: full-tree Export/Import sit alongside a single-variable
+    // Upload that drops one entry into the current directory.  Per-row
+    // Download / Move / Delete handle the inverse direction (one entry
+    // out, or shuffled around).  Click delegation goes through
+    // _handleAction('export' | 'import' | 'upload-var').
     const io = document.createElement('div');
     io.className = 'sp-io';
     const exportBtn = document.createElement('button');
     exportBtn.type = 'button';
     exportBtn.className = 'sp-io-btn';
     exportBtn.dataset.action = 'export';
-    exportBtn.textContent = 'Export';
+    exportBtn.textContent = 'Export All';
     exportBtn.title = 'Download stack + HOME tree as JSON';
     const importBtn = document.createElement('button');
     importBtn.type = 'button';
     importBtn.className = 'sp-io-btn';
     importBtn.dataset.action = 'import';
-    importBtn.textContent = 'Import';
+    importBtn.textContent = 'Import All';
     importBtn.title = 'Replace stack + HOME tree from a JSON file';
+    const uploadBtn = document.createElement('button');
+    uploadBtn.type = 'button';
+    uploadBtn.className = 'sp-io-btn';
+    uploadBtn.dataset.action = 'upload-var';
+    uploadBtn.textContent = 'Upload';
+    uploadBtn.title = 'Add a single variable (or directory) to this directory from a JSON file';
     io.appendChild(exportBtn);
     io.appendChild(importBtn);
+    io.appendChild(uploadBtn);
     wrap.appendChild(io);
 
     // Clickable breadcrumb mirroring the LCD path annunciator — each
@@ -646,6 +657,11 @@ export class SidePanel {
     });
     wrap.appendChild(crumb);
 
+    // Insertion-order iteration — the user explicitly asked that
+    // variables NOT be sorted.  state.current.entries is a Map, which
+    // preserves insertion order, and the HP50 ORDER op is the only
+    // way to reshuffle (matches the real unit's VARS menu, which
+    // ignores alphabetical sort).
     const entries = [...calcState.current.entries.entries()]
       .filter(([name]) => !filter || name.toLowerCase().includes(filter));
 
@@ -654,30 +670,30 @@ export class SidePanel {
       empty.className = 'sp-empty';
       empty.textContent = filter
         ? 'No matches.'
-        : 'Directory is empty — STO a value into a name to populate.';
+        : 'Directory is empty — STO a value into a name, or click Upload.';
       wrap.appendChild(empty);
       return wrap;
     }
 
-    // Directories first (alphabetical), then everything else (alphabetical).
-    entries.sort(([an, av], [bn, bv]) => {
-      const ad = av.type === TYPES.DIRECTORY ? 0 : 1;
-      const bd = bv.type === TYPES.DIRECTORY ? 0 : 1;
-      if (ad !== bd) return ad - bd;
-      return an.localeCompare(bn);
-    });
-
     const list = document.createElement('div');
     list.className = 'sp-file-list';
     for (const [name, value] of entries) {
-      const b = document.createElement('button');
-      b.type = 'button';
+      // Each row is a flex container holding the main name button plus
+      // three small action buttons (download / move / delete).  Nesting
+      // buttons inside .sp-file would be invalid HTML, so the actions
+      // live as siblings — event delegation in _handleAction routes
+      // each data-action independently.
       const isDir = value.type === TYPES.DIRECTORY;
-      b.className = 'sp-file' + (isDir ? ' sp-file-dir' : '');
-      b.dataset.action = isDir ? 'dir' : 'var';
-      b.dataset.value  = name;
+      const row = document.createElement('div');
+      row.className = 'sp-file-row' + (isDir ? ' sp-file-row-dir' : '');
+
+      const main = document.createElement('button');
+      main.type = 'button';
+      main.className = 'sp-file' + (isDir ? ' sp-file-dir' : '');
+      main.dataset.action = isDir ? 'dir' : 'var';
+      main.dataset.value  = name;
       const label = TYPE_LABELS[value.type] ?? value.type;
-      b.title = isDir
+      main.title = isDir
         ? `Open directory ${name}`
         : `Recall ${name} (${label}) onto the stack`;
       const nameEl = document.createElement('span');
@@ -686,9 +702,50 @@ export class SidePanel {
       const typeEl = document.createElement('span');
       typeEl.className = 'sp-file-type';
       typeEl.textContent = label;
-      b.appendChild(nameEl);
-      b.appendChild(typeEl);
-      list.appendChild(b);
+      main.appendChild(nameEl);
+      main.appendChild(typeEl);
+      row.appendChild(main);
+
+      // ⬇ Download — single-variable JSON.  Works for directories too
+      // (the encoder walks the subtree).
+      const dl = document.createElement('button');
+      dl.type = 'button';
+      dl.className = 'sp-file-act';
+      dl.dataset.action = 'download-var';
+      dl.dataset.value  = name;
+      dl.textContent = '⬇';
+      dl.title = isDir
+        ? `Download directory ${name} as JSON`
+        : `Download variable ${name} as JSON`;
+      dl.setAttribute('aria-label', `Download ${name}`);
+      row.appendChild(dl);
+
+      // ↗ Move — prompts for a HOME-rooted destination path.
+      const mv = document.createElement('button');
+      mv.type = 'button';
+      mv.className = 'sp-file-act';
+      mv.dataset.action = 'move-var';
+      mv.dataset.value  = name;
+      mv.textContent = '↗';
+      mv.title = `Move ${name} to another directory`;
+      mv.setAttribute('aria-label', `Move ${name}`);
+      row.appendChild(mv);
+
+      // × Delete — calls PURGE semantics (and refuses non-empty dirs,
+      // matching the HP50 firmware behavior).
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'sp-file-act sp-file-act-del';
+      del.dataset.action = 'purge-var';
+      del.dataset.value  = name;
+      del.textContent = '×';
+      del.title = isDir
+        ? `Delete directory ${name} (must be empty)`
+        : `Delete variable ${name}`;
+      del.setAttribute('aria-label', `Delete ${name}`);
+      row.appendChild(del);
+
+      list.appendChild(row);
     }
     wrap.appendChild(list);
     return wrap;
@@ -782,6 +839,113 @@ export class SidePanel {
       picker.addEventListener('change', async () => {
         const file = picker.files?.[0];
         if (file) await this.app.importSnapshotFromFile(file);
+      });
+      picker.click();
+      return;
+    }
+    if (action === 'download-var') {
+      // Files: per-row Download.  Works for both variables and
+      // directories — `encode()` walks the subtree for a Directory.
+      const v = calcState.current.entries.get(value);
+      if (v === undefined) {
+        entry.flashError({ message: `Undefined: ${value}` });
+        return;
+      }
+      try { exportVariableToFile(value, v); }
+      catch (e) {
+        entry.flashError({ message: `Download failed: ${e.message}` });
+      }
+      return;
+    }
+    if (action === 'move-var') {
+      // Files: per-row Move.  Prompt for a HOME-rooted destination
+      // path (e.g., 'HOME', 'HOME/A', or 'A/B' — getDirectoryByPath
+      // accepts both forms).  Refuses to move into a non-existent dir,
+      // a non-directory, or a directory that already has the same
+      // name; also refuses to drop a directory inside itself.
+      const here = currentPath().join('/');
+      const dest = (typeof window !== 'undefined' && typeof window.prompt === 'function')
+        ? window.prompt(
+            `Move "${value}" from ${here} to which directory?\n` +
+            `Enter a path like HOME, HOME/A, or A/B.`,
+            here)
+        : null;
+      if (dest === null) return;                       // user cancelled
+      const trimmed = String(dest).trim();
+      if (trimmed.length === 0) {
+        entry.flashError({ message: 'Move: empty destination' });
+        return;
+      }
+      // Tolerate either '/' or path-style separators; segments come
+      // from the same shape `currentPath()` produces.
+      const segments = trimmed.split(/[\\/]+/).filter(s => s.length > 0);
+      const targetDir = getDirectoryByPath(segments);
+      if (!targetDir) {
+        entry.flashError({ message: `Move: no such directory: ${trimmed}` });
+        return;
+      }
+      try {
+        moveCurrentEntry(value, targetDir);
+      } catch (e) {
+        entry.flashError({ message: `Move: ${e.message}` });
+      }
+      return;
+    }
+    if (action === 'purge-var') {
+      // Files: per-row Delete.  Confirm before destroying — a single
+      // misclick on a directory full of work shouldn't be silent.
+      // varPurge throws "Directory not empty" for non-empty subdirs,
+      // matching HP50 PURGE semantics; we surface that as a flash
+      // error rather than wrapping it.
+      const v = calcState.current.entries.get(value);
+      if (v === undefined) {
+        entry.flashError({ message: `Undefined: ${value}` });
+        return;
+      }
+      const isDir = v.type === TYPES.DIRECTORY;
+      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+        const ok = window.confirm(
+          isDir ? `Delete directory "${value}"?  (Must be empty.)`
+                : `Delete variable "${value}"?`);
+        if (!ok) return;
+      }
+      try {
+        varPurge(value);
+      } catch (e) {
+        entry.flashError({ message: `Delete: ${e.message}` });
+      }
+      return;
+    }
+    if (action === 'upload-var') {
+      // Files: top-of-tab Upload.  Reads a single-variable JSON file,
+      // checks for a name collision in the current directory, and
+      // installs it.  Same transient-input pattern as the full-snapshot
+      // Import button so the change event fires reliably on a re-pick.
+      const picker = document.createElement('input');
+      picker.type = 'file';
+      picker.accept = 'application/json,.json';
+      picker.addEventListener('change', async () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+        try {
+          const { name, value: val } = await parseVariableFile(file);
+          if (calcState.current.entries.has(name)) {
+            entry.flashError({ message: `Upload: ${name} already exists here` });
+            return;
+          }
+          // Directory uploads need their root parent re-linked to the
+          // live current directory; rehydrateVariable left it null.
+          if (val && val.type === TYPES.DIRECTORY) {
+            val.parent = calcState.current;
+          }
+          // varStore emits a state event so VARS, breadcrumb, and the
+          // Files list all repaint via the existing subscribe()
+          // wiring.  The collision check above already cleared the
+          // "Directory not allowed" branch, so this never throws here.
+          varStore(name, val);
+        } catch (e) {
+          entry.flashError({ message: `Upload failed: ${e.message}` });
+        }
       });
       picker.click();
       return;

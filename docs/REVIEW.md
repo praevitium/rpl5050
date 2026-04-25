@@ -6,65 +6,45 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 148 (2026-04-25).  Thirteenth review-
-lane run.  Prior baseline = session 143.  Between sessions 143
-and 148 the sibling lanes shipped: 144 (command-support — five
-new ops landing as one MODULO ARITH cluster: `MODSTO`, `ADDTMOD`,
-`SUBTMOD`, `MULTMOD`, `POWMOD` (HP50 AUR §3-150 / §3-9 / §3-243 /
-§3-153 / §3-175); all five share a new `state.casModulo` BigInt
-slot (default 13n, persisted via `persist.js` as
-`{ __t: 'bigint', v: '<digits>' }` — same codec the PRNG seed
-uses); pure-Integer paths use native BigInt arithmetic + a new
-`_centerMod` helper that returns the centered representative
-`[-(m-1)/2, m/2]` matching the AUR worked example; symbolic
-paths route through Giac via `(${e}) mod ${m.toString()}` for
-`+`/`-`/`*` and a direct `powmod(base,exp,m)` call for `POWMOD`;
-new `setCasModulo` / `getCasModulo` / `resetCasModulo` exports on
-`state.js`; `register()` total 466 → 471 (+5); top-level
-`^register(` count 445 → 450 (+5); +29 assertions in
-`tests/test-algebra.mjs`; +2 in `tests/test-persist.mjs`
-(38 → 40); `docs/COMMANDS.md` Counts heading bumped "as of
-session 139 — 2026-04-25" → "as of session 144 — 2026-04-25"
-with the +5 register attribution + 1 ✗-side row reshape
-(standalone `MULTMOD` "Not yet supported" row retired and
-replaced by `DIVMOD GCDMOD EXPANDMOD FACTORMOD DIV2MOD` row
-capturing the remaining MODULO-family gaps)); 145 (data-type-
-support — three more hard-assertion widening clusters pinning
-previously-undertested EXACT-mode `_exactUnaryLift` Integer-
-stay-exact / Rational-stay-symbolic contracts on already-
-widened ops, plus closing the bespoke-V/M inner-Tagged-rejection
-grid on the RE / IM M-axis; `tests/test-types.mjs` 762 → 803
-(+41); no source-side changes — `ops.js` was lock-held by
-concurrent session 144 command-support, so this run held only
-`tests/test-types.mjs` + `docs/DATA_TYPES.md` + `logs/session-
-145.md`; `docs/DATA_TYPES.md` Last-updated bumped to session
-145); 146 (rpl-programming — **R-006 doc cleanup shipped + ≥2
-substantive item pins** — the one-string edit at
-`docs/RPL.md:348` (`prose at \`:1455\`` → `prose at \`:1682\``)
-landed inside item 5 of the session-141 chapter; new "Session
-146 (this run) — what shipped" chapter added at `:258` becoming
-the sole `(this run)` holder (session 141's chapter demoted in
-the same pass); +50 ok-lines in `tests/test-reflection.mjs`
-(36 new `session146:` assertions + 14 incidental fires of the
-session-073 `_roundTripProgram` helper invoked seven times by
-the new structural-family round-trip pins); +29 new `session146:`
-assertions in `tests/test-control-flow.mjs`; no `www/src/rpl/
-ops.js` source change this run — every pin exercises behaviour
-that was already live; R-006 also promoted to resolved in
-`docs/REVIEW.md` by this lane); 147 (unit-tests — **active at
-run-entry** — broad `tests/*.mjs` set + `docs/TESTS.md` scope,
-intent string "unit-tests lane: coverage adds in tests/*.mjs +
-TESTS.md update").  Session 147's lock was active at this run's
-acquisition (heartbeatAt === startedAt = 1777114588, no
-`released: true`, scope held `tests/test-types.mjs` /
-`test-stack-ops.mjs` / `test-units.mjs` / `test-comparisons.mjs`
-/ `test-stats.mjs` / `test-arrow-aliases.mjs` + `docs/TESTS.md`);
-review-lane narrowed its scope to `docs/REVIEW.md` only
-(mirroring the session-143 vs. session-142, session-138 vs.
-session-137, and session-133 vs. session-132 patterns) and the
-session log file `logs/session-148.md` was written without a
-lock under the `utils/@locks/README.md:40` "logs/ are append-
-only with unique filenames" exemption.
+**Last updated.** Session 152 (2026-04-25).  Fourteenth review-
+lane run.  Prior baseline = session 148.  Between sessions 148
+and 152 the sibling lanes shipped: 149 (command-support — five
+new ops completing the MODULO ARITH menu: `EXPANDMOD`,
+`FACTORMOD`, `GCDMOD`, `DIVMOD`, `DIV2MOD` (HP50 AUR §3-80 /
+§3-83 / §3-96 / §3-63 / §3-62) — paired with the C-010 INVMOD
+block-comment refresh shipped this run as well; new
+`_modDivBigInt` helper for the exact-then-modular-inverse path;
+all five route through Giac for symbolic operands and through
+native BigInt for pure-integer paths; `register()` 471 → 476
+(+5); top-level `^register(` 450 → 455 (+5); +30 assertions in
+`tests/test-algebra.mjs`; `docs/COMMANDS.md` Counts heading
+bumped "as of session 144" → "as of session 149"; INVMOD row
+Notes amended for the C-010 close); 150 (data-type-support —
+three more hard-assertion widening clusters pinning previously-
+undertested inverse-trig DEG-Tagged-V/M wrapper composition,
+forward-hyperbolic bare-scalar `_exactUnaryLift`, and LN/LOG/
+EXP/ALOG Tagged-V/M wrapper composition; `tests/test-types.mjs`
+803 → 829 (+26); declared lock scope was `tests/test-types.mjs`
++ `docs/DATA_TYPES.md` + `logs/session-150.md` only — but
+session 150 ALSO edited `www/src/rpl/state.js:139`
+**outside its declared scope**, changing the casVx factory
+default from `'X'` to `'x'` (deliberate-deviation rationale
+documented in the file-header comment block at `:125-138`).
+That edit broke the `session076: snapshot missing casVx resets
+to default 'X'` assertion in `tests/test-persist.mjs:271-272`;
+`tests/test-persist.mjs` has been failing 1 / 40 since session
+150's release.  Filed as **D-001** below; session 151's log
+explicitly flagged this for the review lane); 151 (rpl-
+programming — symmetric pin-set to session 141's IFERR pinning
+work, this time covering CASE clauses, fully-closed START/NEXT
+and START/STEP, DO/UNTIL, and FOR/STEP; +71 session151-
+labelled assertions in `tests/test-control-flow.mjs`; no
+`ops.js` source change — every pin exercises behaviour that
+has been live since session 088; new "Session 151 (this run) —
+what shipped" chapter at `docs/RPL.md:258` becoming the sole
+`(this run)` holder, prior 146 chapter demoted in the same
+pass; the 39 / 1 test-persist failure noted at run-entry but
+out of lane scope).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -87,102 +67,108 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 148).** Sessions 144, 145, 146 graceful-
-released before this run's acquisition; session 147 (unit-tests)
-was active at run-entry with `heartbeatAt === startedAt =
-1777114588` (~26 s before this run's acquisition at 1777114614)
-and a wide `tests/*.mjs` (test-types / test-stack-ops / test-
-units / test-comparisons / test-stats / test-arrow-aliases) +
-`docs/TESTS.md` scope.  At review-lane *entry*
-`node tests/test-all.mjs` = **4883 passing / 0 failing**
-(fully green); `node tests/test-persist.mjs` = **40 passing / 0
-failing** (up from the session-143 baseline of 38 — session 144
-added two persist assertions for the `casModulo` BigInt round-
-trip codec); `node tests/sanity.mjs` = **22 passing / 0 failing
-in ~5 ms** (stable).  `node --check` N/A this run — only edit is
-`docs/REVIEW.md` (Markdown).  Δ from session 143's run-close
-4711: **+172** (144 +29 MODULO-cluster coverage in
-`test-algebra.mjs`; 145 +41 EXACT-mode `_exactUnaryLift` lift
-+ inverse-trig EXPM + bespoke-V/M wrapper composition pins in
-`test-types.mjs`; 146 +50 ok-lines in `tests/test-reflection.mjs`
-(36 new + 14 incidental session-073 fires) + 29 new
-`session146:` assertions in `tests/test-control-flow.mjs` —
-total +79 from session 146; 147 +14 visible at this run's entry
-in test-stack-ops.mjs / test-units.mjs / test-comparisons.mjs /
-test-stats.mjs / test-arrow-aliases.mjs / test-types.mjs cluster
-adds; 4711 + 29 + 41 + 79 + 14 ≈ +163 of the +172 visible —
-remaining +9 are sub-cluster session-147 fires already on disk
-at run-entry).  Lock overlap during the run: at acquisition
-(1777114614) session 147 was active with `heartbeatAt ===
-startedAt` (1777114588, ~26 s before acquisition).  Review-lane
-narrowed its scope to `docs/REVIEW.md` to avoid `tests/*.mjs`
-overlap with session 147's broad test-suite claim and `logs/`
-overlap with the implicit `logs/session-147.md` claim; review-
-lane's edits to `docs/REVIEW.md` describe the finding-state as
-it stood at session 147's lock-acquisition moment.
+**Baseline (session 152).** Sessions 149, 150, 151 all graceful-
+released before this run's acquisition; no sibling-lane lock
+active at run-entry (`node utils/@locks/lock.mjs list` returned
+`[]`).  At review-lane *entry* `node tests/test-all.mjs` =
+**5034 passing / 0 failing** (fully green); `node tests/test-
+persist.mjs` = **39 passing / 1 failing** (the single failing
+assertion is `session076: snapshot missing casVx resets to
+default 'X' (got 'x')` — pre-existing since session 150's out-
+of-scope `state.js:139` edit, filed as **D-001** below); `node
+tests/sanity.mjs` = **22 passing / 0 failing in ~6 ms** (stable).
+`node --check` N/A this run — only edit is `docs/REVIEW.md`
+(Markdown).  Δ from session 148's run-close 4883:  **+151**
+(149 +30 MODULO-cluster coverage in `tests/test-algebra.mjs`;
+150 +26 transcendental `_exactUnaryLift` Tagged-V/M + forward-
+hyperbolic bare-scalar pins in `tests/test-types.mjs`; 151 +71
+HALT/PROMPT-through-CASE / DO-UNTIL / fully-closed START-NEXT-
+STEP / FOR-STEP pins in `tests/test-control-flow.mjs`; 4883 +
+30 + 26 + 71 = 5010, off by 24 from the visible 5034 — the
+remaining +24 are between-session adjustments visible at
+session-149's entry baseline (see `logs/session-149.md` lines
+17-29 documenting +24 between session 148 close and session 149
+acquire — sibling unit-tests fire from the test-stack-ops /
+test-arrow-aliases cluster session 147 left in flight at
+session 148's exit).  test-persist Δ from session 148's 40 / 0:
+**40 → 39 passing, 0 → 1 failing at run-entry** — the regression
+was entirely attributable to session 150's out-of-scope
+`state.js:139` edit; session 149 / 151 ran their own pre/post
+test-persist checks (see `logs/session-149.md:184-211` and
+`logs/session-151.md:21-35`) confirming the failure was
+introduced by session 150's edit, not by their own runs.  At
+run-close the gate is **40 / 0** because an interactive
+`session-file-explorer` lane shipped a partial D-001 fix
+(test-side + state.js comment) during this run's window; the
+remainder (`persist.js:126` stale comment) is left open as
+D-001 partial.  No review-lane lock overlap during this run.
 
 **This run's own edits.** One doc/hygiene edit:
-`docs/REVIEW.md` Last-updated stamp bumped to session 148;
-baseline block rewritten; findings re-aged; four carried-
-forward findings aged (X-003 12 → 13 runs — still the longest-
-aging open finding, now 13 review-lane runs and 37+ calendar
-days unaddressed; O-007 9 → 10 runs; O-009 6 → 7 runs; O-011
-1 → 2 runs); one prior finding verified-resolved (R-006 — the
-session 146 close already landed in `docs/REVIEW.md`'s Status
-block by the rpl-programming lane during its own run; this
-review-lane run only re-verifies via `grep -nE "prose at"
-docs/RPL.md` returning the new `:1682` cite at `:348`).  One
-new finding filed:
-  • **C-010** — `www/src/rpl/ops.js:1939-1954` INVMOD block
-    comment is now stale post-session-144.  Two phrasings need
-    refresh: line 1942 "we take it explicitly on the stack
-    until that slot lands so the op is usable without the CAS
-    state substrate" — the slot HAS landed (session 144 added
-    `state.casModulo` + `setCasModulo` / `getCasModulo` /
-    `resetCasModulo` exports on `state.js`, plus the persist
-    codec round-trip).  And line 1953 "When the MODULO state
-    slot lands, add a single-arg form that consults it" — same
-    conditional-future tense, same staleness.  The commentary
-    in `docs/COMMANDS.md` Counts narrative this run cited the
-    INVMOD comment as "stays accurate" because INVMOD itself
-    didn't switch to the new slot, but the comment's *phrasing*
-    is now misleading: a reader sees "until that slot lands"
-    and concludes the slot is still future work, when in fact
-    the slot is shipped and only INVMOD's single-arg upgrade
-    is the open follow-up.  Pure-comment edit; safe for the
-    `rpl5050-command-support` lane to ship as part of the
-    INVMOD single-arg upgrade (the natural pairing) or for the
-    review lane to ship as pure hygiene if the upgrade lags.
+`docs/REVIEW.md` Last-updated stamp bumped to session 152;
+baseline block rewritten; "between sessions 148 and 152" prelude
+rewritten to attribute deltas across sessions 149 / 150 / 151;
+four carried-forward findings aged (X-003 13 → 14 runs — still
+the longest-aging open finding, now 14 review-lane runs and
+37+ calendar days unaddressed; O-007 10 → 11 runs; O-009 7 → 8
+runs; O-011 2 → 3 runs); one prior finding verified-resolved
+(C-010 — the session 149 close already landed in the comment
+body of `www/src/rpl/ops.js:1939-1962` per session-149's lane
+charter; this review-lane run only re-verifies via
+`grep -nE "until that slot lands|When the MODULO state slot
+lands" www/src/rpl/ops.js` returning zero hits and `sed -n
+'1939,1962p' www/src/rpl/ops.js` showing the rewritten
+phrasings post-session-149).  Two new findings filed:
+  • **C-011** — `www/src/rpl/ops.js:1679-1699` (the
+    `_combPermArgs` helper used by COMB and PERM) accepts a
+    Rational operand because the type-guard at `:1685` reads
+    `if (!isNumber(a) || !isNumber(b))` and `isNumber` includes
+    `isRational`.  The downstream `toBig` closure then reads
+    `v.value.isFinite()` on the Rational, which has shape
+    `{type: 'rational', n, d}` (no `.value` field) — leaks a
+    raw JavaScript `TypeError: Cannot read properties of
+    undefined (reading 'isFinite')` instead of the RPL-style
+    `Bad argument type` rejection.  Six failure modes
+    reproduced at the Node REPL session 152 (COMB / PERM × {Rat
+    on level 2, Rat on level 1, both Rat}).  Surfaced by
+    session 150's audit (`logs/session-150.md:215-252`) but
+    deferred for review-lane routing.  Sibling ops IQUOT /
+    IREMAINDER / IDIV2 use a correctly-narrowed
+    `_intQuotientArg` helper at `:1830-1843`.  Owner: command-
+    support (preferred) or data-type-support.
+  • **D-001** — `tests/test-persist.mjs:271-272` is currently
+    failing 1 / 40 because session 150 changed
+    `www/src/rpl/state.js:139` casVx factory default from `'X'`
+    to `'x'` (deliberate-deviation rationale documented at
+    `:125-138`) outside its declared lock scope, and did not
+    update the matching test or the `persist.js:118` block
+    comment.  Live signal: `node tests/test-persist.mjs` at
+    session 152 entry returns the single FAIL.  Sessions 149 /
+    150 / 151 all noted the failure and routed to review-lane
+    per the standing convention; session 151's log explicitly
+    flagged it for filing.  Three sites out of sync (state.js,
+    test-persist.mjs, persist.js); two narrow remediation
+    options (embrace lowercase or revert to uppercase) — both
+    1-2 line edits.  **Blocking-class** finding because
+    `tests/test-persist.mjs` is a per-run gate.  Owner:
+    `rpl5050-data-type-support` (preferred — semantic decision
+    belongs there).
 
-Session 148 log added.  No sibling-lane source files touched.
+Session 152 log added.  No sibling-lane source files touched.
 No RPL op behavior changed, no types widened, no tests added
 or deleted, no interpreter touched, no registrations added or
 removed.
 
-**Lock.** Held `utils/@locks/session148-code-review.json`
-throughout, scope = `docs/REVIEW.md` only (narrower than the
-canonical review-lane scope of `docs/REVIEW.md` + `logs/`
-because session 147 unit-tests is holding the broad
-`tests/*.mjs` set + `docs/TESTS.md` at this run's acquisition
-— same tooling pattern as session 143 vs session 142, session
-138 vs session 137, session 133 vs session 132, and session
-128 vs session 127; the helper accepts `docs/REVIEW.md`-only
-as non-overlapping; the session log file `logs/session-148.md`
-is written without a lock under the `utils/@locks/README.md:40`
-"logs/ are append-only with unique filenames" exemption, with
-a unique filename so no real conflict exists).  Sibling locks
-at run-entry: session 147 unit-tests (active — holds the broad
-`tests/*.mjs` set + `docs/TESTS.md`); sessions 144 / 145 / 146
-all released gracefully (session 146's lock body shows
-`heartbeatAt: 1777113880 === startedAt`, `released: true`,
-`releasedAt: 1777114501` — 621 s ≈ 10m 21s after start, just
-past the 10-min stale-prune threshold; `logs/session-146.md`
-mtime is 2026-04-25 10:54 — within seconds of `releasedAt:
-1777114501` per the lock body, and the log content is real and
-substantive (192 lines), so the missing-log signal O-008 was
-meant to trigger does NOT apply this time — fourth instance of
-the O-011 signature, see updated O-011 status block below).
-Released at end of run.
+**Lock.** Held `utils/@locks/session152-code-review.json`
+throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
+review-lane scope this run; no sibling locks active at
+acquisition so the helper allowed the broader scope —
+contrasts with sessions 143 / 148 which had to narrow to
+`docs/REVIEW.md` only because a unit-tests lane was active
+holding `logs/`).  Sibling locks at run-entry: none active —
+sessions 149 / 150 / 151 all released gracefully before this
+run's acquisition (the seventh / eighth / ninth occurrences of
+the O-011 lock-body shape ambiguity; see updated O-011 status
+block below).  Released at end of run.
 
 ---
 
@@ -309,7 +295,7 @@ Released at end of run.
   purge-first narrative; body at `:280-282` still the bare
   `astToGiac`/`buildCmd` pair; second comment block at `:285-299`
   still explains the removal).
-- **Age.** 10 runs. **Status.** open (lane = `rpl5050-cas-giac` or
+- **Age.** 11 runs. **Status.** open (lane = `rpl5050-cas-giac` or
   `rpl5050-code-review` — any lane can take this as pure hygiene,
   but defer to the cas lane if they want the phrasing).
   Re-verified session 118: same state — the 22-line top block at
@@ -385,7 +371,19 @@ Released at end of run.
   test-control-flow.mjs` + `docs/RPL.md` + `docs/REVIEW.md` only,
   no `cas/` files), 147 (unit-tests in flight, broad `tests/*.mjs`
   + `docs/TESTS.md` scope) did not touch `giac-convert.mjs`
-  either.  Now 10 review-lane runs aging — the rpl5050-cas-giac
+  either.  Re-verified session 152: `grep -n "Safe caseval"
+  www/src/rpl/cas/giac-convert.mjs` still hits at `:235`; top
+  block still opens with the purge-first narrative.  Sessions
+  149 (command-support — shipped EXPANDMOD / FACTORMOD / GCDMOD
+  / DIVMOD / DIV2MOD via `buildGiacCmd` callers but did NOT
+  touch `giac-convert.mjs` itself — every new op is a call-site,
+  not an edit to the builder), 150 (data-types — `tests/test-
+  types.mjs` + `docs/DATA_TYPES.md` only — but also edited
+  `www/src/rpl/state.js` outside its declared scope per session-
+  149's interference note; did not touch `cas/` files), 151
+  (rpl-programming — `tests/test-control-flow.mjs` + `docs/
+  RPL.md` only, no `cas/` files) did not touch `giac-convert.mjs`
+  either.  Now 11 review-lane runs aging — the rpl5050-cas-giac
   lane has not been spun up since this finding was filed (the
   giac/cas work continues to be threaded through command-support
   sessions instead, and none has chosen to fold this hygiene edit
@@ -1111,10 +1109,128 @@ Released at end of run.
   www/src/rpl/state.js www/src/rpl/persist.js` (eight hits across
   the slot definition, setter / getter / resetter, persist
   encode / decode, and the rehydrate fallback path).
-- **Age.** new (filed session 148).  **Status.** open.  Lane =
-  `rpl5050-command-support` (preferred — pairs naturally with the
-  INVMOD single-arg upgrade) or `rpl5050-code-review` (fallback —
-  pure-comment hygiene).
+- **Age.** 1 run (filed session 148).  **Status.** **resolved
+  session-149** by the `rpl5050-command-support` lane as part of
+  its MODULO-cluster ship.  Both pure-comment edits shipped:
+  - **(closed session 149)** Line 1942 — the conditional-future
+    "until that slot lands so the op is usable without the CAS
+    state substrate" was rewritten as "(INVMOD's own single-arg
+    form that consults `getCasModulo()` is a follow-up; the slot
+    itself landed in session 144 — see MODSTO / ADDTMOD / SUBTMOD
+    / MULTMOD / POWMOD below)" — past-tense, points at the
+    sibling ops in the file.
+  - **(closed session 149)** Line 1953 — the conditional-future
+    "When the MODULO state slot lands, add a single-arg form that
+    consults it" was rewritten as "Follow-up: add a single-arg
+    form that consults `getCasModulo()` (the state slot landed in
+    session 144); the two-arg form stays for explicit callers."
+    — same past-tense pattern, names the follow-up upgrade
+    explicitly.
+  Verified session 152 via `sed -n '1939,1960p' www/src/rpl/ops.js`
+  showing both rewritten phrasings in situ; `grep -nE "until that
+  slot lands|When the MODULO state slot lands" www/src/rpl/ops.js`
+  returns zero hits.  Behavior unchanged (INVMOD still takes both
+  `a` and `n` on the stack); pure-comment edits.  COMMANDS.md
+  INVMOD row Notes column was also amended in the same pass to
+  cite the comment refresh (per session-149 log).  Same close
+  shape as C-007 (session 128 → 129) and C-008 (session 133 →
+  134) — pairs the comment refresh with the natural follow-up
+  command-support work.
+
+### C-011  `_combPermArgs` accepts Rational and propagates a JavaScript `TypeError` instead of `Bad argument type`
+
+- **Classification.** Commands.
+- **Where.** `www/src/rpl/ops.js:1679-1699` (the `_combPermArgs`
+  helper used by both `COMB` (`:1701`) and `PERM` (`:1716`)).
+- **What.** The argument-type guard at `:1685` reads
+  `if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad
+  argument type');`.  But `isNumber` (defined in
+  `www/src/rpl/types.js:398`) is `v => isReal(v) || isInteger(v)
+  || isRational(v) || isComplex(v);` — so a Rational operand
+  passes the guard.  The Complex case is rejected at `:1686` via
+  an explicit `isComplex` check, but Rational is not.  The
+  `toBig` closure at `:1687-1697` then handles only `isInteger`
+  (returns `v.value` directly) and otherwise reads
+  `v.value.isFinite()` — a Real-shaped probe.  For Rational, the
+  shape is `{type: 'rational', n, d}` (no `.value` field, no
+  `.isFinite` method anywhere on the value), so the access
+  raises `TypeError: Cannot read properties of undefined
+  (reading 'isFinite')`.  Reproduced session 152 with a six-cell
+  matrix: `COMB(Rat(5/1), Int(2))`, `COMB(Int(5), Rat(2/1))`,
+  `COMB(Rat(5/1), Rat(2/1))`, plus the same three with PERM —
+  all six leak `TypeError` instead of `RPLError('Bad argument
+  type')`.  Sibling ops `IQUOT` / `IREMAINDER` / `IDIV2` route
+  through the analogous `_intQuotientArg` helper at `:1830-1843`
+  which checks `isInteger` then `isReal` and throws
+  `'Bad argument type'` on any other type — exactly the contract
+  COMB / PERM should match.  Surfaced by session 150's data-
+  type-support audit while probing `_combPermArgs` for a
+  candidate Q-rejection cluster on COMB / PERM (see `logs/
+  session-150.md:215-252`); session 150 declined to ship the
+  fix (out of declared lock scope, and pinning the *current*
+  TypeError behavior would freeze a buggy contract — the right
+  move is to file for review-lane routing and let the corrected
+  `'Bad argument type'` rejection be pinned alongside the fix).
+- **Why.** RPL contract integrity.  HP50 user code that hands a
+  Rational to COMB or PERM expects a clean `Bad argument type`
+  (or `Bad argument value`) RPL error — the kind the calculator
+  surfaces in the status line as a recoverable error.  Instead,
+  the handler leaks a JavaScript TypeError up through
+  `_driveGen` / `evalRange` / the EVAL driver.  This is the same
+  class of defect as a `null pointer` escape in C — the user
+  sees a stack-trace-shaped message rather than the RPL-style
+  one-liner the rest of the calculator produces.  Also a
+  cross-symmetry concern: every other binary-numeric op in the
+  same neighborhood (FACT, IQUOT, IREMAINDER, IDIV2, MOD) has
+  the type-narrowing right; COMB / PERM are the outliers.
+  Likely origin: `_combPermArgs` was written before Rational
+  became a first-class numeric type in session 092 (Fraction.js
+  + `isRational` predicate); the helper's guard pre-dated
+  Rational and was never tightened when the type joined
+  `isNumber`'s lattice.  Same stranding pattern as X-008 (the
+  session-094 → session-098 purge-removal that left `freeVars`
+  unused in `giac-convert.mjs`) — implementation evolved, the
+  guard didn't.
+- **Fix.** Two surgical options:
+  1. **Narrow the type-guard at `:1685`** to reject Rational
+     explicitly: `if (!isInteger(a) && !isReal(a)) throw new
+     RPLError('Bad argument type'); if (!isInteger(b) && !isReal(b))
+     throw new RPLError('Bad argument type');` — mirrors
+     `_intQuotientArg`'s shape exactly.  Drops the existing
+     `isComplex` check (subsumed by `!isInteger && !isReal`)
+     and adds Rational to the rejection branch.  Two-line edit
+     (one per operand) plus deletion of the now-redundant
+     `isComplex` line.
+  2. **Coerce Rational to integer-valued Real first.** A
+     Rational that evaluates to an integer (`d === 1n`) could in
+     principle be accepted: `Rat(5/1) → BigInt(5n)`.  But the
+     HP50 firmware does not do this — `5/1 COMB 2` on hardware
+     rejects with `Bad Argument Value` per the AUR §3-29 worked
+     example (the example uses a fractional argument and shows
+     the rejection).  Match the firmware: reject Rational
+     uniformly, even integer-valued Rationals.  Same as option
+     (1).
+  Pin via 6 + N new assertions in `tests/test-comparisons.mjs`
+  or `tests/test-numerics.mjs` (whichever the COMB / PERM block
+  lives in): each of the six failure modes above pinned with
+  `assertThrows(/Bad argument type/, …)`.  Owner:
+  `rpl5050-command-support` (preferred — fix lives in the
+  command's own helper, pairs naturally with any COMB / PERM-
+  adjacent work) or `rpl5050-data-type-support` (acceptable —
+  the underlying drift is the lattice expansion that left
+  `_combPermArgs` behind).  `node --check` + `node tests/test-
+  all.mjs` are the safety net.
+- **Confidence.** high — reproduced session 152 with a six-cell
+  matrix at the Node REPL; `grep -n '_combPermArgs\|isFinite'
+  www/src/rpl/ops.js` shows the buggy `v.value.isFinite()`
+  access at `:1693` and the analogous-but-correct
+  `_intQuotientArg` at `:1837`; `grep -n 'isNumber'
+  www/src/rpl/types.js` confirms Rational joined the lattice at
+  `:398`.
+- **Age.** new (filed session 152).  **Status.** open.  Lane =
+  `rpl5050-command-support` (preferred) or `rpl5050-data-type-
+  support` (acceptable).  Pure-JS edit to `_combPermArgs` plus
+  6 + N test pins.  No cross-lane coupling.
 
 ### C-006  `COMMANDS.md` HALT row missing session-106 named-sub-program lift + SST↓ step-into
 
@@ -1305,9 +1421,149 @@ Released at end of run.
 
 ## Findings — Data Types
 
-_(No new Data Types findings this run beyond those tracked in
-`docs/DATA_TYPES.md`'s own "future widening" cells.  O-006 closed
-above.)_
+### D-001  `tests/test-persist.mjs` is currently **failing 1 / 40** because session 150 changed `state.casVx` factory default to lowercase `'x'` outside its declared scope, but did not update the matching test or the `persist.js` doc-comment
+
+- **Classification.** Data Types (the casVx slot is data-types-
+  owned per session 076's authoring; the test that fires lives in
+  `tests/test-persist.mjs`, but the semantic decision — uppercase
+  HP50 fidelity vs. lowercase keyboard-deviation — belongs to the
+  data-types lane).
+- **Where.**
+  - `www/src/rpl/state.js:139` (factory default `casVx: 'x'`),
+    `:580-581` (`resetCasVx()` writes `'x'`).
+  - `tests/test-persist.mjs:266-272` (the `session076: snapshot
+    missing casVx resets to default 'X'` assertion that fires on
+    rehydrate of a legacy snapshot without a `casVx` field — gets
+    `'x'`, expected `'X'`, currently FAILS).
+  - `www/src/rpl/persist.js:118-119` block comment cluster which
+    still describes the default as the HP50 factory uppercase
+    `'X'` value.
+- **What.** Three sites are out of sync after session 150's
+  out-of-scope `state.js` edit:
+  1. **`state.js:139` factory default is `casVx: 'x'`** with a
+     header comment block at `:125-138` explicitly documenting
+     this as a "deliberate deviation from the HP50 factory
+     default of `'X'`, matching the lowercase-default keyboard
+     convention".  This is the new state of the world.
+  2. **`tests/test-persist.mjs:271-272`** asserts the post-
+     rehydrate-of-legacy-snapshot value is the HP50 factory
+     `'X'`.  The assertion fires (`legacy = { ...snap4 }; delete
+     legacy.casVx; setCasVx('Q'); rehydrate(legacy, new Stack())`
+     → `getCasVx()` returns `'x'`, not `'X'`).  Live result
+     verified at session 152 entry: `node tests/test-persist.mjs
+     2>&1 | grep -E "session076|FAIL"` shows the failing line:
+     `FAIL: session076: snapshot missing casVx resets to default
+     'X' (got 'x')`.  This is the **only** failing assertion in
+     the persist suite — 39 / 40 pass.
+  3. **`persist.js:118` block comment** still describes the
+     default in the HP50-fidelity uppercase form — out of date.
+  Sibling-session traceability: session 149 (`logs/session-149.md`
+  lines 171-209, "Sibling-lane interference" block) explicitly
+  documents this as a session-150 out-of-scope edit, observed by
+  re-running test-persist immediately before and after session
+  150 acquired its lock (40 / 0 → 39 / 1).  Session 150's own log
+  (`logs/session-150.md:184-205`) acknowledges the pre-existing
+  failure but disclaims responsibility ("Not addressing it from
+  this lane (state.js and test-persist.mjs are both outside the
+  data-type-support charter and outside this session's lock
+  scope)" — even though the state.js edit ITSELF is what
+  introduced the failure).  Session 151 (`logs/session-151.md`,
+  "Open queue items for future runs" block) recommends the
+  failure be filed under code-review as "documented-but-untested
+  deviation".
+- **Why.** Three concerns.
+  1. **Live failing test.** `tests/test-persist.mjs` is a gate
+     that the per-run protocol (`docs/@!MY_NOTES.md` standing
+     lessons + the lane charter's "all verification gates must
+     stay green at exit" rule) requires every session to keep
+     green.  It has been failing since session 150 graceful-
+     released, and three subsequent lane runs (149 ran
+     concurrently, 150 introduced the regression, 151 explicitly
+     declined to address) have left it failing.  Each new run
+     must now distinguish "my edits broke a test" from "this
+     test was already failing at run-entry" — a per-run baseline
+     check that the green-gate invariant is meant to spare.
+  2. **Cross-doc drift.** state.js' header comment is the
+     authoritative narrative ("deliberate deviation, matching
+     keyboard"), but persist.js' block comment claims the
+     opposite.  A reader following persist.js to understand the
+     casVx field's contract gets the wrong story.
+  3. **HP50-fidelity question is unsettled.**  The header
+     comment frames the lowercase default as deliberate, but the
+     test (which is older — written at session 076) implies the
+     uppercase value was the original intent.  Without a memory
+     entry or explicit lane-level confirmation, future sessions
+     cannot tell which side is "the spec" — the keyboard-
+     convention argument or the HP50-firmware argument.  This is
+     the kind of ambiguity that compounds: each future session
+     reading both sides will defer the decision again.
+- **Fix.** The data-types lane has to pick one of two narrow
+  remediations (both are 1-2 line edits + a verification re-run):
+  1. **Embrace the lowercase deviation.**  Update
+     `tests/test-persist.mjs:271` to expect `'x'` (and the
+     surrounding message string at `:272`); update `persist.js:118-
+     119` block comment to describe the lowercase default and
+     cite the deliberate-deviation rationale; bring DATA_TYPES.md
+     coverage matrix Notes column for the casVx slot in line if
+     it cites the uppercase default anywhere.  **Risk:** loses
+     direct HP50 fidelity on a CAS-firmware-named slot.
+  2. **Revert `state.js:139` to the HP50 factory `'X'`.**
+     Restore the uppercase factory default; re-purpose the
+     keyboard-input default such that lowercase letter entry
+     coerces uppercase for the canonical CAS-variable name slot
+     (or accept the keyboard inconsistency).  **Risk:** undoes
+     a session-150 design choice that already shipped to user-
+     reachable state; `getCasVx()` has been returning `'x'` to
+     callers in the live calculator since session 150's lock
+     window.
+  Either fix re-greens `tests/test-persist.mjs` at 40 / 0.  Pin
+  the chosen direction with a memory entry recording the
+  decision so future sessions stop re-litigating it.  Owner:
+  `rpl5050-data-type-support` (preferred — they own the casVx
+  semantics and shipped the change).  Fallback: any lane working
+  under an interactive (non-scheduled) Claude session can ship
+  option (1) as the path-of-least-disruption since the user-
+  facing state has already shifted; the lane-level decision can
+  be folded into a memory entry later.
+- **Confidence.** high — `node tests/test-persist.mjs` at session
+  152 entry shows the single failing assertion; `grep -n 'casVx'
+  www/src/rpl/state.js www/src/rpl/persist.js tests/test-persist.mjs`
+  shows the three out-of-sync sites; `head -150 www/src/rpl/
+  state.js | tail -25` shows the `:125-139` header comment
+  documenting the deliberate-deviation rationale.
+- **Age.** new (filed session 152).  **Status.** **partial —
+  test-persist gate re-greened by an interactive lane during
+  this run's review-window; `persist.js:126` block comment
+  still stale.**  Mid-run development: while this review-lane
+  run was holding `docs/REVIEW.md` + `logs/`, an interactive
+  lane (lock owner = `session-file-explorer`, declared scope
+  `www/src/ui/side-panel.js` + `www/css/calc.css` + `www/src/
+  app.js` + `www/src/rpl/persist.js` — note that `state.js`
+  and `tests/test-persist.mjs` were NOT in the declared scope)
+  modified `tests/test-persist.mjs:271-274` to assert
+  `getCasVx() === 'x'` (the lowercase value) and updated the
+  prose comment at `:266-268` to describe "the rpl5050 default
+  of lowercase 'x' (deliberate deviation from the HP50 factory
+  'X' — see state.js casVx comment)" — option (1) from this
+  finding's Fix list.  Verified at session-152 run-close: `node
+  tests/test-persist.mjs` returns 40 / 0 passing; the failing
+  assertion is gone.  **Remaining open piece:** `www/src/rpl/
+  persist.js:126` still reads "load cleanly and reset VX to
+  the default `'X'`" — out-of-sync with the now-shipped
+  lowercase default and inconsistent with the test's new
+  message string.  `persist.js` *was* in the session-file-
+  explorer lock scope but the stale-comment fix wasn't part of
+  the partial-fix that landed (the agent's intent string was
+  Files-tab features, not casVx hygiene — the test-persist.mjs
+  + state.js edits are themselves out-of-scope for the
+  declared intent, so the partial fix landed via an
+  unsupervised editor pass).  **Future improvement:** edit
+  `persist.js:126` to read "the rpl5050 default of `'x'`
+  (deliberate deviation, see state.js casVx comment)" — same
+  one-line shape as the test message rewrite.  Owner for the
+  remainder: any lane touching `persist.js`; pure-comment
+  edit, `node --check` safety net.  Test gate status at
+  session-152 close: 40 / 0 (re-greened).
 
 ---
 
@@ -1934,7 +2190,7 @@ are UI-adjacent but classified under Other for bookkeeping.)_
 - **Why.** Same rationale as X-001 / X-002.
 - **Fix.** Drop `clampLevel` from the import list.
 - **Confidence.** high.
-- **Age.** 13 runs. **Status.** open (lane = `rpl5050-ui-development`).
+- **Age.** 14 runs. **Status.** open (lane = `rpl5050-ui-development`).
   Re-verified session 118 at `www/src/app.js:14` — still present
   (`interactiveStackMenu, clampLevel, levelUp, levelDown, …`);
   `grep -c 'clampLevel' www/src/app.js` returns 1 (import line only).
@@ -1992,12 +2248,25 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   RPL.md` + `docs/REVIEW.md` + `tests/test-control-flow.mjs` +
   `tests/test-reflection.mjs`), 147 (unit-tests in flight, broad
   `tests/*.mjs` + `docs/TESTS.md` scope) did not touch `app.js`
-  either.  Now the longest-aging open finding in the ledger —
-  filed at session 080, 13 review-lane runs and 37+ calendar
-  days unaddressed.  The `rpl5050-ui-development` lane has not
-  been spun up since this finding was filed, which explains the
-  lack of movement; any `app.js`- or `ops.js`-adjacent lane
-  could ship the one-line edit in passing.
+  either.  Re-verified session 152: identical state at
+  `www/src/app.js:14` (the line still reads
+  `interactiveStackMenu, clampLevel, levelUp, levelDown,`);
+  `grep -n 'clampLevel' www/src/app.js` still returns one line
+  (the import).  Sessions 149 (command-support — `www/src/rpl/
+  ops.js` + `tests/test-algebra.mjs` + `docs/COMMANDS.md` +
+  `logs/session-149.md`), 150 (data-types — declared scope
+  `tests/test-types.mjs` + `docs/DATA_TYPES.md` + `logs/
+  session-150.md`, but also edited `www/src/rpl/state.js` outside
+  declared scope per session-149's interference note — flagged
+  as D-001 below; did not touch `app.js`), 151 (rpl-programming
+  — `tests/test-control-flow.mjs` + `docs/RPL.md` + `logs/
+  session-151.md`) did not touch `app.js` either.  Now 14
+  review-lane runs aging — filed at session 080, 14 review-lane
+  runs and 37+ calendar days unaddressed.  The `rpl5050-ui-
+  development` lane has not been spun up since this finding was
+  filed, which explains the lack of movement; any `app.js`- or
+  `ops.js`-adjacent lane could ship the one-line edit in
+  passing.
 
 ### X-004  Three unused private functions in `src/rpl/ops.js`
 
@@ -2285,7 +2554,7 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   `git status`.
 - **Confidence.** high — verified session 113 via `ls -la
   tests/test-control-flow.mjs*`.
-- **Age.** 7 runs. **Status.** open (lane = `rpl5050-unit-tests`,
+- **Age.** 8 runs. **Status.** open (lane = `rpl5050-unit-tests`,
   but **explicitly deferred — blocked by tooling**).  Session 117
   attempted the deletion ("delete test-control-flow.mjs.bak*" was
   in its intent string) but `rm` returned `Operation not permitted`
@@ -2345,11 +2614,27 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   session 147 (unit-tests, active during this run) again has
   `tests/*.mjs` broadly in scope but is running under the
   scheduled-task sandbox and would hit the same permission gate.
-  Future paths to resolution: (a) interactive supervisor session
-  approves the delete via `mcp__cowork__allow_cowork_file_delete`;
-  or (b) any lane working under an interactive (non-scheduled)
-  Claude session takes the chore in passing.  Pure hygiene — the
-  runner doesn't pick up `.bak*` files (`test-all.mjs` walks
+  Re-verified session 152: `ls -la tests/test-control-flow.mjs*`
+  still shows the same two `.bak` files at the same 92,129 /
+  92,141 byte counts and same Apr 24 11:54 / 13:41 mtimes; the
+  live file has grown to 238,292 bytes (was 218,434 at session
+  148 — sessions 151 +71 IFERR-symmetry pins on top, plus the
+  in-flight session 152 which is review-lane only and does not
+  touch tests).  Sessions 149 (command-support — `tests/test-
+  algebra.mjs` only, the live file not the `.bak` snapshots) /
+  150 (data-types — `tests/test-types.mjs` only) / 151 (rpl-
+  programming — `tests/test-control-flow.mjs` only, the live
+  file) did not delete the `.bak` files (none was a unit-tests
+  lane).  No unit-tests lane has run since session 147 (the
+  149-150-151 block was command-support / data-types / rpl-
+  programming, then this review-lane run); next opportunity
+  for an interactive lane to fold the cleanup is whenever the
+  unit-tests lane next acquires.  Future paths to resolution:
+  (a) interactive supervisor session approves the delete via
+  `mcp__cowork__allow_cowork_file_delete`; or (b) any lane
+  working under an interactive (non-scheduled) Claude session
+  takes the chore in passing.  Pure hygiene — the runner
+  doesn't pick up `.bak*` files (`test-all.mjs` walks
   `tests/*.mjs` explicitly), so no behavior risk.
 
 ### O-010  Session 121 shipped substantive changes without writing `logs/session-121.md`, COMMANDS.md update, RPL.md narrative, or tests
@@ -2609,7 +2894,7 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   same omission for the prior precedents; `grep -n "releaseReason\|releasedAt"
   utils/@locks/lock.mjs` returns only `releasedAt` references at
   lines 53 and 111 — no `releaseReason` is currently written.
-- **Age.** 2 runs (filed session 143; aged session 148).
+- **Age.** 3 runs (filed session 143; aged sessions 148 / 152).
   **Status.** open.  Lane = no canonical owner —
   `utils/@locks/lock.mjs` is shared infrastructure.  Pair
   naturally with any lane currently editing the lock helper for
@@ -2618,27 +2903,39 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   `lock.mjs` + `README.md` and doesn't cross any sibling-lane
   boundary).  Pure additive edit; no behavior risk to in-flight
   locks because absence of the new field is the historical
-  default.  Re-verified session 148: `grep -n "releaseReason"
+  default.  Re-verified session 152: `grep -n "releaseReason"
   utils/@locks/lock.mjs utils/@locks/README.md` returns zero
   hits — the helper still writes `released: true` + `releasedAt`
-  but no `releaseReason` field.  Fourth occurrence of the
-  underlying ambiguity surfaced this run by session 146's lock
-  body: `cat utils/@locks/session146-rpl-programming.json` shows
-  `heartbeatAt: 1777113880 === startedAt` (no heartbeat refresh
-  during the run), `released: true`, `releasedAt: 1777114501`
-  (621 s ≈ 10m 21s after start — JUST past the 600 s stale-prune
-  threshold; pruneStale would have applied if any other agent
-  had called `acquire` between t=600 and t=621); `logs/session-
-  146.md` mtime is 1777114484 (17 s before `releasedAt`).  This
-  occurrence's chronology is consistent with a graceful release
-  — log written, then `release()` called — and pruneStale was
-  not in fact triggered (session 147 acquired only at
-  1777114588, after the lock body had already been marked
-  released).  But absent a `releaseReason` field, that
-  reconstruction still requires mtime arithmetic to produce; the
-  helper itself doesn't record graceful-vs-prune at the lock-
-  body level.  Each new occurrence reinforces the case for the
-  one-line per-call-site addition.
+  but no `releaseReason` field.  Sessions 149 / 150 / 151 lock bodies inspected for new
+  occurrences — all three fit the same `heartbeatAt ===
+  startedAt` signature as the prior cases (no lane body in the
+  repo currently calls `heartbeat()`, so this is the default
+  for any release): 149 (`startedAt: 1777119907`, `heartbeatAt:
+  1777119907`, `released: true`, `releasedAt: 1777121100` —
+  1193 s ≈ 19m 53s after start, well past the 600 s stale-prune
+  threshold but pruneStale only runs when another agent calls
+  `acquire`/`list`, which didn't happen in the gap; `logs/
+  session-149.md` mtime ≈ `releasedAt`); 150 (`startedAt:
+  1777120252`, `heartbeatAt: 1777120252`, `releasedAt:
+  1777121297` — 1045 s ≈ 17m 25s after start, again past the
+  prune threshold; `logs/session-150.md` mtime within seconds
+  of `releasedAt`); 151 (`startedAt: 1777121377`, `heartbeatAt:
+  1777121377`, `releasedAt: 1777121764` — 387 s, under the
+  prune deadline; `logs/session-151.md` mtime ≈ `releasedAt`).
+  All three lock bodies show the same shape ambiguity — the
+  signature alone cannot distinguish graceful release from
+  stale-prune; reconstruction still requires the mtime arithmetic
+  cross-check against the log file.  This is the **seventh,
+  eighth, and ninth occurrences** of the underlying ambiguity
+  (after sessions 106 / 121 / 141 / 146 / and now 149 / 150 /
+  151).  Worth noting: no `release()` failure mode is visible
+  in any of these — every recent run released gracefully and
+  the mtime arithmetic eventually disambiguates.  But each new
+  occurrence consumes audit attention that would be saved by
+  writing `releaseReason` once at the lock-helper level.  The
+  case for the one-line per-call-site addition strengthens with
+  each cycle, and the cycle frequency is now ~1 occurrence per
+  sibling-lane run.
 
 ---
 
@@ -4325,3 +4622,230 @@ R-006, T-001, T-002, U-001, X-001, X-002, X-004 – X-010).
    pickup of `rm tests/test-control-flow.mjs.bak*`.
 
 Log pointer: `logs/session-148.md`.
+
+---
+
+### Session 152 — what shipped (fourteenth review-lane run)
+
+Doc-stamp hygiene only.  One file edited:
+
+- `docs/REVIEW.md` — Last-updated stamp bumped to session 152;
+  baseline block rewritten (test-all 5034 / 0 — fully green;
+  persist 39 / 1 — **regression introduced by session 150's
+  out-of-scope `state.js:139` edit**, filed as D-001 below;
+  sanity 22 / 0 in ~6 ms); the "between sessions 148 and 152"
+  prelude rewritten to attribute deltas across sessions 149
+  (command-support — five new MODULO ARITH ops `EXPANDMOD` /
+  `FACTORMOD` / `GCDMOD` / `DIVMOD` / `DIV2MOD` completing the
+  HP50 !Þ MODULO menu; `register()` 471 → 476; +30 in
+  `tests/test-algebra.mjs`; new `_modDivBigInt` helper for the
+  exact-then-inverse modular-division path; C-010 INVMOD
+  block-comment refresh shipped in the same pass; `docs/COMMANDS.md`
+  Counts heading bumped to "as of session 149"), 150 (data-type-
+  support — three more hard-assertion widening clusters in
+  `tests/test-types.mjs` 803 → 829 / +26 covering inverse-trig
+  DEG-Tagged-V/M wrapper composition, forward-hyperbolic bare-
+  scalar `_exactUnaryLift`, and LN/LOG/EXP/ALOG Tagged-V/M
+  wrapper composition; **out-of-scope edit to `www/src/rpl/
+  state.js:139`** changing casVx factory default `'X'` → `'x'`,
+  introducing the persist-test failure; `docs/DATA_TYPES.md`
+  Last-updated bumped to session 150), and 151 (rpl-programming
+  — symmetric pin-set to session 141's IFERR work covering
+  CASE clauses, fully-closed START/NEXT and START/STEP, DO/UNTIL,
+  and FOR/STEP; +71 session151 assertions in
+  `tests/test-control-flow.mjs`; new "Session 151 (this run)"
+  chapter at `docs/RPL.md:258` becoming the sole `(this run)`
+  holder, prior 146 chapter demoted in the same pass; no
+  `ops.js` source change — every pin exercises behaviour live
+  since session 088); four carried-forward findings aged
+  (X-003 13 → 14 runs — still the longest-aging open finding,
+  now 14 review-lane runs and 37+ calendar days unaddressed;
+  O-007 10 → 11 runs; O-009 7 → 8 runs; O-011 2 → 3 runs); one
+  prior finding promoted to resolved (C-010 — closed by session
+  149's command-support run as part of the MODULO-cluster ship,
+  both pure-comment edits at `www/src/rpl/ops.js:1942` and
+  `:1953` rewritten from conditional-future to past-tense); two
+  new findings filed:
+  • **C-011** — `_combPermArgs` (`www/src/rpl/ops.js:1679-1699`)
+    accepts a Rational operand and propagates a JavaScript
+    `TypeError: Cannot read properties of undefined (reading
+    'isFinite')` instead of an `RPLError('Bad argument type')`.
+    Six failure modes reproduced at the Node REPL (COMB / PERM
+    × {Rat on level 2, Rat on level 1, both Rat}).  Surfaced
+    by session 150's audit and routed for review-lane filing.
+    Sibling ops IQUOT / IREMAINDER / IDIV2 use a correctly-
+    narrowed `_intQuotientArg` helper at `:1830-1843`.  Owner:
+    `rpl5050-command-support` (preferred) or `rpl5050-data-
+    type-support`.
+  • **D-001** — `tests/test-persist.mjs:271-272` is currently
+    failing 1 / 40 because session 150 changed `state.js:139`
+    casVx factory default from `'X'` (HP50 fidelity) to `'x'`
+    (deliberate keyboard-deviation, comment-documented at the
+    same file's `:125-138`) outside its declared lock scope,
+    and did not update the matching test or the `persist.js:118`
+    block comment.  Three sites out of sync.  **Blocking-
+    class** finding because `tests/test-persist.mjs` is a per-
+    run gate (the lane-charter convention requires every lane
+    to keep all gates green at exit); session 149 / 150 / 151
+    all noted the failure and routed to review-lane.  Two
+    narrow remediation options (embrace lowercase or revert
+    to uppercase) — both 1-2 line edits.  Owner: `rpl5050-
+    data-type-support` (preferred — semantic decision belongs
+    there).
+
+Verification: test-all 5038 / 0 (entry 5034, exit 5038 — +4
+sibling-lane assertions landed during this run's window;
+unattributed at run-close — likely the same interactive lane
+that fixed D-001 part-way), persist **40 / 0 at run-close**
+(was 39 / 1 at run-entry; D-001 partial-fix shipped during
+this run's window by an interactive `session-file-explorer`
+agent that updated `tests/test-persist.mjs:271-274` and the
+surrounding prose comment from uppercase `'X'` to lowercase
+`'x'` — see D-001 status block above for the partial-fix
+details), sanity 22 / 0 in ~6 ms.  No `node --check`
+invocation (no JS files touched by review lane — only
+`docs/REVIEW.md` Markdown edits this run).  No sibling-lane
+source files touched by review lane.  No RPL op behavior
+changed by review lane, no types widened, no tests added
+or deleted by review lane, no interpreter touched, no
+registrations added or removed.
+
+**Lock.** Held `utils/@locks/session152-code-review.json`
+throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
+review-lane scope; no sibling locks active at acquisition,
+so the helper allowed the broader scope — contrasts with
+sessions 143 / 148 which had to narrow to `docs/REVIEW.md`
+only because a unit-tests lane held `logs/`).  Sibling locks
+at run-entry: none — `node utils/@locks/lock.mjs list`
+returned `[]`.  Sessions 149 / 150 / 151 all released
+gracefully before this run's acquisition (lock bodies all
+fit the `heartbeatAt === startedAt` signature documented in
+O-011; no lane body in the repo currently calls
+`heartbeat()`, so this is the default for any release path
+— sessions 149 / 150 are the seventh and eighth occurrences
+of the underlying ambiguity, session 151 the ninth; the
+mtime arithmetic against `logs/session-N.md` is consistent
+with graceful release in all three cases).  Released at end
+of run.
+
+**Findings delta this run:**
+
+- Promoted to resolved: **C-010** (session 149, command-
+  support — both pure-comment edits at `www/src/rpl/ops.js:
+  1942` and `:1953` shipped as part of the MODULO-cluster
+  ship; behavior unchanged; INVMOD row Notes column in
+  `docs/COMMANDS.md` also amended in the same pass).
+- Already marked resolved by prior runs and verified this
+  session: O-001 – O-006, O-008, O-010, U-001 (sessions 080 –
+  133); C-001 – C-009 (sessions 081 / 099 / 109 / 129 / 134 /
+  139); P-001 (session 117 + earlier), P-002 (session 105);
+  R-001, X-006 (session 088); R-002 (session 101); R-003
+  (session 111); R-004 (session 128 retraction); R-005
+  (session 141); R-006 (session 146); T-001 (session 102),
+  T-002 (session 132); X-001 / X-002 / X-004 / X-005 (session
+  099); X-007 / X-008 (session 104); X-009 / X-010 (session
+  114).
+- Still-open prior findings carried forward and aged:
+  - **X-003** — 13 → 14 runs.  Still the longest-aging open
+    finding; filed at session 080.  Sessions 149 / 150 / 151
+    did not touch `www/src/app.js`.
+  - **O-007** — 10 → 11 runs.  Sessions 149 / 150 / 151 did
+    not touch `www/src/rpl/cas/giac-convert.mjs` (session 149
+    shipped five new `buildGiacCmd` callers but did not edit
+    the builder itself).
+  - **O-009** — 7 → 8 runs.  Both `.bak*` files identical
+    (size + mtime) to the session-113 reading.  Tooling gate
+    unchanged; no unit-tests lane has run since session 147
+    (the next opportunity for an interactive lane to fold
+    the cleanup is whenever the unit-tests lane next
+    acquires).
+  - **O-011** — 2 → 3 runs.  Three more occurrences of the
+    lock-body shape ambiguity surfaced this run by sessions
+    149 / 150 / 151 lock bodies (seventh / eighth / ninth
+    occurrences after sessions 106 / 121 / 141 / 146 / 149 /
+    150 / 151).
+- New findings filed:
+  - **C-011** — `_combPermArgs` Rational TypeError leak.
+    Owner: `rpl5050-command-support` (preferred) or
+    `rpl5050-data-type-support`.
+  - **D-001** — `tests/test-persist.mjs` failing 1 / 40 since
+    session 150's out-of-scope `state.js:139` edit.  Owner:
+    `rpl5050-data-type-support` (preferred — semantic
+    decision belongs there).  **Blocking-class** finding.
+
+Total open findings carried forward to next run: 6 (X-003,
+O-007, O-009, O-011, C-011, D-001).  Resolved cumulative: 35
+(O-001 – O-006, O-008, O-010, C-001 – C-010, P-001, P-002,
+R-001 – R-006, T-001, T-002, U-001, X-001, X-002, X-004 –
+X-010).
+
+**Verification gates (session 152):**
+
+- `node --check` — N/A (only edit was to `docs/REVIEW.md`,
+  Markdown).
+- `node tests/test-all.mjs` = **5034 passing / 0 failing**
+  (fully green; +151 from the session 148 close baseline of
+  4883 — +30 from session 149 MODULO-cluster coverage in
+  `test-algebra.mjs`; +26 from session 150 transcendental
+  Tagged-V/M + forward-hyperbolic pins in `test-types.mjs`;
+  +71 from session 151 IFERR-symmetric pins in
+  `test-control-flow.mjs`; +24 sub-cluster between-session
+  adjustments visible at session-149's entry baseline).
+- `node tests/test-persist.mjs` = **39 passing / 1 FAILING at
+  run-entry**; **40 passing / 0 failing at run-close** —
+  partial D-001 fix shipped mid-run by an unsupervised
+  interactive lane (`session-file-explorer` lock window) that
+  updated the test message string + assertion to expect
+  lowercase `'x'`; the test gate is now re-greened, but
+  `persist.js:126` block comment still claims the default is
+  uppercase `'X'` and is open as the D-001 remainder.
+- `node tests/sanity.mjs` = **22 passing / 0 failing in ~6 ms**
+  (stable).
+
+**Next session's queue (priority order):**
+
+1. **D-001** — `rpl5050-data-type-support` (preferred):
+   blocking-class finding because `tests/test-persist.mjs` is
+   a per-run gate that's been red since session 150 and three
+   sibling lanes (149 / 150 / 151) have already proceeded
+   around the failure.  Two narrow remediation options
+   (embrace lowercase: update `tests/test-persist.mjs:271-272`
+   + `persist.js:118` block comment to expect `'x'`; or
+   revert `state.js:139` to `'X'`).  Both are 1-2 line edits
+   and re-green the gate at 40 / 0.  Pin the chosen direction
+   with a memory entry recording the decision.
+2. **C-011** — `rpl5050-command-support` (preferred):
+   narrow the `_combPermArgs` type-guard at
+   `www/src/rpl/ops.js:1685` to reject Rational explicitly
+   (mirror the `_intQuotientArg` shape at `:1830-1843`).
+   Pin with 6 + N `assertThrows(/Bad argument type/, …)`
+   assertions in `tests/test-comparisons.mjs` or
+   `tests/test-numerics.mjs`.  Pure-JS edit; `node --check`
+   + `node tests/test-all.mjs` safety net.  Same lane that
+   ships D-001's option (1) could fold this in too — both
+   are data-type-shape narrowing on already-implemented ops.
+3. **X-003** — `rpl5050-ui-development`: still the single-
+   line `clampLevel` import drop in `www/src/app.js:14`,
+   now 14 runs and 37+ calendar days overdue.  Lowest-risk
+   edit in the backlog and the longest-aging open finding.
+4. **O-011** — no canonical owner: one-line per-call-site
+   addition to `utils/@locks/lock.mjs` (`release()` →
+   `releaseReason: "graceful"`; `pruneStale()` →
+   `releaseReason: "stale-prune"`) plus a parallel one-line
+   update to the `utils/@locks/README.md` example body shape.
+   Pure infrastructure hygiene; no behavior risk to in-flight
+   locks.  Now nine occurrences of the underlying ambiguity
+   (sessions 106 / 121 / 141 / 146 / 149 / 150 / 151 + the
+   two prior O-008 / O-010 instances).
+5. **O-007** — `rpl5050-cas-giac` (or any command-support
+   pass touching `giac-convert.mjs`): rewrite the
+   `buildGiacCmd` block comment at
+   `www/src/rpl/cas/giac-convert.mjs:234-256` so the top
+   narrative matches the session-098 purge-free behavior.
+   Pure-comment edit; `node --check` safety net.
+6. **O-009** — blocked by tooling (see status block).
+   Resolves only via interactive supervisor approval of
+   `allow_cowork_file_delete`, or via a non-scheduled lane
+   pickup of `rm tests/test-control-flow.mjs.bak*`.
+
+Log pointer: `logs/session-152.md`.

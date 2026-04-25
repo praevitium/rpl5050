@@ -21,35 +21,61 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 144 — 2026-04-25)
+## Counts (as of session 149 — 2026-04-25)
 
-- Fully shipped (✓): 442 (this lane's net since session 139 — session
-  144 ships five new ops as a cluster: `MODSTO`, `ADDTMOD`, `SUBTMOD`,
-  `MULTMOD`, `POWMOD` — all five share a new `state.casModulo` BigInt
-  slot persisted via `persist.js`.  +5 ✗→✓ transitions counted as 3
-  rows added on the Polynomials/algebra section because ADDTMOD /
-  SUBTMOD / MULTMOD share a single row, and one ✗-side reshape on
-  the "Not yet supported" table — the standalone `MULTMOD` row is
-  retired and replaced by a `DIVMOD GCDMOD EXPANDMOD FACTORMOD
-  DIV2MOD` row capturing the remaining MODULO-family gaps.)
+- Fully shipped (✓): 447 (this lane's net since session 144 — session
+  149 ships the remaining five MODULO ARITH ops as a cluster:
+  `EXPANDMOD`, `FACTORMOD`, `GCDMOD`, `DIVMOD`, `DIV2MOD` — all five
+  read the `state.casModulo` slot introduced session 144.  +5 ✗→✓
+  transitions; the single "Not yet supported" row for the modular
+  cluster is retired (✗→✓ collapses the row entirely).  Closes
+  `C-010` from `docs/REVIEW.md` (INVMOD block-comment drift —
+  session-144 conditional-future phrasings now read in past tense).)
 - Partially shipped (~): 0
-- Not yet implemented (✗): 1 (the remaining MODULO-family row plus
-  the `JORDAN` / `SCHUR` matrix-decomp row — session 144 doesn't
-  change those, but the modular row's content shifted from
-  "MULTMOD only" to "DIVMOD / GCDMOD / EXPANDMOD / FACTORMOD /
-  DIV2MOD" since MULTMOD shipped this run.)
+- Not yet implemented (✗): 1 (only the `JORDAN` / `SCHUR`
+  matrix-decomp row remains — the entire MODULO-family is now ✓.)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" www/src/rpl/ops.js` = **471** at the end of session
-144 (was 466 at the end of session 139, was 463 at the end of session
-134, was 458 at the end of session 129, was 455 at the end of session
-124, was 448 at the end of session 119).  Session 144 added five
-top-level register sites: `register('MODSTO', …)`, `register('ADDTMOD',
-…)`, `register('SUBTMOD', …)`, `register('MULTMOD', …)`, and
-`register('POWMOD', …)`.  The actual top-level `register()` *call*
-count (`grep -cE '^register\(' www/src/rpl/ops.js`) is **450** (was
-445 at session 139, was 442 from session 129 onward through session 134).
+`grep -c "register(" www/src/rpl/ops.js` = **476** at the end of session
+149 (was 471 at the end of session 144, was 466 at the end of session
+139, was 463 at the end of session 134, was 458 at the end of session
+129, was 455 at the end of session 124, was 448 at the end of session
+119).  Session 149 added five top-level register sites:
+`register('EXPANDMOD', …)`, `register('FACTORMOD', …)`,
+`register('GCDMOD', …)`, `register('DIVMOD', …)`, and
+`register('DIV2MOD', …)`.  The actual top-level `register()` *call*
+count (`grep -cE '^register\(' www/src/rpl/ops.js`) is **455** (was
+450 at session 144, was 445 at session 139, was 442 from session 129
+onward through session 134).
+
+Session-149 row transitions:
+- **5 ops newly shipped** (✗ → ✓): `EXPANDMOD` (HP50 AUR §3-80), `FACTORMOD`
+  (HP50 AUR §3-83), `GCDMOD` (HP50 AUR §3-96), `DIVMOD` (HP50 AUR
+  §3-63), `DIV2MOD` (HP50 AUR §3-62).  The five share a unified
+  pattern: pure-Integer fast paths use BigInt with `_centerMod` (and,
+  for DIVMOD / DIV2MOD, a new `_modDivBigInt` that prefers exact
+  integer division and falls back to modular inverse — matches the
+  HP50 User Guide p.5-14 mix where 12/3 ≡ 4 even though gcd(3,12)=3,
+  but 12/8 "does not exist"); Symbolic / Name paths route through
+  Giac with an inline `(...) mod m` postfix wrapping the underlying
+  `expand` / `factor` / `gcd` / `/` / `quo` / `rem` call.
+  FACTORMOD additionally enforces the AUR §3-83 modulus precondition
+  ("less than 100, and a prime number").
+- **1 ✗-side row retired**: the standalone `DIVMOD GCDMOD EXPANDMOD
+  FACTORMOD DIV2MOD` row in "Not yet supported" is dropped — the
+  entire MODULO-family is now ✓.  Not-yet-supported count drops
+  1 → 0 in the modular cluster (the `JORDAN` / `SCHUR` row stays).
+- **1 review-lane finding closed**: `C-010` (the session-148-filed
+  INVMOD block-comment drift at `www/src/rpl/ops.js:1942` and `:1953`)
+  — both conditional-future phrasings ("until that slot lands" /
+  "When the MODULO state slot lands") rewritten in past tense
+  pointing at the session-144 ship.  Two pure-comment edits; behavior
+  unchanged.
+- **State / persistence:** no change — the five new ops *consume*
+  `state.casModulo` via `getCasModulo()` but never mutate it (only
+  MODSTO writes), so `persist.js` and `tests/test-persist.mjs` are
+  unaffected (40 / 0 stable).
 
 Session-144 row transitions:
 - **5 ops newly shipped** (✗ → ✓): `MODSTO` (HP50 AUR §3-150; new row
@@ -408,10 +434,15 @@ DERIV, etc. via Giac).
 | `IBERNOULLI` `DIVIS` `FACTORS` | ✓ | |
 | `ISPRIME?` `NEXTPRIME` `PREVPRIME` | ✓ | |
 | `EUCLID` | ✓ | **Session 076** — `( a b → {u v g} )` extended-Euclid / Bezout; `u*a + v*b = g`.  Rejects `(0,0)` ("Bad argument value"), non-Integer ("Bad argument type").  Re-signs u,v for negative inputs. |
-| `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  One-arg MODULO-state form deferred until MODULO lands. |
+| `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  Single-arg MODULO-state form (consult `getCasModulo()`) is a follow-up; the slot itself landed in session 144 (see MODSTO below).  Block-comment phrasings refreshed session 149 (closes `C-010`). |
 | `MODSTO` | ✓ | **Session 144** — `( m → )` set the global CAS MODULO state value (HP50 AUR §3-150).  `state.casModulo` is a BigInt, default 13n; setter normalizes negatives to abs and 0 / 1 to 2 (HP50 firmware contract: modulus is always ≥ 2 positive).  Persisted across reload via `persist.js` (`{ __t: 'bigint', v: '<digits>' }` codec).  Accepts Integer or integer-valued Real; non-integer Real → `Bad argument value`; Vector / Symbolic / etc. → `Bad argument type`. |
 | `ADDTMOD` `SUBTMOD` `MULTMOD` | ✓ | **Session 144** — `( a b → (a±·) mod m )` modular arithmetic against the MODSTO-set modulus (HP50 AUR §3-9 / §3-243 / §3-153).  Pure-Integer / integer-Real inputs reduce natively with BigInt and return the centered representative `[-(m-1)/2, m/2]` — `12 0 ADDTMOD` (m=7) → `Integer(-2)` matching the AUR worked example `(X^2+3X+6)+(9X+3) ≡ X^2-2X+2 (mod 7)`.  Symbolic / Name inputs route through Giac as `((expr1 op expr2)) mod m` and lift the result back via `giacToAst`.  Rejects Vector / Matrix / Complex / List / Tagged / etc. with `Bad argument type` (only number-shaped operands are valid).  No-fallback policy. |
 | `POWMOD` | ✓ | **Session 144** — `( a n → a^n mod m )` modular exponentiation against the MODSTO modulus (HP50 AUR §3-175).  Pure-Integer fast path uses `_powModBig` with BigInt; the result is centered (matches ADDTMOD/SUBTMOD/MULTMOD).  Symbolic / Name path emits `powmod(base,exp,m)` to Giac and round-trips the result.  Negative exponent → `Bad argument value`.  No-fallback policy. |
+| `EXPANDMOD` | ✓ | **Session 149 [Giac]** — `( a → a' )` coefficient-reduce + expand mod the MODSTO modulus (HP50 AUR §3-80).  Pure-Integer / integer-Real path returns `_centerMod(v, m)` directly (mirrors User Guide p.5-15: `EXPANDMOD(125) ≡ 5 (mod 12)`).  Symbolic / Name path routes through Giac as `expand(${e}) mod ${m}` and lifts back via `_astToRplValue` (numeric-leaf → Real, polynomial → Symbolic).  Rejects Vector / Matrix / Complex / etc. with `Bad argument type`.  No-fallback policy. |
+| `FACTORMOD` | ✓ | **Session 149 [Giac]** — `( p → factored )` factorization in Z_m[X] (HP50 AUR §3-83).  Modulus precondition enforced before the operand is consumed: `m < 100 && _isPrimeBig(m)` else `Bad argument value` (matches the AUR rule "the modulus must be less than 100, and a prime number").  Pure-Integer / integer-Real path collapses to `_centerMod(v, m)` (every nonzero element of Z/pZ is a unit, so a bare integer round-trips as itself centered).  Symbolic / Name path routes through Giac as `factor(${e}) mod ${m}`.  Worked example `FACTORMOD(X^2+2)` (m=3) → `(X+1)*(X-1)`.  No-fallback policy. |
+| `GCDMOD` | ✓ | **Session 149 [Giac]** — `( a b → gcd )` polynomial GCD over Z_m[X] (HP50 AUR §3-96).  Pure-Integer-pair path: native `_extGcdBigInt` then `_centerMod`; rejects gcd(0,0) with `Bad argument value` (matches `EUCLID`).  Symbolic / Name path routes through Giac as `gcd(${e1},${e2}) mod ${m}`.  Worked example `GCDMOD(2X^2+5, 4X^2-5X)` (m=13) → `-(4X-5)`.  No-fallback policy. |
+| `DIVMOD` | ✓ | **Session 149 [Giac]** — `( a b → quotient )` modular division in Z_m (or rational form in Z_m[X] for symbolic) (HP50 AUR §3-63).  Pure-Integer path uses `_modDivBigInt`: prefers exact integer division (`12 3 DIVMOD` = `4` mod 12 even though gcd(3,12)=3, matching User Guide p.5-14 "12/3 ≡ 4 (mod 12)" / "66/6 ≡ -1 (mod 12)") and falls back to modular inverse otherwise (`64 13` = `4` since 13 ≡ 1 mod 12 invertible); rejects when neither path applies (`12 8` → `Bad argument value` since 12 isn't divisible by 8 and gcd(8,12)≠1, matching User Guide "12/8 (mod 12) does not exist").  Symbolic path emits `(${e1})/(${e2}) mod ${m}` to Giac.  AUR worked example `DIVMOD(5*X^2+4*X+2, X^2+1)` (m=3) → `-((X^2-X+1)/(X^2+1))`.  No-fallback policy. |
+| `DIV2MOD` | ✓ | **Session 149 [Giac]** — `( a b → q r )` Euclidean division mod m, two-result (HP50 AUR §3-62).  Quotient on level 2, remainder on level 1.  Pure-Integer path uses `_modDivBigInt` for q (same exact-then-inverse policy as `DIVMOD`) and `_centerMod(a - q·b, m)` for r — User Guide p.5-14 examples reproduce: `125 17 DIV2MOD` (m=12) → `(1, 0)`; `68 7 DIV2MOD` (m=12) → `(-4, 0)`; `7 5 DIV2MOD` (m=12) → `(-1, 0)`.  Symbolic path issues two Giac calls — `quo(${e1},${e2}) mod ${m}` and `rem(${e1},${e2}) mod ${m}` — simpler than parsing a list response from `divmod(a,b,m)`.  AUR worked example `DIV2MOD(X^3+4, X^2-1)` (m=3) → `(X, X+1)`.  No-fallback policy. |
 | `PA2B2` | ✓ | **Session 114** — `( p → (a,b) )` Fermat sum of two squares for primes with `p=2` or `p ≡ 1 (mod 4)`; native Cornacchia via the existing BigInt helpers (`_isPrimeBig`, `_powModBig`, new `_bigIntSqrtFloor`).  Returns a native Complex Gaussian integer with the smaller component real, larger imag.  Rejects non-prime / `p ≡ 3 (mod 4)` with "Bad argument value".  HP50 AUR §3-162. |
 | `CYCLOTOMIC` | ✓ | **Session 081** — `( n → Φ_n(X) )` n-th cyclotomic polynomial as a Symbolic in X.  BigInt long-division build via `Φ_n = (Xⁿ − 1) / ∏_{d\|n, d<n} Φ_d`.  Capped at n ≤ 200 (MAX_SAFE_INTEGER guard on the descending-degree coefficient array).  Rejects non-Integer and n < 1. |
 | `LNAME` | ✓ | **Session 124** — `( 'expr' → 'expr' [names] )` extract the symbolic Names referenced by an expression.  Native AST walker (no Giac dependency): visits `Var` nodes and `Fn` nodes whose head is not in `KNOWN_FUNCTIONS` (i.e. user-defined function names land in the result), dedups in first-seen order, sorts by length DESC then alpha ASC to match HP50 AUR §3-136.  Preserves the input on level 2 and pushes the Vector of Names on level 1.  Rejects non-Symbolic input ("Bad argument type"). |
@@ -536,7 +567,6 @@ can be picked up as a group.
 | `JORDAN` `SCHUR` | Matrix | low | Advanced decomps.  (`RSD` shipped session 119, `LQD` retired session 134 as a phantom — neither was previously grouped on this row.) |
 | `BARPLOT` `HISTPLOT` `SCATRPLOT` | graphics | ui-lane | (graphics — not in this lane) |
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
-| `DIVMOD` `GCDMOD` `EXPANDMOD` `FACTORMOD` `DIV2MOD` | modular | medium | Remaining MODULO-family ops after the session-144 ship of `MODSTO` / `ADDTMOD` / `SUBTMOD` / `MULTMOD` / `POWMOD`.  All five build on the same `state.casModulo` slot the session-144 ops introduced; route through Giac for polynomial inputs (`gcdmod`, `divmod`, `expandmod`, `factormod` are all valid Xcas calls). |
 
 ## Will-not-support (by design deviation)
 
@@ -561,6 +591,114 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 149** (2026-04-25) — Five ops newly shipped (`EXPANDMOD`,
+  `FACTORMOD`, `GCDMOD`, `DIVMOD`, `DIV2MOD`) — the remaining HP50
+  CAS MODULO ARITH menu (`!Þ MODULO`) ops, completing the menu started
+  in session 144.  All five consult the `state.casModulo` slot via
+  `getCasModulo()` (read-only — only MODSTO writes), so `persist.js`
+  and `tests/test-persist.mjs` are unaffected (40 / 0 stable).
+
+  1. **`EXPANDMOD`** (HP50 AUR §3-80) — `( a → a' )` coefficient-reduce
+     + expand mod the MODSTO modulus.  Pure-Integer / integer-Real
+     path returns `_centerMod(v, m)` directly; the User Guide p.5-15
+     worked examples (`EXPANDMOD(125) ≡ 5`, `EXPANDMOD(17) ≡ 5`,
+     `EXPANDMOD(6) ≡ 6`, all mod 12) reproduce.  Symbolic / Name path
+     routes through Giac as `expand(${e}) mod ${m}` and lifts back
+     via `_astToRplValue`.  AUR worked example
+     `EXPANDMOD((X+3)*(X+4))` (m=3) → `X^2+X` (mock fixture verified).
+  2. **`FACTORMOD`** (HP50 AUR §3-83) — `( p → factored )` polynomial
+     factorization in Z_m[X].  Modulus precondition enforced before
+     the operand is consumed: `m < 100 && _isPrimeBig(m)` else
+     `Bad argument value` (matches AUR rule "the modulus must be less
+     than 100, and a prime number").  Pure-Integer path collapses to
+     `_centerMod(v, m)` (every nonzero element of Z/pZ is a unit, so
+     a bare integer round-trips as itself centered).  Symbolic path
+     routes through Giac as `factor(${e}) mod ${m}`.  AUR worked
+     example `FACTORMOD(X^2+2)` (m=3) → `(X+1)*(X-1)` (mock fixture
+     verified).
+  3. **`GCDMOD`** (HP50 AUR §3-96) — `( a b → gcd )` polynomial GCD
+     over Z_m[X].  Pure-Integer-pair path uses `_extGcdBigInt` then
+     `_centerMod`; rejects gcd(0,0) with `Bad argument value` (matches
+     `EUCLID`'s contract).  Symbolic path emits
+     `gcd(${e1},${e2}) mod ${m}` to Giac.  AUR worked example
+     `GCDMOD(2X^2+5, 4X^2-5X)` (m=13) → `-(4X-5)` (mock fixture
+     verified).
+  4. **`DIVMOD`** (HP50 AUR §3-63) — `( a b → quotient )` modular
+     division.  New helper `_modDivBigInt(ba, bb, m)` implements the
+     two-path semantics surfaced by reading the User Guide p.5-14
+     examples carefully: prefer **exact integer division** when `b`
+     divides `a` (so `12 3` → `4` mod 12 even though gcd(3,12)=3,
+     and `66 6` → `-1` mod 12 even though gcd(6,12)=6); fall back to
+     **modular inverse** otherwise (so `64 13` → `4` since 13 ≡ 1
+     mod 12 invertible); reject when neither path applies (`12 8`
+     → `Bad argument value`, matching User Guide "12/8 (mod 12) does
+     not exist" — 12 not divisible by 8 and gcd(8,12)≠1).  All five
+     User Guide DIVMOD numeric examples reproduce.  Symbolic path
+     emits `(${e1})/(${e2}) mod ${m}` to Giac (matches AUR worked
+     example `DIVMOD(5*X^2+4*X+2, X^2+1)` mod 3 → fraction form).
+  5. **`DIV2MOD`** (HP50 AUR §3-62) — `( a b → q r )` Euclidean
+     division mod m, two-result.  Quotient on level 2, remainder on
+     level 1 (matches AUR output spec).  Pure-Integer path reuses
+     `_modDivBigInt` for q (same exact-then-inverse policy as
+     DIVMOD) and `_centerMod(a - q·b, m)` for r — User Guide p.5-14
+     examples reproduce: `125 17` (m=12) → `(1, 0)`; `68 7` (m=12)
+     → `(-4, 0)`; `7 5` (m=12) → `(-1, 0)`; `2 3` (m=12) →
+     `Bad argument value` (matching "2/3 (mod 12) does not exist").
+     Symbolic path issues two Giac calls — `quo(${e1},${e2}) mod ${m}`
+     and `rem(${e1},${e2}) mod ${m}` — simpler than parsing a list
+     response from `divmod(a,b,m)`.  AUR worked example
+     `DIV2MOD(X^3+4, X^2-1)` (m=3) → `(X, X+1)` (mock fixtures
+     verified).
+
+  All five share two new helpers in the new MODULO-extension block
+  in `www/src/rpl/ops.js` (above the session-144 ADDTMOD block):
+  `_modDivBigInt(ba, bb, m)` (the exact-then-inverse division
+  helper) and a re-use of session-144's `_centerMod` / `_isIntLike`.
+  +5 register sites; counts heading bumped 471 → 476 register-comments,
+  450 → 455 top-level register calls.
+
+  Tests:
+    • `tests/test-algebra.mjs` +30 assertions in a new "session 149"
+      block at the file end (EXPANDMOD on Integer / integer-Real / Symbolic
+      via mock fixture / Vector-reject; FACTORMOD on Integer / Symbolic
+      via mock fixture / composite-modulus reject / m≥100 reject;
+      GCDMOD on Integer / 0,0 reject / Symbolic via mock fixture;
+      DIVMOD on the five User Guide p.5-14 numeric cases (12/3, 25/5,
+      66/6, 12/8 reject, 64/13) plus AUR symbolic via mock fixture
+      plus Vector reject; DIV2MOD on the three User Guide DIV2MOD
+      numeric cases (125/17, 68/7, 7/5) plus 2/3 reject plus AUR
+      symbolic two-call mock fixtures; MODSTO + EXPANDMOD round-trip
+      pinning the modulus consultation).  Test-all total: 4907 → 4937
+      (+30).
+    • `tests/test-persist.mjs` unchanged at 40 / 0 (the new ops only
+      *read* `casModulo`; only MODSTO writes — and that's already
+      pinned by the session-144 round-trip block).
+    • `node tests/sanity.mjs` stable at 22 / 0.
+
+  Closes `C-010` from `docs/REVIEW.md` (INVMOD block-comment drift):
+  the two conditional-future phrasings at `www/src/rpl/ops.js:1942`
+  ("until that slot lands so the op is usable without the CAS state
+  substrate") and `:1953` ("When the MODULO state slot lands, add a
+  single-arg form that consults it") rewritten in past tense pointing
+  at the session-144 ship.  Pure-comment edits; behavior unchanged.
+
+  User-reachable demo:
+  ```
+    13 ENTER          → Integer 13   (factory default modulus)
+    ALPHA M O D S T O ENTER  → casModulo := 13n (hygiene reset)
+
+    20 ENTER 8 ENTER ALPHA G C D M O D ENTER   → 4
+    125 ENTER 17 ENTER ALPHA D I V 2 M O D ENTER  → q=1 (level 2), r=0 (level 1)
+    66 ENTER 6 ENTER ALPHA D I V M O D ENTER  → -1  (centered, m=12 demo below)
+    125 ENTER ALPHA E X P A N D M O D ENTER  → 8  (since m=13 still: 125 mod 13 = 8)
+
+    7 ENTER ALPHA F A C T O R M O D ENTER  → 7  (Integer, prime modulus required)
+    `X^2+2` ENTER ALPHA F A C T O R M O D ENTER  → `(X+1)*(X-1)` (m=13 → reduces, browser-side Giac required)
+  ```
+  (The Symbolic FACTORMOD example wants m=3 to land on the AUR
+  textbook output `(X+1)*(X-1)`; rerun after `3 ENTER MODSTO`.  The
+  modulus persists across reloads via `persist.js`.)
 
 - **session 144** (2026-04-25) — Five ops newly shipped (`MODSTO`,
   `ADDTMOD`, `SUBTMOD`, `MULTMOD`, `POWMOD`) — the HP50 CAS MODULO

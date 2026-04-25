@@ -87,6 +87,14 @@ function decode(v) {
   return v;
 }
 
+/** Public encode/decode shims so the Files tab (and any other UI that
+ *  exports a single variable rather than the full snapshot) goes through
+ *  the same Decimal / BigInt / Map handling that `snapshot()` uses.  The
+ *  internal helpers stay private so this module's encoding contract has
+ *  one entry point per direction. */
+export function encodeValue(v) { return encode(v); }
+export function decodeValue(v) { return decode(v); }
+
 /* Walk a decoded Directory tree and re-link parent pointers so
    currentPath / goUp / goInto all work as before. */
 function relinkParents(dir, parent = null) {
@@ -289,4 +297,106 @@ function defaultFilename() {
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
               + `-${pad(d.getHours())}${pad(d.getMinutes())}`;
   return `hp50-${stamp}.json`;
+}
+
+/* ---------------------- single-variable export / import ----------------------
+   The Files tab supports exporting and importing one variable (or one
+   subdirectory) at a time, as opposed to the whole HOME-tree snapshot above.
+   The wire shape is intentionally distinct from `snapshot()` so a malformed
+   file can't be silently rehydrated as a full state replacement:
+
+     {
+       "version":  1,
+       "kind":     "variable",
+       "name":     "<name>",
+       "value":    <encode(value)>,
+     }
+
+   `value` carries the same `{__t: 'bigint'|'decimal'|'map', ...}` envelopes
+   that `snapshot()` uses, so Decimal / BigInt / Directory all round-trip
+   through `decode()` unchanged.  A Directory exports recursively (its
+   `.entries` are walked by `encode()` already).
+   ---------------------------------------------------------------------- */
+
+/** Build the JSON-safe wire object for a single named variable.
+ *  Exposed for tests; `exportVariableToFile` is the user-facing wrapper. */
+export function snapshotVariable(name, value) {
+  return {
+    version: SCHEMA_VERSION,
+    kind:    'variable',
+    name:    String(name),
+    value:   encode(value),
+  };
+}
+
+/** Inverse of `snapshotVariable`.  Returns `{ name, value }` with the
+ *  value run through the same `decode()` the full-snapshot rehydrate
+ *  uses (Decimal / BigInt / Map / Directory are all reconstructed).  A
+ *  Directory's `.parent` is left null — the caller relinks before
+ *  installing it under a live parent, the same way `rehydrate()` does. */
+export function rehydrateVariable(snap) {
+  if (!snap || typeof snap !== 'object') {
+    throw new Error('variable: not an object');
+  }
+  if (snap.version !== SCHEMA_VERSION) {
+    throw new Error(`variable: unsupported version ${snap.version}`);
+  }
+  if (snap.kind !== 'variable') {
+    throw new Error(`variable: unsupported kind ${snap.kind}`);
+  }
+  if (typeof snap.name !== 'string' || snap.name.length === 0) {
+    throw new Error('variable: missing name');
+  }
+  const value = decode(snap.value);
+  // Re-link the parent chain on a freshly-decoded directory subtree —
+  // top-level parent is null because the caller hasn't installed it yet.
+  if (value && value.type === TYPES.DIRECTORY) {
+    relinkParents(value, null);
+  }
+  return { name: snap.name, value };
+}
+
+/** Trigger a browser download of one named variable as a JSON file.
+ *  Filename defaults to `hp50-var-<name>-<stamp>.json` so the user can
+ *  tell single-variable dumps from the full snapshot at a glance. */
+export function exportVariableToFile(name, value, filename = defaultVariableFilename(name)) {
+  const json = JSON.stringify(snapshotVariable(name, value), null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Read a File object the user picked, parse it, and return
+ *  `{ name, value }`.  Does NOT install the variable anywhere — the
+ *  caller decides whether to overwrite, rename, or refuse on conflict.
+ *  Returns a Promise that resolves on success and rejects on failure. */
+export function parseVariableFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.onload  = () => {
+      try {
+        const snap = JSON.parse(String(reader.result));
+        resolve(rehydrateVariable(snap));
+      } catch (e) { reject(e); }
+    };
+    reader.readAsText(file);
+  });
+}
+
+function defaultVariableFilename(name) {
+  // Strip path-unfriendly characters so a variable called `→FOO` lands
+  // as `hp50-var-FOO-...json` rather than something the OS flags.
+  const safe = String(name).replace(/[^A-Za-z0-9_+\-]/g, '_') || 'var';
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
+              + `-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `hp50-var-${safe}-${stamp}.json`;
 }

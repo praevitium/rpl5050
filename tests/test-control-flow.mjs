@@ -5747,3 +5747,492 @@ const { getPromptMessage, clearPromptMessage }
   assert(localFramesDepth() === 0,
     'session146: nested → sequential HALT: both frames torn down at end');
 }
+
+/* ================================================================
+   Session 151 — HALT/PROMPT lift through CASE clauses, fully-closed
+   START (NEXT and STEP), and DO/UNTIL.
+
+   None of the runners changed this session — runCase / runStart /
+   runDo have been generators since session 088, and `yield*
+   evalRange(...)` for every clause / body / test means HALT and
+   PROMPT already lift mechanically through the chain.  The session
+   141 narrative pinned the same property for IFERR; this run closes
+   the symmetric gaps for CASE, fully-closed START, and DO/UNTIL.
+   Auto-closed START's body-HALT was pinned at session 136; auto-
+   closed FOR's body-HALT was pinned at session 136; HALT inside an
+   *explicit* START NEXT body, an explicit START STEP body, an
+   explicit DO UNTIL body, and inside an UNTIL test were all
+   un-pinned until this run.
+
+   The interesting interactions:
+     - CASE: each THEN-clause action is a separate `yield* evalRange`,
+       and the no-match default clause is also a `yield* evalRange`.
+       A HALT inside any of them must propagate cleanly, and after
+       CONT the CASE must still short-circuit past the remaining
+       clauses' END tokens (the post-clause `pending` / `nest`
+       counter loop in runCase) so the program continues at the
+       intended point — a HALT in the middle of a clause cannot
+       reset the short-circuit bookkeeping.
+     - DO/UNTIL: HALT inside the body suspends mid-iteration; CONT
+       resumes the body, then the UNTIL test runs.  HALT inside the
+       UNTIL test suspends after the body is complete; CONT runs
+       the rest of the test, the loop continues if the test is
+       false.
+     - START STEP: the step is popped from the stack at the end of
+       each iteration.  HALT inside the body suspends with the
+       correct counter visible (mid-iteration); CONT resumes; the
+       step is popped at the *end* of the resumed body, not at the
+       suspension point.  HALT inside the computed step expression
+       (e.g. a sub-program that pushes the step) suspends after the
+       body is complete and before the step is consumed.
+   ================================================================ */
+
+/* ---- HALT in CASE clause action: clause runs, halts mid-action,
+        CONT completes; later clauses are still skipped ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 5 CASE 1 THEN 10 HALT 11 END 1 THEN 999 END END »
+  // First clause's test is 1 (true) → action runs (push 10), HALT,
+  // CONT pushes 11, then runCase short-circuits past the second
+  // clause's `999`.  Final stack ⟦5 10 11⟧.
+  s.push(Program([
+    Integer(5),
+    Name('CASE'),
+      Integer(1), Name('THEN'), Integer(10), Name('HALT'), Integer(11), Name('END'),
+      Integer(1), Name('THEN'), Integer(999), Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in CASE clause action suspends');
+  assert(haltedDepth() === 1,
+    'session151: HALT-in-CASE-action populates exactly one halted slot');
+  assert(s.depth === 2 && s.peek().value === 10n && s._items[0].value === 5n,
+    'session151: HALT-in-CASE-action sees pre-HALT clause residue (5,10)');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: CONT after HALT-in-CASE-action completes the program');
+  assert(s.depth === 3 && s.peek().value === 11n && s._items[1].value === 10n && s._items[0].value === 5n,
+    'session151: CONT-after-HALT short-circuits past later clauses (5,10,11)');
+  assert(localFramesDepth() === 0,
+    'session151: HALT-in-CASE-action leaves no local-frame leak');
+}
+
+/* ---- HALT in CASE clause test expression: test halts mid-expr,
+        CONT resumes the test, then the matching action runs ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « CASE 1 HALT THEN 7 END 1 THEN 999 END END »
+  // First clause's test pushes 1, HALTs.  CONT resumes the test
+  // (already complete — the 1 is the test).  test=1 is truthy →
+  // first clause's action runs (push 7).  Second clause skipped.
+  // Final stack ⟦7⟧.
+  s.push(Program([
+    Name('CASE'),
+      Integer(1), Name('HALT'), Name('THEN'), Integer(7), Name('END'),
+      Integer(1), Name('THEN'), Integer(999), Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in CASE test expression suspends');
+  // The test pushed 1 before HALT; that 1 is still on the stack at
+  // suspension — the test isn't consumed until after the test
+  // expression range completes.
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session151: HALT-in-CASE-test sees pushed test value (1) on stack');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: CONT after HALT-in-CASE-test completes the program');
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session151: CONT-after-HALT-in-test runs the matched clause action (7)');
+}
+
+/* ---- HALT in CASE default clause: tests all false, default runs,
+        HALTs, CONT completes the default ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « CASE 0 THEN 999 END HALT 42 END »
+  // First test 0 → false; default clause is `HALT 42`.  HALT
+  // suspends; CONT pushes 42.  Final stack ⟦42⟧.
+  s.push(Program([
+    Name('CASE'),
+      Integer(0), Name('THEN'), Integer(999), Name('END'),
+      Name('HALT'), Integer(42),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in CASE default clause suspends');
+  assert(s.depth === 0,
+    'session151: HALT-in-CASE-default with empty pre-CASE stack stays empty');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: CONT after HALT-in-CASE-default completes the program');
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session151: HALT-in-CASE-default CONT pushes the post-HALT 42');
+}
+
+/* ---- HALT inside auto-closed CASE (no outer END): default clause
+        is the auto-closed tail ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « CASE 0 THEN 999 END HALT 7 »  — no outer END
+  // First test 0 → false.  Auto-close: default clause is `HALT 7`.
+  // HALT suspends; CONT pushes 7.
+  s.push(Program([
+    Name('CASE'),
+      Integer(0), Name('THEN'), Integer(999), Name('END'),
+      Name('HALT'), Integer(7),
+    // no outer END — auto-closed
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in auto-closed CASE default suspends');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: CONT after HALT-in-auto-closed-CASE completes');
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session151: auto-closed CASE default ran post-HALT 7');
+}
+
+/* ---- PROMPT inside a CASE clause action sets the banner mid-
+        clause; CONT clears it and finishes the clause ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // « CASE 1 THEN "msg" PROMPT 8 END END »
+  // First clause's test is 1 → action runs.  PROMPT pops "msg",
+  // sets the banner, halts.  CONT clears the banner and pushes 8.
+  s.push(Program([
+    Name('CASE'),
+      Integer(1), Name('THEN'), Str('msg'), Name('PROMPT'), Integer(8), Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: PROMPT in CASE action suspends');
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'string' && msg.value === 'msg',
+    'session151: PROMPT-in-CASE-action sets the banner mid-clause');
+  lookup('CONT').fn(s);
+  assert(getPromptMessage() === null,
+    'session151: CONT clears the prompt banner after PROMPT-in-CASE-action');
+  assert(getHalted() === null,
+    'session151: CONT after PROMPT-in-CASE-action completes the program');
+  assert(s.depth === 1 && s.peek().value === 8n,
+    'session151: CONT after PROMPT-in-CASE pushes the post-PROMPT 8');
+}
+
+/* ---- KILL of halted CASE: generator chain torn down via gen.return(),
+        no local-frame leak ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « CASE 1 THEN HALT 9 END END »
+  // First clause action: HALT then 9.  KILL drops the halt slot
+  // and gen.return()'s the chain.  Stack must be in pre-EVAL state
+  // (the EVAL handler rolls back to its snapshot — the 9 never
+  // gets pushed).
+  s.push(Program([
+    Name('CASE'),
+      Integer(1), Name('THEN'), Name('HALT'), Integer(9), Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in CASE clause suspends before KILL');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session151: KILL clears the halt slot for halted CASE');
+  assert(localFramesDepth() === 0,
+    'session151: KILL of halted CASE leaves no local-frame leak');
+}
+
+/* ---- Sentinel: yield is not a thrown exception, so a HALT in a
+        CASE clause action must not be caught by anything CASE-internal.
+        The CASE machinery has no catch, but this test pins the
+        invariant so a future refactor can't introduce one. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « CASE 1 THEN HALT 1 END 1 THEN 99 END END »
+  // First clause matches; HALT in action; CONT pushes 1.  The
+  // second clause's `99` must NOT appear on the stack — short-
+  // circuit must hold across HALT/CONT.
+  s.push(Program([
+    Name('CASE'),
+      Integer(1), Name('THEN'), Name('HALT'), Integer(1), Name('END'),
+      Integer(1), Name('THEN'), Integer(99), Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null, 'session151: HALT in CASE first-clause action');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session151: CASE short-circuit holds across HALT/CONT — 99 not on stack');
+}
+
+/* ----------------------------------------------------------------
+   DO/UNTIL/END HALT lift
+   ---------------------------------------------------------------- */
+
+/* ---- HALT inside DO body: body halts mid-iteration; CONT resumes;
+        UNTIL test runs and loop terminates ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 0 DO 1 + HALT UNTIL DUP 2 ≥ END »
+  // Iter 1: push 1, +→1, HALT.  CONT: UNTIL test runs: DUP→1, 1≥2 false.
+  //   Loop continues.  Iter 2: push 1, +→2, HALT.  CONT: DUP→2, 2≥2
+  //   true → loop exits.  Final stack ⟦2⟧.
+  s.push(Program([
+    Integer(0),
+    Name('DO'),
+      Integer(1), Name('+'), Name('HALT'),
+    Name('UNTIL'),
+      Name('DUP'), Integer(2), Name('≥'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in DO body suspends iter 1');
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session151: HALT in DO body iter 1 sees mid-iteration counter (1)');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in DO body suspends iter 2');
+  assert(s.depth === 1 && s.peek().value === 2n,
+    'session151: HALT in DO body iter 2 sees counter (2)');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: DO/UNTIL completes after iter-2 HALT/CONT');
+  assert(s.depth === 1 && s.peek().value === 2n,
+    'session151: DO/UNTIL final stack 2 (UNTIL test exited at counter=2)');
+}
+
+/* ---- HALT inside UNTIL test expression: test halts mid-expression,
+        CONT resumes the test ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 0 DO 1 + UNTIL DUP HALT 3 ≥ END »
+  // Iter 1: body pushes 1, +→1.  UNTIL test: DUP→1, HALT.  CONT
+  // resumes: push 3, 1≥3 false → loop continues.  Iter 2 body:
+  // push 1, +→2.  UNTIL: DUP→2, HALT.  CONT: push 3, 2≥3 false.
+  // Iter 3 body: push 1, +→3.  UNTIL: DUP→3, HALT.  CONT: push 3,
+  // 3≥3 true → loop exits.  Final stack ⟦3⟧.
+  s.push(Program([
+    Integer(0),
+    Name('DO'),
+      Integer(1), Name('+'),
+    Name('UNTIL'),
+      Name('DUP'), Name('HALT'), Integer(3), Name('≥'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in UNTIL test suspends iter 1');
+  // Stack at suspension: [counter=1, dup=1] (DUP ran before HALT).
+  assert(s.depth === 2 && s.peek().value === 1n && s._items[0].value === 1n,
+    'session151: HALT in UNTIL test sees DUP residue + counter');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in UNTIL test suspends iter 2 (test ran false → loop continued)');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in UNTIL test suspends iter 3');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: DO/UNTIL completes after iter-3 UNTIL-test HALT/CONT');
+  assert(s.depth === 1 && s.peek().value === 3n,
+    'session151: DO/UNTIL final counter 3 (UNTIL test exited at counter=3)');
+}
+
+/* ---- KILL of halted DO body: tear down generator chain ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 0 DO HALT 1 + UNTIL 0 END »  — UNTIL test is 0 (always false),
+  // so without KILL this would be an infinite loop after CONT.
+  s.push(Program([
+    Integer(0),
+    Name('DO'), Name('HALT'), Integer(1), Name('+'),
+    Name('UNTIL'), Integer(0),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null, 'session151: HALT in DO body suspends');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session151: KILL of halted DO clears the slot');
+  assert(localFramesDepth() === 0,
+    'session151: KILL of halted DO leaves no local-frame leak');
+}
+
+/* ---- PROMPT inside DO body sets banner; CONT clears it; loop
+        terminates ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // « 0 DO 1 + "doing" PROMPT UNTIL DUP 1 ≥ END »
+  // Iter 1: 0+1=1, PROMPT pops "doing", halts.  CONT clears banner,
+  // UNTIL: DUP→1, 1≥1 true → loop exits.  Final stack ⟦1⟧.
+  s.push(Program([
+    Integer(0),
+    Name('DO'),
+      Integer(1), Name('+'), Str('doing'), Name('PROMPT'),
+    Name('UNTIL'),
+      Name('DUP'), Integer(1), Name('≥'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: PROMPT in DO body suspends');
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'string' && msg.value === 'doing',
+    'session151: PROMPT-in-DO-body sets banner');
+  lookup('CONT').fn(s);
+  assert(getPromptMessage() === null,
+    'session151: CONT clears prompt banner after PROMPT-in-DO');
+  assert(getHalted() === null,
+    'session151: DO/UNTIL completes after PROMPT/CONT (UNTIL true on iter 1)');
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session151: PROMPT-in-DO final stack 1');
+}
+
+/* ----------------------------------------------------------------
+   Fully-closed START/NEXT and START/STEP HALT lift
+   (auto-closed forms pinned at session 136 — these pin the
+    explicit-closer forms that runStart routes through closerIdx)
+   ---------------------------------------------------------------- */
+
+/* ---- HALT inside fully-closed START/NEXT body: halts each iter ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 3 START HALT 7 NEXT »  — explicit NEXT
+  // Three iterations; HALT in each, CONT pushes 7.
+  s.push(Program([
+    Integer(1), Integer(3), Name('START'),
+      Name('HALT'), Integer(7),
+    Name('NEXT'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in fully-closed START/NEXT body iter 1');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in fully-closed START/NEXT body iter 2');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in fully-closed START/NEXT body iter 3');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: fully-closed START/NEXT completes after 3 CONTs');
+  assert(s.depth === 3 && s.peek().value === 7n
+      && s._items[0].value === 7n && s._items[1].value === 7n,
+    'session151: fully-closed START/NEXT leaves three 7s on stack');
+}
+
+/* ---- HALT inside fully-closed START/STEP body: halts mid-iter,
+        STEP value popped after CONT resumes the body ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 5 START HALT 100 2 STEP »
+  // counter=1, body: HALT, push 100, STEP pops 2 → counter=3.  Body
+  // again: HALT, push 100, STEP pops 2 → counter=5.  Body again:
+  // HALT, push 100, STEP pops 2 → counter=7.  7 > 5 → loop ends.
+  // Final stack ⟦100 100 100⟧.
+  s.push(Program([
+    Integer(1), Integer(5), Name('START'),
+      Name('HALT'), Integer(100), Integer(2),
+    Name('STEP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in START/STEP body iter 1');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in START/STEP body iter 2');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in START/STEP body iter 3');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: fully-closed START/STEP completes after 3 CONTs');
+  assert(s.depth === 3
+      && s.peek().value === 100n
+      && s._items[0].value === 100n
+      && s._items[1].value === 100n,
+    'session151: START/STEP final stack [100,100,100] (3 iters at step=2)');
+}
+
+/* ---- HALT inside fully-closed FOR/STEP body: halts mid-iter,
+        loop var visible to varRecall ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 4 FOR i i HALT 1 STEP »  — counter increments by explicit STEP=1.
+  // Iter 1: i=1, push 1, HALT.  CONT pops STEP (1) → i=2.  Iter 2…
+  s.push(Program([
+    Integer(1), Integer(4), Name('FOR'), Name('i'),
+      Name('i'), Name('HALT'), Integer(1),
+    Name('STEP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in fully-closed FOR/STEP body iter 1');
+  // Loop var i is visible at suspension.
+  assert(varRecall('i')?.value === 1n,
+    'session151: FOR loop var i=1 visible at iter 1 HALT');
+  assert(s.depth === 1 && s.peek().value === 1n,
+    'session151: FOR/STEP iter 1 stack: i pushed (1)');
+  lookup('CONT').fn(s);
+  assert(varRecall('i')?.value === 2n,
+    'session151: FOR loop var i=2 visible at iter 2 HALT');
+  lookup('CONT').fn(s);
+  assert(varRecall('i')?.value === 3n,
+    'session151: FOR loop var i=3 visible at iter 3 HALT');
+  lookup('CONT').fn(s);
+  assert(varRecall('i')?.value === 4n,
+    'session151: FOR loop var i=4 visible at iter 4 HALT');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session151: fully-closed FOR/STEP completes after 4 CONTs');
+  assert(varRecall('i') === undefined,
+    'session151: FOR/STEP finally purged i after completion (no prior binding)');
+  assert(s.depth === 4 && s.peek().value === 4n,
+    'session151: FOR/STEP final stack [1,2,3,4]');
+}
+
+/* ---- KILL of halted fully-closed FOR/STEP: finally restores i ---- */
+{
+  resetHome(); clearAllHalted();
+  // Establish a prior binding for i so we can verify save/restore.
+  varStore('i', Integer(99n));
+  const s = new Stack();
+  s.push(Program([
+    Integer(1), Integer(5), Name('FOR'), Name('i'),
+      Name('i'), Name('HALT'), Integer(1),
+    Name('STEP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session151: HALT in FOR/STEP iter 1 before KILL');
+  assert(varRecall('i')?.value === 1n,
+    'session151: FOR/STEP loop var i shadows prior binding (1, not 99)');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session151: KILL of halted FOR/STEP clears the halt slot');
+  assert(varRecall('i')?.value === 99n,
+    'session151: KILL of halted FOR/STEP runs the finally — restores prior i=99');
+  assert(localFramesDepth() === 0,
+    'session151: KILL of halted FOR/STEP leaves no local-frame leak');
+  varPurge('i');
+}

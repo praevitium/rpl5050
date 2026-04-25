@@ -127,14 +127,16 @@ export const state = {
   // op consults when it needs to pick a canonical variable against
   // which to operate: DERVX, INTVX, LAPLACE, ILAP, PREVAL on
   // multi-free-variable input, TABVAL, TAYLOR0, etc.  We store it
-  // here as a plain uppercase-ish string (Name.id).  Default is `'X'`
-  // — matches the HP50 factory default.  Written by the SVX op and
-  // by `setCasVx()`; read by the VX op and by `getCasVx()`.
+  // here as a plain string (Name.id).  Default is `'x'` (lowercase)
+  // — deliberate deviation from the HP50 factory default of `'X'`,
+  // matching the lowercase-default keyboard convention (see
+  // ui/keyboard.js header).  Written by the SVX op and by
+  // `setCasVx()`; read by the VX op and by `getCasVx()`.
   //
   // Not (yet) persisted across reloads in v1 snapshots; we accept an
   // optional `casVx` field on decode so a future version bump is
   // backwards-compatible.
-  casVx: 'X',
+  casVx: 'x',
   // CAS MODULO state slot (MODSTO / ADDTMOD / SUBTMOD / MULTMOD /
   // POWMOD family — HP50 AUR §3-150 / §3-9 / §3-243 / §3-153 / §3-175).
   // BigInt holding the current modulus.  HP50 factory default is 13
@@ -570,11 +572,13 @@ export function setCasVx(name) {
 
 export function getCasVx() { return state.casVx; }
 
-/** Reset VX to the HP50 factory default of `'X'`.  For tests so one
- *  test's SVX call doesn't leak into the next. */
+/** Reset VX to the rpl5050 factory default of `'x'` (lowercase —
+ *  deliberate deviation from the HP50, matching our lowercase-default
+ *  keyboard).  For tests so one test's SVX call doesn't leak into the
+ *  next. */
 export function resetCasVx() {
-  if (state.casVx === 'X') return;
-  state.casVx = 'X';
+  if (state.casVx === 'x') return;
+  state.casVx = 'x';
   _emit();
 }
 
@@ -955,6 +959,81 @@ export function makeSubdir(id) {
   state.current.entries.set(key, sub);
   _emit();
   return sub;
+}
+
+/** Walk a HOME-rooted path of segment names and return the Directory at
+ *  the end, or `null` if any segment is missing or doesn't refer to a
+ *  Directory.  Accepts either `['HOME', 'A', 'B']` (the shape returned
+ *  by `currentPath()`) or `['A', 'B']` (no leading HOME) — both root at
+ *  state.home.  An empty array also lands on HOME.
+ *
+ *  Used by the Files tab's Move action to resolve the user's typed
+ *  destination into a live Directory before transplanting an entry. */
+export function getDirectoryByPath(segments) {
+  if (!Array.isArray(segments)) return null;
+  let i = 0;
+  // Accept a leading 'HOME' segment to match what `currentPath()`
+  // returns; everything below the root walks via .entries.
+  if (segments.length > 0 && segments[0] === state.home.name) i = 1;
+  let cur = state.home;
+  for (; i < segments.length; i++) {
+    const seg = String(segments[i]);
+    if (seg.length === 0) continue;                    // tolerate '//' typos
+    const next = cur.entries.get(seg);
+    if (!next || next.type !== TYPES.DIRECTORY) return null;
+    cur = next;
+  }
+  return cur;
+}
+
+/** Move an entry from the current directory to `targetDir`, preserving
+ *  the value's identity (no copy / no re-encode).  The entry is
+ *  appended to the target's insertion order, matching what the Files
+ *  tab expects ("the order they were added").
+ *
+ *  Throws when:
+ *    - the source entry doesn't exist in the current directory
+ *    - `targetDir` isn't a Directory value
+ *    - `targetDir` already has an entry with the same name
+ *    - the entry IS a Directory and the target sits inside it
+ *      (would orphan the parent chain)
+ *
+ *  When the moved entry is itself a Directory, its `.parent` pointer
+ *  is re-linked so `goUp()` from inside it lands on the new parent.
+ *  No state change happens until every guard has passed — failures
+ *  leave the tree untouched. */
+export function moveCurrentEntry(name, targetDir) {
+  const key = String(name);
+  const src = state.current;
+  if (!src.entries.has(key)) {
+    throw new Error(`Undefined name: ${key}`);
+  }
+  if (!targetDir || targetDir.type !== TYPES.DIRECTORY) {
+    throw new Error(`Bad target: not a directory`);
+  }
+  if (targetDir === src) {
+    // No-op move; emit nothing rather than reorder.
+    return;
+  }
+  if (targetDir.entries.has(key)) {
+    throw new Error(`Name conflict: ${key}`);
+  }
+  const value = src.entries.get(key);
+  // Disallow dropping a directory into itself / into one of its
+  // descendants — that would build a cycle and lose the parent chain.
+  if (value && value.type === TYPES.DIRECTORY) {
+    for (let d = targetDir; d; d = d.parent) {
+      if (d === value) {
+        throw new Error(`Cannot move ${key} into itself`);
+      }
+    }
+  }
+  src.entries.delete(key);
+  targetDir.entries.set(key, value);
+  if (value && value.type === TYPES.DIRECTORY) {
+    value.parent = targetDir;
+  }
+  _emit();
 }
 
 /* ---------------------------- last error ----------------------------

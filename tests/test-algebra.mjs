@@ -3561,17 +3561,20 @@ function _assertRootsMatch(got, expected, name) {
    ================================================================ */
 
 // PREVAL routes through Giac.  Each PREVAL call emits one command of
-// the shape `simplify(subst(F,X=b)-subst(F,X=a))`, so we register one
-// fixture per test case with the scalar difference the test expects.
-// Bulk-register them first — the cluster shares the set.
+// the shape `simplify(subst(F,VAR=b)-subst(F,VAR=a))` where VAR is
+// either the single free variable in F (single-var case) or the
+// active VX (multi-var / constant case).  rpl5050 defaults VX to the
+// lowercase 'x' so the constant-F fixture uses lowercase, while the
+// X^2 / 2*X+1 / X^3 cases pin to whichever single var their AST
+// contains.
 giac._clear();
 giac._setFixtures({
   'simplify(subst(X^2,X=3)-subst(X^2,X=0))':         '9',
   'simplify(subst(2*X+1,X=5)-subst(2*X+1,X=1))':     '8',
   'simplify(subst(X^3,X=2)-subst(X^3,X=1))':         '7',
   'simplify(subst(X^2,X=A)-subst(X^2,X=0))': 'A^2',
-  'simplify(subst(5,X=2)-subst(5,X=1))':             '0',
-  'simplify(subst(X+Y,X=1)-subst(X+Y,X=0))': '1',
+  'simplify(subst(5,x=2)-subst(5,x=1))':             '0',
+  'simplify(subst(x+y,x=1)-subst(x+y,x=0))': '1',
 });
 
 /* ---- PREVAL of X^2 from 0 to 3 = 9 ---- */
@@ -3649,18 +3652,19 @@ giac._setFixtures({
 }
 
 /* ---- PREVAL multi-variable F substitutes VX ----
-   PREVAL picks VX (default 'X') as the substitution variable, per
-   HP50 AUR.  For F = X + Y with VX = X, result is
-   (1 + Y) - (0 + Y) = 1. */
+   PREVAL picks VX (rpl5050 default 'x' — lowercase deviation from
+   HP50 AUR's 'X', see state.js casVx slot) as the substitution
+   variable.  For F = x + y with VX = x, result is
+   (1 + y) - (0 + y) = 1. */
 {
   const s = new Stack();
-  s.push(Symbolic(parseAlgebra('X+Y')));
+  s.push(Symbolic(parseAlgebra('x+y')));
   s.push(Real(0));
   s.push(Real(1));
   lookup('PREVAL').fn(s);
   const out = s.pop();
   assert(isReal(out) && Math.abs(out.value - 1) < 1e-12,
-    'session076: PREVAL X+Y from 0 to 1 → 1 (substitutes VX=X)');
+    'session076: PREVAL x+y from 0 to 1 → 1 (substitutes VX=x)');
 }
 
 /* ---- PREVAL non-Symbolic F rejects ---- */
@@ -3772,19 +3776,25 @@ giac._setFixtures({
   'ilaplace(1/(X^2+1),X,X)': 'sin(X)',
 });
 
-/* ---- LAPLACE of 1 = 1/X ---- */
+/* ---- LAPLACE of 1 = 1/x ---- */
+// Constant-input LAPLACE picks the variable from VX.  rpl5050 ships
+// VX='x' (lowercase deviation from HP50; see state.js casVx slot),
+// so this test exercises the default-VX path with the lowercase
+// fixture below and asserts the lowercase variable in the result.
+giac._setFixture('laplace(1,x,x)', '1/x');
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('1')));
   lookup('LAPLACE').fn(s);
   const out = s.pop();
   assert(isSymbolic(out), 'session058: LAPLACE(1) returns Symbolic');
-  // Expect 1/X.
+  // Expect 1/x — uppercase X case stays covered by the X / X^2 / etc.
+  // tests below where the input AST already pins the variable.
   const e = out.expr;
   assert(e && e.kind === 'bin' && e.op === '/'
     && e.l.kind === 'num' && e.l.value === 1
-    && e.r.kind === 'var' && e.r.name === 'X',
-    'session058: LAPLACE(1) = 1/X');
+    && e.r.kind === 'var' && e.r.name === 'x',
+    'session058: LAPLACE(1) = 1/x');
 }
 
 /* ---- LAPLACE of X = 1/X^2 ---- */
@@ -5314,15 +5324,19 @@ giac._setFixtures({
     'session061: ILAP(e^(-3X)) = DIRAC(X-3)');
 }
 
-/* ---- ILAP constant 1 → DIRAC(X) ---- */
+/* ---- ILAP constant 1 → DIRAC(x) ---- */
+// Constant-input ILAP picks the variable from VX (default 'x').
+// Mirror the LAPLACE(1) story above: register the lowercase fixture
+// and assert the lowercase variable in the result.
+giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('1')));
   lookup('ILAP').fn(s);
   const out = s.pop();
   assert(out.expr.kind === 'fn' && out.expr.name === 'DIRAC'
-    && out.expr.args[0].kind === 'var' && out.expr.args[0].name === 'X',
-    'session061: ILAP(1) = DIRAC(X)');
+    && out.expr.args[0].kind === 'var' && out.expr.args[0].name === 'x',
+    'session061: ILAP(1) = DIRAC(x)');
 }
 
 /* ---- LAPLACE / ILAP round-trip on DIRAC(X-3) ---- */
@@ -5460,15 +5474,18 @@ giac._setFixtures({
    VX / SVX CAS-main-variable state + ops.
    ================================================================ */
 
-/* ---- VX push default = Name('X') ---- */
+/* ---- VX push default = Name('x') ---- */
+// rpl5050 ships a lowercase default for the CAS main variable
+// (deliberate deviation from the HP50's `'X'` — matches the
+// lowercase-default keyboard layout in www/src/ui/keyboard.js).
 {
   const { resetCasVx } = await import('../www/src/rpl/state.js');
   resetCasVx();
   const s = new Stack();
   lookup('VX').fn(s);
   const out = s.pop();
-  assert(isName(out) && out.id === 'X',
-    'session076: VX pushes Name(X) on a freshly-booted unit');
+  assert(isName(out) && out.id === 'x',
+    'session076: VX pushes Name(x) on a freshly-booted unit');
 }
 
 /* ---- SVX accepts Name and is observable via VX ---- */
@@ -5898,6 +5915,16 @@ giac._setFixtures({
    the mock engine); PA2B2 is native-BigInt (no CAS dependency).
    ================================================================== */
 
+// PCAR / CHARPOL emit `charpoly(matrix, VX)` and the existing fixtures
+// in this cluster were written for the HP50 default VX='X'.  rpl5050
+// now ships VX='x' (lowercase keyboard default — see state.js casVx),
+// so pin VX to 'X' for the duration of the cluster and reset on the
+// way out.  Avoids touching every fixture key + assertion.
+{
+  const { setCasVx } = await import('../www/src/rpl/state.js');
+  setCasVx('X');
+}
+
 // ---- PCAR — characteristic polynomial ------------------------------
 
 /* ---- PCAR on a 2×2 integer matrix routes through Giac charpoly(...) */
@@ -6021,6 +6048,14 @@ giac._setFixtures({
   assertThrows(() => { lookup('EGVL').fn(s); },
                /Bad argument type/,
                'session114: EGVL on Integer → Bad argument type');
+}
+
+// Reset VX after the PCAR/CHARPOL/EGVL cluster — see the setCasVx('X')
+// at the top of session 114 above.  PA2B2 doesn't touch VX so it can
+// run with whatever the next cluster expects.
+{
+  const { resetCasVx } = await import('../www/src/rpl/state.js');
+  resetCasVx();
 }
 
 // ---- PA2B2 — Fermat sum of two squares ---------------------------
@@ -6888,13 +6923,17 @@ giac._setFixtures({
 
 /* ---- LIMIT bare-value form uses VX as default variable ---------- */
 {
-  // VX defaults to 'X' on a fresh boot; bare-value pointArg should
-  // resolve to that variable.  Fixture reflects the canonical X.
+  // VX defaults to 'x' (rpl5050 lowercase deviation from HP50 — see
+  // state.js casVx slot).  Bare-value pointArg should resolve to that
+  // variable; the cmd uses lowercase x but the integrand still spells
+  // X explicitly, so the substitution finds nothing and Giac collapses
+  // the Symbolic to whatever the fixture returns.  We exercise the
+  // VX-default path here, not the algebraic resolution semantics.
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('SIN(X)/X')));
   s.push(Integer(0n));
   giac._clear();
-  giac._setFixture('limit(sin(X)/X,X,0)', '1');
+  giac._setFixture('limit(sin(X)/X,x,0)', '1');
   lookup('LIMIT').fn(s);
   assert(isReal(s.peek()) && s.peek().value.eq(1),
          `session139: LIMIT SIN(X)/X bare-value 0 → Real(${s.peek() && s.peek().value}) (want 1; uses VX)`);
@@ -6972,7 +7011,7 @@ giac._setFixtures({
   s.push(Symbolic(parseAlgebra('1/X')));
   s.push(Rational(1n, 2n));
   giac._clear();
-  giac._setFixture('limit(1/X,X,(1/2))', '2');
+  giac._setFixture('limit(1/X,x,(1/2))', '2');
   lookup('lim').fn(s);
   assert(isReal(s.peek()) && s.peek().value.eq(2),
          `session139: lim 1/X at X=1/2 (Rational point) → Real(${s.peek() && s.peek().value}) (want 2)`);
@@ -7250,6 +7289,305 @@ giac._setFixtures({
     // m=3 now; (2+2) mod 3 = 4 mod 3 = 1; centered: 2*1=2 < 3 → 1.
     assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 1n,
            `session144: MODSTO 3 then 2 2 ADDTMOD → Integer(1) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- Reset for hygiene ---- */
+  resetCasModulo();
+}
+
+// ==================================================================
+// session 149 — EXPANDMOD / FACTORMOD / GCDMOD / DIVMOD / DIV2MOD
+// HP50 AUR §3-80 / §3-83 / §3-96 / §3-63 / §3-62.
+// User Guide p.5-14 / p.5-15 worked examples mod 12.
+// ==================================================================
+{
+  const stateMod = await import('../www/src/rpl/state.js');
+  const { setCasModulo, resetCasModulo } = stateMod;
+
+  /* ---- EXPANDMOD on Integer (User Guide p.5-15 worked examples) ---- */
+  setCasModulo(12n);
+  {
+    const s = new Stack();
+    s.push(Integer(125n));
+    lookup('EXPANDMOD').fn(s);
+    // User Guide: EXPANDMOD(125) ≡ 5 (mod 12)
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 5n,
+           `session149: 125 EXPANDMOD (m=12) → Integer(5) (got ${s.peek() && s.peek().value})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(17n));
+    lookup('EXPANDMOD').fn(s);
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 5n,
+           `session149: 17 EXPANDMOD (m=12) → Integer(5) (got ${s.peek() && s.peek().value})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(6n));
+    lookup('EXPANDMOD').fn(s);
+    // 6 mod 12: r=6; 2*6=12 = m, NOT > m → stays 6.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 6n,
+           `session149: 6 EXPANDMOD (m=12) → Integer(6) at boundary (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- EXPANDMOD on integer-valued Real ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Real(20));
+    lookup('EXPANDMOD').fn(s);
+    // 20 mod 7 = 6; 2*6=12 > 7 → 6-7 = -1.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === -1n,
+           `session149: Real(20) EXPANDMOD (m=7) → Integer(-1) centered (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- EXPANDMOD Symbolic via Giac mock (AUR §3-80 worked example) ---- */
+  setCasModulo(3n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('(X+3)*(X+4)')));
+    giac._clear();
+    giac._setFixture('expand((X+3)*(X+4)) mod 3', 'X^2+X');
+    lookup('EXPANDMOD').fn(s);
+    assert(s.depth === 1 && isSymbolic(s.peek()) &&
+           formatAlgebra(s.peek().expr) === 'X^2 + X',
+           `session149: EXPANDMOD AUR worked example mod 3 → 'X^2 + X' (got '${s.peek() && formatAlgebra(s.peek().expr)}')`);
+    giac._clear();
+  }
+
+  /* ---- EXPANDMOD rejects Vector ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(2)]));
+    assertThrows(() => { lookup('EXPANDMOD').fn(s); }, null,
+                 'session149: Vector EXPANDMOD → Bad argument type');
+  }
+
+  /* ---- FACTORMOD on Integer (collapses to centered representative) ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(15n));
+    lookup('FACTORMOD').fn(s);
+    // 15 mod 7 = 1; centered: 1.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 1n,
+           `session149: 15 FACTORMOD (m=7) → Integer(1) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- FACTORMOD Symbolic via Giac mock (AUR §3-83 worked example) ---- */
+  setCasModulo(3n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('X^2+2')));
+    giac._clear();
+    giac._setFixture('factor(X^2+2) mod 3', '(X+1)*(X-1)');
+    lookup('FACTORMOD').fn(s);
+    assert(s.depth === 1 && isSymbolic(s.peek()) &&
+           formatAlgebra(s.peek().expr) === '(X + 1)*(X - 1)',
+           `session149: FACTORMOD AUR worked example X^2+2 mod 3 → '(X+1)*(X-1)' (got '${s.peek() && formatAlgebra(s.peek().expr)}')`);
+    giac._clear();
+  }
+
+  /* ---- FACTORMOD modulus precondition: composite m rejects ---- */
+  setCasModulo(12n);
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    assertThrows(() => { lookup('FACTORMOD').fn(s); }, null,
+                 'session149: FACTORMOD m=12 (composite) → Bad argument value');
+  }
+
+  /* ---- FACTORMOD modulus precondition: m >= 100 rejects (even if prime) ---- */
+  setCasModulo(101n);
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    assertThrows(() => { lookup('FACTORMOD').fn(s); }, null,
+                 'session149: FACTORMOD m=101 (>=100, even prime) → Bad argument value');
+  }
+
+  /* ---- GCDMOD on pure Integer ---- */
+  setCasModulo(13n);
+  {
+    const s = new Stack();
+    s.push(Integer(20n));
+    s.push(Integer(8n));
+    lookup('GCDMOD').fn(s);
+    // gcd(20, 8) = 4; centered mod 13: 4 (2*4=8 < 13 → stays 4).
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 4n,
+           `session149: 20 8 GCDMOD (m=13) → Integer(4) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- GCDMOD rejects gcd(0, 0) ---- */
+  setCasModulo(13n);
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    s.push(Integer(0n));
+    assertThrows(() => { lookup('GCDMOD').fn(s); }, null,
+                 'session149: 0 0 GCDMOD → Bad argument value');
+  }
+
+  /* ---- GCDMOD Symbolic via Giac mock (AUR §3-96 worked example) ---- */
+  setCasModulo(13n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('2*X^2+5')));
+    s.push(Symbolic(parseAlgebra('4*X^2-5*X')));
+    giac._clear();
+    giac._setFixture('gcd(2*X^2+5,4*X^2-5*X) mod 13', '-(4*X-5)');
+    lookup('GCDMOD').fn(s);
+    assert(s.depth === 1 && isSymbolic(s.peek()) &&
+           formatAlgebra(s.peek().expr) === '-(4*X - 5)',
+           `session149: GCDMOD AUR worked example mod 13 → '-(4*X-5)' (got '${s.peek() && formatAlgebra(s.peek().expr)}')`);
+    giac._clear();
+  }
+
+  /* ---- DIVMOD: User Guide p.5-14 examples (mod 12) ---- */
+  setCasModulo(12n);
+  // 12/3 ≡ 4 (mod 12) — exact integer division path
+  {
+    const s = new Stack();
+    s.push(Integer(12n));
+    s.push(Integer(3n));
+    lookup('DIVMOD').fn(s);
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 4n,
+           `session149: 12 3 DIVMOD (m=12) → Integer(4) exact (got ${s.peek() && s.peek().value})`);
+  }
+  // 25/5 ≡ 5 (mod 12) — exact integer division path
+  {
+    const s = new Stack();
+    s.push(Integer(25n));
+    s.push(Integer(5n));
+    lookup('DIVMOD').fn(s);
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 5n,
+           `session149: 25 5 DIVMOD (m=12) → Integer(5) (got ${s.peek() && s.peek().value})`);
+  }
+  // 66/6 ≡ -1 (mod 12) — exact integer (66/6=11), centered to -1
+  {
+    const s = new Stack();
+    s.push(Integer(66n));
+    s.push(Integer(6n));
+    lookup('DIVMOD').fn(s);
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === -1n,
+           `session149: 66 6 DIVMOD (m=12) → Integer(-1) centered (got ${s.peek() && s.peek().value})`);
+  }
+  // 64/13 ≡ 4 (mod 12) — modular inverse path (13 mod 12 = 1, invertible)
+  {
+    const s = new Stack();
+    s.push(Integer(64n));
+    s.push(Integer(13n));
+    lookup('DIVMOD').fn(s);
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 4n,
+           `session149: 64 13 DIVMOD (m=12) → Integer(4) inverse (got ${s.peek() && s.peek().value})`);
+  }
+  // 12/8 (mod 12) does not exist
+  {
+    const s = new Stack();
+    s.push(Integer(12n));
+    s.push(Integer(8n));
+    assertThrows(() => { lookup('DIVMOD').fn(s); }, null,
+                 'session149: 12 8 DIVMOD → Bad argument value (gcd(8,12)≠1)');
+  }
+
+  /* ---- DIVMOD Symbolic via Giac mock (AUR §3-63 worked example) ---- */
+  setCasModulo(3n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('5*X^2+4*X+2')));
+    s.push(Symbolic(parseAlgebra('X^2+1')));
+    giac._clear();
+    giac._setFixture('(5*X^2+4*X+2)/(X^2+1) mod 3', '-(X^2-X+1)/(X^2+1)');
+    lookup('DIVMOD').fn(s);
+    assert(s.depth === 1 && isSymbolic(s.peek()),
+           `session149: DIVMOD AUR worked example returns Symbolic`);
+    giac._clear();
+  }
+
+  /* ---- DIV2MOD: User Guide p.5-14 examples (mod 12) ---- */
+  setCasModulo(12n);
+  // 125/17 mod 12 = 1 r 0
+  {
+    const s = new Stack();
+    s.push(Integer(125n));
+    s.push(Integer(17n));
+    lookup('DIV2MOD').fn(s);
+    assert(s.depth === 2,
+           `session149: 125 17 DIV2MOD pushes 2 results (got depth ${s.depth})`);
+    assert(isInteger(s.peek(2)) && s.peek(2).value === 1n,
+           `session149: 125 17 DIV2MOD (m=12) quotient → Integer(1) (got ${s.peek(2) && s.peek(2).value})`);
+    assert(isInteger(s.peek(1)) && s.peek(1).value === 0n,
+           `session149: 125 17 DIV2MOD (m=12) remainder → Integer(0) (got ${s.peek(1) && s.peek(1).value})`);
+  }
+  // 68/7 mod 12 = -4 r 0
+  {
+    const s = new Stack();
+    s.push(Integer(68n));
+    s.push(Integer(7n));
+    lookup('DIV2MOD').fn(s);
+    assert(s.depth === 2 && s.peek(2).value === -4n && s.peek(1).value === 0n,
+           `session149: 68 7 DIV2MOD (m=12) → q=-4 r=0 (got q=${s.peek(2) && s.peek(2).value} r=${s.peek(1) && s.peek(1).value})`);
+  }
+  // 7/5 mod 12 = -1 r 0
+  {
+    const s = new Stack();
+    s.push(Integer(7n));
+    s.push(Integer(5n));
+    lookup('DIV2MOD').fn(s);
+    assert(s.depth === 2 && s.peek(2).value === -1n && s.peek(1).value === 0n,
+           `session149: 7 5 DIV2MOD (m=12) → q=-1 r=0 (got q=${s.peek(2) && s.peek(2).value} r=${s.peek(1) && s.peek(1).value})`);
+  }
+  // 2/3 mod 12 — does not exist
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    s.push(Integer(3n));
+    assertThrows(() => { lookup('DIV2MOD').fn(s); }, null,
+                 'session149: 2 3 DIV2MOD (m=12) → Bad argument value (no inverse, not exact)');
+  }
+
+  /* ---- DIV2MOD Symbolic via Giac mock (AUR §3-62 worked example) ---- */
+  setCasModulo(3n);
+  {
+    const s = new Stack();
+    s.push(Symbolic(parseAlgebra('X^3+4')));
+    s.push(Symbolic(parseAlgebra('X^2-1')));
+    giac._clear();
+    giac._setFixture('quo(X^3+4,X^2-1) mod 3', 'X');
+    giac._setFixture('rem(X^3+4,X^2-1) mod 3', 'X+1');
+    lookup('DIV2MOD').fn(s);
+    assert(s.depth === 2,
+           `session149: DIV2MOD AUR symbolic pushes 2 results (got depth ${s.depth})`);
+    // quo lifts to Name('X', quoted) via _astToRplValue's Var-leaf unwrap.
+    assert((isName(s.peek(2)) && s.peek(2).id === 'X') ||
+           (isSymbolic(s.peek(2)) && formatAlgebra(s.peek(2).expr) === 'X'),
+           `session149: DIV2MOD AUR symbolic quotient → 'X'`);
+    assert(isSymbolic(s.peek(1)) && formatAlgebra(s.peek(1).expr) === 'X + 1',
+           `session149: DIV2MOD AUR symbolic remainder → 'X+1' (got '${s.peek(1) && formatAlgebra(s.peek(1).expr)}')`);
+    giac._clear();
+  }
+
+  /* ---- Modulus consultation: changing MODSTO changes results ---- */
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    lookup('MODSTO').fn(s);
+    s.push(Integer(7n));
+    lookup('EXPANDMOD').fn(s);
+    // m=5; 7 mod 5 = 2; 2*2=4 < 5 → stays 2.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 2n,
+           `session149: MODSTO 5 then 7 EXPANDMOD → Integer(2) (got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- DIVMOD rejects Vector / non-numeric type ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(2)]));
+    s.push(Integer(3n));
+    assertThrows(() => { lookup('DIVMOD').fn(s); }, null,
+                 'session149: Vector DIVMOD → Bad argument type');
   }
 
   /* ---- Reset for hygiene ---- */

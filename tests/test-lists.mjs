@@ -340,6 +340,51 @@ import { assert, assertThrows } from './helpers.mjs';
     'SORT does not mutate the original List');
 }
 
+/* ---- SORT: negative reals (regression — session 151b user report).
+   Pre-fix: _rplCompare returned `a.value < b.value` on raw Decimal
+   instances; Decimal.valueOf() returns a string so "-3.5" > "-1.5"
+   lexicographically and the comparator gave the wrong sign for
+   negative-vs-negative pairs.  Post-fix routes both operands through
+   Number() so the comparator always works on JS numbers. ---- */
+{
+  const s = new Stack();
+  s.push(RList([Real(-3.5), Real(0), Real(-1.5), Real(5)]));
+  lookup('SORT').fn(s);
+  const vals = s.peek(1).items.map(x => x.value.toNumber());
+  assert(JSON.stringify(vals) === JSON.stringify([-3.5, -1.5, 0, 5]),
+    'session151b: SORT { -3.5 0 -1.5 5 } → { -3.5 -1.5 0 5 } (negatives ordered numerically)');
+}
+/* ---- SORT: mixed-sign reals two-decimal ---- */
+{
+  const s = new Stack();
+  s.push(RList([Real(-10.5), Real(-2.5), Real(-100.25), Real(-1.25)]));
+  lookup('SORT').fn(s);
+  const vals = s.peek(1).items.map(x => x.value.toNumber());
+  assert(JSON.stringify(vals) === JSON.stringify([-100.25, -10.5, -2.5, -1.25]),
+    'session151b: SORT all-negative reals: -10.5 -2.5 -100.25 -1.25 → -100.25 -10.5 -2.5 -1.25');
+}
+/* ---- SORT: mixed-magnitude positive reals (string-vs-numeric divergence) ---- */
+{
+  const s = new Stack();
+  // "10" < "9" lexicographically, but 10 > 9 numerically.  Pre-fix
+  // would have returned the lex order.
+  s.push(RList([Real(10), Real(9), Real(11), Real(2), Real(100)]));
+  lookup('SORT').fn(s);
+  const vals = s.peek(1).items.map(x => x.value.toNumber());
+  assert(JSON.stringify(vals) === JSON.stringify([2, 9, 10, 11, 100]),
+    'session151b: SORT { 10 9 11 2 100 } → { 2 9 10 11 100 } (numeric, not lex)');
+}
+/* ---- SORT: mixed Integer/Real with negatives ---- */
+{
+  const s = new Stack();
+  s.push(RList([Integer(-3n), Real(-2.5), Integer(0n), Real(-10), Integer(5n)]));
+  lookup('SORT').fn(s);
+  const num = v => typeof v.value === 'bigint' ? Number(v.value) : v.value.toNumber();
+  const vals = s.peek(1).items.map(num);
+  assert(JSON.stringify(vals) === JSON.stringify([-10, -3, -2.5, 0, 5]),
+    'session151b: SORT mixed Integer/Real with negatives ordered correctly');
+}
+
 /* ---- REVLIST: basic ---- */
 {
   const s = new Stack();

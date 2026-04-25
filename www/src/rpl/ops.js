@@ -1939,8 +1939,10 @@ register('EUCLID', (s) => {
 /* ---- INVMOD — modular multiplicative inverse ----------------------
    HP50 AUR §2-58 (CAS-ARITH-MODULO menu).  The HP50 firmware uses
    the global CAS MODULO state variable for the modulus; we take it
-   explicitly on the stack until that slot lands so the op is usable
-   without the CAS state substrate.
+   explicitly on the stack here (INVMOD's own single-arg form that
+   consults `getCasModulo()` is a follow-up; the slot itself landed
+   in session 144 — see MODSTO / ADDTMOD / SUBTMOD / MULTMOD /
+   POWMOD below).
 
      a n INVMOD  ( Z Z → Z )    a · result ≡ 1  (mod n)
 
@@ -1950,8 +1952,9 @@ register('EUCLID', (s) => {
    uses for MODULO-style output.  Integer-valued Reals coerce
    through `_intQuotientArg` the same way IQUOT / IREMAINDER do.
 
-   When the MODULO state slot lands, add a single-arg form that
-   consults it; the two-arg form stays for explicit callers. */
+   Follow-up: add a single-arg form that consults `getCasModulo()`
+   (the state slot landed in session 144); the two-arg form stays for
+   explicit callers. */
 
 register('INVMOD', (s) => {
   const [a, n] = s.popN(2);
@@ -2095,6 +2098,185 @@ register('POWMOD', (s) => {
     (_) => `powmod(${astToGiac(lAst)},${astToGiac(rAst)},${m.toString()})`,
   );
   s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+});
+
+/* ------------------------------------------------------------------
+   EXPANDMOD / FACTORMOD / GCDMOD / DIVMOD / DIV2MOD     (session 149)
+
+   The remaining five !Þ MODULO ARITH ops, completing the menu started
+   in session 144 (MODSTO + ADDTMOD/SUBTMOD/MULTMOD/POWMOD).  All five
+   read the same `state.casModulo` slot via `getCasModulo()`; none of
+   them mutate it.  HP50 AUR §3-80 / §3-83 / §3-96 / §3-63 / §3-62.
+
+   Stack contracts (mirror the AUR — numeric-or-symbolic):
+     EXPANDMOD     ( a    → a' )           coefficient-reduce + expand
+     FACTORMOD     ( p    → factored )     factorization in Z_m[X]
+     GCDMOD        ( a b  → gcd )          GCD over Z_m[X]
+     DIVMOD        ( a b  → quotient )     a · b⁻¹ mod m  (rational)
+     DIV2MOD       ( a b  → q r )          Euclidean div: q on level 2,
+                                           r on level 1
+
+   Pure-integer operands (Integer / integer-valued Real on every level)
+   take a native BigInt fast path that returns the centered representative
+   `_centerMod(...)` (matches the session-144 ADDTMOD/SUBTMOD/MULTMOD
+   convention).  DIVMOD / DIV2MOD additionally require the divisor to
+   be invertible mod m (gcd(b, m) = 1) — the HP50 User Guide p.5-14
+   examples ("12/8 (mod 12) does not exist") show this rejection
+   surfaces as `Bad argument value`.
+
+   Symbolic / Name operands route through Giac with the inline
+   `(... ) mod m` postfix wrapping the underlying call (`expand`,
+   `factor`, `gcd`, `/`, `quo`, `rem`).  Result lifts back through
+   `giacToAst` + `_astToRplValue` so a numeric-leaf result lands as
+   Real and a polynomial result stays Symbolic.  No-fallback policy:
+   Giac not ready → `CAS not ready`.
+
+   FACTORMOD additionally validates the modulus per HP50 AUR p.3-83
+   ("the modulus must be less than 100, and a prime number") — any
+   other modulus raises `Bad argument value` rather than letting Giac
+   silently return a non-unique factorization over a non-prime ring.
+   ------------------------------------------------------------------ */
+
+register('EXPANDMOD', (s) => {
+  const v = s.pop();
+  const m = getCasModulo();
+  if (_isIntLike(v)) {
+    // EXPANDMOD on a bare integer is just the centered representative
+    // of `v` mod m — User Guide p.5-15 EXPANDMOD(125) ≡ 5 (mod 12).
+    const ba = isInteger(v) ? v.value : BigInt(v.value.toFixed(0));
+    s.push(Integer(_centerMod(ba, m)));
+    return;
+  }
+  const a = _toAst(v);
+  if (!a) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const cmd = buildGiacCmd(a, (e) => `expand(${e}) mod ${m.toString()}`);
+  s.push(_astToRplValue(giacToAst(giac.caseval(cmd))));
+});
+
+register('FACTORMOD', (s) => {
+  const m = getCasModulo();
+  // AUR p.3-83 modulus precondition.  Validate before consuming the
+  // arg so a bad modulus surfaces independently of the operand type.
+  if (m >= 100n || !_isPrimeBig(m)) {
+    throw new RPLError('Bad argument value');
+  }
+  const v = s.pop();
+  if (_isIntLike(v)) {
+    // Integer "factorization" mod prime p collapses to the centered
+    // representative — every nonzero element of Z/pZ is a unit, so
+    // the only "factor" is the value itself.  HP50 firmware does
+    // the same: a bare Integer round-trips as itself centered.
+    const ba = isInteger(v) ? v.value : BigInt(v.value.toFixed(0));
+    s.push(Integer(_centerMod(ba, m)));
+    return;
+  }
+  const a = _toAst(v);
+  if (!a) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const cmd = buildGiacCmd(a, (e) => `factor(${e}) mod ${m.toString()}`);
+  s.push(_astToRplValue(giacToAst(giac.caseval(cmd))));
+});
+
+register('GCDMOD', (s) => {
+  const [a, b] = s.popN(2);
+  const m = getCasModulo();
+  if (_isIntLike(a) && _isIntLike(b)) {
+    const ba = isInteger(a) ? a.value : BigInt(a.value.toFixed(0));
+    const bb = isInteger(b) ? b.value : BigInt(b.value.toFixed(0));
+    // gcd(0,0) is undefined per HP50 (matches EUCLID's contract).
+    if (ba === 0n && bb === 0n) throw new RPLError('Bad argument value');
+    const { g } = _extGcdBigInt(ba, bb);
+    s.push(Integer(_centerMod(g, m)));
+    return;
+  }
+  const lAst = _toAst(a), rAst = _toAst(b);
+  if (!lAst || !rAst) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const cmd = buildGiacCmd(
+    AstBin('+', lAst, rAst),    // dummy bin for free-var detection only
+    () => `gcd(${astToGiac(lAst)},${astToGiac(rAst)}) mod ${m.toString()}`,
+  );
+  s.push(_astToRplValue(giacToAst(giac.caseval(cmd))));
+});
+
+/** Native modular division on BigInts.  Two paths:
+ *
+ *  1. **Exact integer division.**  When `bb` divides `ba` exactly,
+ *     return `ba / bb` regardless of whether `bb` is invertible mod m.
+ *     This matches the HP50 User Guide p.5-14 examples
+ *     (12/3 ≡ 4 mod 12 even though gcd(3,12)=3; 66/6 ≡ -1 mod 12
+ *     even though gcd(6,12)=6).  The integer quotient takes priority
+ *     because the modular reduction simply post-applies to the
+ *     pre-existing integer answer.
+ *
+ *  2. **Modular inverse fallback.**  Otherwise reduce `bb` mod m and
+ *     solve `b·x ≡ a (mod m)`; throws `Bad argument value` when `b`
+ *     is not invertible (matches "12/8 (mod 12) does not exist"). */
+function _modDivBigInt(ba, bb, m) {
+  if (bb === 0n) throw new RPLError('Bad argument value');
+  if (ba % bb === 0n) return ba / bb;
+  let raB = bb % m;
+  if (raB < 0n) raB += m;
+  if (raB === 0n) throw new RPLError('Bad argument value');
+  const { g, s: u } = _extGcdBigInt(raB, m);
+  if (g !== 1n) throw new RPLError('Bad argument value');
+  let invB = u % m;
+  if (invB < 0n) invB += m;
+  return ba * invB;
+}
+
+register('DIVMOD', (s) => {
+  const [a, b] = s.popN(2);
+  const m = getCasModulo();
+  if (_isIntLike(a) && _isIntLike(b)) {
+    const ba = isInteger(a) ? a.value : BigInt(a.value.toFixed(0));
+    const bb = isInteger(b) ? b.value : BigInt(b.value.toFixed(0));
+    s.push(Integer(_centerMod(_modDivBigInt(ba, bb, m), m)));
+    return;
+  }
+  const lAst = _toAst(a), rAst = _toAst(b);
+  if (!lAst || !rAst) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  // DIVMOD's polynomial path is the rational form `a/b mod m` —
+  // AUR §3-63 example DIVMOD(5*X^2+4*X+2, X^2+1) mod 3 returns
+  // `-((X^2-X+1)/X^2+1))`.
+  const cmd = buildGiacCmd(
+    AstBin('+', lAst, rAst),
+    () => `(${astToGiac(lAst)})/(${astToGiac(rAst)}) mod ${m.toString()}`,
+  );
+  s.push(_astToRplValue(giacToAst(giac.caseval(cmd))));
+});
+
+register('DIV2MOD', (s) => {
+  const [a, b] = s.popN(2);
+  const m = getCasModulo();
+  if (_isIntLike(a) && _isIntLike(b)) {
+    // Integer DIV2MOD: treat operands as 0-degree polynomials in
+    // Z_m[X].  User Guide p.5-14 examples (125/17 mod 12 → 1 r 0;
+    // 68/7 mod 12 → -4 r 0) show the same a·b⁻¹ semantics as DIVMOD,
+    // with remainder defined as `a - q·b` reduced and centered.
+    const ba = isInteger(a) ? a.value : BigInt(a.value.toFixed(0));
+    const bb = isInteger(b) ? b.value : BigInt(b.value.toFixed(0));
+    const q = _centerMod(_modDivBigInt(ba, bb, m), m);
+    const r = _centerMod(ba - q * bb, m);
+    s.push(Integer(q));
+    s.push(Integer(r));
+    return;
+  }
+  const lAst = _toAst(a), rAst = _toAst(b);
+  if (!lAst || !rAst) throw new RPLError('Bad argument type');
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  // Two Giac calls (one for `quo`, one for `rem`) is simpler than
+  // parsing a list response from `divmod(a, b, m)`.  AUR §3-62
+  // worked example DIV2MOD(X^3+4, X^2-1) mod 3 → {X, X+1}.
+  const lStr = astToGiac(lAst), rStr = astToGiac(rAst);
+  const cmdQ = buildGiacCmd(AstBin('+', lAst, rAst),
+    () => `quo(${lStr},${rStr}) mod ${m.toString()}`);
+  const cmdR = buildGiacCmd(AstBin('+', lAst, rAst),
+    () => `rem(${lStr},${rStr}) mod ${m.toString()}`);
+  s.push(_astToRplValue(giacToAst(giac.caseval(cmdQ))));
+  s.push(_astToRplValue(giacToAst(giac.caseval(cmdR))));
 });
 
 /** Log-gamma via the same Lanczos coefficients as _gamma.  Implemented
@@ -6656,16 +6838,28 @@ register('ARRY->', _fromArrayOp);
 
 // Compare two RPL values for SORT.  Returns negative / 0 / positive.
 // Throws "Bad argument type" on unsupported or mismatched types.
+//
+// Real values carry a decimal.js `Decimal` payload, NOT a JS number.
+// Decimal#valueOf() returns a string, so JS `<` / `>` between two
+// Decimals does *string* comparison, which mis-orders negatives
+// (e.g. "-3.5" > "-1.5" lexicographically).  The fix: route every
+// numeric comparison through `Number()` of the operand's payload —
+// BigInt for Integer / BinaryInteger, `.toNumber()` for Decimal —
+// so the comparator always works on JS numbers.  Precision loss
+// from Number coercion is acceptable for SORT (HP50's own SORT runs
+// at hardware float precision, which is less than IEEE 754 double).
+function _toCompareNumber(v) {
+  if (isReal(v))           return v.value.toNumber();
+  if (isInteger(v))        return Number(v.value);
+  if (isBinaryInteger(v))  return Number(v.value);
+  return null;             // unreachable for callers that gate on isAnyNum
+}
+
 function _rplCompare(a, b) {
-  // Numeric family (Real / Integer / BinInt) — compare as floats.
   const isAnyNum = v => isReal(v) || isInteger(v) || isBinaryInteger(v);
   if (isAnyNum(a) && isAnyNum(b)) {
-    const an = isBinaryInteger(a) ? Number(a.value)
-             : isInteger(a)       ? Number(a.value)
-             :                      a.value;
-    const bn = isBinaryInteger(b) ? Number(b.value)
-             : isInteger(b)       ? Number(b.value)
-             :                      b.value;
+    const an = _toCompareNumber(a);
+    const bn = _toCompareNumber(b);
     return an < bn ? -1 : an > bn ? 1 : 0;
   }
   if (isString(a) && isString(b)) {
