@@ -31,11 +31,15 @@ import {
   exportToFile, importFromFile,
 } from './rpl/persist.js';
 import { giac } from './rpl/cas/giac-engine.mjs';
+import { FULL as BUILD_FULL } from './build-info.js';
 
 class App {
   constructor() {
     this.stack = new Stack();
     this.entry = new Entry(this.stack);
+
+    const versionEl = document.getElementById('versionLabel');
+    if (versionEl) versionEl.textContent = BUILD_FULL;
 
     this.display = new Display({
       stackView:  document.getElementById('stackView'),

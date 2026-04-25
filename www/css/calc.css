@@ -112,6 +112,13 @@ body {
 }
 .model-sub { color: var(--shift-left); font-weight: 700; margin-right: 4px; }
 
+.version {
+  font-size: 9.5px;
+  color: #6b7280;
+  letter-spacing: .4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 /* ------------------------------ Screen ------------------------------
    The LCD fills the remaining vertical space between the brand row and
    the keyboard.  Its inner area is a flex column: status line, stack

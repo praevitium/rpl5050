@@ -5,13 +5,22 @@
   "type": "module",
   "scripts": {
     "test": "node tests/test-all.mjs",
+    "build-info": "node scripts/gen-build-info.mjs",
+    "postinstall": "npm run build-info",
+    "preserve": "npm run build-info",
     "serve": "npx --yes live-server --port=5050 --host=127.0.0.1 --no-browser --entry-file=index.html www",
+    "prebundle:vendor": "npm run build-info",
     "bundle:vendor": "esbuild www/vendor/codemirror/src-entry.mjs --bundle --format=esm --outfile=www/vendor/codemirror/codemirror.bundle.js",
     "tauri": "tauri",
+    "predev": "npm run build-info",
     "dev": "tauri dev",
+    "prebuild": "npm run build-info",
     "build": "tauri build",
+    "prebuild:macos": "npm run build-info",
     "build:macos": "tauri build --target universal-apple-darwin",
+    "prebuild:windows": "npm run build-info",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "prebuild:linux": "npm run build-info",
     "build:linux": "tauri build --target x86_64-unknown-linux-gnu"
   },
   "devDependencies": {
