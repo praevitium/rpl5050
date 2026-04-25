@@ -11,7 +11,7 @@ import { SidePanel }    from './ui/side-panel.js';
 import { clampStackScroll, computeMenuPage } from './ui/paging.js';
 import { handleModifierShortcut } from './ui/shortcuts.js';
 import {
-  interactiveStackMenu, clampLevel, levelUp, levelDown,
+  interactiveStackMenu, levelUp, levelDown,
   rollLevel, rollDownToLevel, dropLevel,
 } from './ui/interactive-stack.js';
 import { format } from './rpl/formatter.js';

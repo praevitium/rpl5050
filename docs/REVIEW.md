@@ -6,45 +6,45 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 152 (2026-04-25).  Fourteenth review-
-lane run.  Prior baseline = session 148.  Between sessions 148
-and 152 the sibling lanes shipped: 149 (command-support — five
-new ops completing the MODULO ARITH menu: `EXPANDMOD`,
-`FACTORMOD`, `GCDMOD`, `DIVMOD`, `DIV2MOD` (HP50 AUR §3-80 /
-§3-83 / §3-96 / §3-63 / §3-62) — paired with the C-010 INVMOD
-block-comment refresh shipped this run as well; new
-`_modDivBigInt` helper for the exact-then-modular-inverse path;
-all five route through Giac for symbolic operands and through
-native BigInt for pure-integer paths; `register()` 471 → 476
-(+5); top-level `^register(` 450 → 455 (+5); +30 assertions in
-`tests/test-algebra.mjs`; `docs/COMMANDS.md` Counts heading
-bumped "as of session 144" → "as of session 149"; INVMOD row
-Notes amended for the C-010 close); 150 (data-type-support —
-three more hard-assertion widening clusters pinning previously-
-undertested inverse-trig DEG-Tagged-V/M wrapper composition,
-forward-hyperbolic bare-scalar `_exactUnaryLift`, and LN/LOG/
-EXP/ALOG Tagged-V/M wrapper composition; `tests/test-types.mjs`
-803 → 829 (+26); declared lock scope was `tests/test-types.mjs`
-+ `docs/DATA_TYPES.md` + `logs/session-150.md` only — but
-session 150 ALSO edited `www/src/rpl/state.js:139`
-**outside its declared scope**, changing the casVx factory
-default from `'X'` to `'x'` (deliberate-deviation rationale
-documented in the file-header comment block at `:125-138`).
-That edit broke the `session076: snapshot missing casVx resets
-to default 'X'` assertion in `tests/test-persist.mjs:271-272`;
-`tests/test-persist.mjs` has been failing 1 / 40 since session
-150's release.  Filed as **D-001** below; session 151's log
-explicitly flagged this for the review lane); 151 (rpl-
-programming — symmetric pin-set to session 141's IFERR pinning
-work, this time covering CASE clauses, fully-closed START/NEXT
-and START/STEP, DO/UNTIL, and FOR/STEP; +71 session151-
-labelled assertions in `tests/test-control-flow.mjs`; no
-`ops.js` source change — every pin exercises behaviour that
-has been live since session 088; new "Session 151 (this run) —
-what shipped" chapter at `docs/RPL.md:258` becoming the sole
-`(this run)` holder, prior 146 chapter demoted in the same
-pass; the 39 / 1 test-persist failure noted at run-entry but
-out of lane scope).
+**Last updated.** Session 160 (2026-04-25, code-review release-
+wrap-up run).  Sixteenth review-lane run.  Prior baseline =
+session 152; session 156 was a meta-only review-lane pass
+(`logs/meta-2026-04-25-code-review.md`) that re-verified all
+findings but could not fold the closures into REVIEW.md because
+`session156-unit-tests` held `docs/REVIEW.md` + `logs/` for the
+duration.  This run folds in everything that landed since
+session 152: ship-prep-2026-04-25 (interactive coordinator pass
+— closed O-007, R-007, R-009, R-010, R-011 and re-greened the
+test-persist gate, promoting D-001 from partial to fully
+resolved); 153 (command-support — closed C-011 with a narrow
+`_combPermArgs` argument-type guard tightening at
+`www/src/rpl/ops.js:1683`, mirroring `_intQuotientArg`'s
+per-arg `isInteger || isReal` shape; +8 `session153:` rejection
+pins in `tests/test-numerics.mjs`); 154 (data-type-support —
+release-mode coverage-matrix reconciliation pass on
+`docs/DATA_TYPES.md`; no source edits); 155 (rpl-programming —
+closed R-008 — Real branch reduced from mantissa/exponent
+split to `s.push(v); return;` matching the AUR no-numeric-
+scalar entry, Tagged branch was a phantom per AUR §3-149's
+String-literal `"tag"` notation; +5 net session155 pins in
+`tests/test-reflection.mjs` plus the two prior 1-in/2-out
+assertions flipped to pin the new 1-in/1-out shape); 156 (unit-
+tests — pinned recently-shipped session-149 / 150 / 153 / 155
+behaviours, refreshed TESTS.md; **filed R-012** as the third
+row of the AUR §3-149 OBJ→ table that session 155's audit did
+not address); 156 (code-review meta-only — no REVIEW.md
+edits, narrow scope only); 157 (command-support — release-mode
+doc-reconciliation, COMMANDS.md drift sweep + `register()`
+stamp refresh "as of session 153" → "as of session 157"; OBJ→
+row Notes amended for the session-155 audit close); 158 (data-
+type-support — two more hard-assertion pinning clusters lifting
+session-150 wrapper-VM-under-Tagged work onto the LIST axis on
+already-widened transcendental ops; no source-side changes,
+`tests/test-types.mjs` widened); 159 (rpl-programming — closed
+R-012 by adding the missing `isUnit` branch to OBJ→'s dispatch
+at `www/src/rpl/ops.js:6720-6738`, matching AUR §3-149's
+`x_unit  →  x  1_unit` row; +15 session159 pins in
+`tests/test-reflection.mjs`).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -67,108 +67,69 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 152).** Sessions 149, 150, 151 all graceful-
-released before this run's acquisition; no sibling-lane lock
-active at run-entry (`node utils/@locks/lock.mjs list` returned
-`[]`).  At review-lane *entry* `node tests/test-all.mjs` =
-**5034 passing / 0 failing** (fully green); `node tests/test-
-persist.mjs` = **39 passing / 1 failing** (the single failing
-assertion is `session076: snapshot missing casVx resets to
-default 'X' (got 'x')` — pre-existing since session 150's out-
-of-scope `state.js:139` edit, filed as **D-001** below); `node
-tests/sanity.mjs` = **22 passing / 0 failing in ~6 ms** (stable).
-`node --check` N/A this run — only edit is `docs/REVIEW.md`
-(Markdown).  Δ from session 148's run-close 4883:  **+151**
-(149 +30 MODULO-cluster coverage in `tests/test-algebra.mjs`;
-150 +26 transcendental `_exactUnaryLift` Tagged-V/M + forward-
-hyperbolic bare-scalar pins in `tests/test-types.mjs`; 151 +71
-HALT/PROMPT-through-CASE / DO-UNTIL / fully-closed START-NEXT-
-STEP / FOR-STEP pins in `tests/test-control-flow.mjs`; 4883 +
-30 + 26 + 71 = 5010, off by 24 from the visible 5034 — the
-remaining +24 are between-session adjustments visible at
-session-149's entry baseline (see `logs/session-149.md` lines
-17-29 documenting +24 between session 148 close and session 149
-acquire — sibling unit-tests fire from the test-stack-ops /
-test-arrow-aliases cluster session 147 left in flight at
-session 148's exit).  test-persist Δ from session 148's 40 / 0:
-**40 → 39 passing, 0 → 1 failing at run-entry** — the regression
-was entirely attributable to session 150's out-of-scope
-`state.js:139` edit; session 149 / 151 ran their own pre/post
-test-persist checks (see `logs/session-149.md:184-211` and
-`logs/session-151.md:21-35`) confirming the failure was
-introduced by session 150's edit, not by their own runs.  At
-run-close the gate is **40 / 0** because an interactive
-`session-file-explorer` lane shipped a partial D-001 fix
-(test-side + state.js comment) during this run's window; the
-remainder (`persist.js:126` stale comment) is left open as
-D-001 partial.  No review-lane lock overlap during this run.
+**Baseline (session 160).** Sibling lane `session160-unit-tests`
+was active at acquisition (scope `tests/test-reflection.mjs` +
+`tests/test-types.mjs` + `tests/test-algebra.mjs` +
+`docs/TESTS.md`).  No overlap with this run's claimed scope
+(`docs/REVIEW.md` + `logs/` + `www/src/app.js`), so the helper
+allowed acquisition.  At review-lane *entry* `node tests/test-
+all.mjs` = **5120 passing / 0 failing** (fully green; was 5063
+at session 156's close + 5086 at session 157's entry / +57
+across 156 / 157 / 158 / 159 deltas — 156 unit-tests pin sweep
++13, 157 doc-only, 158 LIST-axis Tagged pinning +25, 159 R-012
+OBJ→-Unit pins +15, plus a few sub-cluster between-session
+adjustments); `node tests/test-persist.mjs` = **40 passing / 0
+failing** (stable, fully green since the D-001 ship-prep close);
+`node tests/sanity.mjs` = **22 passing / 0 failing in ~6 ms**
+(stable).  `node --check www/src/app.js` clean post-edit.  Δ
+from session 152's run-close 5038: **+82** test-all (5038 →
+5120 across ship-prep + 153 + 155 + 156 + 158 + 159 — see
+preamble for the per-session attribution).  test-persist Δ from
+session 152's 40 / 0 close: stable at 40 / 0.  Since acquisition
+the sibling unit-tests lane has continued to add pins; final
+exit count captured at the verification block below.
 
-**This run's own edits.** One doc/hygiene edit:
-`docs/REVIEW.md` Last-updated stamp bumped to session 152;
-baseline block rewritten; "between sessions 148 and 152" prelude
-rewritten to attribute deltas across sessions 149 / 150 / 151;
-four carried-forward findings aged (X-003 13 → 14 runs — still
-the longest-aging open finding, now 14 review-lane runs and
-37+ calendar days unaddressed; O-007 10 → 11 runs; O-009 7 → 8
-runs; O-011 2 → 3 runs); one prior finding verified-resolved
-(C-010 — the session 149 close already landed in the comment
-body of `www/src/rpl/ops.js:1939-1962` per session-149's lane
-charter; this review-lane run only re-verifies via
-`grep -nE "until that slot lands|When the MODULO state slot
-lands" www/src/rpl/ops.js` returning zero hits and `sed -n
-'1939,1962p' www/src/rpl/ops.js` showing the rewritten
-phrasings post-session-149).  Two new findings filed:
-  • **C-011** — `www/src/rpl/ops.js:1679-1699` (the
-    `_combPermArgs` helper used by COMB and PERM) accepts a
-    Rational operand because the type-guard at `:1685` reads
-    `if (!isNumber(a) || !isNumber(b))` and `isNumber` includes
-    `isRational`.  The downstream `toBig` closure then reads
-    `v.value.isFinite()` on the Rational, which has shape
-    `{type: 'rational', n, d}` (no `.value` field) — leaks a
-    raw JavaScript `TypeError: Cannot read properties of
-    undefined (reading 'isFinite')` instead of the RPL-style
-    `Bad argument type` rejection.  Six failure modes
-    reproduced at the Node REPL session 152 (COMB / PERM × {Rat
-    on level 2, Rat on level 1, both Rat}).  Surfaced by
-    session 150's audit (`logs/session-150.md:215-252`) but
-    deferred for review-lane routing.  Sibling ops IQUOT /
-    IREMAINDER / IDIV2 use a correctly-narrowed
-    `_intQuotientArg` helper at `:1830-1843`.  Owner: command-
-    support (preferred) or data-type-support.
-  • **D-001** — `tests/test-persist.mjs:271-272` is currently
-    failing 1 / 40 because session 150 changed
-    `www/src/rpl/state.js:139` casVx factory default from `'X'`
-    to `'x'` (deliberate-deviation rationale documented at
-    `:125-138`) outside its declared lock scope, and did not
-    update the matching test or the `persist.js:118` block
-    comment.  Live signal: `node tests/test-persist.mjs` at
-    session 152 entry returns the single FAIL.  Sessions 149 /
-    150 / 151 all noted the failure and routed to review-lane
-    per the standing convention; session 151's log explicitly
-    flagged it for filing.  Three sites out of sync (state.js,
-    test-persist.mjs, persist.js); two narrow remediation
-    options (embrace lowercase or revert to uppercase) — both
-    1-2 line edits.  **Blocking-class** finding because
-    `tests/test-persist.mjs` is a per-run gate.  Owner:
-    `rpl5050-data-type-support` (preferred — semantic decision
-    belongs there).
+**This run's own edits.** Two edits this run — one doc/hygiene,
+one in-place dead-import drop:
+  1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
+     session 160 (16th review-lane run); baseline block
+     rewritten; "between sessions 152 and 160" prelude rewritten
+     to attribute deltas across ship-prep-2026-04-25 + sessions
+     153 / 154 / 155 / 156 / 157 / 158 / 159 (see preamble);
+     three carried-forward open findings aged (**X-003** 14 →
+     **resolved this run**; **O-009** 8 → 9 runs — still
+     `[deferred - post-ship]`, tooling gate unchanged;
+     **O-011** 3 → 4 runs — `[deferred - post-ship]` per the
+     session 156 meta-log triage); five prior open findings
+     promoted to resolved by sibling lanes since session 152
+     (**O-007**, **D-001**, **C-011**, **R-008**, **R-012**;
+     status blocks already amended by the closing lanes —
+     this run's REVIEW.md edit only fold the closures into the
+     baseline + Ship priorities + session log narratives).
+  2. **`www/src/app.js:13-15`** — dropped `clampLevel` from
+     the `./ui/interactive-stack.js` import block (X-003 close).
+     The function lives at `interactive-stack.js:24` and is
+     only used internally by `levelUp` / `levelDown`; no
+     cross-module caller in `app.js` or anywhere else in
+     `www/src/`.  One-line change matching the X-003 fix
+     suggestion exactly; `node --check www/src/app.js` clean
+     post-edit.  Charter-permitted: dead-import drop with
+     certainty about the unused-ness, behaviour-preserving.
 
-Session 152 log added.  No sibling-lane source files touched.
-No RPL op behavior changed, no types widened, no tests added
-or deleted, no interpreter touched, no registrations added or
-removed.
+Session 160 log added (`logs/session-160-code-review.md` to
+disambiguate from the concurrent `session160-unit-tests` lane's
+own `logs/session-160.md`).  No RPL op behavior changed by
+review lane, no types widened, no tests added or deleted, no
+interpreter touched, no registrations added or removed.
 
-**Lock.** Held `utils/@locks/session152-code-review.json`
-throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
-review-lane scope this run; no sibling locks active at
-acquisition so the helper allowed the broader scope —
-contrasts with sessions 143 / 148 which had to narrow to
-`docs/REVIEW.md` only because a unit-tests lane was active
-holding `logs/`).  Sibling locks at run-entry: none active —
-sessions 149 / 150 / 151 all released gracefully before this
-run's acquisition (the seventh / eighth / ninth occurrences of
-the O-011 lock-body shape ambiguity; see updated O-011 status
-block below).  Released at end of run.
+**Lock.** Held `utils/@locks/rpl5050-code-review-2026-04-25.json`
+throughout, scope = `docs/REVIEW.md` + `logs/` + `www/src/app.js`
+(broadened from the canonical review-lane scope at run-entry to
+fold in the X-003 in-place edit before close).  Sibling lock
+at run-entry: `session160-unit-tests` (scope `tests/test-
+reflection.mjs` + `tests/test-types.mjs` + `tests/test-
+algebra.mjs` + `docs/TESTS.md`) — no overlap with my scope, so
+the helper allowed acquisition.  Released at end of run.
 
 ---
 
@@ -224,22 +185,50 @@ Translated into ledger items, in priority order:
    `docs/@!MY_NOTES.md` Intentional Deviations table.  Reverting
    to AUR-strict semantics would break the session-116 HALT-
    through-Tagged feature; not in scope for this version.
-5. **R-008** `[ship-target — programming-features priority]` —
-   `OBJ→` AUR §3-149 fidelity audit.  Real-branch decomposition
-   (mantissa/exponent split) and Tagged-branch tag-as-String are
-   the two suspected divergences; AUR re-read needed before edit.
-   Owner = `rpl5050-rpl-programming`.
-6. Anything else in the open queue (**C-011**, **X-003**) is
-   ship-stretch — nice to land but not blocking.
-7. **O-009** `[deferred - post-ship]` — sandbox cannot delete the
+5. **R-008** `[resolved - session 155]` — `OBJ→` AUR §3-149
+   fidelity audit closed.  Real-branch divergence confirmed and
+   fixed (push-unchanged, matching AUR's no-numeric-scalar
+   entry).  Tagged-branch was a phantom: AUR §3-149 shows
+   `"tag"` (String) per the table's String-literal convention,
+   so the existing `Str(v.tag)` is AUR-correct; comment block
+   rewritten to flag this as verified-against-AUR, regression
+   assertion added.  Lane = `rpl5050-rpl-programming`.
+5b. **R-012** `[resolved - session 159]` — `OBJ→` Unit branch
+    closed by `rpl5050-rpl-programming` lane.  New `if (isUnit(v))`
+    branch at `www/src/rpl/ops.js:6720-6738` pushes `Real(v.value)`
+    on level 2 and `Unit(1, v.uexpr)` on level 1, matching AUR
+    §3-149 row `x_unit  →  x  1_unit` exactly.  Pinned by 15
+    `session159:` assertions in `tests/test-reflection.mjs`.
+    The full AUR §3-149 Input/Output table is now covered end-to-
+    end (Complex / Tagged / List / Vector / Matrix / String /
+    Program / Symbolic / Real / Integer / Unit).
+6. **C-011** `[resolved - session 153]` — `_combPermArgs`
+    Rational-TypeError leak closed by `rpl5050-command-support`.
+    Argument-type guard at `www/src/rpl/ops.js:1683` tightened
+    from broad `!isNumber` to per-arg `!isInteger && !isReal`
+    pair, mirroring `_intQuotientArg`.  Eight `session153:`
+    rejection pins in `tests/test-numerics.mjs`.
+7. **X-003** `[resolved - session 160]` — unused `clampLevel`
+   import dropped from `www/src/app.js:13-15` by this review-
+   lane run.  Charter-permitted dead-import drop; 16 review-lane
+   runs aging at close.
+8. **O-009** `[deferred - post-ship]` — sandbox cannot delete the
    `.bak` files; user-side `rm` after ship.
+9. **O-011** `[deferred - post-ship]` — lock-body releaseReason
+   field; pure-infrastructure hygiene best landed post-ship per
+   the session 156 meta-log triage.
+
+Open queue at session 160 close: O-009 + O-011 — both
+`[deferred - post-ship]`, no behavior risk for the release.
+**Zero release-blocker class findings remain.**
 
 Lane priority through Sunday close: **`rpl5050-rpl-programming`
-runs take precedence** over the other lanes' work where there is
-contention; they should pull R-008 first, then any other R-bucket
-items.  Other lanes should avoid touching `www/src/rpl/ops.js`
-ranges that overlap `OBJ→` (`:6535-6635`) without coordinating via
-the lock system.
+runs take precedence** over the other lanes' work where there
+is contention; they should pull any R-bucket items first.  Other
+lanes should avoid touching `www/src/rpl/ops.js` ranges that
+overlap `OBJ→` (`:6535-6745`, now extended to include the
+session-159 Unit branch) without coordinating via the lock
+system.
 
 ---
 
@@ -1295,10 +1284,38 @@ the lock system.
   `_intQuotientArg` at `:1837`; `grep -n 'isNumber'
   www/src/rpl/types.js` confirms Rational joined the lattice at
   `:398`.
-- **Age.** new (filed session 152).  **Status.** open.  Lane =
-  `rpl5050-command-support` (preferred) or `rpl5050-data-type-
-  support` (acceptable).  Pure-JS edit to `_combPermArgs` plus
-  6 + N test pins.  No cross-lane coupling.
+- **Age.** 1 run (filed session 152).  **Status.** **[resolved -
+  session 153]** — `rpl5050-command-support` lane (this run)
+  rewrote the `_combPermArgs` argument-type guard at
+  `www/src/rpl/ops.js:1683` from
+  `if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad
+  argument type');` to the narrower
+  `if (!isInteger(a) && !isReal(a)) throw new RPLError('Bad
+  argument type'); if (!isInteger(b) && !isReal(b)) throw new
+  RPLError('Bad argument type');` pair, mirroring
+  `_intQuotientArg`'s shape exactly.  The redundant explicit
+  `isComplex(a) || isComplex(b)` rejection a line below was
+  deleted (Complex satisfies neither `isInteger` nor `isReal`,
+  so the new guard subsumes it).  Block comment above the guard
+  was expanded to record the origin of the drift (Rational
+  joined the `isNumber` lattice in session 092 — the helper
+  pre-dated the lattice expansion and the guard was never
+  tightened) and to point at C-011 for archaeology.  Eight
+  `session153:` `assertThrows(/Bad argument type/, …)` pins
+  added to `tests/test-numerics.mjs` covering the six AUR-
+  mandated rejection modes (COMB / PERM × {Rat-on-2,
+  Rat-on-1, both Rat}) plus two genuinely-fractional Rational
+  cases (Rat 5/2, Rat 3/2).  Re-verified at run-close:
+  `node utils/@c011-repro.mjs` shows all six failure modes
+  surface as `RPLError: Bad argument type` (was
+  `TypeError: Cannot read properties of undefined (reading
+  'isFinite')`); `node utils/@c011-regression.mjs` confirms the
+  happy paths (Integer, integer-valued Real, Complex
+  rejection) and the integer-valued-Real fractional rejection
+  all still behave correctly; `node tests/test-all.mjs` =
+  5058 / 0 (was 5050 / 0 at entry; +8 from the new pins).
+  COMMANDS.md COMB / PERM row Notes amended in the same
+  pass.
 
 ### C-006  `COMMANDS.md` HALT row missing session-106 named-sub-program lift + SST↓ step-into
 
@@ -1897,12 +1914,127 @@ the lock system.
   AUR re-read is needed to lock in the exact HP50 spec for both
   branches.  The Tagged divergence reading is from the AUR's
   general `OBJ→` table; confirm against the PDF before the fix.
-- **Age.** new (filed ship-prep 2026-04-25).  **Status.** open
-  — **[ship-target — programming-features priority]**.  Lane =
-  `rpl5050-rpl-programming` (preferred — programming features
-  take priority through Sunday close per the user's ship-prep
-  instruction); fallback owner `rpl5050-command-support` since
-  the code lives in `www/src/rpl/ops.js`.
+- **Age.** new (filed ship-prep 2026-04-25).  **Status.**
+  **[resolved - session 155]** — `rpl5050-rpl-programming` lane
+  closed both arms of the audit:
+  - **Real branch.** AUR §3-149 re-read confirmed the Input/
+    Output table lists no numeric-scalar entry; the mantissa/
+    exponent split is the job of `MANT` (AUR p.3-6) and `XPON`
+    (AUR p.3-9), wired separately.  Real branch at
+    `www/src/rpl/ops.js:6709-6720` reduced from the
+    mantissa/exponent split to `s.push(v); return;` — matches
+    the AUR-fidelity choice of "no internal structure to
+    decompose, push back unchanged".  The two prior test
+    assertions at `tests/test-reflection.mjs:149-167` that pinned
+    the old (1-in / 2-out) shape were flipped to pin the new
+    (1-in / 1-out) shape, plus four new session155 assertions
+    covering Integer-branch symmetry, zero-Real no-special-case,
+    and a `MANT`/`XPON` sanity-pin confirming the standalone ops
+    still do the split.
+  - **Tagged branch.** AUR §3-149 re-read showed the table cell
+    `:tag:obj  →  obj  "tag"` uses the AUR's String-literal
+    notation (double quotes), not the quoted-Name notation
+    (single quotes, used elsewhere in the same table for
+    Symbolic decomposition's `'function'` head).  The existing
+    `Str(v.tag)` push at `www/src/rpl/ops.js:6644-6650` is
+    therefore correct per AUR — R-008's Tagged-divergence
+    reading was a phantom.  No code change; the comment block
+    at `:6604-6638` was rewritten to capture the AUR-verified
+    finding and warn future readers not to "fix" `Str(v.tag)`
+    into `Name(v.tag, true)`.  A new session155 regression
+    assertion in `tests/test-reflection.mjs` pins the tag is
+    `isString` and not `isName`, so any future flip is caught
+    by the test suite immediately.
+  Verified at run-close: `node tests/test-all.mjs` = 5063 / 0
+  (entry 5034 + 29 sibling + my +5 net new + 2 flipped); `node
+  tests/test-persist.mjs` = 40 / 0; `node tests/sanity.mjs` =
+  22 / 0; `node --check` clean on `www/src/rpl/ops.js` and
+  `tests/test-reflection.mjs`.
+
+### R-012  `OBJ→` on a Unit value rejects with `Bad argument type` instead of pushing `x  1_unit` per HP50 AUR §3-149
+
+- **Classification.** RPL (programming-features priority —
+  `OBJ→` is the standard "decompose an HP50 object on the
+  stack" idiom).  Discovered as a session-155 follow-up while
+  pinning the OBJ→ session-156 cluster; surfaces a third
+  divergence the session-155 audit did not address (R-008
+  scope was Real and Tagged branches only).
+- **Where.**
+  - `www/src/rpl/ops.js:6642-6720` (`register('OBJ→', ...)`).
+    Dispatch covers Complex / Tagged / List / Vector / Matrix /
+    String / Program / Symbolic / Real / Integer.  No `isUnit`
+    branch — Unit falls through to `throw new RPLError('Bad
+    argument type')`.
+  - Probe at session 156 entry: `5_m OBJ→` returns `THREW: Bad
+    argument type`; AUR table cell expects depth-2 stack with
+    `Real(5)` on level 2 and `1_m` (Unit value 1, same uexpr)
+    on level 1.
+- **What.**  AUR §3-149 Input/Output table row `x_unit  →  x
+  1_unit` (verbatim from `docs/HP50 Advanced Guide.pdf` PDF
+  body line 13201ff, same extraction the session-155 lane did
+  for the Real/Tagged audit).  rpl5050 currently has no Unit
+  branch; the AUR-fidelity behavior is to push the bare
+  numeric `value` on level 2 and `Unit(1, uexpr)` on level 1.
+- **Why.**  Two reasons: (1) the AUR documents the contract,
+  so any HP50 program assuming the (x, 1_unit) decomposition
+  silently misbehaves on rpl5050 (it gets a hard error
+  instead, which is at least loud — but breaks the
+  metaprogramming pattern `x_unit OBJ→ … rebuild …`).  (2)
+  Symmetric to R-008's Real/Tagged audit — the Unit row of the
+  same AUR table was simply not enumerated in the session-155
+  fix scope.
+- **Fix sketch (for the owning lane).**  Add an `isUnit(v)`
+  branch to OBJ→ that pushes `Real(v.value)` (or `Integer` if
+  the value coerces) on level 2 and `Unit(1, v.uexpr)` (the
+  unit-of-1 same-uexpr Unit) on level 1.  Update the dispatch
+  comment block at `:6605-6638` to enumerate the Unit row
+  alongside the existing AUR table cells.  Pin both the new
+  Unit decomposition shape and a Unit round-trip (`5_m OBJ→
+  *` → `5_m`, since `Real * Unit(1,m) = Unit(5,m) = 5_m`) in
+  `tests/test-reflection.mjs` next to the session-155 / 156
+  OBJ→ pin clusters.
+- **Confidence.** medium — the AUR row is unambiguous, but
+  the unit-of-1 helper (`Unit(1, uexpr)` constructor) hasn't
+  been exercised on the OBJ→ side and may need the
+  zero-uexpr-collapse guard at `_makeUnit` (`ops.js:316`) to
+  short-circuit, otherwise a Unit with empty uexpr would
+  collapse to `Real(1)`.  Worth a probe before the fix.
+- **Routing.**  Owner = `rpl5050-rpl-programming` for ship-
+  target priority (matches the R-008 routing); can ride a
+  `rpl5050-command-support` run since the implementation lives
+  in `www/src/rpl/ops.js` register sites.  Unit-tests lane has
+  filed this here per the no-fix-source-bugs lane rule.
+- **Age.** new (filed session 156, ship-prep 2026-04-25).
+  **Status.** **resolved session-159** by the
+  `rpl5050-rpl-programming` lane.  New `if (isUnit(v))` branch
+  added to `register('OBJ→', ...)` at `www/src/rpl/ops.js:6720-
+  6738` that pushes `Real(v.value)` on level 2 and `Unit(1,
+  v.uexpr)` on level 1 — matching the AUR §3-149 row
+  `x_unit  →  x  1_unit` exactly.  The level-1 push uses the
+  bare `Unit()` constructor rather than `_makeUnit` so a
+  theoretically-empty uexpr would still emit the prototype
+  rather than collapsing to `Real(1)` — addresses the medium-
+  confidence concern raised in this finding's "Confidence"
+  section about the `_makeUnit` zero-uexpr-collapse guard.
+  Header comment block at `:6605-6650` extended to enumerate
+  the Unit row alongside the existing AUR table cells.
+  Pinned by 15 session159-labelled assertions in
+  `tests/test-reflection.mjs` covering: basic decomposition;
+  the round-trip-via-* contract (`5_m OBJ→ * → 5_m`); multi-
+  symbol uexpr (`m/s`); negative-value branch (`-3_kg → -3
+  1_kg` with sign on level-2 value, prototype value always 1;
+  round-trip preserves sign); regression guard pinning level-1
+  push as `isUnit` and NOT `isName` / NOT `isString`; Tagged-
+  of-Unit composition (one-layer peel only); ASCII alias
+  `OBJ->` parity; negative-exponent uexpr (`2_(1/m)`)
+  prototype-shape preservation.  `test-all.mjs` at 5120 / 0 /
+  0 (was 5105, Δ+15).  `test-persist.mjs` at 40 / 0.
+  `sanity.mjs` at 22 / 0 in 5 ms.  `node --check` clean on
+  every touched JS file.  Closes the OBJ→ HP50-fidelity audit
+  trail end-to-end — every row of the AUR §3-149 Input/Output
+  table now has a corresponding branch in rpl5050's dispatch
+  (Complex / Tagged / List / Vector / Matrix / String /
+  Program / Symbolic / Real / Integer / Unit).
 
 ### R-004  `docs/RPL.md` carries no narrative for the session-121 IFT/IFTE generator-flavor lift or the PROMPT mechanism
 
@@ -2525,7 +2657,9 @@ are UI-adjacent but classified under Other for bookkeeping.)_
 - **Why.** Same rationale as X-001 / X-002.
 - **Fix.** Drop `clampLevel` from the import list.
 - **Confidence.** high.
-- **Age.** 14 runs. **Status.** open (lane = `rpl5050-ui-development`).
+- **Age.** 16 runs at close. **Status.** **resolved session 160**
+  (lane = `rpl5050-code-review` — folded into the release-mode
+  wrap-up run as a charter-permitted dead-import drop).
   Re-verified session 118 at `www/src/app.js:14` — still present
   (`interactiveStackMenu, clampLevel, levelUp, levelDown, …`);
   `grep -c 'clampLevel' www/src/app.js` returns 1 (import line only).
@@ -2595,13 +2729,25 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   declared scope per session-149's interference note — flagged
   as D-001 below; did not touch `app.js`), 151 (rpl-programming
   — `tests/test-control-flow.mjs` + `docs/RPL.md` + `logs/
-  session-151.md`) did not touch `app.js` either.  Now 14
-  review-lane runs aging — filed at session 080, 14 review-lane
-  runs and 37+ calendar days unaddressed.  The `rpl5050-ui-
-  development` lane has not been spun up since this finding was
-  filed, which explains the lack of movement; any `app.js`- or
-  `ops.js`-adjacent lane could ship the one-line edit in
-  passing.
+  session-151.md`) did not touch `app.js` either.  Re-verified
+  session 156 (meta-only): same state, 15 runs aging.  Sessions
+  153 / 154 / 155 / 156 / 157 / 158 / 159 did not touch
+  `app.js`.  **Resolved session 160** — this review-lane run
+  shipped the X-003 fix in-place per the lane charter's "dead
+  imports (only when you are certain they are unused)" rule.
+  Edit at `www/src/app.js:13-15`: dropped `clampLevel` from the
+  `./ui/interactive-stack.js` import block; the remaining
+  imports `interactiveStackMenu, levelUp, levelDown,
+  rollLevel, rollDownToLevel, dropLevel` are all retained.
+  `node --check www/src/app.js` clean post-edit; `grep
+  '\bclampLevel\b' www/src/app.js` returns zero hits at run-
+  close (was 1 — the import line — at run-entry); the
+  definition still lives at `www/src/ui/interactive-stack.js:24`
+  with internal callers `levelUp` / `levelDown` unchanged.
+  16 review-lane runs aging at close (filed session 080;
+  re-verified at sessions 089 / 103 / 108 / 113 / 118 / 123 /
+  128 / 133 / 138 / 143 / 148 / 152 / 156 — the longest-aging
+  open finding in the entire ledger before this close).
 
 ### X-004  Three unused private functions in `src/rpl/ops.js`
 
@@ -2979,7 +3125,15 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   manual cleanup post-ship** — recommend adding `*.bak` /
   `*.bak2` to `.gitignore` at the same time so future spillover
   is silently excluded.  Marking **[deferred - post-ship]**:
-  no behavior risk for the release.
+  no behavior risk for the release.  Re-verified session 156
+  (meta-only): both files still on disk at the same byte counts
+  and mtimes; tooling gate unchanged.  Re-verified session 160
+  (`ls tests/test-control-flow.mjs.bak*`): both `.bak` files
+  still present at 92,129 / 92,141 bytes / Apr 24 11:54 / 13:41
+  mtimes; the live file has continued to grow with sibling-lane
+  pin-additions (~250 KB at this point); no scheduled-task lane
+  has been able to delete them.  9 review-lane runs aging.
+  Status remains **[deferred - post-ship]**.
 
 ### O-010  Session 121 shipped substantive changes without writing `logs/session-121.md`, COMMANDS.md update, RPL.md narrative, or tests
 
@@ -3279,7 +3433,18 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   writing `releaseReason` once at the lock-helper level.  The
   case for the one-line per-call-site addition strengthens with
   each cycle, and the cycle frequency is now ~1 occurrence per
-  sibling-lane run.
+  sibling-lane run.  Re-verified session 160: `grep -n
+  "releaseReason" utils/@locks/lock.mjs utils/@locks/README.md`
+  still returns zero hits.  Sessions 153 / 154 / 155 / 156 /
+  157 / 158 / 159 lock bodies all fit the same `heartbeatAt ===
+  startedAt` signature (no lane currently calls `heartbeat()`),
+  bringing the running count of underlying-ambiguity occurrences
+  to **sixteen** since session 106.  Triaged
+  **[deferred - post-ship]** by the session 156 meta-log: change
+  shape of shared tooling, cycle frequency makes a post-ship
+  landing more appropriate than a rushed in-window edit.  4
+  review-lane runs aging; status remains
+  **[deferred - post-ship]**.
 
 ---
 
@@ -5193,3 +5358,166 @@ X-010).
    pickup of `rm tests/test-control-flow.mjs.bak*`.
 
 Log pointer: `logs/session-152.md`.
+
+### Session 160 — what shipped (sixteenth review-lane run, release wrap-up)
+
+Two edits this run.  This is the final review-lane run before
+the 2026-04-26 ship.
+
+- **`docs/REVIEW.md`** — Last-updated stamp bumped to session
+  160 (release wrap-up, code-review run); preamble + baseline +
+  Ship priorities + open-finding tail breadcrumbs rewritten to
+  fold in everything that landed since session 152.  Promoted
+  five findings to resolved (status text was already amended
+  in-body by the closing lanes — this run only updates the
+  baseline + Ship-priorities narratives that referred to them
+  as still-open):
+  - **O-007** `[resolved - ship-prep 2026-04-25]` — interactive
+    coordinator pass rewrote the `buildGiacCmd` block comment
+    at `www/src/rpl/cas/giac-convert.mjs:234-256`; the new 25-
+    line block accurately describes the preamble-free behaviour
+    and folds in the post-return contradiction comment.  Aged
+    11 review-lane runs before close.
+  - **D-001** `[resolved - ship-prep 2026-04-25]` — last out-
+    of-sync site (`www/src/rpl/persist.js:126`) updated to
+    lowercase `'x'`; all three D-001 sites consistent at
+    lowercase.  Test-persist gate has been 40 / 0 since the
+    ship-prep close.
+  - **C-011** `[resolved - session 153]` — `_combPermArgs`
+    type-guard tightening at `www/src/rpl/ops.js:1683`.
+    Mirrors `_intQuotientArg`'s per-arg
+    `isInteger || isReal` shape.  Six failure modes now
+    surface as `RPLError: Bad argument type` instead of raw
+    `TypeError`.  +8 `session153:` rejection pins in
+    `tests/test-numerics.mjs`.
+  - **R-008** `[resolved - session 155]` — AUR §3-149 OBJ→
+    fidelity audit closed.  Real branch reduced from
+    mantissa/exponent split to `s.push(v); return;` matching
+    AUR's no-numeric-scalar entry.  Tagged branch was a
+    phantom — AUR's `:tag:obj  →  obj  "tag"` row uses
+    String-literal notation.  +5 net session155 pins in
+    `tests/test-reflection.mjs`; comment block at
+    `www/src/rpl/ops.js:6604-6638` rewritten to capture the
+    AUR-verified finding.
+  - **R-012** `[resolved - session 159]` — third row of the
+    AUR §3-149 OBJ→ table (Unit branch) closed by the rpl-
+    programming lane.  New `if (isUnit(v))` branch at
+    `www/src/rpl/ops.js:6720-6738` pushes `Real(v.value)` on
+    level 2 and `Unit(1, v.uexpr)` on level 1, matching AUR
+    `x_unit  →  x  1_unit` exactly.  +15 session159 pins in
+    `tests/test-reflection.mjs`.  Closes the AUR §3-149
+    audit trail end-to-end (every row of the Input/Output
+    table now has a corresponding branch in OBJ→'s
+    dispatch).
+  - **X-003** `[resolved - session 160]` — this run shipped
+    the in-place dead-import drop (see edit (2) below).
+
+- **`www/src/app.js:13-15`** — dropped the unused `clampLevel`
+  import from the `./ui/interactive-stack.js` import block.
+  X-003 close, exactly as the finding's Fix line specified.
+  `node --check www/src/app.js` clean post-edit; remaining
+  imports `interactiveStackMenu, levelUp, levelDown,
+  rollLevel, rollDownToLevel, dropLevel` retained.  Behavior-
+  preserving (no other module references `clampLevel` from
+  `app.js` — the function lives at `interactive-stack.js:24`
+  and is only used internally there).  Charter-permitted under
+  the "Dead imports (only when you are certain they are unused)"
+  rule.
+
+**Findings delta this run:**
+
+- **Promoted to resolved this run:** O-007, D-001 (full-fix
+  promotion from partial), C-011, R-008, R-012, X-003.  (Status
+  text in O-007, D-001, C-011, R-008, R-012 bodies was already
+  written by the closing lanes; the baseline + Ship-priorities
+  blocks are what this review-lane run rewrites to acknowledge
+  the closures.)
+- **Still-open findings carried forward and aged:**
+  - **O-009** — 8 → 9 runs.  `[deferred - post-ship]`.  Tooling
+    gate unchanged; both `.bak` files still on disk.
+  - **O-011** — 3 → 4 runs.  `[deferred - post-ship]` per the
+    session 156 meta-log triage.  Sixteen total occurrences of
+    the underlying lock-body ambiguity since session 106.
+- **No new findings filed.**  Cross-checked the codebase against
+  the audit axes from the lane charter; surfaced no new defects
+  beyond the existing two `[deferred - post-ship]` items.
+  Verified at session 160:
+  - `docs/COMMANDS.md` Counts heading reads "as of session 157"
+    — current.
+  - `docs/DATA_TYPES.md` Last-updated reads "Session 158 (release-
+    mode wrap-up)" — current.
+  - `docs/RPL.md` Current-implementation-status header reads
+    "as of session 159" — current.
+  - `docs/TESTS.md` Last-updated reads "Session 156" — the
+    `session160-unit-tests` lane is in flight at this run's
+    acquisition with declared scope including `docs/TESTS.md`,
+    so any drift will be addressed by their refresh, not this
+    run.
+  - **Lane-task-id drift sweep** — `grep -rnE
+    "rpl5050-data-types[^-]|rpl5050-tests[^-]|hp50-type-support"
+    docs/` (excluding REVIEW.md) returns zero hits.
+  - **`COMMANDS_INVENTORY.md` references** — only two surviving
+    in `docs/COMMANDS.md`, both inside audit-trail narratives
+    describing the original O-004 fix.  Not drift.
+  - **`src/...` path drift** — only two surviving in
+    `docs/RPL.md` and `docs/TESTS.md`, both inside historical-
+    narrative passages re-stating P-001's own description.  Not
+    drift.
+
+Total open findings carried forward to next run: **2** (O-009,
+O-011 — both `[deferred - post-ship]`, no behavior risk for the
+release).  Resolved cumulative: **41** (O-001 – O-008, O-010,
+C-001 – C-011, P-001, P-002, R-001 – R-012 except R-011 which
+was a documented deviation, T-001, T-002, U-001, X-001 – X-010,
+D-001).
+
+**Verification gates (session 160):**
+
+- `node --check www/src/app.js` — **clean** (post-X-003 edit).
+- `node tests/test-all.mjs` = **5120 passing / 0 failing** at
+  run-entry; close gate captured at run-close (the
+  `session160-unit-tests` lane was actively pinning during this
+  run's window so the count continued to grow — see the close
+  block in `logs/session-160-code-review.md` for the final
+  number).
+- `node tests/test-persist.mjs` = **40 passing / 0 failing**
+  (stable across the run; D-001 ship-prep close left the gate
+  green).
+- `node tests/sanity.mjs` = **22 passing / 0 failing in ~6 ms**
+  (stable).
+
+**Lock.** Held `utils/@locks/rpl5050-code-review-2026-04-25.json`
+throughout, scope = `docs/REVIEW.md` + `logs/` + `www/src/app.js`
+(scope broadened mid-run from the canonical review-lane scope to
+fold the X-003 in-place edit before close — no overlap with the
+concurrent `session160-unit-tests` lane's scope, so the broaden
+was safe).  Sibling lock at run-entry: `session160-unit-tests`
+holding `tests/test-reflection.mjs` + `tests/test-types.mjs` +
+`tests/test-algebra.mjs` + `docs/TESTS.md`; their lock body fits
+the `heartbeatAt === startedAt` signature documented in O-011
+(seventeenth occurrence — but triaged `[deferred - post-ship]`
+at the session-156 meta-log).  Released at end of run.
+
+**Next session's queue (priority order):**
+
+There is no "next" review-lane run before the 2026-04-26 ship.
+The hard ship-date guard at the top of every recurring scheduled
+task aborts immediately on dates after 2026-04-26, and a one-
+time kill-switch task disables all six recurring tasks at
+`2026-04-26T23:55:00-07:00`.  Any post-ship review-lane work
+would start from a clean slate after the ship-mode restrictions
+are lifted.
+
+For the audit trail, the post-ship to-do list is short and
+contained:
+
+1. **O-009** — user-side `rm tests/test-control-flow.mjs.bak{,2}`,
+   pair with adding `*.bak` / `*.bak2` to `.gitignore`.
+2. **O-011** — one-line per-call-site addition to
+   `utils/@locks/lock.mjs` (`release()` → `releaseReason:
+   "graceful"`; `pruneStale()` → `releaseReason: "stale-prune"`)
+   plus a parallel update to `utils/@locks/README.md`.
+
+Both items are pure hygiene with no behavior risk.
+
+Log pointer: `logs/session-160-code-review.md`.

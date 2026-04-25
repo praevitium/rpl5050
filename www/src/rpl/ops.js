@@ -1680,8 +1680,18 @@ function _combPermArgs(a, b, opName) {
     if (!l || !r) throw new RPLError('Bad argument type');
     return { kind: 'sym', expr: Symbolic(AstFn(opName, [l, r])) };
   }
-  if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
-  if (isComplex(a) || isComplex(b)) throw new RPLError('Bad argument type');
+  // Type guard mirrors `_intQuotientArg` (used by IQUOT / IREMAINDER /
+  // IDIV2 / DIVMOD / DIV2MOD): only Integer or Real survive.  Rational
+  // is explicitly rejected even when integer-valued (`5/1`) — HP50 AUR
+  // §3-29 worked example shows the firmware rejects fractional COMB /
+  // PERM arguments rather than coercing them; we match that contract
+  // uniformly.  Complex is subsumed by !isInteger && !isReal.  This
+  // guard previously read `if (!isNumber(...)) ...` which let Rational
+  // leak through to a downstream `v.value.isFinite()` access (Rational
+  // payload is `{n, d}` — no `.value`), surfacing as a JavaScript
+  // TypeError instead of an RPLError; closes review-lane finding C-011.
+  if (!isInteger(a) && !isReal(a)) throw new RPLError('Bad argument type');
+  if (!isInteger(b) && !isReal(b)) throw new RPLError('Bad argument type');
   const toBig = (v) => {
     if (isInteger(v)) return v.value;
     // Real is only accepted if integer-valued — COMB/PERM are defined
@@ -1948,9 +1958,14 @@ register('EUCLID', (s) => {
    uses for MODULO-style output.  Integer-valued Reals coerce
    through `_intQuotientArg` the same way IQUOT / IREMAINDER do.
 
-   TODO: add a single-arg form that consults `getCasModulo()` for
-   parity with the rest of the MODULO menu; the two-arg form stays
-   for explicit callers. */
+   Deliberate deviation from HP50.  The HP50 firmware exposes INVMOD
+   as a one-arg op that consumes the global `MODULO` state slot for
+   the modulus.  rpl5050 takes the modulus explicitly on level 1 so
+   programs can compute inverses against ad-hoc moduli without
+   round-tripping through MODSTO.  ADDTMOD / SUBTMOD / MULTMOD /
+   POWMOD do consume `state.casModulo`; INVMOD is the one outlier in
+   the MODULO menu and is recorded as such in the Intentional
+   Deviations table in `docs/@!MY_NOTES.md`. */
 
 register('INVMOD', (s) => {
   const [a, n] = s.popN(2);
@@ -6589,14 +6604,55 @@ register('TYPE', (s) => {
 /* ----------------------------------------------------------------
    OBJ→ — decompose level-1 object into its parts.
 
-   Dispatch:
+   Dispatch (matches HP50 AUR §3-149 Input/Output table):
      Complex(re,im)      → re im
-     Tagged(tag, value)  → value "tag"
+     Tagged(tag, value)  → value "tag"             ← tag is a String per AUR
      List { x1 … xn }    → x1 … xn n
      Vector [ x1 … xn ]  → x1 … xn { n }
      Matrix [[...][...]] → x11 x12 … xmn { m n }
      String  "src"       → evaluate src (parse + push each result)
+     Symbolic 'expr'     → arg1 … argn  n  'function'
      Program « t1 … tn » → t1 … tn n
+     Real / Integer  x   → x                       ← AUR §3-149 lists no
+                                                     numeric-scalar case;
+                                                     AUR-fidelity choice
+                                                     is to push back
+                                                     unchanged.  The
+                                                     mantissa / exponent
+                                                     split is the job of
+                                                     MANT / XPON (AUR
+                                                     p.3-6 / p.3-9).
+     Unit  x_unit        → x  1_unit                ← AUR §3-149 row.
+                                                     The bare numeric
+                                                     value rides level 2
+                                                     as a Real; the unit
+                                                     prototype `1_unit`
+                                                     (same uexpr, value
+                                                     1) rides level 1.
+                                                     `x  1_unit  *` is
+                                                     the natural
+                                                     round-trip: the
+                                                     dimensionless Real
+                                                     scales the unit
+                                                     prototype back to
+                                                     the original value.
+
+   Tagged note: AUR §3-149 shows the tag output as `"tag"` — String,
+   not Name.  See →TAG (AUR p.3-247) which accepts either a String OR
+   a Name as the tag-side input but OBJ→'s canonical decomposition
+   uses the String form.  Don't "fix" Str(v.tag) into Name(v.tag) —
+   that would diverge from the AUR.
+
+   Unit note: the Unit branch uses the bare `Unit(1, v.uexpr)`
+   constructor rather than `_makeUnit` so a (theoretically possible)
+   empty-uexpr Unit would still emit `Unit(1, [])` rather than
+   collapsing to `Real(1)` — preserving the AUR table's
+   shape-preserving "1_unit" output.  In practice the codebase's
+   arithmetic invariant ensures Units on the stack always have
+   non-empty uexpr (anything dimensionless flows through `_makeUnit`'s
+   collapse), but the bare constructor keeps the OBJ→ branch robust
+   against any future Unit constructor that doesn't go through that
+   path.
 
    The Program case is the "program-as-data" hook RPL metaprogrammers
    reach for: `« ... » OBJ→` returns each token (as a stack-pushable
@@ -6604,9 +6660,6 @@ register('TYPE', (s) => {
    (see below).  Round-trip is guaranteed for any program token stream
    since each token is itself a value-type — Names, numbers, strings,
    nested Programs, etc.
-
-   Not yet implemented:
-     Unit      (needs full Unit support)
    ---------------------------------------------------------------- */
 register('OBJ→', (s) => {
   const [v] = s.popN(1);
@@ -6616,6 +6669,8 @@ register('OBJ→', (s) => {
     return;
   }
   if (isTagged(v)) {
+    // AUR §3-149: `:tag:obj  →  obj  "tag"` — the tag is a String.
+    // (Don't switch to Name(v.tag) — see header block.)
     s.push(v.value);
     s.push(Str(v.tag));
     return;
@@ -6670,19 +6725,29 @@ register('OBJ→', (s) => {
     return;
   }
   if (isReal(v) || isInteger(v)) {
-    // HP50 OBJ→ on a Real pushes the mantissa and the exponent.  For
-    // Integer it pushes the same Integer (no decomposition).  We
-    // implement the Real split; Integer is a no-op except it re-pushes.
-    if (isInteger(v)) { s.push(v); return; }
-    // Real → mantissa (in [1,10)) and exponent (integer).
-    if (v.value.isZero()) { s.push(Real(0)); s.push(Integer(0n)); return; }
-    const x = v.value.toNumber();
-    const sign = x < 0 ? -1 : 1;
-    const abs = Math.abs(x);
-    const e = Math.floor(Math.log10(abs));
-    const m = sign * abs / Math.pow(10, e);
-    s.push(Real(m));
-    s.push(Integer(BigInt(e)));
+    // HP50 AUR §3-149 lists no numeric-scalar entry in the OBJ→ table —
+    // a Real or Integer has no internal structure to decompose into
+    // separate stack items.  AUR-fidelity choice is to push the value
+    // back unchanged (1-in / 1-out).  Users who want the mantissa /
+    // exponent split should reach for MANT (AUR p.3-6) and XPON (AUR
+    // p.3-9) directly — those ops are wired separately and unaffected
+    // by this branch.  Prior versions did the mantissa/exponent split
+    // here; that was an HP50-divergence noted in REVIEW.md R-008 and
+    // closed in this revision.
+    s.push(v);
+    return;
+  }
+  if (isUnit(v)) {
+    // AUR §3-149: `x_unit  →  x  1_unit`.
+    // Push the bare numeric value (Real on level 2) and the
+    // unit prototype `1_unit` (Unit with value=1, same uexpr) on
+    // level 1.  Round-trip via `*` reconstructs the original Unit
+    // because `_unitBinary` on Real*Unit folds the scalar into
+    // `b.value` (1 * x = x), preserving the uexpr.  Use the bare
+    // Unit() constructor here, NOT _makeUnit, to avoid an
+    // empty-uexpr collapse — see the header comment block above.
+    s.push(Real(v.value));
+    s.push(Unit(1, v.uexpr));
     return;
   }
   throw new RPLError('Bad argument type');

@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 151)
+## Current implementation status (as of session 159)
 
 
 ### Program value — parser & round-trip
@@ -234,6 +234,26 @@ open, and the next-session queue.
   Fn(name, args) → pushes `[arg1..argN, Name(name, quoted), Integer(N+1)]`;
   Neg(x) → same shape as Fn('NEG', [x]); leaves (num/var) unwrap to the
   underlying Real/Integer/Name with an Integer(1) count.
+- `OBJ→` on Real / Integer: **session 155: AUR §3-149 fidelity edit**
+  — pushes the value back unchanged (1-in / 1-out), matching the AUR
+  §3-149 Input/Output table which lists no numeric-scalar entry.  The
+  mantissa / exponent split that prior versions performed is the job
+  of `MANT` (AUR p.3-6) and `XPON` (AUR p.3-9) — those ops are wired
+  separately and unchanged by this edit.  Closes R-008.
+- `OBJ→` on Tagged: **AUR-verified session 155** — pushes
+  `value, "tag"` where `"tag"` is a String, not a Name.  R-008 had
+  flagged this branch as suspect; the AUR §3-149 re-read confirmed
+  the existing behaviour is correct.  Pinned with a regression
+  assertion that the tag is `isString` and not `isName`.
+- `OBJ→` on Unit: **session 159: AUR §3-149 row added** — pushes
+  `Real(v.value)` on level 2 and `Unit(1, v.uexpr)` on level 1, so
+  `x_unit  →  x  1_unit` per the AUR.  Round-trip via `*`
+  reconstructs the original Unit because `_unitBinary` on Real*Unit
+  folds the scalar into `b.value` (1 * x = x), preserving the uexpr.
+  The level-1 push uses the bare `Unit()` constructor (not
+  `_makeUnit`) so a theoretically-empty uexpr would still emit the
+  prototype rather than collapsing to `Real(1)` — preserving the
+  AUR table's shape-preserving "1_unit" output.  Closes R-012.
 - `DECOMP` on Program: **session 069: new**. Pushes the formatter
   source-string (`« … »` form). Pair with `STR→` for round-trip —
   **session 074: DECOMP→STR→ round-trip pinned** by assertions in
@@ -255,7 +275,215 @@ open, and the next-session queue.
 
 ---
 
-## Session 151 (this run) — what shipped
+## Session 159 (this run) — what shipped
+
+This run closes the open RPL-bucket finding **R-012**: the HP50
+AUR §3-149 fidelity edit of `OBJ→`'s **Unit** branch — the third
+row of the §3-149 Input/Output table, the one session 155's audit
+did not address (R-008 was scoped to Real and Tagged only).
+The session-156 audit re-read AUR §3-149 (text at PDF body line
+13201ff, `OBJ→` Input/Output table) and confirmed the row reads
+`x_unit  →  x  1_unit`: a Unit decomposes into the bare numeric
+value (level 2) and a `1_unit` prototype (a Unit with value 1 and
+the same uexpr) on level 1.  Pre-fix rpl5050 had no `isUnit`
+branch in `OBJ→`'s dispatch — Unit fell through to `throw new
+RPLError('Bad argument type')`, breaking the standard
+`x_unit  OBJ→ ... rebuild ...` metaprogramming idiom.
+
+1. **Unit branch added to OBJ→** (`www/src/rpl/ops.js:6720-6738`).
+   New `if (isUnit(v))` branch pushes `Real(v.value)` on level 2
+   and `Unit(1, v.uexpr)` on level 1.  The level-1 push uses the
+   bare `Unit()` constructor rather than `_makeUnit` so a
+   theoretically-empty uexpr would still emit the prototype rather
+   than collapsing to `Real(1)` — preserving the AUR table's
+   shape-preserving "1_unit" output.  In practice the codebase's
+   arithmetic invariant ensures Units on the stack always have
+   non-empty uexpr (anything dimensionless flows through
+   `_makeUnit`'s collapse), but the bare constructor keeps the
+   `OBJ→` branch robust against any future Unit constructor that
+   doesn't go through that path.
+
+2. **Header comment block updated** (`www/src/rpl/ops.js:6605-
+   6650`).  The dispatch comment block — last rewritten in
+   session 155 for the R-008 close — gains a Unit row in the
+   AUR-table summary alongside Real/Integer, plus a paragraph
+   explaining the `Unit()`-not-`_makeUnit` choice and the
+   round-trip-via-`*` contract.
+
+3. **Pinned with eight new session159 assertions** in
+   `tests/test-reflection.mjs` covering: basic decomposition
+   (`5_m → 5  1_m`); the round-trip-via-* contract (`5_m OBJ→ *
+   → 5_m`, lossless); multi-symbol uexpr preservation
+   (`5_m/s → 5  1_m/s`); the negative-value branch
+   (`-3_kg → -3  1_kg` with sign on level-2 value, level-1
+   prototype's value always 1; round-trip preserves sign); a
+   regression guard pinning the level-1 push as `isUnit` and
+   NOT `isName` / NOT `isString` (so a future "fix" that flips
+   the prototype to a Name is caught); Tagged-of-Unit
+   composition (only the outer Tagged peels, the inner Unit is
+   preserved at level 2 — symmetric with session 156's
+   Tagged-of-Tagged pin); ASCII alias `OBJ->` parity on Unit;
+   and a negative-exponent uexpr (`2_(1/m)`) regression guard
+   that the prototype preserves the `[m,-1]` shape.  Total:
+   15 session159-labelled assertions across the file (counted
+   inclusive of the helper-fired sub-asserts; the cluster is
+   eight `{ ... }` blocks per the comment plan).
+
+Files edited:
+- `www/src/rpl/ops.js` — Unit branch added (10 source lines),
+  header comment block extended (~20 lines added).
+- `tests/test-reflection.mjs` — `Unit` / `isUnit` added to the
+  shared imports; 15 session159 assertions appended at the tail
+  of the OBJ→ test cluster (file ~315 → ~430 lines).
+- `docs/RPL.md` — this chapter; OBJ→ implementation-status row
+  for Unit added under "Program decomposition / composition";
+  Session log pointer prose extended with a session-159 footnote;
+  session 155's `(this run)` heading demoted to plain past tense
+  per R-005's recurring drift pattern (session 155's chapter is
+  now the entry one above this one).
+- `docs/REVIEW.md` — R-012 promoted to `[resolved - session 159]`.
+
+Totals: **15 new session159-labelled assertions** in
+`tests/test-reflection.mjs` (file 315 → ~430 lines).
+`test-all.mjs` at **5120 passing / 0 failing** (entry baseline
+5105 from session 158 close, Δ+15 — entirely this lane this run).
+`test-persist.mjs` at **40 passing / 0 failing** (D-001 closed
+during session 152's window per the REVIEW.md note).
+`sanity.mjs` at **22 passing / 5 ms** (unchanged).
+`node --check` clean on every touched JS file.
+
+User-reachable demo (`OBJ→` on a Unit decomposes per AUR):
+
+```
+5 _ m   ENTER         (level 1: 5_m)
+OBJ→                  (level 2: 5, level 1: 1_m)
+*                     (level 1: 5_m  — round-trip closes)
+```
+
+User-reachable demo (multi-symbol uexpr):
+
+```
+5 _ m / s   ENTER     (level 1: 5_m/s)
+OBJ→                  (level 2: 5, level 1: 1_m/s)
+SWAP / 1 / *          → reconstructs back to 5_m/s
+```
+
+User-reachable demo (negative-value, round-trip):
+
+```
+3 +/-  _ k g  ENTER   (level 1: -3_kg)
+OBJ→                  (level 2: -3, level 1: 1_kg)
+*                     (level 1: -3_kg — sign on the value, prototype
+                       value always 1)
+```
+
+R-012 closed.  No other RPL-bucket findings were open coming
+into this run (R-001 / R-002 / R-003 / R-004 / R-005 / R-006 /
+R-007 / R-008 / R-009 / R-010 all resolved by previous lanes;
+R-011 is a documented deliberate deviation).  R-012's close
+also clears the OBJ→ HP50-fidelity audit trail — every row of
+the AUR §3-149 Input/Output table now has a corresponding
+branch in rpl5050's dispatch (Complex / Tagged / List / Vector /
+Matrix / String / Program / Symbolic / Real / Integer / Unit).
+
+---
+
+## Session 155 — what shipped
+
+This run closes the top-priority ship-target finding **R-008**: the
+HP50 AUR §3-149 fidelity audit of `OBJ→`'s Real and Tagged branches.
+Two suspected divergences were filed; the AUR re-read against
+`docs/HP50 Advanced Guide.pdf` §3-149 (text at PDF body line 13201
+onward, `OBJ→` Input/Output table) showed one was real and one was
+a phantom:
+
+1. **Real branch — divergence confirmed and fixed** (`www/src/rpl/
+   ops.js:6709-6720`).  AUR §3-149 lists no Real / Integer entry in
+   the `OBJ→` Input/Output table.  Prior rpl5050 implementation
+   split a Real into mantissa-in-`[1,10)` and `floor(log10(|x|))`
+   exponent and pushed them as `Real(m), Integer(e)` — that's
+   `MANT` / `XPON`'s job per AUR p.3-6 / p.3-9, separately.  Real
+   branch reduced to `s.push(v); return;` matching the Integer
+   branch.  The two existing test assertions in
+   `tests/test-reflection.mjs` that pinned the old (1-in / 2-out)
+   behaviour were flipped to pin the new (1-in / 1-out, no
+   decomposition) behaviour, and four new session155 assertions
+   were added covering: Real → same Real; Integer → same Integer;
+   zero Real → zero Real (no zero-special-case decomposition); a
+   `MANT` / `XPON` sanity-pin confirming the mantissa / exponent
+   split still lives at the standalone ops untouched by this edit.
+
+2. **Tagged branch — phantom divergence, no edit** (`www/src/rpl/
+   ops.js:6644-6650`).  R-008 suspected the existing `Str(v.tag)`
+   push was a divergence from HP50 (claim: HP50 pushes the tag as a
+   quoted Name).  AUR §3-149 re-read showed the table cell as
+   `:tag:obj  →  obj  "tag"` — the `"tag"` notation uses double
+   quotes, which is the AUR's String-literal convention (compare
+   the symbolic-decomposition row showing `'function'` with single
+   quotes for a quoted Name).  The existing `Str(v.tag)` is
+   correct per AUR.  →TAG (AUR p.3-247) accepts either a String OR
+   a Name as the tag-side input, so a user can construct a tagged
+   from either, but `OBJ→`'s canonical decomposition uses the
+   String form.  No code change; the comment block at
+   `ops.js:6604-6638` was rewritten to capture the AUR-verified
+   finding and warn future readers not to "fix" `Str(v.tag)` into
+   a Name form.  A new session155 regression assertion in
+   `tests/test-reflection.mjs` pins the tag is `isString` and not
+   `isName` so any future flip is caught.
+
+Files edited:
+- `www/src/rpl/ops.js` — Real-branch reduction (12 lines → 4
+  lines), header comment block rewrite (10 lines added), Tagged-
+  branch one-line "do not flip" comment.
+- `tests/test-reflection.mjs` — two old-behavior asserts replaced
+  with new-behavior asserts; five new session155 asserts (Integer
+  no-op, zero-Real no-op, MANT/XPON still operate on Real, Tagged
+  isString-not-isName regression-guard).
+
+Totals: **7 new session155-labelled assertions** (5 new + 2
+flipped from prior shape) in `tests/test-reflection.mjs` (file
+~280 → ~315 lines).  `test-all.mjs` at **5063 passing / 0
+failing** (entry baseline 5034 from session 151 close + sibling
+deltas across 152 / 153 / 154; my run delta is +5 net new + 2
+flipped = +5 across the file's per-file count).
+`test-persist.mjs` at **40 passing / 0 failing** (D-001 was
+closed during session 152's window per the REVIEW.md note).
+`sanity.mjs` at **22 passing / 5 ms** (unchanged).
+`node --check` clean on every touched JS file.
+
+User-reachable demo (OBJ→ on a Real returns the same Real):
+
+```
+3.14   ENTER         (level 1: 3.14)
+OBJ→                 (depth still 1; level 1: 3.14 — no split)
+```
+
+Compare with MANT / XPON which still do the split:
+
+```
+1500   ENTER         (level 1: 1500)
+DUP                  (level 2: 1500, level 1: 1500)
+MANT                 (level 2: 1500, level 1: 1.5)
+SWAP XPON            (level 2: 1.5,  level 1: 3)
+```
+
+User-reachable demo (OBJ→ on a Tagged: tag pushes as a String):
+
+```
+:lbl:7   ENTER       (level 1: :lbl:7)
+OBJ→                 (level 2: 7, level 1: "lbl" — note the
+                      double quotes; this is a String, not a Name)
+```
+
+R-008 closed.  No other RPL-bucket findings touched this run —
+R-001 through R-006 remain open for follow-up runs (R-005 / R-006
+are doc-cleanup, R-001 / R-002 / R-003 are docstring drift, R-004
+is the IFT/IFTE/PROMPT narrative gap in this file's chapter
+sequence).  Next-session queue updated below.
+
+---
+
+## Session 151 — what shipped
 
 This run is a test-pinning run.  No source-code logic in
 `www/src/rpl/ops.js` changed; every assertion below corresponds to
@@ -1926,7 +2154,7 @@ entry after the bootstrap; session 068 went to the data-types lane
 locals + DECOMP + OBJ→ on Symbolic); sessions 070–073 went to sibling
 lanes; session 074 was this lane (HALT/CONT/KILL pilot + CASE auto-close
 + DECOMP round-trip + closure pin); sessions 075–077 went to sibling
-lanes; session 078 is this run (HALT/CONT flake-hardening + IFERR
+lanes; session 078 was this lane (HALT/CONT flake-hardening + IFERR
 auto-close + →LIST/→PRG/→ARRY BinInt-count parity).
 
 Note on cohort labels: session 074's assertions carry the `session073:`
@@ -1948,7 +2176,7 @@ semantics, P-001 RPL.md doc-path fixes).  Session 111 was this lane
 message threaded through `_evalValueSync` from IFT / IFTE / MAP /
 SEQ / DOLIST / DOSUBS / STREAM call sites); test-file prefix is
 `session111:` and the log file is `logs/session-111.md`.  Session 116
-is this run (EVAL handler driven through `_evalValueGen` so HALT
+was this lane (EVAL handler driven through `_evalValueGen` so HALT
 lifts through Tagged-wrapped Programs and Name-on-stack EVALs;
 DBUG widened to peel Tagged in its argument-type guard;
 `runArrow` Symbolic body wired with the `'→ algebraic body'`
@@ -1983,7 +2211,7 @@ save/restore chain across nested `finally`s on CONT and KILL;
 sentinel pin that yield is not a thrown exception so IFERR's catch
 must not capture HALT; demote of stale `(this run)` headings in
 this file per R-005); test-file prefix is `session141:` and the log
-file is `logs/session-141.md`.  Session 146 is this run (R-006
+file is `logs/session-141.md`.  Session 146 was this lane (R-006
 internal cross-reference refresh `:1455` → `:1682` at item 5 of
 the session 141 chapter; **NEWOB on Program** distinct-object /
 distinct-tokens-array / structural / EVAL-equivalence pin set in
@@ -1996,12 +2224,44 @@ IF/THEN/ELSE/END-only round-trip set; **HALT/CONT/KILL through
 +65 session146 assertions split 36 / 29 across the two test files;
 no `www/src/rpl/ops.js` source change this run); test-file prefix
 is `session146:` and the log file is `logs/session-146.md`.
+Session 151 was this lane (HALT/PROMPT lift through CASE clauses,
+fully-closed START/NEXT and START/STEP, DO/UNTIL, and FOR/STEP
+pinned; +71 session151 assertions in `tests/test-control-flow.mjs`;
+no `www/src/rpl/ops.js` source change); test-file prefix is
+`session151:` and the log file is `logs/session-151.md`.
+Session 155 was this lane (R-008 close — HP50 AUR §3-149 fidelity
+audit of `OBJ→`'s Real and Tagged branches: Real-branch reduced to
+`s.push(v); return;` matching the AUR's no-numeric-scalar entry,
+Tagged branch verified-correct against AUR's `"tag"` notation and
+left as `Str(v.tag)` with a "do not flip" comment guard;
+`MANT` / `XPON` are unchanged and remain the canonical mantissa /
+exponent split per AUR p.3-6 / p.3-9; +5 net new + 2 flipped =
++7 session155 assertions in `tests/test-reflection.mjs`); test-
+file prefix is `session155:` and the log file is
+`logs/session-155.md`.
+Session 159 is this run (R-012 close — HP50 AUR §3-149 fidelity
+edit of `OBJ→`'s Unit branch, the third row of the §3-149 table
+that session 155's audit did not address; new `isUnit` branch
+pushes `Real(v.value)` on level 2 and `Unit(1, v.uexpr)` on
+level 1 per the AUR `x_unit  →  x  1_unit` row, with the
+level-1 push using the bare `Unit()` constructor rather than
+`_makeUnit` so the prototype shape is preserved; +15 session159
+assertions in `tests/test-reflection.mjs`); test-file prefix is
+`session159:` and the log file is `logs/session-159.md`.
 
 (Footnote — sessions 074 / 078 / 088 / 106 / 116 / 121 / 126 / 131
-/ 141 used the historical "is this run" wording in their authoring
-session; that label has since been demoted to plain past tense as
-the lane runs forward.  Demotion to plain past tense for sessions
-121 / 126 / 131 / 136 was bundled into session 141 per R-005;
-demotion of session 141's own `(this run)` heading is bundled into
-this session 146 run as part of the new session-146 chapter
-becoming the sole `(this run)` holder.)
+/ 141 / 146 / 151 / 155 used the historical "is this run" wording
+in their authoring session; that label has since been demoted to
+plain past tense as the lane runs forward.  Demotion to plain past
+tense for sessions 121 / 126 / 131 / 136 was bundled into session
+141 per R-005; demotion of session 141's own `(this run)` heading
+was bundled into session 146; demotion of session 146's own `(this
+run)` heading was bundled into session 151; demotion of session
+151's own `(this run)` heading was bundled into session 155;
+demotion of session 155's own `(this run)` heading is bundled into
+this session 159 run as part of the new session-159 chapter
+becoming the sole `(this run)` holder.  This is the recurring
+R-005 drift pattern — every substantive rpl-programming-lane run
+that adds a new `(this run)` chapter must also demote its
+predecessor; the recurrence is by design, the demote is the
+ship-discipline check.)

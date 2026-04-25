@@ -4,7 +4,178 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 147 (2026-04-25).  Unit-tests lane run.
+**Last updated.** Session 160 (2026-04-25).  Unit-tests lane run
+(release wrap-up — last full day before the 2026-04-26 ship).
+
+Sibling deltas absorbed since the session-156 snapshot
+(5086 → 5120, **+34** over three sibling sessions):
+- Session 157 (command-support) — doc-only run; **0** assertion
+  deltas (`docs/COMMANDS.md` OBJ→ row Notes amendment + Counts
+  heading bump + session-log back-fill closing the s156 R-012
+  filing pointer).  No source / test edits.
+- Session 158 (data-type-support) shipped **+19** assertions in
+  `test-types.mjs` (829 → 848) across two clusters lifting
+  session 150's wrapper-VM-under-Tagged work onto the LIST axis:
+  Cluster 1 (ACOSH/ATANH bare-List + Tagged-of-List with
+  Integer-stay-exact, out-of-domain Real→Complex bypass, and
+  heterogeneous per-element domain dispatch) and Cluster 2
+  (LN/LOG/EXP/ALOG bare-List + Tagged-of-List with EXACT-mode
+  Integer-stay-exact, distinct-position outputs, heterogeneous
+  stay-symbolic + integer-clean, APPROX-mode bypass).  No
+  source change — the wrapper paths were already live since
+  session 145 / 150.
+- Session 159 (rpl-programming) shipped **+15** assertions in
+  `test-reflection.mjs` (258 → 273) for the **R-012 close** —
+  added the missing `isUnit` branch to OBJ→'s dispatch per AUR
+  §3-149's `x_unit → x  1_unit` row (1-line edit at
+  `ops.js:6720-6738`), plus the comment-block extension at
+  `:6605-6650` documenting all eleven AUR §3-149 rows now
+  covered.  Eight test blocks pin the new shape: basic
+  decomposition, *-fold round-trip, multi-symbol uexpr,
+  negative-value sign rule, ASCII alias OBJ-> parity,
+  Tagged-of-Unit one-layer-peel composition, regression guard
+  against future Name-instead-of-Unit refactors, and reverse-
+  uexpr (1/m) shape preservation.
+
+Session 160 unit-tests deltas:
+- **+6 OBJ→ Unit follow-up boundary pins** in
+  `test-reflection.mjs` (273 → 279) closing edges session 159's
+  R-012 pin set did not enumerate.  Five blocks: zero-value
+  boundary `0_m → 0  1_m` (closes value=0 corner between s159
+  positive 5_m and negative -3_kg pins); fractional value
+  `2.5_m → 2.5  1_m` (non-integer Real passes through value
+  extraction unchanged); higher-power uexpr `3_m^2 → 3  1_m^2`
+  (exponent ≠ ±1 preserved on prototype — distinct from s159
+  +1 / -1 exponent pins); multi-symbol round-trip
+  `5_m/s OBJ→ * → 5_m/s` (uexpr ordering preserved through the
+  *-fold path); higher-power round-trip `3_m^2 OBJ→ * → 3_m^2`
+  (exponent=2 reconstructed exactly).
+- **+4 transcendental wrapper-LIST n=0 / n=1 boundary pins**
+  in `test-types.mjs` (848 → 852) lifting session 156's empty-
+  V/L/P n=0 boundary closure pattern onto the session-158
+  wrapper-LIST composition.  Cluster 1 (direct-registered
+  ACOSH): `{ } ACOSH → { }` (n=0 boundary on direct-registered
+  bare wrapper).  Cluster 2 (LN through `_unaryCx`):
+  `{ } LN → { }` (n=0 bare); `:l:{ } LN → :l:{ }` (n=0 under
+  Tagged composition; outer tag preserved across empty inner
+  dispatch); `{ Integer(1) } LN → { Integer(0) }` (n=1 single-
+  element shoulder between s160 n=0 and s158 n=2 pins — guards
+  against a refactor that special-cases n=1 to the bare-scalar
+  code path bypassing `_withListUnary`).
+- **+3 MODULO ARITH follow-up pins** in `test-algebra.mjs`
+  (1058 → 1061) closing edges session 156's MODULO ARITH
+  follow-up pin-set did not enumerate.  Two DIV2MOD MODSTO
+  consultation pins (m=12 baseline + m=7 alternate, with
+  {64, 13} input — mirror of s156 DIVMOD MODSTO pair on the
+  two-result sibling per AUR §3-62; pins q-arm tracks DIVMOD
+  across MODSTO change while r-arm independently routes
+  through the two-result return).  One GCDMOD(0, 0) both-zero
+  edge: rejects with Bad argument value (mathematically-
+  undefined gcd(0,0); closes the s156 gcd-with-one-zero
+  identity pair on the both-zero corner — guards against a
+  refactor that silently returns 0).
+
+Sibling deltas absorbed since the session-147 snapshot (4903 → 5063,
+**+160** over eight sibling sessions):
+
+Sibling deltas absorbed since the session-147 snapshot (4903 → 5063,
+**+160** over eight sibling sessions):
+- Session 148 (code-review) — doc-only run; **0** assertion deltas
+  (REVIEW.md re-aging / new R-008 ship-priority filing).
+- Session 149 (command-support) shipped **+30** assertions in
+  `test-algebra.mjs` (1014 → 1044) for the HP50 !Þ MODULO ARITH
+  cluster completion: `EXPANDMOD` / `FACTORMOD` / `GCDMOD` /
+  `DIVMOD` / `DIV2MOD` (AUR §3-80 / §3-83 / §3-96 / §3-63 /
+  §3-62) with new `_modDivBigInt` exact-then-inverse helper.
+- Session 150 (data-type-support) shipped **+26** assertions in
+  `test-types.mjs` (803 → 829) across three transcendental
+  Tagged-V/M wrapper composition clusters (inverse-trig DEG-mode,
+  forward-hyperbolic bare-scalar `_exactUnaryLift`, LN/LOG/EXP/
+  ALOG Tagged-V/M).  Note: session 150 also out-of-scope edited
+  `www/src/rpl/state.js:139` (casVx factory default `'X'` →
+  `'x'`); D-001 was filed against this and partial-fixed by an
+  interactive `session-file-explorer` lane; persist 39/1 → 40/0
+  by session-152 close.  Session 151 added +25 to test-persist
+  separately for casVx persistence pins (40 → 66 — see test-
+  persist row in the table below).
+- Session 151 (rpl-programming) shipped **+71** assertions in
+  `test-control-flow.mjs` (704 → 775) — symmetric pin-set to
+  session 141's IFERR work, this time covering CASE clauses,
+  fully-closed START/NEXT and START/STEP, DO/UNTIL, FOR/STEP.
+  No source change — every pin exercises behaviour live since
+  session 088's generator substrate.
+- Session 152 (code-review) — doc-only run; **0** assertion
+  deltas (REVIEW.md re-aging; filed C-011 + D-001).
+- Session 153 (command-support) shipped **+8** assertions in
+  `test-numerics.mjs` (695 → 703) for the C-011 close (COMB /
+  PERM Rational-rejection cluster) plus the INVMOD `TODO`
+  retire (deliberate-deviation codification, doc-only).
+- Session 154 (data-type-support) — doc-only audit (`docs/
+  DATA_TYPES.md` matrix reconciliation against live ops); **0**
+  assertion deltas.
+- Session 155 (rpl-programming) shipped **+5** net new + 2
+  flipped assertions in `test-reflection.mjs` (251 — for
+  the R-008 audit close (OBJ→ Real-branch fidelity fix +
+  Tagged-branch phantom retraction; AUR §3-149 verbatim
+  re-read).  Real-branch dropped the mantissa/exponent split
+  (now 1-in / 1-out repush), Tagged-branch confirmed
+  `Str(v.tag)` is AUR-correct (the `"tag"` notation is the
+  AUR's String-literal convention, not quoted-Name).
+
+Session 156 unit-tests deltas:
+- **+7 OBJ→ session-155 follow-up edge / composition pins**
+  in `test-reflection.mjs` (251 → 258): empty Vector → just
+  `{0}` size-list (no items pushed; AUR §3-149 n=0 boundary
+  closure for the Vector row); empty List → just Integer(0)
+  count (n=0 boundary closure for the List row); empty
+  Program → just Integer(0) count (symmetric to empty-List;
+  pins the unconditional count for round-trip via →PRG);
+  Real(-1500) → -1500 (no sign decomposition; closes the
+  negative-Real branch session 155 left to symmetry); Tagged-
+  of-Tagged composition (3 sub-pins: depth=2 one-layer peel,
+  outer "outer" String on level 1, inner :inner:7 Tagged
+  preserved on level 2; guards against a recursive-peel
+  refactor).  R-008 scope was Real and Tagged branches only;
+  these close edges the audit pin-set didn't enumerate.
+- **+10 Session-149 MODULO ARITH cluster follow-up pins**
+  in `test-algebra.mjs` (1048 → 1058) across six branches:
+  DIV2MOD on Vector → Bad argument type (mirror of session-
+  149's DIVMOD-Vector reject — the two-result sibling was
+  unpinned); DIVMOD on Complex (level 2) → Bad argument type;
+  DIVMOD on String (level 2) → Bad argument type (extends
+  the session-149 Vector pin onto the per-arg type-check
+  fall-throughs); GCDMOD(15, 0) and GCDMOD(0, 15) mod 13 →
+  Integer(2) (gcd-with-zero identity edge of the extended-
+  Euclidean algorithm; both directions); EXPANDMOD(-7) mod
+  12 → Integer(5) centered (negative-input branch of
+  `_centerMod`); FACTORMOD m=2 → Integer(1) (smallest prime
+  modulus accepted; previously unpinned); FACTORMOD m=99 →
+  Bad argument value (largest composite below the >=100
+  cutoff; symmetric to session-149's m=101 prime-but-too-
+  large reject); DIVMOD MODSTO consultation pair (m=12
+  baseline 64/13 → 4 + m=7 alternate 64/13 → -1; only
+  EXPANDMOD's MODSTO sensitivity was pinned by session 149).
+- **+6 C-011 follow-up COMB/PERM rejection-arm composition
+  pins** in `test-numerics.mjs` (701 → 707): Tagged(Rational)
+  on level 2 (Tagged-transparency unwraps then C-011 narrow
+  guard fires — composition arm session 153 left unpinned);
+  Tagged(Rational) on level 1 (PERM symmetric); BinInt COMB
+  + BinInt PERM (out of scope per AUR §3-29; guards against
+  a session-115 FLOOR/CEIL/IP/FP-style widening landing on
+  COMB/PERM); Vector COMB (no V/M distribution defined; only
+  List × scalar broadcast per session-065 pin); negative-
+  integer-valued Rational(-5,1) COMB (negative-arm of session
+  153's positive-only Rat(5,1) reject).
+- **R-012 filed** (REVIEW.md, `Findings — RPL` bucket): OBJ→
+  on a Unit value rejects with `Bad argument type` instead of
+  pushing `x  1_unit` per AUR §3-149.  Discovered while pinning
+  the OBJ→ session-156 cluster; surfaces a third row of the
+  AUR §3-149 table that R-008's audit (Real / Tagged only)
+  did not enumerate.  Filed as ship-stretch — owner =
+  `rpl5050-rpl-programming`, lane = `rpl5050-unit-tests`
+  filed-only per the no-fix-source-bugs lane rule.  No
+  `.skip`'d test added; the REVIEW.md finding is the load-
+  bearing record.
 
 Sibling deltas absorbed since the session-142 snapshot (4734 → 4883,
 **+149** over four sibling sessions):
@@ -424,7 +595,132 @@ Session 117 unit-tests deltas:
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
 
-## Coverage snapshot (session 147)
+## Coverage snapshot (session 160)
+
+Baseline at session start: `node tests/test-all.mjs` = **5120
+passing / 0 failing** (session-159 close, fully green; sibling
+deltas absorbed in the prelude above — +0 s157 doc-only, +19
+s158 test-types, +15 s159 test-reflection R-012 close).
+`test-persist.mjs` 66 / 0 (unchanged since session 156).
+`sanity.mjs` 22 / 0.
+
+Final: **5133 passing / 0 failing** — fully green.  The +13
+session-160 deltas land in three files across three substantive
+clusters:
+- `test-reflection.mjs` 273 → 279 (**+6**) — OBJ→ Unit follow-up
+  boundary edges session 159's R-012 pin set did not enumerate:
+  zero-value `0_m → 0  1_m` (with prototype shape pin),
+  fractional `2.5_m → 2.5  1_m`, higher-power uexpr
+  `3_m^2 → 3  1_m^2`, multi-symbol round-trip `5_m/s OBJ→ *`,
+  higher-power round-trip `3_m^2 OBJ→ *`.
+- `test-types.mjs` 848 → 852 (**+4**) — transcendental wrapper-
+  LIST n=0 / n=1 boundary pins lifting session 156's empty-V/L/P
+  n=0 closure pattern onto the session-158 wrapper-LIST
+  composition: `{ } ACOSH → { }` (direct-registered),
+  `{ } LN → { }` (bare via `_unaryCx`), `:l:{ } LN → :l:{ }`
+  (Tagged-of-empty), `{ Integer(1) } LN → { Integer(0) }` (n=1
+  shoulder).
+- `test-algebra.mjs` 1058 → 1061 (**+3**) — MODULO ARITH
+  follow-up edges session 156's pin-set did not enumerate:
+  DIV2MOD MODSTO consultation pair (m=12 + m=7 baseline/
+  alternate; mirror of s156 DIVMOD pair on the two-result
+  sibling per AUR §3-62), GCDMOD(0, 0) both-zero edge → Bad
+  argument value (closes the s156 gcd-with-one-zero pair on
+  the mathematically-undefined corner).
+
+`test-persist.mjs` 66 / 0 (unchanged this run).  `sanity.mjs`
+22 / 0 (unchanged).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | **1061** | 0    | +25 s119, +25 s124, +9 s127, +13 s139, +29 s144, +30 s149, +10 s156 (MODULO follow-up), **+3 session-160** (MODULO ARITH follow-up: DIV2MOD MODSTO consultation pair + GCDMOD(0,0) both-zero reject). |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  775 | 0    | s151 fully closed (CASE / fully-closed START/NEXT and START/STEP / DO/UNTIL / FOR/STEP).  Session 160 did not touch this file. |
+| test-entry.mjs              |   90 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  185 | 0    | +14 ship-prep-r4 (List EVAL HP50 §3-77 fix; R-010). |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  701 | 0    | +27 s109 + s112 + s153 + s156 retained.  Session 160 did not touch this file (s156's C-011 follow-up cluster is the closing pass). |
+| test-reflection.mjs         |  **279** | 0    | +50 s146, +5 net + 2 flipped s155 (R-008 OBJ→ Real-branch fix), +7 s156 (n=0 boundary closures), +15 s159 (R-012 close — OBJ→ Unit branch), **+6 session-160** (OBJ→ Unit follow-up boundary edges: zero / fractional / higher-power uexpr / multi-symbol round-trip / higher-power round-trip). |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              |  **852** | 0    | +50 s115, +2 s117, +68 s120, +43 s125, +35 s130, +31 s135, +36 s140, +23 s142, +41 s145, +26 s150, +19 s158 (LN/LOG/EXP/ALOG + ACOSH/ATANH bare-List + Tagged-of-List composition), **+4 session-160** (transcendental wrapper-LIST n=0 / n=1 boundary closures: ACOSH n=0 direct-registered, LN n=0 bare + Tagged-of-empty + n=1 shoulder). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5133** | **0** | Session 160 close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
+| test-persist.mjs (separate) |   66 | 0    | Unchanged this run; session 156 baseline retained. |
+| sanity.mjs (standalone)     |   22 | 0    | <5 ms smoke suite.                       |
+
+### Prior snapshot — Session 156 (retained for context)
+
+Baseline at session start: `node tests/test-all.mjs` = **5063
+passing / 0 failing** (session-155 close, fully green; sibling
+deltas absorbed in the prelude above).  `test-persist.mjs` 66 /
+0 (was 40 at session-147 close; +26 from sessions 150 / 151 /
+152 / 155 — D-001 partial fix + casVx persistence cluster from
+session 151).  `sanity.mjs` 22 / 0.
+
+Final: **5086 passing / 0 failing** — fully green.  The +23
+session-156 deltas land in three files across three substantive
+clusters:
+- `test-reflection.mjs` 251 → 258 (**+7**) — OBJ→ session-155
+  follow-up edges: empty Vector / List / Program n=0 boundary
+  closures, negative-Real branch, Tagged-of-Tagged composition
+  (3 sub-pins).  R-008 scope was Real and Tagged only; these
+  close the AUR §3-149 boundary cells the audit didn't enumerate.
+- `test-algebra.mjs` 1048 → 1058 (**+10**) — Session-149 MODULO
+  ARITH cluster follow-up: DIV2MOD-Vector reject + DIVMOD
+  Complex / String reject (per-arg type-check fall-throughs) +
+  GCDMOD-with-zero identity edge (both directions) + EXPANDMOD-
+  negative-input branch + FACTORMOD m=2 / m=99 modulus boundary
+  pair + DIVMOD MODSTO consultation pair (only EXPANDMOD's
+  MODSTO sensitivity was pinned by session 149).
+- `test-numerics.mjs` 701 → 707 (**+6**) — Session-153 C-011
+  follow-up rejection-arm composition: Tagged-of-Rational (both
+  COMB level-2 and PERM level-1); BinInt COMB / PERM (guards
+  against a session-115-style widening); Vector COMB (no V/M
+  distribution); negative-int-valued Rational(-5,1) COMB
+  (negative-arm of session-153's positive-only pin).
+
+`test-persist.mjs` 66 / 0 (unchanged this run — the +26 since
+session-147 absorbed in this snapshot via sessions 150 / 151 /
+152 / 155).  `sanity.mjs` 22 / 0 (unchanged).
+
+R-012 filed against REVIEW.md `Findings — RPL` bucket (OBJ→ on
+Unit divergence from AUR §3-149; ship-stretch; owner =
+`rpl5050-rpl-programming`).  Lane filed-only per the no-fix-
+source-bugs rule.  **Session 159 closed R-012** by adding the
+missing `isUnit` branch to OBJ→'s dispatch.
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | **1058** | 0    | +25 s119 (EGV / RSD / GREDUCE), +25 s124 (LNAME / GBASIS), +9 s127 (LNAME edge), +13 s139 (LIN/LIMIT), +29 s144 (MODSTO + ADDTMOD/SUBTMOD/MULTMOD/POWMOD), +30 s149 (EXPANDMOD/FACTORMOD/GCDMOD/DIVMOD/DIV2MOD), **+10 session-156** (MODULO follow-up: DIV2MOD-V reject, DIVMOD-Complex/String reject, GCDMOD-with-zero, EXPANDMOD-negative, FACTORMOD m=2/m=99 boundary, DIVMOD MODSTO consultation). |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  775 | 0    | +71 session-151 (CASE clauses, fully-closed START/NEXT and START/STEP, DO/UNTIL, FOR/STEP — symmetric to s141 IFERR set).  Session 156 did not touch this file. |
+| test-entry.mjs              |   90 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  185 | 0    | +14 ship-prep-r4 (List EVAL HP50 §3-77 fix; R-010). |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  **707** | 0    | +27 s109 + s112 LOG-CMPLX-OFF split, +8 s153 (C-011 close — COMB/PERM Rational reject), **+6 session-156** (C-011 follow-up: Tagged-of-Rat both directions, BinInt COMB/PERM, Vector COMB, negative-int-valued Rat). |
+| test-reflection.mjs         |  **258** | 0    | +50 s146 (Program/structural round-trip pins), +5 net new + 2 flipped session-155 (R-008 OBJ→ Real-branch fix + Tagged-branch phantom retraction), **+7 session-156** (OBJ→ session-155 follow-up: empty V/L/P n=0 boundary, negative Real, Tagged-of-Tagged composition). |
+| test-stack-ops.mjs          |   48 | 0    | +9 session-137 + 7 session-147 edge-path closures retained. |
+| test-stats.mjs              |   55 | 0    | session-147 NSIGMA/NΣ + MEAN/VAR/SDEV reject + canonical ΣX/ΣX² col-0 positive retained. |
+| test-types.mjs              |  829 | 0    | +50 s115, +2 s117, +68 s120, +43 s125, +35 s130, +31 s135, +36 s140, +23 s142, +41 s145, +26 session-150 (inverse-trig DEG-Tagged-V/M wrapper composition + forward-hyperbolic bare-scalar + LN/LOG/EXP/ALOG Tagged-V/M wrapper composition).  Session 156 did not touch this file. |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    | +12 s137 + 5 s147 closures retained.     |
+| test-variables.mjs          |  251 | 0    | +3 ship-prep-r2 (R-007 soft-key program-error rollback). |
+| **test-all (aggregate)**    | **5086** | **0** | Session 156 close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
+| test-persist.mjs (separate) |   66 | 0    | +26 absorbed from sessions 150 / 151 / 152 / 155 (D-001 partial fix + casVx persistence pins from session 151).  Session 156 did not touch this file. |
+| sanity.mjs (standalone)     |   22 | 0    | <5 ms smoke suite.                       |
+
+### Prior snapshot — Session 147 (retained for context)
 
 Baseline at session start: `node tests/test-all.mjs` = **4883
 passing / 0 failing** (session-146 close, fully green).  Sibling
@@ -995,7 +1291,76 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 147 (2026-04-25) — this run.  Unit-tests lane.  **+20
+- Session 156 (2026-04-25) — this run.  Unit-tests lane (release
+  wrap-up — penultimate day before the 2026-04-26 ship).  **+23
+  assertions across 3 substantive clusters** (above the 3-item
+  floor) plus **R-012 filed** (REVIEW.md `Findings — RPL` bucket)
+  for OBJ→ Unit divergence from AUR §3-149:
+  - **Cluster 1 (7)** — `test-reflection.mjs` 251 → 258.  OBJ→
+    session-155 follow-up edges: empty Vector → just `{0}` size-
+    list (n=0 boundary closure for AUR Vector row); empty List →
+    just Integer(0) count (n=0 boundary closure for AUR List
+    row); empty Program → just Integer(0) count (symmetric to
+    empty-List; pins unconditional count for round-trip via →PRG);
+    Real(-1500) → -1500 (no sign decomposition; closes the
+    negative-Real branch session 155 left to symmetry); Tagged-
+    of-Tagged composition (3 sub-pins: depth=2 one-layer peel,
+    outer "outer" String on level 1, inner :inner:7 Tagged
+    preserved on level 2; guards against a recursive-peel
+    refactor).  R-008 scope was Real and Tagged branches only.
+  - **Cluster 2 (10)** — `test-algebra.mjs` 1048 → 1058.
+    Session-149 MODULO ARITH cluster follow-up: DIV2MOD-Vector
+    reject (mirror of session-149's DIVMOD-Vector pin — the
+    two-result sibling was unpinned); DIVMOD on Complex (level 2)
+    + DIVMOD on String (level 2) → Bad argument type (extends
+    the s149 Vector pin onto per-arg type-check fall-throughs);
+    GCDMOD(15, 0) and GCDMOD(0, 15) mod 13 → Integer(2) (gcd-
+    with-zero identity edge of `_extGcdBigInt`); EXPANDMOD(-7)
+    mod 12 → Integer(5) centered (negative-input branch of
+    `_centerMod`); FACTORMOD m=2 → Integer(1) (smallest prime
+    accepted; previously unpinned); FACTORMOD m=99 → Bad
+    argument value (largest composite below the >=100 cutoff;
+    symmetric to s149's m=101 prime-but-too-large reject);
+    DIVMOD MODSTO consultation pair (m=12 baseline 64/13 → 4 +
+    m=7 alternate 64/13 → -1; only EXPANDMOD's MODSTO
+    sensitivity was pinned by s149).
+  - **Cluster 3 (6)** — `test-numerics.mjs` 701 → 707.
+    Session-153 C-011 follow-up rejection-arm composition:
+    Tagged(Rational(5,1)) on level 2 (Tagged-transparency
+    unwraps then C-011 narrow guard fires — composition arm
+    s153 left unpinned); Tagged(Rational(2,1)) on level 1
+    (PERM symmetric); BinInt COMB / PERM (out of scope per AUR
+    §3-29; guards against a session-115-style FLOOR/CEIL/IP/FP
+    widening landing on COMB/PERM); Vector COMB (no V/M
+    distribution defined; only List × scalar broadcast per
+    s065 pin); Rational(-5,1) COMB (negative-int-valued arm;
+    type-narrowing fires before the negative-arg value-domain
+    check would).
+  - **R-012 filed** in REVIEW.md `Findings — RPL` bucket.
+    `5_m OBJ→` rejects with `Bad argument type`; AUR §3-149 row
+    `x_unit  →  x  1_unit` expects depth-2 `Real(5)` + `1_m`.
+    Discovered while pinning the OBJ→ session-156 cluster;
+    surfaces a third row of the AUR §3-149 table that R-008's
+    audit (Real / Tagged only) did not enumerate.  Owner =
+    `rpl5050-rpl-programming` (matches R-008 routing); ship-
+    stretch — nice to land if a programming-features run fits
+    before close, but not blocking.  No `.skip`'d test added;
+    the REVIEW.md finding is the load-bearing record (per
+    no-fix-source-bugs lane rule).  Ship-priorities item 5b
+    added in REVIEW.md.
+  - **Did not touch** `tests/test-types.mjs` (sibling lanes
+    140 / 142 / 145 / 150 between them shipped 829 assertions
+    there over the last few weeks); `tests/test-control-flow.mjs`
+    (session 151 closed it fully green at 775 / 0); `tests/test-
+    persist.mjs` (D-001 was partial-fixed by an interactive
+    `session-file-explorer` lane during sessions 152's window —
+    persist gate is 66 / 0 at session-156 entry).
+  - Final test-all **5086 passing / 0 failing** — fully green
+    (entry was 5063 / 0; +23 from this run).  test-persist
+    66 / 0 (unchanged this run).  sanity 22 / 0 (unchanged).
+    Log file: `logs/session-156.md`.
+
+- Session 147 (2026-04-25) — earlier run.  Unit-tests lane.  **+20
   assertions across 3 substantive clusters** (above the 3-item
   floor) — distributed across `test-stack-ops.mjs`,
   `test-stats.mjs`, `test-units.mjs` (no test-types touch this

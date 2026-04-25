@@ -7398,3 +7398,480 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+/* ================================================================
+   session 158 — Cluster 1: ACOSH / ATANH on bare List + Tagged-of-
+   List composition.
+
+   Session 120's hyperbolic-family pin (`tests/test-types.mjs:3153`)
+   only iterated `SINH / COSH / TANH / ASINH` for List distribution
+   — those four route through `_unaryCx`.  ACOSH and ATANH are
+   registered with the bespoke direct shape `_withTaggedUnary(
+   _withListUnary(_withVMUnary(handler)))` (per session 140 Cluster
+   1 comment at `tests/test-types.mjs:5266-5278`) so the bare-List
+   and Tagged-of-List composition was never directly pinned; only
+   the Tagged-of-Vector composition was (session 140 Cluster 1).
+   The matrix Notes claim L ✓ for the row covering "SIN..ASIN..ATAN
+   ..ACOSH..ATANH (elementary)" but the L ✓ on the ACOSH / ATANH
+   sub-axes was inherited from the convention text rather than from
+   a hard-assertion pin on the direct-registered shape.
+
+   Session 150 closed the LN/LOG/EXP/ALOG and forward-/inverse-trig
+   wrapper-VM composition under Tagged-V/M.  This cluster closes
+   the **dual** axis: the L/T axis (bare List + Tagged-of-List)
+   on the direct-registered ACOSH / ATANH handlers, including the
+   EXACT-mode Integer-stay-exact composition per element and the
+   out-of-domain Integer→Complex bypass per element (mirror of
+   session 150 Cluster 2's bare-scalar out-of-domain pin lifted
+   into the List axis).
+
+   Same code path as session 140 Cluster 1's Tagged-of-Vector
+   (`acoshTaggedV` / `atanhTaggedV`), but exercises the inner
+   `_withListUnary` instead of `_withVMUnary`.  Distinct from
+   session 120's SINH-only Tagged-List pin (`SINH` routes through
+   `_unaryCx` — wrapped externally; ACOSH/ATANH bypass `_unaryCx`
+   so the wrapper composition shape is registered directly). */
+{
+  // ---- ACOSH bare List, Real in-domain boundary (acosh(1)=0).
+  // Pins that the bare-List wrapper distributes per element on
+  // the direct-registered ACOSH handler; mirror of session 120
+  // line :3153's SINH/COSH/TANH/ASINH for-loop on the ACOSH axis
+  // which the session 120 loop deliberately excluded (ACOSH /
+  // ATANH dispatch through a bespoke shape, not `_unaryCx`).
+  {
+    const s = new Stack();
+    s.push(RList([Real(1), Real(1)]));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(0)
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session158: ACOSH {Real(1) Real(1)} → {Real(0) Real(0)} (bare-List distribution on direct-registered ACOSH handler — closes the L axis on session 120's SINH-only direct-registered loop); got ${v?.type} items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ATANH bare List, Real in-domain trivial (atanh(0)=0).
+  // Operand-symmetric to ACOSH boundary above; pins the bare-List
+  // distribution on ATANH's direct-registered handler.
+  {
+    const s = new Stack();
+    s.push(RList([Real(0), Real(0)]));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(0)
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session158: ATANH {Real(0) Real(0)} → {Real(0) Real(0)} (bare-List distribution on direct-registered ATANH handler — closes L axis on session 120's loop); got ${v?.type} items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ACOSH Tagged-of-List composition: outer Tagged unwraps,
+  // inner List distributes per element, outer Tagged re-applies.
+  // Mirror of session 140 Cluster 1's Tagged-of-Vector ACOSH pin
+  // on the LIST axis — pins that the same direct-registered
+  // wrapper composition `_withTaggedUnary(_withListUnary(_with
+  // VMUnary(...)))` threads correctly through the LIST inner
+  // wrapper (not just the V/M inner wrapper).
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([Real(1), Real(1)])));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h' && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(0)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session158: ACOSH :h:{Real(1) Real(1)} → :h:{Real(0) Real(0)} (Tagged-of-List composition through 3-deep direct-registered wrapper; outer tag preserved across element-wise List dispatch); got tag=${v?.tag} inner=${v?.value?.type} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ATANH Tagged-of-List composition (closes the ACOSH/ATANH
+  // pair on the Tagged-of-List axis).  Same structure as the
+  // ACOSH variant above but on ATANH's bespoke handler.
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([Real(0), Real(0)])));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h' && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(0)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session158: ATANH :h:{Real(0) Real(0)} → :h:{Real(0) Real(0)} (Tagged-of-List composition through 3-deep direct-registered wrapper; closes ACOSH/ATANH pair on T+L axis); got tag=${v?.tag} inner=${v?.value?.type} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ACOSH bare List with Integer operands, in-domain.  Pins
+  // that the EXACT-mode Integer-stay-exact arm of the bespoke
+  // ACOSH handler (`ops.js:8309` per session 150 Cluster 2 doc)
+  // composes per element through `_withListUnary` — each element
+  // independently routes through `_exactUnaryLift` and emerges
+  // as Integer.  Mirror of session 150 Cluster 2's bare-scalar
+  // `ACOSH(Integer(1)) → Integer(0)` pin lifted into the List
+  // axis on the direct-registered shape.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(1n), Integer(1n)]));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 0n
+        && isInteger(v.items[1]) && v.items[1].value === 0n,
+      `session158: ACOSH {Integer(1) Integer(1)} → {Integer(0) Integer(0)} (EXACT-mode Integer-stay-exact composes per element through bare _withListUnary on direct-registered ACOSH; mirror of session 150 bare-scalar pin lifted onto L axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ATANH bare List with Integer operands, in-domain trivial
+  // (atanh(0) = 0).  Mirror of ACOSH-Integer pin above on the
+  // ATANH axis; closes the inverse-hyp `_exactUnaryLift` Integer-
+  // stay-exact List composition pair.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(0n), Integer(0n)]));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 0n
+        && isInteger(v.items[1]) && v.items[1].value === 0n,
+      `session158: ATANH {Integer(0) Integer(0)} → {Integer(0) Integer(0)} (EXACT-mode Integer-stay-exact composes per element through bare _withListUnary on direct-registered ATANH; closes inverse-hyp List EXACT-arm pair); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ACOSH bare List, OUT-OF-DOMAIN Real→Complex bypass per
+  // element.  Session 150 Cluster 2 pinned `ACOSH(Integer(0))`
+  // → Complex(0, ±π/2) bare-scalar (in-domain check `x ≥ 1`
+  // fails for Integer(0); EXACT-mode integer-stay arm falls
+  // through into the Complex principal-branch lift).  Pins that
+  // the same out-of-domain bypass composes through the bare-List
+  // wrapper per element — Real(0) routes around `_exactUnaryLift`
+  // (which would otherwise crash on `Math.acosh(0) = NaN`) and
+  // emerges as Complex.
+  {
+    const s = new Stack();
+    s.push(RList([Real(0)]));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    const item = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 && isComplex(item)
+        && Math.abs(item.re - 0) < 1e-12
+        && Math.abs(Math.abs(item.im) - Math.PI / 2) < 1e-12,
+      `session158: ACOSH {Real(0)} → {Complex(0, ±π/2)} (out-of-domain Real→Complex bypass composes per element through bare _withListUnary; mirror of session 150 bare-scalar out-of-domain pin lifted onto L axis); got items=${v?.items?.map(x => x?.type === 'complex' ? `Complex(${x.re},${x.im})` : `${x?.type}(${x?.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ATANH bare List, OUT-OF-DOMAIN bypass per element.
+  // Session 150 Cluster 2 pinned `ATANH(Integer(2))` → Complex
+  // principal branch bare-scalar.  Pins per-element out-of-domain
+  // bypass through the bare-List wrapper on the ATANH axis;
+  // mirror of ACOSH out-of-domain List pin above.  atanh(2)
+  // principal branch is 0.5493… - i·π/2.
+  {
+    const s = new Stack();
+    s.push(RList([Real(2)]));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    const item = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 && isComplex(item)
+        && Math.abs(item.re - 0.5493061443340548) < 1e-12
+        && Math.abs(Math.abs(item.im) - Math.PI / 2) < 1e-12,
+      `session158: ATANH {Real(2)} → {Complex(atanh(2)-iπ/2)} (out-of-domain Real→Complex bypass composes per element through bare _withListUnary on direct-registered ATANH); got items=${v?.items?.map(x => x?.type === 'complex' ? `Complex(${x.re},${x.im})` : `${x?.type}(${x?.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- HETEROGENEOUS in-domain + out-of-domain in a single
+  // bare List on ACOSH.  Strong pin: the same `_withListUnary`
+  // wrapper dispatches some elements through the EXACT-mode
+  // Integer-stay arm (Integer(1) → Integer(0)) and OTHER
+  // elements through the out-of-domain Complex-principal-branch
+  // bypass (Real(0) → Complex(0, π/2)) — closes the per-element
+  // domain-check independence on the List axis.  Mirror of
+  // session 150 Cluster 3's heterogeneous LOG mixed integer-
+  // clean / stay-symbolic Tagged-V pin on the ACOSH heterogeneous
+  // domain-axis.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(1n), Real(0)]));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    const item0 = v?.items?.[0];
+    const item1 = v?.items?.[1];
+    assert(isList(v) && v.items.length === 2
+        && isInteger(item0) && item0.value === 0n
+        && isComplex(item1) && Math.abs(item1.re - 0) < 1e-12
+            && Math.abs(Math.abs(item1.im) - Math.PI / 2) < 1e-12,
+      `session158: ACOSH {Integer(1) Real(0)} → {Integer(0) Complex(0, ±π/2)} (HETEROGENEOUS per-element domain dispatch under bare List: in-domain Integer fold + out-of-domain Real bypass within the same wrapper invocation; pins per-element domain-check independence); got items=${v?.items?.map(x => x?.type === 'complex' ? `Complex(${x.re},${x.im})` : `${x?.type}(${x?.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ATANH Tagged-of-List with mixed in/out-of-domain Real
+  // operands.  Closes the heterogeneous-domain pin on the Tagged-
+  // of-List axis (cluster's strongest variant — pins outer Tagged
+  // unwrap + inner List per-element dispatch + per-element domain
+  // check + tag re-apply, all in one observable result).
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([Real(0), Real(2)])));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    const okShape = isTagged(v) && v.tag === 'h' && isList(v.value) && v.value.items.length === 2;
+    const item0 = okShape && v.value.items[0];
+    const item1 = okShape && v.value.items[1];
+    assert(okShape && isReal(item0) && item0.value.eq(0)
+        && isComplex(item1)
+        && Math.abs(item1.re - 0.5493061443340548) < 1e-12
+        && Math.abs(Math.abs(item1.im) - Math.PI / 2) < 1e-12,
+      `session158: ATANH :h:{Real(0) Real(2)} → :h:{Real(0) Complex(atanh(2)-iπ/2)} (HETEROGENEOUS in-domain/out-of-domain per element under Tagged-of-List composition — closes ACOSH/ATANH heterogeneous axis on the T+L composition); got tag=${v?.tag} items=${v?.value?.items?.map(x => x?.type === 'complex' ? `Complex(${x.re},${x.im})` : `${x?.type}(${x?.value?.toString?.()})`).join(',')}`);
+  }
+
+  // session160 — Empty-List (n=0) boundary closure on the direct-
+  // registered ACOSH wrapper composition.  Pair with the session-160
+  // LN n=0 pin in Cluster 2 below: lifts the empty-List boundary onto
+  // the inverse-hyp pair direct-registered ops too (ACOSH/ATANH dispatch
+  // through a bespoke registration shape, not _unaryCx — see s158
+  // header comment for the distinction).  Pins that the bare and
+  // Tagged-of-List wrappers both preserve an empty inner-List unchanged.
+  //
+  // ---- Empty bare List on ACOSH: { } ACOSH → { } (n=0 boundary on
+  // direct-registered wrapper; closes the boundary the s158 ACOSH n=2
+  // pins do not enumerate).
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session160: { } ACOSH → { } (n=0 empty-List boundary on direct-registered ACOSH bare wrapper; closes the n=0 corner the s158 ACOSH/ATANH n=2 pins do not enumerate); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+}
+
+/* ================================================================
+   session 158 — Cluster 2: LN / LOG / EXP / ALOG bare-List
+   distribution + Tagged-of-List composition with EXACT-mode
+   `_exactUnaryLift` Integer-stay-exact folds composing per
+   element.
+
+   Session 145 Cluster 2 pinned bare-scalar EXACT-mode Integer-
+   stay-exact / Rational-stay-symbolic.  Session 150 Cluster 3
+   lifted that into the wrapper-VM-under-Tagged composition
+   (Tagged-of-V and Tagged-of-M).  This cluster closes the dual:
+   bare-List + Tagged-of-List, the LIST axis of the wrapper
+   composition.
+
+   These four ops dispatch through `_unaryCx` (`ops.js:7984` per
+   session 145 doc) which wraps in the standard 3-deep
+   `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`.
+   The inner `_withListUnary` runs the inner handler per element;
+   when each element is integer-clean under EXACT mode, the per-
+   element results are Integer (via `_exactUnaryLift`); when
+   mixed, the result is a heterogeneous Integer + Symbolic List.
+
+   Same code path as session 150 Cluster 3's Tagged-V/M pin, but
+   on the LIST inner-wrapper instead of V/M.  Distinct from
+   session 130 Cluster 1's LNP1 Tagged-of-Vector pin (which only
+   covered LNP1 — not the LN/LOG/EXP/ALOG quartet — and only on
+   V, not on List). */
+{
+  // LN / LOG / EXP / ALOG do not depend on angle mode — no
+  // try/finally guard needed for non-APPROX assertions.
+
+  // ---- LN bare List, both Integer(1).  ln(1)=0 integer-clean
+  // per element.  Pins that EXACT-mode `_exactUnaryLift` Integer-
+  // stay-exact composes through the bare `_withListUnary` on
+  // every position; mirror of session 150 Cluster 3's `:v:V(Z(1)
+  // ,Z(1)) LN` Tagged-of-Vector pin on the LIST axis.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(1n), Integer(1n)]));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 0n
+        && isInteger(v.items[1]) && v.items[1].value === 0n,
+      `session158: LN {Integer(1) Integer(1)} → {Integer(0) Integer(0)} (EXACT-mode _exactUnaryLift Integer-stay-exact composes through bare _withListUnary on LN axis; mirror of session 150 :v:V LN pin lifted onto L axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LOG bare List, three distinct integer-clean outputs at
+  // three distinct positions: 1/10/100 → 0/1/2.  Pins per-element
+  // wrapper dispatch with distinct integer outputs at each List
+  // position; mirror of session 150 Cluster 3's :v:V(Z(1),Z(10),
+  // Z(100)) LOG pin on the LIST axis.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(1n), Integer(10n), Integer(100n)]));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 3
+        && isInteger(v.items[0]) && v.items[0].value === 0n
+        && isInteger(v.items[1]) && v.items[1].value === 1n
+        && isInteger(v.items[2]) && v.items[2].value === 2n,
+      `session158: LOG {Integer(1) Integer(10) Integer(100)} → {Integer(0) Integer(1) Integer(2)} (three distinct integer-clean outputs at three List positions — pins per-element wrapper dispatch via bare _withListUnary on LOG axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXP bare List, both Integer(0).  exp(0)=1 non-zero
+  // integer output pins that the EXP arm of `_unaryCx` ran
+  // (rather than a hypothetical zero-fold) per element through
+  // the bare-List wrapper.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(0n), Integer(0n)]));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 1n
+        && isInteger(v.items[1]) && v.items[1].value === 1n,
+      `session158: EXP {Integer(0) Integer(0)} → {Integer(1) Integer(1)} (non-zero integer output pins inner EXP handler ran per element via bare _withListUnary; mirror of session 150 :v:V(Z(0),Z(0)) EXP pin lifted onto L axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ALOG bare List, high-magnitude integer trio: 0/2/3 →
+  // 1/100/1000.  High-magnitude non-zero integer outputs pin
+  // `_exactUnaryLift`'s BigInt round-trip per element through the
+  // bare-List wrapper; mirror of session 150 Cluster 3's
+  // `:v:V(Z(0),Z(2),Z(3)) ALOG` Tagged-of-Vector pin on the LIST
+  // axis.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(0n), Integer(2n), Integer(3n)]));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 3
+        && isInteger(v.items[0]) && v.items[0].value === 1n
+        && isInteger(v.items[1]) && v.items[1].value === 100n
+        && isInteger(v.items[2]) && v.items[2].value === 1000n,
+      `session158: ALOG {Integer(0) Integer(2) Integer(3)} → {Integer(1) Integer(100) Integer(1000)} (high-magnitude non-zero integer outputs pin _exactUnaryLift's BigInt round-trip per element under bare _withListUnary on ALOG axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LN Tagged-of-List composition: outer Tagged unwraps,
+  // inner List distributes per element, integer-clean fold per
+  // element, outer Tagged re-applies.  Closes the LN axis on
+  // the T+L composition; mirror of session 150 Cluster 3's
+  // :v:V LN pin on the LIST instead of the V wrapper.
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Integer(1n), Integer(1n)])));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l' && isList(v.value) && v.value.items.length === 2
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+        && isInteger(v.value.items[1]) && v.value.items[1].value === 0n,
+      `session158: LN :l:{Integer(1) Integer(1)} → :l:{Integer(0) Integer(0)} (Tagged-of-List composition through 3-deep wrapper on LN axis; outer tag preserved across element-wise List dispatch + per-element EXACT integer-stay fold); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LOG Tagged-of-List with three distinct integer-clean
+  // outputs.  Mirror of bare-List LOG pin above lifted into
+  // Tagged-of-List composition; closes the LOG axis on T+L.
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Integer(1n), Integer(10n), Integer(100n)])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l' && isList(v.value) && v.value.items.length === 3
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+        && isInteger(v.value.items[1]) && v.value.items[1].value === 1n
+        && isInteger(v.value.items[2]) && v.value.items[2].value === 2n,
+      `session158: LOG :l:{Integer(1) Integer(10) Integer(100)} → :l:{Integer(0) Integer(1) Integer(2)} (Tagged-of-List composition with three distinct integer-clean outputs at three List positions); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- HETEROGENEOUS integer-clean / stay-symbolic within a
+  // single bare List on LOG.  log10(2)≈0.301 NOT integer-clean →
+  // stay-symbolic per `_exactUnaryLift`'s fall-through;
+  // log10(10)=1 integer-clean → Integer(1).  Strong pin: result
+  // is a mixed-kind List (Symbolic + Integer) — pins that
+  // `_exactUnaryLift`'s stay-symbolic fall-through and integer-
+  // clean fold both operate per element under the BARE List
+  // wrapper WITHOUT collapsing the whole List to a uniform
+  // output kind.  Mirror of session 150 Cluster 3's mixed-kind
+  // `:v:V(Z(2),Z(10)) LOG` pin on the bare-List axis.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(2n), Integer(10n)]));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    const okShape = isList(v) && v.items.length === 2;
+    const okSym = okShape && isSymbolic(v.items[0])
+        && v.items[0].expr?.kind === 'fn' && v.items[0].expr.name === 'LOG';
+    const okInt = okShape && isInteger(v.items[1]) && v.items[1].value === 1n;
+    assert(okSym && okInt,
+      `session158: LOG {Integer(2) Integer(10)} → {Symbolic LOG(2), Integer(1)} (HETEROGENEOUS per-element output: log10(2) not integer-clean → stay-symbolic, log10(10)=1 integer-clean → Integer; pins _exactUnaryLift's stay-symbolic fall-through and integer-clean fold both operate per element under BARE _withListUnary WITHOUT uniform-kind collapse); got items=${v?.items?.map(x => `${x.type}${x.value?.toString?.() ? '('+x.value.toString()+')' : ''}`).join(',')}`);
+  }
+
+  // ---- HETEROGENEOUS within Tagged-of-List on LOG.  Strongest
+  // variant on the T+L axis — pins outer Tagged unwrap + inner
+  // List per-element dispatch + per-element EXACT branch
+  // (integer-clean OR stay-symbolic) + tag re-apply, all in one
+  // observable result.  Mirror of session 150 Cluster 3's mixed-
+  // kind Tagged-V LOG pin on the Tagged-of-List axis.
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Integer(2n), Integer(10n)])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    const okShape = isTagged(v) && v.tag === 'l' && isList(v.value) && v.value.items.length === 2;
+    const okSym = okShape && isSymbolic(v.value.items[0])
+        && v.value.items[0].expr?.kind === 'fn' && v.value.items[0].expr.name === 'LOG';
+    const okInt = okShape && isInteger(v.value.items[1]) && v.value.items[1].value === 1n;
+    assert(okSym && okInt,
+      `session158: LOG :l:{Integer(2) Integer(10)} → :l:{Symbolic LOG(2), Integer(1)} (HETEROGENEOUS within Tagged-of-List composition: outer tag preserved + per-element integer-clean OR stay-symbolic; closes mixed-kind axis on T+L composition); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}${x.value?.toString?.() ? '('+x.value.toString()+')' : ''}`).join(',')}`);
+  }
+
+  // ---- APPROX-mode bypass under bare List composition: LOG
+  // {Integer(1) Integer(100)} APPROX → {Real(0) Real(2)}.
+  // Pins that the APPROX-mode flag flips the result KIND (Real
+  // not Integer) per element under the bare-List wrapper —
+  // distinct from the EXACT-mode all-Integer output of the LOG
+  // {1, 10, 100} pin above on the same wrapper.  Mirror of
+  // session 150 Cluster 3's APPROX-bypass-under-Tagged-V pin
+  // on the bare-List axis.
+  {
+    setApproxMode(true);
+    try {
+      const s = new Stack();
+      s.push(RList([Integer(1n), Integer(100n)]));
+      lookup('LOG').fn(s);
+      const v = s.peek();
+      const okShape = isList(v) && v.items.length === 2;
+      const okItem0 = okShape && isReal(v.items[0]) && v.items[0].value.eq(0);
+      const okItem1 = okShape && isReal(v.items[1]) && v.items[1].value.eq(2);
+      assert(okItem0 && okItem1,
+        `session158: LOG {Integer(1) Integer(100)} APPROX → {Real(0) Real(2)} (APPROX-mode bypass composes per element under bare _withListUnary: APPROX flips KIND from Integer to Real per element, integer-clean output values still emerge but as Real; mirror of session 150 Cluster 3's APPROX-under-Tagged-V pin on the L axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    } finally {
+      setApproxMode(false);
+    }
+  }
+
+  // session160 — Empty-List (n=0) boundary closures for the bare-List +
+  // Tagged-of-List wrapper composition.  Mirror of session 156's empty-
+  // V/L/P n=0 boundary closures on AUR §3-149 OBJ→ rows; this lifts the
+  // n=0 boundary onto the transcendental wrapper-LIST composition the
+  // session-158 pins (n=2 / n=3) and the session-160 single-element
+  // pins (n=1, below) bracket.  Pins that the inner `_withListUnary`
+  // pass-through preserves an empty-List shell unchanged on every code
+  // path, AND that the outer Tagged wrapper preserves the tag across the
+  // empty inner composition.
+  //
+  // ---- Empty bare List on LN: { } LN → { } (transcendental n=0 edge).
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session160: { } LN → { } (n=0 empty-List boundary on bare _withListUnary — transcendental wrapper preserves empty shell unchanged; closes the boundary the s158 n=2/n=3 pins do not enumerate); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+
+  // ---- Empty Tagged-of-List on LN: :l:{ } LN → :l:{ } (n=0 under
+  // 3-deep wrapper composition; outer tag preserved across empty inner).
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([])));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 0,
+      `session160: :l:{ } LN → :l:{ } (n=0 empty-List under Tagged composition: outer tag preserved across empty inner List dispatch through 3-deep wrapper; mirror of the bare empty-List pin lifted onto T+L); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- Single-element bare List (n=1) boundary on LN: { Integer(1) }
+  // LN → { Integer(0) }.  Distinct from session 158's n=2 pin (which is
+  // homogeneous-zero output) — the n=1 case guards against a refactor
+  // that special-cases n=1 to the bare-scalar code path and bypasses the
+  // _withListUnary wrapper.  Closes the n=1 shoulder between the s160
+  // n=0 and s158 n=2 pins.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(1n)]));
+    lookup('LN').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isInteger(v.items[0]) && v.items[0].value === 0n,
+      `session160: { Integer(1) } LN → { Integer(0) } (n=1 single-element boundary on bare _withListUnary; pins per-element EXACT-mode integer-clean fold runs through the wrapper for n=1 — guards against refactor that bypasses wrapper for singleton); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+}
+

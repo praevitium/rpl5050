@@ -2,9 +2,9 @@ import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
-  RList, Vector, Matrix, Symbolic,
+  RList, Vector, Matrix, Symbolic, Unit,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
-  isString,
+  isString, isUnit,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
 import { format, formatStackTop } from '../www/src/rpl/formatter.js';
@@ -146,24 +146,73 @@ import { assert } from './helpers.mjs';
     // Parsed as three values: Integer(1), Integer(2), Name('+')
     assert(s.depth === 3, 'OBJ→ "1 2 +" parses 3 tokens');
   }
+  /* HP50 AUR §3-149 — OBJ→ on a Real returns the Real unchanged.
+     Prior versions did a mantissa/exponent split here, but the AUR
+     §3-149 Input/Output table lists no numeric-scalar entry; the
+     mantissa/exponent split is the job of MANT (AUR p.3-6) and XPON
+     (AUR p.3-9), which are wired separately.  R-008 closed by
+     session 155. */
   {
     const s = new Stack();
     s.push(Real(3.14));
     lookup('OBJ→').fn(s);
-    // Real OBJ→ → mantissa, exponent.  3.14 → 3.14, 0.
-    assert(s.depth === 2
-        && isInteger(s.peek(1)) && s.peek(1).value === 0n
-        && isReal(s.peek(2)) && Math.abs(s.peek(2).value - 3.14) < 1e-12,
-      'OBJ→ 3.14 → 3.14 0');
+    assert(s.depth === 1
+        && isReal(s.peek(1)) && s.peek(1).value.eq(3.14),
+      'session155: OBJ→ Real 3.14 → 3.14 (1-in / 1-out, no decomposition)');
   }
   {
     const s = new Stack();
     s.push(Real(1500));
     lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isReal(s.peek(1)) && s.peek(1).value.eq(1500),
+      'session155: OBJ→ Real 1500 → 1500 (no mantissa/exponent split)');
+  }
+  {
+    /* OBJ→ on Integer is also a no-op repush — symmetric with Real. */
+    const s = new Stack();
+    s.push(Integer(42n));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isInteger(s.peek(1)) && s.peek(1).value === 42n,
+      'session155: OBJ→ Integer 42 → 42 (1-in / 1-out)');
+  }
+  {
+    /* OBJ→ on zero Real returns zero Real (no special-case decomp). */
+    const s = new Stack();
+    s.push(Real(0));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isReal(s.peek(1)) && s.peek(1).value.isZero(),
+      'session155: OBJ→ Real 0 → 0 (no zero-special-case)');
+  }
+  {
+    /* MANT and XPON still operate on Real to provide the
+       mantissa / exponent split that OBJ→ no longer does. */
+    const s = new Stack();
+    s.push(Real(1500));
+    lookup('MANT').fn(s);
+    assert(s.depth === 1
+        && isReal(s.peek(1)) && Math.abs(s.peek(1).value.toNumber() - 1.5) < 1e-12,
+      'session155: MANT 1500 → 1.5 (split lives at MANT, not OBJ→)');
+    s.push(Real(1500));
+    lookup('XPON').fn(s);
     assert(s.depth === 2
-        && isInteger(s.peek(1)) && s.peek(1).value === 3n
-        && isReal(s.peek(2)) && Math.abs(s.peek(2).value - 1.5) < 1e-12,
-      'OBJ→ 1500 → 1.5 3');
+        && isReal(s.peek(1)) && s.peek(1).value.eq(3),
+      'session155: XPON 1500 → 3 (split lives at XPON, not OBJ→)');
+  }
+  {
+    /* Tagged OBJ→: AUR §3-149 shows tag as `"tag"` (String), not Name.
+       Pinned here so any future "fix" to switch to Name(tag) is
+       caught by the test suite as a regression. */
+    const s = new Stack();
+    s.push(Tagged('lbl', Real(7)));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2
+        && isString(s.peek(1)) && s.peek(1).value === 'lbl'
+        && !isName(s.peek(1))
+        && isReal(s.peek(2)) && s.peek(2).value.eq(7),
+      'session155: OBJ→ :lbl:7 → 7 "lbl" — tag is a String per AUR §3-149');
   }
   {
     // ASCII alias OBJ-> produces the same result
@@ -173,6 +222,291 @@ import { assert } from './helpers.mjs';
     assert(s.depth === 2
         && isInteger(s.peek(1)) && s.peek(1).value === 1n,
       'ASCII alias OBJ-> behaves the same as OBJ→');
+  }
+
+  /* session 156 — OBJ→ edge / composition pins extending the
+     session-155 Real/Tagged/Integer audit.  Five new pins covering
+     the empty-container shapes (Vector / List / Program), the
+     Tagged-of-Tagged composition, and the negative-Real branch.
+     None of these were exercised by session 155's pin set; each
+     guards a distinct branch of the OBJ→ dispatch in
+     `www/src/rpl/ops.js:6642-6720`. */
+  {
+    /* Empty Vector → just the {0} size-list (no items pushed).
+       Mirrors AUR §3-149's `[ x1, ... ,xn ] → x1 … xn  {n}` row
+       at the n=0 boundary — pins that the size-list is emitted as
+       an RList containing a single Real(0), not omitted entirely
+       (which would collapse the depth to 0 and break the inverse
+       round-trip via →ARRY). */
+    const s = new Stack();
+    s.push(Vector([]));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && s.peek(1).type === 'list'
+        && s.peek(1).items.length === 1
+        && isReal(s.peek(1).items[0])
+        && s.peek(1).items[0].value.eq(0),
+      'session156: OBJ→ empty Vector → just {0} size-list (no items, list with single Real(0))');
+  }
+  {
+    /* Empty List → just the Integer(0) count (no items pushed).
+       Mirrors AUR §3-149's `{ obj1, ... ,objn } → obj1 … objn  n`
+       row at the n=0 boundary — pins that the trailing count is
+       still emitted as Integer(0) so a generic
+       `OBJ→ … N→PRG`-style metaprogramming loop sees a uniform
+       (args, count) shape regardless of list size. */
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isInteger(s.peek(1)) && s.peek(1).value === 0n,
+      'session156: OBJ→ empty List → just Integer(0) count (no items, count present)');
+  }
+  {
+    /* Empty Program → just the Integer(0) count.  Symmetric to
+       the empty-List case above; pins that the Program branch
+       (ops.js:6685-6691) does NOT special-case empty so the
+       count is unconditional and a `« » OBJ→ →PRG` round-trip
+       closes through the Integer(0) bridge. */
+    const s = new Stack();
+    s.push(Program([]));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isInteger(s.peek(1)) && s.peek(1).value === 0n,
+      'session156: OBJ→ empty Program → just Integer(0) count');
+  }
+  {
+    /* Negative Real → unchanged (no sign decomposition).
+       Session 155 pinned the zero-Real and positive-Real
+       no-decomposition path; this closes the negative-sign
+       branch, guarding against a future "fix" that special-cases
+       sign extraction (some HP48-era RPL variants pushed
+       sign + magnitude separately — AUR §3-149 explicitly does
+       not). */
+    const s = new Stack();
+    s.push(Real(-1500));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isReal(s.peek(1)) && s.peek(1).value.eq(-1500),
+      'session156: OBJ→ Real(-1500) → -1500 (no sign decomposition; symmetric to session-155 positive/zero pins)');
+  }
+  {
+    /* Tagged-of-Tagged: only the outermost layer peels.  The
+       inner Tagged value is preserved as the level-2 push, and
+       the outer tag becomes the level-1 String per AUR §3-149.
+       Session 155 pinned the Real-inside-Tagged shape; this is
+       the recursive-Tagged composition pin — guards against a
+       refactor that flattens nested tags or recursively peels
+       (the AUR is explicit that OBJ→ is one-layer-deep). */
+    const s = new Stack();
+    s.push(Tagged('outer', Tagged('inner', Real(7))));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2,
+      'session156: OBJ→ Tagged-of-Tagged → 2 stack items (one-layer peel, not recursive)');
+    assert(isString(s.peek(1)) && s.peek(1).value === 'outer',
+      'session156: OBJ→ Tagged-of-Tagged level-1 = "outer" (outer tag as String per AUR §3-149)');
+    const inner = s.peek(2);
+    assert(inner.type === 'tagged' && inner.tag === 'inner'
+        && isReal(inner.value) && inner.value.value.eq(7),
+      'session156: OBJ→ Tagged-of-Tagged level-2 = :inner:7 (inner Tagged preserved, NOT recursively peeled)');
+  }
+
+  /* session 159 — OBJ→ on Unit (HP50 AUR §3-149: `x_unit → x  1_unit`).
+     Closes R-012 — the Unit branch was previously missing, so OBJ→ on
+     a Unit value rejected with `Bad argument type` instead of pushing
+     the bare numeric value (level 2) and the unit prototype `1_unit`
+     (level 1).  Eight new pins covering the basic decomposition,
+     multi-symbol uexpr, the round-trip-via-* contract, the negative-
+     value branch, the inverse-style uexpr (`m/s`), Tagged-of-Unit
+     composition, and the regression guard against future "fix"
+     attempts that flip the level-1 push to a Name. */
+  {
+    /* Basic Unit decomposition: 5_m → 5  1_m. */
+    const s = new Stack();
+    s.push(Unit(5, [['m', 1]]));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2,
+      'session159: OBJ→ 5_m → 2 stack items (Real on level 2, Unit prototype on level 1)');
+    assert(isReal(s.peek(2)) && s.peek(2).value.eq(5),
+      'session159: OBJ→ 5_m level-2 = Real(5) (the bare numeric value per AUR §3-149)');
+    assert(isUnit(s.peek(1)) && s.peek(1).value === 1
+        && s.peek(1).uexpr.length === 1
+        && s.peek(1).uexpr[0][0] === 'm' && s.peek(1).uexpr[0][1] === 1,
+      'session159: OBJ→ 5_m level-1 = Unit(1, [[m,1]]) — the `1_m` prototype per AUR §3-149');
+  }
+  {
+    /* Round-trip via *: x_unit OBJ→ * → x_unit (lossless reconstruction). */
+    const s = new Stack();
+    s.push(Unit(5, [['m', 1]]));
+    lookup('OBJ→').fn(s);
+    lookup('*').fn(s);
+    assert(s.depth === 1 && isUnit(s.peek(1))
+        && s.peek(1).value === 5
+        && s.peek(1).uexpr.length === 1
+        && s.peek(1).uexpr[0][0] === 'm' && s.peek(1).uexpr[0][1] === 1,
+      'session159: 5_m OBJ→ * → 5_m (lossless round-trip via Real*Unit fold)');
+  }
+  {
+    /* Multi-symbol inverse uexpr (m/s) preserved through OBJ→. */
+    const s = new Stack();
+    s.push(Unit(5, [['m', 1], ['s', -1]]));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2 && isReal(s.peek(2)) && s.peek(2).value.eq(5),
+      'session159: OBJ→ 5_m/s level-2 = Real(5)');
+    const proto = s.peek(1);
+    assert(isUnit(proto) && proto.value === 1
+        && proto.uexpr.length === 2
+        && proto.uexpr[0][0] === 'm' && proto.uexpr[0][1] === 1
+        && proto.uexpr[1][0] === 's' && proto.uexpr[1][1] === -1,
+      'session159: OBJ→ 5_m/s level-1 = Unit(1, [[m,1],[s,-1]]) — multi-symbol uexpr preserved');
+  }
+  {
+    /* Negative-value Unit: -3_kg → -3  1_kg.  Sign rides the level-2
+       Real, NOT the level-1 prototype (which always carries value=1). */
+    const s = new Stack();
+    s.push(Unit(-3, [['kg', 1]]));
+    lookup('OBJ→').fn(s);
+    assert(isReal(s.peek(2)) && s.peek(2).value.eq(-3),
+      'session159: OBJ→ -3_kg level-2 = Real(-3) (sign on the value, NOT the prototype)');
+    assert(isUnit(s.peek(1)) && s.peek(1).value === 1,
+      'session159: OBJ→ -3_kg level-1 prototype value = 1 (positive, regardless of input sign)');
+    /* And round-trip: -3_kg OBJ→ * → -3_kg. */
+    lookup('*').fn(s);
+    assert(s.depth === 1 && isUnit(s.peek(1))
+        && s.peek(1).value === -3
+        && s.peek(1).uexpr[0][0] === 'kg',
+      'session159: -3_kg OBJ→ * → -3_kg (sign survives the round-trip)');
+  }
+  {
+    /* Regression guard against a future "fix" that flips the level-1
+       push to a Name.  AUR §3-149 unambiguously specifies a Unit
+       prototype, not a Name — Don't switch to Name(uexpr-as-string). */
+    const s = new Stack();
+    s.push(Unit(7, [['m', 1]]));
+    lookup('OBJ→').fn(s);
+    assert(isUnit(s.peek(1)) && !isName(s.peek(1)) && !isString(s.peek(1)),
+      'session159: OBJ→ Unit level-1 is a Unit value (NOT a Name, NOT a String) per AUR §3-149');
+  }
+  {
+    /* Tagged-of-Unit composition: only the outermost layer peels.
+       The inner Unit value is preserved as the level-2 push, NOT
+       further decomposed — symmetric with the session-156
+       Tagged-of-Tagged pin.  Guards against a refactor that
+       recursively decomposes through composite types. */
+    const s = new Stack();
+    s.push(Tagged('len', Unit(5, [['m', 1]])));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2,
+      'session159: OBJ→ :len:5_m → 2 stack items (one-layer Tagged peel)');
+    assert(isString(s.peek(1)) && s.peek(1).value === 'len',
+      'session159: OBJ→ :len:5_m level-1 = "len" (tag as String per AUR §3-149)');
+    const inner = s.peek(2);
+    assert(isUnit(inner) && inner.value === 5 && inner.uexpr[0][0] === 'm',
+      'session159: OBJ→ :len:5_m level-2 = 5_m (inner Unit preserved, NOT recursively decomposed)');
+  }
+  {
+    /* ASCII alias OBJ-> works on Unit too (parity with session-155
+       OBJ-> alias pin on List). */
+    const s = new Stack();
+    s.push(Unit(2, [['kg', 1]]));
+    lookup('OBJ->').fn(s);
+    assert(s.depth === 2
+        && isReal(s.peek(2)) && s.peek(2).value.eq(2)
+        && isUnit(s.peek(1)) && s.peek(1).value === 1,
+      'session159: ASCII alias OBJ-> on Unit behaves the same as OBJ→');
+  }
+  {
+    /* Reverse-uexpr-shape (1/m): pins that the prototype carries the
+       same uexpr shape regardless of whether exponents are positive
+       or negative — guards against a future refactor that strips
+       negative exponents on the prototype. */
+    const s = new Stack();
+    s.push(Unit(2, [['m', -1]]));
+    lookup('OBJ→').fn(s);
+    const proto = s.peek(1);
+    assert(isUnit(proto) && proto.value === 1
+        && proto.uexpr.length === 1
+        && proto.uexpr[0][0] === 'm' && proto.uexpr[0][1] === -1,
+      'session159: OBJ→ 2_(1/m) level-1 prototype preserves the [m,-1] negative-exponent uexpr');
+  }
+
+  /* session160: OBJ→ Unit follow-up edges — boundary cases (zero / fractional
+     value, exponent != ±1 on uexpr) and round-trip closures that session 159's
+     R-012 close pin-set did not enumerate.  Five pins covering the value-side
+     edges (zero, fractional) and the uexpr-side edges (exponent ≠ 1, multi-
+     symbol round-trip, higher-power round-trip).  All five exercise the same
+     Unit branch in OBJ→'s dispatch; mirror of session 156's empty-V/L/P
+     boundary closures applied to the Unit row of AUR §3-149.  No source
+     change — the branch has been live since session 159. */
+  {
+    /* Zero-value Unit boundary: 0_m OBJ→ → 0  1_m.  Sign-rule edge: zero
+       has no sign so the Real(0) push and the level-1 prototype both have
+       value=1 — closes the value=0 corner that the s159 negative -3_kg
+       pin and positive 5_m pin straddle. */
+    const s = new Stack();
+    s.push(Unit(0, [['m', 1]]));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2 && isReal(s.peek(2)) && s.peek(2).value.eq(0),
+      'session160: OBJ→ 0_m level-2 = Real(0) (zero-value boundary; closes value=0 corner between s159 5_m positive and -3_kg negative pins)');
+    assert(isUnit(s.peek(1)) && s.peek(1).value === 1
+        && s.peek(1).uexpr.length === 1 && s.peek(1).uexpr[0][0] === 'm'
+        && s.peek(1).uexpr[0][1] === 1,
+      'session160: OBJ→ 0_m level-1 = Unit(1, [[m,1]]) (prototype shape unchanged at value=0; the prototype always carries value=1 regardless of input value)');
+  }
+  {
+    /* Fractional-value Unit: 2.5_m OBJ→ → 2.5  1_m.  Pins that non-integer
+       Real values pass through OBJ→'s value-extraction unchanged — guards
+       against a refactor that would round/truncate the level-2 push. */
+    const s = new Stack();
+    s.push(Unit(2.5, [['m', 1]]));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2 && isReal(s.peek(2)) && s.peek(2).value.eq(2.5),
+      'session160: OBJ→ 2.5_m level-2 = Real(2.5) (fractional value passed through OBJ→ unchanged; complements s159 integer-value pins)');
+  }
+  {
+    /* Higher-power uexpr: 3_m^2 OBJ→ → 3  1_m^2.  Exponent ≠ ±1 on the
+       prototype.  Distinct from s159's 5_m (exponent +1) and 2_(1/m)
+       (exponent -1) pins — pins that arbitrary integer exponents survive
+       the prototype construction. */
+    const s = new Stack();
+    s.push(Unit(3, [['m', 2]]));
+    lookup('OBJ→').fn(s);
+    const proto = s.peek(1);
+    assert(s.depth === 2 && isReal(s.peek(2)) && s.peek(2).value.eq(3)
+        && isUnit(proto) && proto.value === 1
+        && proto.uexpr.length === 1
+        && proto.uexpr[0][0] === 'm' && proto.uexpr[0][1] === 2,
+      'session160: OBJ→ 3_m^2 → Real(3) + Unit(1, [[m,2]]) (exponent ≠ ±1 preserved on prototype; closes the integer-exponent shoulder between s159 +1 and -1 pins)');
+  }
+  {
+    /* Multi-symbol round-trip: 5_m/s OBJ→ * → 5_m/s.  Mirror of s159's
+       single-symbol round-trip pin lifted onto the multi-symbol uexpr —
+       guards against a refactor that re-orders or normalizes the uexpr
+       differently in the *-fold path versus the OBJ→ build path. */
+    const s = new Stack();
+    s.push(Unit(5, [['m', 1], ['s', -1]]));
+    lookup('OBJ→').fn(s);
+    lookup('*').fn(s);
+    assert(s.depth === 1 && isUnit(s.peek(1))
+        && s.peek(1).value === 5
+        && s.peek(1).uexpr.length === 2
+        && s.peek(1).uexpr[0][0] === 'm' && s.peek(1).uexpr[0][1] === 1
+        && s.peek(1).uexpr[1][0] === 's' && s.peek(1).uexpr[1][1] === -1,
+      'session160: 5_m/s OBJ→ * → 5_m/s (multi-symbol uexpr round-trip closes via Real*Unit fold; uexpr ordering preserved [m,1][s,-1])');
+  }
+  {
+    /* Higher-power round-trip: 3_m^2 OBJ→ * → 3_m^2.  Mirror of s159's
+       single-symbol +1-exponent round-trip onto exponent ≠ ±1 — pins that
+       Real*Unit fold reconstructs the higher-power uexpr exactly. */
+    const s = new Stack();
+    s.push(Unit(3, [['m', 2]]));
+    lookup('OBJ→').fn(s);
+    lookup('*').fn(s);
+    assert(s.depth === 1 && isUnit(s.peek(1))
+        && s.peek(1).value === 3
+        && s.peek(1).uexpr.length === 1
+        && s.peek(1).uexpr[0][0] === 'm' && s.peek(1).uexpr[0][1] === 2,
+      'session160: 3_m^2 OBJ→ * → 3_m^2 (higher-power uexpr round-trip via Real*Unit fold; exponent=2 reconstructed exactly)');
   }
 
 /* ================================================================

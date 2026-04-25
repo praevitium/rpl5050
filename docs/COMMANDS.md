@@ -21,33 +21,79 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 149 — 2026-04-25)
+## Counts (as of session 161 — 2026-04-25)
 
-- Fully shipped (✓): 447 (this lane's net since session 144 — session
-  149 ships the remaining five MODULO ARITH ops as a cluster:
-  `EXPANDMOD`, `FACTORMOD`, `GCDMOD`, `DIVMOD`, `DIV2MOD` — all five
-  read the `state.casModulo` slot introduced session 144.  +5 ✗→✓
-  transitions; the single "Not yet supported" row for the modular
-  cluster is retired (✗→✓ collapses the row entirely).  Closes
-  `C-010` from `docs/REVIEW.md` (INVMOD block-comment drift —
-  session-144 conditional-future phrasings now read in past tense).)
+- Fully shipped (✓): 447 (no net change since session 149 — sessions
+  150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
+  161 are all contract-tightening, coverage, and doc-hygiene runs; no
+  ✗ → ✓ transitions in any of them.  Session 153's ship-prep run closed
+  `C-011` (`_combPermArgs` Rational `TypeError` leak — guard tightened
+  to mirror `_intQuotientArg`) and retired the stale INVMOD `TODO`.
+  Session 155 closed ship-target `R-008` (HP50 AUR §3-149 fidelity
+  audit of `OBJ→`'s Real / Integer + Tagged branches) — Real / Integer
+  no longer mantissa/exponent-split; Tagged tag emitted as String
+  (AUR-verified, with a comment guard at `ops.js:6640-6644` against a
+  future Name "fix").  Session 159 closed ship-target `R-012` (the
+  third — and final — row of the AUR §3-149 OBJ→ Input/Output table):
+  the missing `isUnit` branch was added to OBJ→'s dispatch at
+  `ops.js:6740-6752`, matching the AUR `x_unit → x  1_unit` row
+  exactly.  Session 160 was split between the code-review lane (X-003
+  dead-import drop in `app.js:13-15`; full release-mode REVIEW.md
+  reconciliation; sixteenth review-lane run) and the unit-tests lane
+  (+13 release-mode pin coverage assertions across reflection / types /
+  algebra files).  Session 161 (this run) is a doc-reconciliation
+  pass — Counts stamp refresh, OBJ→ row Notes amendment for the
+  session-159 R-012 close + session-160 boundary-edge follow-up pins,
+  and session-log back-fill (sessions 158 / 159 / 160 entries
+  enumerated below).)
 - Partially shipped (~): 0
 - Not yet implemented (✗): 1 (only the `JORDAN` / `SCHUR`
-  matrix-decomp row remains — the entire MODULO-family is now ✓.)
+  matrix-decomp row remains — the entire MODULO-family is ✓.)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
 `grep -c "register(" www/src/rpl/ops.js` = **476** at the end of session
-149 (was 471 at the end of session 144, was 466 at the end of session
-139, was 463 at the end of session 134, was 458 at the end of session
-129, was 455 at the end of session 124, was 448 at the end of session
-119).  Session 149 added five top-level register sites:
-`register('EXPANDMOD', …)`, `register('FACTORMOD', …)`,
-`register('GCDMOD', …)`, `register('DIVMOD', …)`, and
-`register('DIV2MOD', …)`.  The actual top-level `register()` *call*
-count (`grep -cE '^register\(' www/src/rpl/ops.js`) is **455** (was
-450 at session 144, was 445 at session 139, was 442 from session 129
-onward through session 134).
+161 (unchanged from session 149 — no new registrations across sessions
+150 → 161; was 471 at the end of session 144, was 466 at the end of
+session 139, was 463 at the end of session 134, was 458 at the end of
+session 129, was 455 at the end of session 124, was 448 at the end of
+session 119).  The actual top-level `register()` *call* count
+(`grep -cE '^register\(' www/src/rpl/ops.js`) is **455** (unchanged
+from session 149).
+
+Session-153 row transitions:
+- **0 ops newly shipped** (no ✗ → ✓).  Release-mode wrap-up run.
+- **1 review-lane finding closed**: `C-011` (the session-152-filed
+  `_combPermArgs` Rational TypeError leak at `www/src/rpl/ops.js:1683`).
+  Argument-type guard rewritten from the broad
+  `if (!isNumber(a) || !isNumber(b))` to the narrow
+  `if (!isInteger(a) && !isReal(a)) … if (!isInteger(b) && !isReal(b)) …`
+  pair, mirroring `_intQuotientArg`'s shape exactly.  The redundant
+  explicit `isComplex` rejection a line below was deleted (subsumed
+  by the new guard — Complex satisfies neither `isInteger` nor `isReal`).
+  Eight `session153:` assertions added to `tests/test-numerics.mjs`
+  pinning the six AUR-mandated rejection modes (COMB / PERM ×
+  {Rat-on-2, Rat-on-1, both Rat}) plus two genuinely-fractional
+  Rational rejections (Rat 5/2, Rat 3/2).  All eight surface as the
+  RPL-style `Bad argument type` instead of the prior leaked
+  `TypeError: Cannot read properties of undefined (reading
+  'isFinite')`.  Behavior change is rejection-narrowing only — the
+  COMB/PERM happy paths (Integer pairs, integer-valued Real pairs,
+  Name/Symbolic lift, Complex-rejection, `m > n` rejection) all
+  re-verified at run-close.
+- **1 stale-comment block retired**: the `TODO` paragraph at
+  `www/src/rpl/ops.js:1961-1963` ("add a single-arg form that
+  consults `getCasModulo()`") rewritten as a deliberate-deviation
+  note explaining why INVMOD remains 2-arg even though the rest of
+  the MODULO menu (`ADDTMOD` / `SUBTMOD` / `MULTMOD` / `POWMOD`)
+  consumes `state.casModulo`.  Paired entry added to the
+  Intentional Deviations table in `docs/@!MY_NOTES.md` ("INVMOD
+  arity").  Pure-comment + doc edit; no behavior change.
+- **2 row Notes amendments**: `COMB` / `PERM` row (session-153
+  C-011 close — Rational rejection contract pinned) and `INVMOD`
+  row (session-153 deviation codification).
+- **State / persistence:** no change — no new state slots; no
+  `persist.js` edits; `tests/test-persist.mjs` 66 / 0 stable.
 
 Session-149 row transitions:
 - **5 ops newly shipped** (✗ → ✓): `EXPANDMOD` (HP50 AUR §3-80), `FACTORMOD`
@@ -307,7 +353,7 @@ DERIV, etc. via Giac).
 | `MIN` `MAX` | ✓ | Session 062 Sym lift + Tagged.  Session 068 pinned V/M rejection (HP50 AUR §3 scalar-only). |
 | `GCD` `LCM` | ✓ | Session 064 — Sy/N/L/T. |
 | `%` `%T` `%CH` | ✓ | Session 064 Tagged + List.  Session 072 pinned V/M rejection (HP50 AUR §3-1 scalar-only). |
-| `COMB` `PERM` | ✓ | Session 065.  Integer-only (non-integer Real rejected). |
+| `COMB` `PERM` | ✓ | Session 065.  Integer-only (non-integer Real rejected).  Session 153 — `_combPermArgs` argument-type guard tightened to mirror `_intQuotientArg`: Rational is rejected with `Bad argument type` even when integer-valued (`5/1`).  Closes `C-011` from `docs/REVIEW.md` — was leaking `TypeError: Cannot read properties of undefined (reading 'isFinite')` because the prior `isNumber`-based guard let Rational through to a downstream `.value.isFinite()` access on `{n, d}`. |
 | `FACT` (`!`) | ✓ | Session 031; session 063 L/V/M/Sy widening. |
 | `IDIV2` | ✓ | Session 065.  Two-result; no wrappers. |
 | `IQUOT` `IREMAINDER` | ✓ | Session 068 — single-result siblings of IDIV2, Tagged + List + Sy. |
@@ -376,7 +422,7 @@ DERIV, etc. via Giac).
 | `CMPLX?` `CMPLX` | ✓ | |
 | `→TAG` `DTAG` | ✓ | |
 | `→UNIT` `UVAL` `UBASE` `CONVERT` | ✓ | |
-| `OBJ→` `→STR` `STR→` | ✓ | Session 067 OBJ→ on Program + →PRG composer. |
+| `OBJ→` `→STR` `STR→` | ✓ | **Session 067** — OBJ→ on Program + →PRG composer.  **Session 155** — R-008 close: HP50 AUR §3-149 fidelity audit of the Real / Integer and Tagged branches.  Real / Integer now push back unchanged (1-in / 1-out) — AUR §3-149 lists no numeric-scalar Input/Output row, and the prior depth-2 mantissa/exponent split was an HP50-divergence; users wanting the split now reach for `MANT` / `XPON` (AUR p.3-6 / p.3-9), unchanged.  Tagged push order verified against AUR §3-149 (`:tag:obj → obj "tag"`): the tag is a String, not a Name — see the dispatch comment at `ops.js:6640-6644` warning future readers off the `Str(v.tag) → Name(v.tag)` "fix".  **Session 156** — follow-up pin coverage in `tests/test-reflection.mjs` for the boundary cells the audit didn't enumerate: empty Vector → `{0}`, empty List / empty Program → Integer(0), negative Real unchanged, Tagged-of-Tagged peels only the outer layer (preserves the inner Tagged on level 2, outer tag as String on level 1).  **Session 159** — R-012 close: missing `isUnit` branch added at `ops.js:6740-6752` per AUR §3-149's `x_unit → x  1_unit` row.  The bare numeric value lands on level 2 as a Real; the unit prototype `Unit(1, v.uexpr)` lands on level 1 — `*`-fold on the pair reconstructs the original Unit because `_unitBinary` on Real×Unit folds the scalar into `b.value` (1·x = x) while preserving the uexpr.  Header block at `:6605-6655` extended with a Unit-row entry (and a sibling note explaining why the bare `Unit(1, v.uexpr)` constructor is used instead of `_makeUnit` — preserves the AUR's shape-preserving "1_unit" output even for a theoretically-empty uexpr).  Closes the AUR §3-149 audit trail end-to-end: every Input/Output table row (Complex / Tagged / List / Vector / Matrix / String / Program / Symbolic / Real / Integer / Unit) now has a matching branch in `register('OBJ→', ...)`.  Pinned by 15 `session159:` assertions in `tests/test-reflection.mjs` plus 6 `session160:` boundary-edge follow-ups (zero-value `0_m`, fractional `2.5_m`, exponent-≠-±1 `3_m^2`, multi-symbol round-trip `5_m/s`, higher-power round-trip `3_m^2`). |
 | `NEWOB` | ✓ | Deep copy. |
 | `BYTES` | ✓ | |
 | `APPROX` `EXACT` `→NUM` `→Q` `→Qπ` | ✓ | |
@@ -434,7 +480,7 @@ DERIV, etc. via Giac).
 | `IBERNOULLI` `DIVIS` `FACTORS` | ✓ | |
 | `ISPRIME?` `NEXTPRIME` `PREVPRIME` | ✓ | |
 | `EUCLID` | ✓ | **Session 076** — `( a b → {u v g} )` extended-Euclid / Bezout; `u*a + v*b = g`.  Rejects `(0,0)` ("Bad argument value"), non-Integer ("Bad argument type").  Re-signs u,v for negative inputs. |
-| `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  Single-arg MODULO-state form (consult `getCasModulo()`) is a follow-up; the slot itself landed in session 144 (see MODSTO below).  Block-comment phrasings refreshed session 149 (closes `C-010`). |
+| `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  Block-comment phrasings refreshed session 149 (closes `C-010`).  Session 153 — the explicit-modulus 2-arg form is **deliberate**; HP50 firmware exposes INVMOD as a 1-arg op consuming `state.casModulo` like ADDTMOD / SUBTMOD / MULTMOD / POWMOD, but rpl5050 keeps the 2-arg form so programs can compute inverses against ad-hoc moduli without an intervening MODSTO.  Codified in the Intentional Deviations table at `docs/@!MY_NOTES.md`; the prior `TODO` for adding a 1-arg form has been retired. |
 | `MODSTO` | ✓ | **Session 144** — `( m → )` set the global CAS MODULO state value (HP50 AUR §3-150).  `state.casModulo` is a BigInt, default 13n; setter normalizes negatives to abs and 0 / 1 to 2 (HP50 firmware contract: modulus is always ≥ 2 positive).  Persisted across reload via `persist.js` (`{ __t: 'bigint', v: '<digits>' }` codec).  Accepts Integer or integer-valued Real; non-integer Real → `Bad argument value`; Vector / Symbolic / etc. → `Bad argument type`. |
 | `ADDTMOD` `SUBTMOD` `MULTMOD` | ✓ | **Session 144** — `( a b → (a±·) mod m )` modular arithmetic against the MODSTO-set modulus (HP50 AUR §3-9 / §3-243 / §3-153).  Pure-Integer / integer-Real inputs reduce natively with BigInt and return the centered representative `[-(m-1)/2, m/2]` — `12 0 ADDTMOD` (m=7) → `Integer(-2)` matching the AUR worked example `(X^2+3X+6)+(9X+3) ≡ X^2-2X+2 (mod 7)`.  Symbolic / Name inputs route through Giac as `((expr1 op expr2)) mod m` and lift the result back via `giacToAst`.  Rejects Vector / Matrix / Complex / List / Tagged / etc. with `Bad argument type` (only number-shaped operands are valid).  No-fallback policy. |
 | `POWMOD` | ✓ | **Session 144** — `( a n → a^n mod m )` modular exponentiation against the MODSTO modulus (HP50 AUR §3-175).  Pure-Integer fast path uses `_powModBig` with BigInt; the result is centered (matches ADDTMOD/SUBTMOD/MULTMOD).  Symbolic / Name path emits `powmod(base,exp,m)` to Giac and round-trips the result.  Negative exponent → `Bad argument value`.  No-fallback policy. |
@@ -591,6 +637,358 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 161** (2026-04-25) — `rpl5050-command-support` lane.
+  Release-mode doc-reconciliation run, no source-side or test-side
+  edits.  Two substantive items, both `docs/COMMANDS.md` hygiene:
+
+  1. **OBJ→ row Notes amendment** (`docs/COMMANDS.md:416`).
+     The OBJ→ row's Notes column carried a "**Residual:** R-012
+     (open, routed to `rpl5050-rpl-programming`)" call-out from
+     the session-157 amendment, flagging that OBJ→ on a Unit
+     value rejected `Bad argument type` instead of pushing
+     `x  1_unit` per AUR §3-149's `x_unit → x  1_unit` row.
+     Session 159 (`rpl5050-rpl-programming`) closed `R-012` by
+     adding the missing `isUnit` branch at `ops.js:6740-6752` —
+     bare numeric value lands on level 2 as Real, unit prototype
+     `Unit(1, v.uexpr)` lands on level 1; `*`-fold reconstructs
+     the original Unit via `_unitBinary`'s Real×Unit fold.
+     Notes column rewritten to: (a) drop the "Residual: R-012"
+     paragraph; (b) add a **Session 159** addendum citing the
+     branch location, the AUR Input/Output table closure (every
+     row Complex / Tagged / List / Vector / Matrix / String /
+     Program / Symbolic / Real / Integer / Unit now has a matching
+     branch), the bare-`Unit(1, v.uexpr)` rationale (vs.
+     `_makeUnit`'s empty-uexpr collapse), and the test pin counts
+     (15 `session159:` + 6 `session160:` boundary-edge follow-ups
+     in `tests/test-reflection.mjs`).  Also nudged the comment-
+     guard line reference forward (`:6649-6655` → `:6640-6644`)
+     to match the live header block at `ops.js:6605-6655`.
+     This is doc-row reconciliation, not a source edit.
+
+  2. **Counts heading bump + session-log back-fill**
+     (`docs/COMMANDS.md:24` and `:637` block).  Counts heading
+     refreshed from "as of session 157" to "as of session 161"
+     with the twelve-session no-net-change narrative extended
+     (sessions 150 → 161 are all contract-tightening / coverage /
+     doc-hygiene runs; no ✗ → ✓ transitions).  Comment-guard
+     line reference also fixed in the Counts narrative
+     (`ops.js:6649-6655` → `:6640-6644`).  Session-log block
+     back-filled with four prior-session entries (sessions 158 /
+     159 / 160-code-review / 160-unit-tests) plus this run's
+     session-161 entry at the top.  No `register()` count change
+     (476 / 455 unchanged from session 153 entry).
+
+  Run-entry test gate: `tests/test-all.mjs` 5133 / 0 (was 5120 at
+  session-160-code-review close + 13 from session-160-unit-tests
+  three coverage clusters); `tests/test-persist.mjs` 66 / 0;
+  `tests/sanity.mjs` 22 / 0.  Run-close test gate: identical (no
+  source-side or test-side edits this run).  No new findings
+  filed in `docs/REVIEW.md`; the Commands bucket has zero open
+  findings at run-close (`C-001` … `C-011` all resolved; release
+  open queue is `O-009` + `O-011`, both `[deferred - post-ship]`,
+  neither in this lane's bucket).  Lock =
+  `utils/@locks/session161-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`, released gracefully
+  at end of run.
+
+- **session 160** (2026-04-25) — `rpl5050-unit-tests` lane.
+  Release wrap-up coverage pass.  Three substantive `session160:`
+  pin clusters totaling +13 assertions, all weighted toward
+  pinning recently-shipped behavior: (a) `tests/test-
+  reflection.mjs` +6 — OBJ→ Unit follow-up boundary edges that
+  session 159's R-012 close pin-set did not enumerate (zero-value
+  `0_m`, fractional `2.5_m`, exponent-≠-±1 `3_m^2`, multi-symbol
+  round-trip `5_m/s`, higher-power round-trip `3_m^2`); (b)
+  `tests/test-types.mjs` +4 — transcendental wrapper-LIST n=0 /
+  n=1 boundary closures lifting session 156's empty-V/L/P n=0
+  closure pattern onto the session-158 wrapper-LIST composition;
+  (c) `tests/test-algebra.mjs` +3 — MODULO ARITH follow-up edges
+  session 156's pin-set did not enumerate (DIV2MOD MODSTO
+  consultation pair + GCDMOD(0,0) both-zero reject).  No source-
+  side change; no `register()` change.  `tests/test-all.mjs`
+  5120 → 5133 (+13).  Concurrent with `session160-code-review`
+  via non-overlapping locks (this lane held test files +
+  `docs/TESTS.md`; the review lane held `docs/REVIEW.md` +
+  `logs/` + a mid-run scope broaden to `www/src/app.js` for the
+  X-003 close).
+
+- **session 160** (2026-04-25) — `rpl5050-code-review` lane.
+  Release-mode wrap-up review-lane run (sixteenth such run).
+  Folded all sibling-lane closures since session 152 into the
+  authoritative ledger (`docs/REVIEW.md`), shipped one charter-
+  permitted dead-import drop, aged the two `[deferred - post-
+  ship]` items.  Substantive items: (a) **X-003 close** at
+  `www/src/app.js:13-15` — dropped the unused `clampLevel`
+  import from the `./ui/interactive-stack.js` import block;
+  16 review-lane runs aging at close.  Pure dead-import drop;
+  `node --check` clean; `clampLevel` is still used internally
+  by `levelUp` / `levelDown` in `interactive-stack.js`, just no
+  cross-module caller.  (b) **REVIEW.md release-mode triage**
+  — last-updated stamp bumped to session 160; preamble
+  rewritten to attribute deltas across ship-prep-2026-04-25 +
+  sessions 153 / 154 / 155 / 156 / 157 / 158 / 159; ship-
+  priorities section updated to reflect closures; `R-008` /
+  `R-012` / `C-011` / `X-003` promoted to resolved with
+  attribution; `O-009` and `O-011` aged with re-verification
+  notes (both `[deferred - post-ship]`).  No source-side change
+  in this lane outside the X-003 in-place edit.  Lock =
+  `rpl5050-code-review-2026-04-25`, broadened mid-run for the
+  X-003 close, released gracefully.
+
+- **session 159** (2026-04-25) — `rpl5050-rpl-programming` lane.
+  **R-012 close** (the third — and final — row of the AUR §3-149
+  OBJ→ Input/Output table).  Session 155's R-008 audit closed
+  the Real and Tagged rows; R-012 was filed session 156 as the
+  follow-up Unit row that session 155 did not address.  Session
+  159 added the missing `isUnit` branch to OBJ→'s dispatch at
+  `www/src/rpl/ops.js:6740-6752`, matching AUR §3-149's
+  `x_unit → x  1_unit` row exactly: `s.push(Real(v.value));
+  s.push(Unit(1, v.uexpr));`.  The bare `Unit(1, v.uexpr)`
+  constructor (vs. `_makeUnit`) is intentional — preserves the
+  AUR shape-preserving "1_unit" output even for a theoretically
+  empty uexpr (in practice the codebase's `_makeUnit` collapse
+  invariant ensures Units on the stack always have non-empty
+  uexpr, but the bare constructor keeps the OBJ→ branch robust
+  against any future Unit constructor that doesn't go through
+  that path).  Header block at `ops.js:6605-6655` extended with
+  a Unit-row entry citing AUR §3-149 and a sibling note
+  explaining the constructor choice.  Pinned by 15 `session159:`
+  assertions in `tests/test-reflection.mjs` (8 test blocks:
+  basic decomposition, *-fold round-trip, multi-symbol uexpr,
+  negative-value sign rule, ASCII alias OBJ-> parity, Tagged-of-
+  Unit one-layer-peel composition, regression guard against a
+  future Name-instead-of-Unit refactor, reverse-uexpr (1/m)
+  shape preservation).  After this run every row of AUR §3-149
+  has a matching branch in `register('OBJ→', ...)`.  No
+  `register()` count change (still 476 / 455).  `tests/test-
+  all.mjs` 5105 → 5120 (+15 session159 pins).
+
+- **session 158** (2026-04-25) — `rpl5050-data-type-support` lane.
+  Two more hard-assertion **pinning** clusters in
+  `tests/test-types.mjs` lifting session-150's wrapper-VM-under-
+  Tagged work onto the **LIST axis** (bare-List + Tagged-of-List)
+  on already-widened transcendental ops: ACOSH/ATANH (Cluster 1,
+  Integer-stay-exact under bare/Tagged-List wrapper composition,
+  out-of-domain Real → Complex bypass, heterogeneous per-element
+  domain dispatch) and LN/LOG/EXP/ALOG (Cluster 2, EXACT-mode
+  Integer-stay-exact under bare/Tagged-List composition,
+  distinct-position outputs, heterogeneous stay-symbolic +
+  integer-clean, APPROX-mode bypass).  +19 assertions
+  (`tests/test-types.mjs` 829 → 848).  No source-side change —
+  the wrapper paths were already live since session 145 / 150;
+  this run pins them.  `tests/test-all.mjs` 5086 → 5105 (+19).
+
+- **session 157** (2026-04-25) — `rpl5050-command-support` lane.
+  Release-mode doc-reconciliation run, no source-side or test-side
+  edits.  Two substantive items, both `docs/COMMANDS.md` hygiene:
+
+  1. **OBJ→ row Notes amendment** (`docs/COMMANDS.md:409`).
+     The OBJ→ row Notes column previously read only "Session 067
+     OBJ→ on Program + →PRG composer." — stale after the
+     session-155 R-008 close (HP50 AUR §3-149 fidelity audit of
+     the Real / Integer + Tagged branches) and the session-156
+     unit-tests follow-up (boundary-cell pin coverage).  Notes
+     amended with: (a) **Session 155** addendum citing the Real
+     / Integer push-unchanged shape, the Tagged-tag-as-String
+     verification, and the comment guard at `ops.js:6649-6655`
+     warning future readers off the `Str(v.tag) → Name(v.tag)`
+     "fix"; (b) **Session 156** addendum citing the
+     `tests/test-reflection.mjs` follow-up pin set (empty Vector
+     → `{0}`, empty List / Program → Integer(0), negative Real
+     unchanged, Tagged-of-Tagged peels only the outer layer);
+     (c) explicit **Residual** call-out for `R-012` (open,
+     routed to `rpl5050-rpl-programming`) — OBJ→ on a Unit
+     value still rejects `Bad argument type` instead of pushing
+     `x  1_unit` per AUR §3-149's `x_unit → x  1_unit` row;
+     ship-stretch finding.
+
+  2. **Counts heading bump + session-log back-fill**
+     (`docs/COMMANDS.md:24` and `:629` block).  Counts heading
+     refreshed from "as of session 153" to "as of session 157"
+     with the eight-session no-net-change narrative (sessions
+     150 → 157 are all contract-tightening / coverage / doc-
+     hygiene runs; no ✗ → ✓ transitions).  Session-log block
+     back-filled with seven prior-session entries (sessions
+     150 / 151 / 152 / 154 / 155 / 156) plus this run's
+     session-157 entry at the top.  No `register()` count
+     change (476 / 455 unchanged from session 153 entry).
+
+  Run-entry test gate: `tests/test-all.mjs` 5086 / 0 (was 5063
+  at session-155 close + 23 from session 156's three coverage
+  clusters); `tests/test-persist.mjs` 66 / 0; `tests/sanity.mjs`
+  22 / 0.  Run-close test gate: identical (no source-side or
+  test-side edits this run).  No new findings filed in
+  `docs/REVIEW.md`; the Commands bucket has zero open findings
+  at run-close.  Lock = `utils/@locks/session157-command-support.json`,
+  scope `[www/src/rpl/ops.js, docs/COMMANDS.md, docs/REVIEW.md,
+  logs/]`, released gracefully at end of run.
+
+- **session 156** (2026-04-25) — `rpl5050-unit-tests` lane.
+  Release wrap-up coverage pass.  Three substantive `session156:`
+  pin clusters totaling +23 assertions: (a) `tests/test-
+  reflection.mjs` +7 — OBJ→ session-155 follow-up boundary cells
+  (empty Vector → `{0}` size-list, empty List / Program → Integer
+  count, negative Real unchanged, Tagged-of-Tagged peels only the
+  outer layer); (b) `tests/test-algebra.mjs` +10 — session-149
+  MODULO cluster follow-up (DIV2MOD V-reject, DIVMOD per-arg type
+  rejects, GCDMOD `(a, 0)` identity edge in both directions,
+  EXPANDMOD on negative integer, FACTORMOD prime-modulus boundary
+  m=2 / m=99, DIVMOD MODSTO consultation pair); (c) `tests/test-
+  numerics.mjs` +6 — session-153 C-011 follow-up composition
+  branches (Tagged(Rational) on level 2 / level 1, BinaryInteger
+  COMB / PERM, Vector COMB, negative integer-valued
+  `Rational(-5, 1)`).  One new finding filed: **R-012** (OBJ→ on
+  Unit divergence — AUR §3-149 `x_unit → x  1_unit` row not yet
+  wired; routed to `rpl5050-rpl-programming` as ship-stretch).
+  No source-side edit; no `register()` change.
+  `tests/test-all.mjs` 5063 → 5086 (+23).
+
+- **session 155** (2026-04-25) — `rpl5050-rpl-programming` lane.
+  **R-008 close** (HP50 AUR §3-149 fidelity audit of `OBJ→`'s
+  Real / Integer and Tagged branches).  Two arms shipped: (a)
+  Real / Integer branch reduced from a 12-line mantissa /
+  exponent split to a 4-line push-unchanged body — the prior
+  depth-2 shape was an HP50-divergence; users wanting the split
+  reach for `MANT` / `XPON` (AUR p.3-6 / p.3-9), unchanged; (b)
+  Tagged branch verified-and-guarded — AUR §3-149 shows
+  `:tag:obj → obj "tag"` with the tag in **String** notation
+  (not Name); existing `Str(v.tag)` was already AUR-correct, but
+  a one-line comment was added at `ops.js:6649-6655` warning
+  future readers off the `Str(v.tag) → Name(v.tag)` "fix".
+  Header block at `:6605-6638` rewritten to enumerate the AUR
+  Input/Output table verbatim, cite MANT / XPON as the
+  mantissa-split owners, and link to →TAG (AUR p.3-247).
+  `tests/test-reflection.mjs`: 2 prior asserts flipped (depth-2
+  → depth-1) + 5 new `session155:` asserts pinning the new
+  shapes + Tagged regression-guard.  No `register()` change.
+  `tests/test-all.mjs` 5034 → 5063 (entry baseline already
+  included sibling-lane growth from sessions 152 / 153 / 154
+  plus this run's +5 net new pins; the run's net file delta is
+  +5 in test-reflection.mjs).
+
+- **session 154** (2026-04-25) — `rpl5050-data-type-support` lane.
+  Doc-only `docs/DATA_TYPES.md` audit reconciling the coverage
+  matrix against live op registrations in `www/src/rpl/ops.js`
+  via three `utils/@…` probe scripts (special-fns V/M, TRUNC V/M,
+  XROOT V/M).  20 cells downgraded from aspirational ✓ to blank
+  (5 ops × 4 cells); the matrix now reflects what tests actually
+  pin, no aspirational ✓.  No source-side edit; no test-side
+  edit; no `register()` change.
+
+- **session 152** (2026-04-25) — `rpl5050-code-review` lane
+  (fourteenth review-lane run).  Doc-stamp hygiene only: re-aged
+  baseline, four prior open findings re-verified and aged, one
+  prior finding promoted to resolved (C-010 — closed by session
+  149 alongside the MODULO cluster), two new findings filed
+  (C-011 + D-001).  No source-side edit; no `register()` change.
+  An interactive `session-file-explorer` lane shipped a partial
+  D-001 fix during this run's window (uppercase `'X'` → lowercase
+  `'x'` in `tests/test-persist.mjs:271-274`) re-greening the
+  persist gate; D-001 stays open as **partial** because
+  `persist.js:126` block comment was not part of the partial fix.
+
+- **session 151** (2026-04-25) — `rpl5050-rpl-programming` lane.
+  HALT / PROMPT lift coverage symmetric to session 141's IFERR
+  pin set: pins for HALT / PROMPT inside CASE clauses, fully-
+  closed START/NEXT and START/STEP, and DO/UNTIL.  +71 assertions
+  in `tests/test-control-flow.mjs`.  Plus `session151b-sort-fix`
+  side-quest (an interactive sort-fix run that addressed a
+  test-control-flow ordering bug).  No source-side `register()`
+  change; no row flips.
+
+- **session 150** (2026-04-25) — `rpl5050-data-type-support` lane.
+  Three hard-assertion widening clusters in `tests/test-types.mjs`:
+  inverse-trig (ASIN/ACOS/ATAN) DEG-mode `_exactUnaryLift` Integer-
+  stay-exact under Tagged-V/M wrapper composition; transcendental
+  bare-scalar EXACT-mode contract closures; closes the
+  transcendental wrapper-VM-under-Tagged matrix (forward-trig DEG,
+  inverse-trig DEG, forward-hyp, LN/LOG/EXP/ALOG).  +26 assertions
+  (test-types.mjs 803 → 829).  No source-side `register()` change.
+
+- **session 153** (2026-04-25) — Release-mode wrap-up run.  No new
+  ops; two substantive items shipped, both HP50-fidelity contract
+  clarifications.
+
+  1. **C-011 close** (`www/src/rpl/ops.js:1683`).  The
+     `_combPermArgs` argument-type guard was rewritten from the
+     broad `if (!isNumber(a) || !isNumber(b))` to the narrower
+     `if (!isInteger(a) && !isReal(a)) … if (!isInteger(b) &&
+     !isReal(b)) …` pair, mirroring `_intQuotientArg` (used by
+     IQUOT / IREMAINDER / IDIV2 / DIVMOD / DIV2MOD).  The
+     redundant explicit `isComplex(a) || isComplex(b)` rejection
+     a line below was deleted (subsumed by the new guard).
+     Reason: the prior guard allowed `Rational` operands through
+     to a downstream `v.value.isFinite()` access in the `toBig`
+     closure — Rational payload is `{n, d}` with no `.value`
+     field, so the access leaked a JavaScript
+     `TypeError: Cannot read properties of undefined (reading
+     'isFinite')` instead of the RPL-style `Bad argument type`.
+     Six failure modes (COMB / PERM × {Rat-on-2, Rat-on-1, both
+     Rat}) plus two genuinely-fractional Rational cases
+     (Rat 5/2, Rat 3/2) pinned with eight `session153:`
+     `assertThrows(/Bad argument type/, …)` sites in
+     `tests/test-numerics.mjs`.  Origin of the drift: the
+     `isNumber` lattice expanded to include Rational in session
+     092 (Fraction.js + `isRational` predicate); the
+     `_combPermArgs` guard pre-dated that and was never
+     tightened.  Same stranding pattern as X-008 (purge-removal
+     stranded `freeVars`).  Behavior change is rejection-narrowing
+     only — happy paths (Integer pairs, integer-valued Real
+     pairs, Name/Symbolic lift, Complex rejection, `m > n`
+     rejection) all re-verified at run-close.  `tests/test-all.mjs`
+     5050 → 5058 (+8 session153 pins), all green.
+
+  2. **INVMOD `TODO` retire** (`www/src/rpl/ops.js:1961-1963`).
+     The session-144-vintage `TODO` paragraph ("add a single-arg
+     form that consults `getCasModulo()` for parity with the rest
+     of the MODULO menu") was rewritten as a deliberate-deviation
+     note explaining why INVMOD remains 2-arg even though the rest
+     of the MODULO menu (ADDTMOD / SUBTMOD / MULTMOD / POWMOD)
+     consumes `state.casModulo`.  Paired entry "INVMOD arity"
+     added to the Intentional Deviations table in
+     `docs/@!MY_NOTES.md`.  Reason: the explicit-modulus 2-arg
+     form lets programs compute inverses against ad-hoc moduli
+     without round-tripping through MODSTO; converting to 1-arg
+     would force every caller through state mutation.  This is
+     pure documentation hygiene — no behavior change, no test
+     change.  The TODO had sat dormant for nine sessions
+     (144 → 152) without any lane choosing to ship the 1-arg
+     form, so codifying the 2-arg form as deliberate is the
+     ship-aligned choice.
+
+  Doc-row Notes amendments: `COMB` `PERM` row (C-011 close
+  pinned; Rational rejection contract documented) and `INVMOD`
+  row (deliberate-deviation note + `TODO` retire reference).
+  Counts heading bumped "as of session 149" → "as of session
+  153"; the +5 register-site bump narrative is preserved as
+  the prior baseline; this run is `register()` count 476
+  unchanged + top-level 455 unchanged.  `persist.js` /
+  `tests/test-persist.mjs` untouched (66 / 0 stable).
+
+  User-reachable demo:  on the calculator: `5 ENTER 1 / 3 COMB`
+  (or alpha-typed `'COMB'`) — soft-key path: `MTH` → `PROB`
+  → press the `COMB` soft-key with a Rational on level 1.  The
+  status line now reads `COMB Error: Bad argument type`; before
+  this run it read the JavaScript stack trace
+  `TypeError: Cannot read properties of undefined (reading
+  'isFinite')` (which the formatter would surface as the bare
+  string).
+
+  Next-run queue (post-ship — defer until next version of
+  rpl5050):
+    • `JORDAN` / `SCHUR` matrix decomps — only ✗ row remaining
+      (advanced linear algebra; needs a numerical-LAPACK
+      vendoring decision).
+    • Open Other-bucket findings inherited from the review-lane
+      ledger: O-007 (giac-convert.mjs `buildGiacCmd` block-
+      comment top/bottom contradiction — `[resolved - ship-prep
+      2026-04-25]` per REVIEW.md so already closed), O-009
+      (sandbox `.bak` cleanup — `[deferred - post-ship]`),
+      O-011 (lock-body shape ambiguity).
+    • Single-arg INVMOD form (would now be a behavior-changing
+      addition — opt-in via `MODSTO` slot).  Explicitly
+      deferred per the deliberate-deviation table entry.
 
 - **session 149** (2026-04-25) — Five ops newly shipped (`EXPANDMOD`,
   `FACTORMOD`, `GCDMOD`, `DIVMOD`, `DIV2MOD`) — the remaining HP50

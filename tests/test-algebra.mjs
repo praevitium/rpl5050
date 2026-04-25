@@ -7585,6 +7585,189 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
                  'session149: Vector DIVMOD → Bad argument type');
   }
 
+  /* ===============================================================
+     session 156 — MODULO ARITH cluster follow-up.  Closes branches
+     left by session 149's pin set.  Five clusters:
+       (a) DIV2MOD rejects Vector — mirror of session-149 DIVMOD
+           Vector pin (the two-result sibling was unpinned).
+       (b) DIVMOD rejects Complex / String — extends the session-149
+           Vector pin onto the per-arg type-check fall-throughs in
+           the integer-path guard at ops.js:_modDivBigInt sites.
+       (c) GCDMOD with one zero argument — gcd(a, 0) = a is the
+           identity edge of the extended-Euclidean GCD; pin both
+           directions (gcd(15, 0) and gcd(0, 15)) to guard against
+           a refactor that special-cases the (0,0) reject without
+           preserving the (a,0) and (0,a) accept paths.
+       (d) EXPANDMOD on a negative integer — `-7 mod 12 = 5`
+           centered.  Session 149 pinned positives only; this
+           guards the negative branch of `_centerMod`.
+       (e) FACTORMOD prime modulus boundary cases — m=2 (smallest
+           prime; previously unpinned), m=99 (largest composite
+           below the >=100 cutoff; previously unpinned — closes
+           the boundary opposite to session-149's m=101 prime
+           reject).
+       (f) DIVMOD MODSTO consultation — symmetric to session-149's
+           EXPANDMOD MODSTO consultation pin (the only modular op
+           whose MODSTO sensitivity was pinned).  Changing MODSTO
+           changes the DIVMOD result.
+  =============================================================== */
+
+  /* ---- (a) DIV2MOD rejects Vector ---- */
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(2)]));
+    s.push(Integer(3n));
+    assertThrows(() => { lookup('DIV2MOD').fn(s); }, null,
+                 'session156: Vector DIV2MOD → Bad argument type (mirror of session-149 DIVMOD Vector reject)');
+  }
+
+  /* ---- (b) DIVMOD rejects Complex ---- */
+  {
+    const s = new Stack();
+    s.push(Complex(3, 4));
+    s.push(Integer(2n));
+    assertThrows(() => { lookup('DIVMOD').fn(s); }, null,
+                 'session156: DIVMOD Complex (level 2) → Bad argument type');
+  }
+
+  /* ---- (b cont) DIVMOD rejects String on level 2 ---- */
+  {
+    const s = new Stack();
+    s.push(Str('foo'));
+    s.push(Integer(2n));
+    assertThrows(() => { lookup('DIVMOD').fn(s); }, null,
+                 'session156: DIVMOD String (level 2) → Bad argument type');
+  }
+
+  /* ---- (c) GCDMOD with one zero argument: gcd(a, 0) = a ---- */
+  setCasModulo(13n);
+  {
+    const s = new Stack();
+    s.push(Integer(15n));
+    s.push(Integer(0n));
+    lookup('GCDMOD').fn(s);
+    // gcd(15, 0) = 15; centered mod 13 = 2 (since 15 mod 13 = 2,
+    // and 2*2=4 < 13 stays positive).
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 2n,
+           `session156: 15 0 GCDMOD (m=13) → Integer(2) centered (gcd(a,0)=a identity edge; got ${s.peek() && s.peek().value})`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    s.push(Integer(15n));
+    lookup('GCDMOD').fn(s);
+    // gcd(0, 15) = 15; centered mod 13 = 2 (symmetric direction).
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 2n,
+           `session156: 0 15 GCDMOD (m=13) → Integer(2) centered (gcd(0,a)=a symmetric edge; got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- (d) EXPANDMOD on a negative integer ---- */
+  setCasModulo(12n);
+  {
+    const s = new Stack();
+    s.push(Integer(-7n));
+    lookup('EXPANDMOD').fn(s);
+    // -7 mod 12 = 5 centered (raw mod is -7+12=5; 2*5=10 < 12 → stays positive).
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 5n,
+           `session156: -7 EXPANDMOD (m=12) → Integer(5) centered (negative-input branch of _centerMod; got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- (e) FACTORMOD m=2 (smallest prime modulus accepted) ---- */
+  setCasModulo(2n);
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    lookup('FACTORMOD').fn(s);
+    // 5 mod 2 = 1; 2*1=2 not > 2, stays positive (boundary on `2*r > m`).
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 1n,
+           `session156: 5 FACTORMOD (m=2 smallest prime) → Integer(1) (m=2 accepted; got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- (e cont) FACTORMOD m=99 (composite, opposite boundary from session-149's m=101 prime reject) ---- */
+  setCasModulo(99n);
+  {
+    const s = new Stack();
+    s.push(Integer(5n));
+    assertThrows(() => { lookup('FACTORMOD').fn(s); }, null,
+                 'session156: FACTORMOD m=99 (composite, just below the >=100 cutoff) → Bad argument value (composite-modulus reject path; symmetric to session-149 m=101 prime-but-too-large reject)');
+  }
+
+  /* ---- (f) DIVMOD MODSTO consultation: changing MODSTO changes the result ---- */
+  setCasModulo(12n);
+  {
+    const s = new Stack();
+    s.push(Integer(64n));
+    s.push(Integer(13n));
+    lookup('DIVMOD').fn(s);
+    // 13 mod 12 = 1; 64 / 1 = 64; centered mod 12 = 4 (per session-149 pin).
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 4n,
+           `session156: DIVMOD baseline 64 13 (m=12) → Integer(4) (got ${s.peek() && s.peek().value})`);
+  }
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(64n));
+    s.push(Integer(13n));
+    lookup('DIVMOD').fn(s);
+    // m=7: 13 mod 7 = 6; 64 mod 7 = 1; need 1 / 6 mod 7.  6 * 6 = 36 mod 7 = 1 so 6⁻¹ = 6.
+    // 1 * 6 mod 7 = 6; centered (2*6=12 > 7) → 6 - 7 = -1.
+    assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === -1n,
+           `session156: DIVMOD MODSTO 7 then 64 13 → Integer(-1) (different result from m=12 baseline; pins MODSTO consultation for DIVMOD per session-149 EXPANDMOD pin pattern; got ${s.peek() && s.peek().value})`);
+  }
+
+  /* ---- (g) session160: DIV2MOD MODSTO consultation pair (mirror of
+     the DIVMOD pair above on the two-result sibling).  Session 156
+     pinned DIVMOD's MODSTO sensitivity but DIV2MOD — which returns
+     both quotient AND remainder per AUR §3-62 — was unpinned.  Same
+     {64, 13} input, two distinct moduli (12 + 7), two distinct
+     (q, r) pairs.  Pins that DIV2MOD's quotient-arm matches DIVMOD
+     under the same MODSTO AND that the remainder-arm separately
+     consults MODSTO. */
+  setCasModulo(12n);
+  {
+    const s = new Stack();
+    s.push(Integer(64n));
+    s.push(Integer(13n));
+    lookup('DIV2MOD').fn(s);
+    // DIV2MOD returns (q, r) on the stack: q on level 2, r on level 1.
+    // m=12: 13 mod 12 = 1; 64 / 1 = 64; q centered mod 12 = 4 (matches DIVMOD).
+    // r = 64 - 4 * 13 = 64 - 52 = 12 ≡ 0 mod 12.
+    assert(s.depth === 2
+        && isInteger(s.peek(2)) && s.peek(2).value === 4n
+        && isInteger(s.peek(1)) && s.peek(1).value === 0n,
+           `session160: DIV2MOD baseline 64 13 (m=12) → q=Integer(4) r=Integer(0) (q matches s156 DIVMOD pin; r-arm separately pinned — DIV2MOD's two-result MODSTO consultation closes the s156 sibling-unpinned branch); got depth=${s.depth} q=${s.peek(2)?.value} r=${s.peek(1)?.value}`);
+  }
+  setCasModulo(7n);
+  {
+    const s = new Stack();
+    s.push(Integer(64n));
+    s.push(Integer(13n));
+    lookup('DIV2MOD').fn(s);
+    // m=7: q = -1 (matches DIVMOD); r = 64 - (-1)*13 = 77 ≡ 0 mod 7.
+    assert(s.depth === 2
+        && isInteger(s.peek(2)) && s.peek(2).value === -1n
+        && isInteger(s.peek(1)) && s.peek(1).value === 0n,
+           `session160: DIV2MOD MODSTO 7 then 64 13 → q=Integer(-1) r=Integer(0) (q matches s156 DIVMOD m=7 pin; pair-with-baseline pin pattern — q-arm tracks DIVMOD across MODSTO change while r-arm independently routes through the two-result return); got depth=${s.depth} q=${s.peek(2)?.value} r=${s.peek(1)?.value}`);
+  }
+
+  /* ---- (h) session160: GCDMOD(0, 0) — both-zero edge.  Session 156
+     pinned the gcd-with-one-zero identity in both directions
+     (GCDMOD(15, 0) and GCDMOD(0, 15) → gcd(15, 0) = 15 ≡ 2 mod 13);
+     the both-zero corner is mathematically undefined (gcd(0, 0) is
+     0 by some conventions, undefined by others) so rpl5050 rejects
+     it as a value-domain error.  Pins the rejection arm and guards
+     against a refactor that would silently return 0. */
+  setCasModulo(13n);
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    s.push(Integer(0n));
+    assertThrows(() => { lookup('GCDMOD').fn(s); },
+                 /Bad argument value/,
+                 'session160: GCDMOD(0, 0) mod 13 → Bad argument value (both-zero edge of _extGcdBigInt; closes the s156 gcd-with-one-zero pair on the both-zero corner — the mathematically-undefined case rejects as value-domain error rather than silently returning 0)');
+  }
+
   /* ---- Reset for hygiene ---- */
   resetCasModulo();
 }

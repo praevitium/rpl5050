@@ -2,7 +2,7 @@ import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
-  RList, Vector, Matrix,
+  RList, Vector, Matrix, Rational,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString,
 } from '../www/src/rpl/types.js';
@@ -3341,6 +3341,149 @@ setAngle('RAD');
   s.push(Str('five'));
   s.push(Integer(2n));
   assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/, 'session065: PERM(String, 2) throws Bad argument type');
+}
+
+/* ---- C-011 close: COMB / PERM reject Rational with `Bad argument
+   type` (was leaking a JavaScript TypeError because the legacy
+   `_combPermArgs` guard accepted any `isNumber` value and the
+   downstream `toBig` closure read `.value.isFinite()` on a Rational
+   payload that has only `{n, d}`).  HP50 AUR §3-29 worked example
+   shows the firmware rejects fractional COMB / PERM arguments
+   uniformly — even integer-valued Rationals like `5/1` are rejected
+   rather than silently coerced.  Six failure-mode pins below: COMB
+   and PERM × {Rat on level 2, Rat on level 1, both Rat}. */
+{
+  const s = new Stack();
+  s.push(Rational(5n, 1n));
+  s.push(Integer(2n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/, 'session153: COMB(Rat 5/1, Int 2) throws Bad argument type (C-011)');
+}
+{
+  const s = new Stack();
+  s.push(Integer(5n));
+  s.push(Rational(2n, 1n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/, 'session153: COMB(Int 5, Rat 2/1) throws Bad argument type (C-011)');
+}
+{
+  const s = new Stack();
+  s.push(Rational(5n, 1n));
+  s.push(Rational(2n, 1n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/, 'session153: COMB(Rat 5/1, Rat 2/1) throws Bad argument type (C-011)');
+}
+{
+  const s = new Stack();
+  s.push(Rational(5n, 1n));
+  s.push(Integer(2n));
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/, 'session153: PERM(Rat 5/1, Int 2) throws Bad argument type (C-011)');
+}
+{
+  const s = new Stack();
+  s.push(Integer(5n));
+  s.push(Rational(2n, 1n));
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/, 'session153: PERM(Int 5, Rat 2/1) throws Bad argument type (C-011)');
+}
+{
+  const s = new Stack();
+  s.push(Rational(5n, 1n));
+  s.push(Rational(2n, 1n));
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/, 'session153: PERM(Rat 5/1, Rat 2/1) throws Bad argument type (C-011)');
+}
+// Genuinely-fractional Rational also rejected — same `Bad argument
+// type` (the type-narrowing happens before the integer-valued check
+// in the `toBig` closure, which is what governs Real fractional
+// rejection with `Bad argument value`).
+{
+  const s = new Stack();
+  s.push(Rational(5n, 2n));
+  s.push(Integer(1n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/, 'session153: COMB(Rat 5/2, Int 1) throws Bad argument type (C-011)');
+}
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  s.push(Rational(3n, 2n));
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/, 'session153: PERM(Int 7, Rat 3/2) throws Bad argument type (C-011)');
+}
+
+/* ---- session 156 — C-011 follow-up: COMB / PERM rejection-arm
+   composition pins.  Session 153 closed the bare-Rational arm
+   (positive integer-valued + genuinely-fractional × COMB/PERM ×
+   level-2/level-1/both).  This block closes:
+     (a) Tagged-of-Rational composition — Tagged transparency
+         unwraps to Rational, then the C-011 narrow guard rejects.
+         Pin guards against a future "Tagged-of-Rational lift"
+         that would silently coerce the Rational into a Real and
+         bypass the type narrowing.
+     (b) BinaryInteger arm — BinInt does not satisfy isInteger or
+         isReal, so the new guard rejects.  Session 115 widened
+         FLOOR/CEIL/IP/FP for BinInt; this pin guards against a
+         well-meaning future widening that would do the same for
+         COMB/PERM (HP50 AUR §3-29 is explicit that COMB / PERM
+         take real-number arguments only — BinInt is out of scope).
+     (c) Vector arm — there is no V/M distribution defined for
+         COMB / PERM (the existing s065 pin covers List × scalar
+         distribution only).  Vector should reject with Bad arg
+         type.
+     (d) Negative integer-valued Rational — symmetric to s153's
+         positive Rat(5,1) pin; pins the negative-integer-valued
+         arm of the type-narrowing.
+*/
+{
+  /* (a) Tagged(Rational(5,1)) on level 2 — Tagged transparency
+     unwraps the tag (per session-065 Tagged-Integer pin), the
+     inner Rational then fails the C-011 narrow guard. */
+  const s = new Stack();
+  s.push(Tagged('a', Rational(5n, 1n)));
+  s.push(Integer(2n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/,
+               'session156: COMB(Tagged(Rat 5/1), Int 2) throws Bad argument type (Tagged-transparency unwraps then C-011 guard fires; composition arm session 153 left unpinned)');
+}
+{
+  /* (a cont) symmetric: Tagged(Rational) on level 1. */
+  const s = new Stack();
+  s.push(Integer(5n));
+  s.push(Tagged('a', Rational(2n, 1n)));
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/,
+               'session156: PERM(Int 5, Tagged(Rat 2/1)) throws Bad argument type (Tagged-of-Rat composition arm; mirror of (a) but for PERM and level-1)');
+}
+{
+  /* (b) BinaryInteger COMB — guard against the FLOOR/CEIL/IP/FP
+     widening pattern landing on COMB. */
+  const s = new Stack();
+  s.push(BinaryInteger(5n, 'h'));
+  s.push(Integer(2n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/,
+               'session156: COMB(BinInt 5h, Int 2) throws Bad argument type (BinInt out of scope per AUR §3-29 — guards against well-meaning widening pattern)');
+}
+{
+  /* (b cont) BinaryInteger PERM — symmetric. */
+  const s = new Stack();
+  s.push(BinaryInteger(5n, 'h'));
+  s.push(Integer(2n));
+  assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/,
+               'session156: PERM(BinInt 5h, Int 2) throws Bad argument type (BinInt out of scope per AUR §3-29 — symmetric to COMB pin)');
+}
+{
+  /* (c) Vector arm — no V/M distribution for COMB; only List ×
+     scalar per session-065 pin.  Pin Vector rejection so a
+     future "uniform broadcast" refactor doesn't silently extend
+     this surface. */
+  const s = new Stack();
+  s.push(Vector([Real(5), Real(7)]));
+  s.push(Integer(2n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/,
+               'session156: COMB(Vector, Int) throws Bad argument type (no V/M distribution; only List × scalar broadcast is defined per session-065 pin)');
+}
+{
+  /* (d) Negative integer-valued Rational — symmetric to s153's
+     positive Rat(5,1) pin.  Pins the negative-int-valued arm of
+     the type-narrowing rather than the value-domain check that
+     COMB(-3, 2) hits at the next layer. */
+  const s = new Stack();
+  s.push(Rational(-5n, 1n));
+  s.push(Integer(2n));
+  assertThrows(() => { lookup('COMB').fn(s); }, /Bad argument type/,
+               'session156: COMB(Rat -5/1, Int 2) throws Bad argument type (negative-int-valued Rat reject; type-narrowing fires before the negative-arg value-domain check would)');
 }
 
 /* ---- IDIV2: integer quotient + remainder ---- */
