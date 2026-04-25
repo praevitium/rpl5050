@@ -5,7 +5,168 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 125 (2026-04-24) — three more hard-assertion
+**Last updated.** Session 140 (2026-04-25) — three more hard-assertion
+widening clusters pinning previously-undertested wrapper-VM
+composition contracts on already-widened ops (no source-side
+changes; lane held only `tests/test-types.mjs`, `docs/DATA_TYPES.md`,
+`logs/session-140.md`).  (1) **Hyperbolic family Tagged-of-V/M
+wrapper-VM composition (SINH / COSH / TANH / ASINH / ACOSH /
+ATANH)** — all six dispatch through the 3-deep wrapper
+`_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`
+(SINH / COSH / TANH / ASINH via `_unaryCx` at `ops.js:7856`,
+ACOSH / ATANH via direct registration); session 120 Cluster 1
+pinned bare-scalar Tagged transparency and List distribution on
+this family, and session 130 Cluster 1 pinned the wrapper-VM
+composition for SQRT / FACT / LNP1 / SIN — but the hyperbolic
+3-deep wrapper-VM composition was unpinned.  Pins SINH /
+COSH / TANH / ASINH / ACOSH / ATANH on Tagged-Vector and
+Tagged-Matrix axes, plus the EXACT-mode `_exactUnaryLift`
+Integer-stay-exact path under Tagged-V (`SINH :h:Vector(Integer(0),
+Integer(0))` → `:h:Vector(Integer(0), Integer(0))` — distinct
+from `Real(0)` input) and the inner-Tagged-inside-Vector
+rejection (mirror of session 130 Cluster 3's inner-Tagged-
+inside-List rejection on the V-axis of the hyperbolic surface).
+(2) **Inverse-trig family Tagged-of-V/M wrapper-VM composition
+(ASIN / ACOS / ATAN) plus EXPM Tagged-of-V/M** — ASIN / ACOS
+register the 3-deep wrapper directly, ATAN routes through
+`_trigInvCx` (`ops.js:7929`), EXPM uses direct registration at
+`ops.js:7249`; session 130 Cluster 1 pinned LNP1 Tagged-of-Vector
+but EXPM (the LNP1 dual) was unpinned, and the inverse-trig
+Tagged-of-V/M composition was entirely unpinned.  Pins ASIN /
+ACOS / ATAN on Tagged-Vector and ASIN / ACOS on Tagged-Matrix
+in RAD (with explicit `setAngle('RAD')` and a `try / finally`
+restore so any prior angle-mode state survives), plus EXPM on
+Tagged-Vector and Tagged-Matrix — closes the inverse-trig family
+on the Tagged-V/M axis and the LNP1/EXPM dual pair on the M
+axis.  (3) **ARG bare V/M axis + ARG / CONJ / RE / IM Tagged-of-
+V/M composition with bespoke V/M dispatch INSIDE the 2-deep
+wrapper** — distinct wrapper shape from clusters 1 / 2: ARG /
+CONJ / RE / IM use `_withTaggedUnary(_withListUnary(handler))`
+(only 2-deep), with the V/M dispatch happening BESPOKE inside
+the inner handler (NOT through `_withVMUnary`).  See `ops.js:1379`
+(ARG), `:1414` (CONJ), `:1420` (RE), `:1426` (IM).  Session 110
+pinned ARG Tagged transparency on bare Complex; session 100
+pinned Sy round-trip on CONJ / RE / IM; session 064 added bare
+V/M dispatch to CONJ / RE / IM and session 068 added bare T —
+but the bare V/M axis on ARG was unpinned, and the Tagged-of-V/M
+composition through this 2-deep-bespoke wrapper shape was
+unpinned for all four ops.  Pins ARG bare-V (Real-axis: ARG of
+non-negative Real = 0, ARG of negative Real = π; Complex-axis:
+atan2(im, re)), ARG bare-M (mixed Complex/Real entries), ARG
+Tagged-of-V (Complex elements through 2-deep wrapper), CONJ
+Tagged-of-V (mixed Complex/Real, Complex.im sign-flip per
+element), CONJ Tagged-of-M, RE Tagged-of-M (per-entry
+Complex→Real collapse, Matrix kind preserved), IM Tagged-of-V
+(per-entry imaginary part — Complex→Real(im), Real→Real(0)).
+Closes the bare V/M axis on ARG and the Tagged-of-V/M
+composition through the 2-deep-bespoke wrapper shape on all
+four ops.  +36 assertions in `tests/test-types.mjs` (703 → 739).
+See "Resolved this session (140)" below.  Session 135 was the
+prior widening pass (Q × V/M arithmetic broadcast + Tagged-of-V/M
+binary composition + Tagged tag-identity & BinInt cross-base
+equality).
+
+**Last updated (prior).** Session 135 (2026-04-24) — three more hard-assertion
+widening clusters pinning previously-undertested broadcast and
+identity contracts on already-widened ops (no source-side changes;
+lane held only `tests/test-types.mjs`, `docs/DATA_TYPES.md`,
+`logs/session-135.md`).  (1) **Rational × Vector / Rational ×
+Matrix arithmetic broadcast on `+ - * /`** — the compact `+ - * /`
+reference rows carried `V ✓ M ✓` and `Q` as a first-class peer
+since sessions 092 / 115, but no direct test pinned the
+*broadcast* of a Rational scalar onto a V/M, nor the per-element
+type contract on V/M.  Pins Q×R-element → Real per element
+(degradation, mirror of session 125 Cluster 3's MIN/MAX/MOD
+Q→R contract on the V/M arithmetic surface), Q×Q-element stays-
+exact via `_rationalBinary` per element (with d=1 collapse to
+Integer), Q×Z-element on the Matrix axis (`Mat[Z(2),Z(4)|Z(6),
+Z(8)] * Q(1/2)` → `Mat[Z(1),Z(2)|Z(3),Z(4)]`), and per-element
+Q+R degradation on V+V pairwise (Q on left-V, R on right-V each
+position).  (2) **Tagged-of-Vector / Tagged-of-Matrix on BINARY
+arithmetic via `_withTaggedBinary(_withListBinary(handler))`** —
+session 130 Cluster 1 covered the UNARY surface (SQRT, FACT, LNP1,
+NEG, ABS) on Tagged-of-V/M with the 3-deep wrapper.  This cluster
+covers the BINARY surface, where the wrapper is the 2-deep
+`_withTaggedBinary(_withListBinary(handler))` and the inner
+handler dispatches to `_arithmeticOnArrays` for V/M scalar-
+broadcast, V+V/V−V/V·V (dot product), and M·M (matmul).  Pins all
+four operand-shape combinations (T-V × bare-scalar, bare-scalar ×
+T-V, T-V × T-V, T-scalar × bare-V), the bespoke V·V dot product
+through tag-drop (kind change V → R survives the binary wrapper —
+mirror of session 125 Cluster 2's bespoke ABS V → R pin on the
+binary surface), matmul through tag-drop (Matrix kind preserved),
+and the inner-Tagged-inside-Vector binary rejection (mirror of
+session 130 Cluster 3's inner-Tagged-inside-List rejection on the
+V-axis); also pins that the V+V dimension-mismatch error survives
+the Tagged unwrap.  (3) **Tag-identity contract on `==` / `SAME`
+plus BinInt base-agnostic equality contract** — the Tagged row
+in the `==` / `SAME` block carried the Notes phrase "same tag AND
+same value" since session 072, and session 074 added BinInt ×
+BinInt with wordsize masking, but no direct test had pinned the
+different-tag failure mode, the missing-tag-on-one-side mismatch
+(Tagged ≠ bare even at the same payload value), the same-tag +
+different-value mismatch, or the BinInt cross-base contract
+(`#5h SAME #5d` → 1 — base is cosmetic; `SAME #5h #6d` → 0 —
+value differences win regardless of base).  Pins the full Tagged
+× Tagged truth table (4 combinations) plus Tagged × bare on `==`,
+the SAME-mirrors-`==` contract on Tagged (always returns Real
+1./0., never Symbolic), and BinInt cross-base equality / SAME /
+ordered-compare (closes the cross-base contract on the comparator
+family — session 074 pinned BinInt × Z, session 130 pinned BinInt
+× Q, but BinInt × BinInt cross-base was unpinned).  +31 assertions
+in `tests/test-types.mjs` (672 → 703).  See "Resolved this session
+(135)" below.  Session 130 was the prior widening pass (Tagged-of-
+V/M wrapper composition on the unary family + BinInt × Rational
+cross-family compare/equality + Tagged-of-List composition on
+binary ops).
+
+**Last updated (prior pass before 140).** Session 130 (2026-04-24) — three more hard-assertion
+widening clusters pinning previously-undertested wrapper-composition
+and cross-family contracts on already-widened ops (no source-side
+changes; the lane held only `tests/test-types.mjs`, `docs/DATA_TYPES.md`,
+`logs/session-130.md`, and stand-by claims on `ops.js` / `algebra.js`
+that didn't fire).  (1) **Tagged-of-Vector / Tagged-of-Matrix
+composition through `_withTaggedUnary(_withListUnary(_withVMUnary(
+handler)))`** on the wrapper-VM-using unary family (SQRT, SIN, FACT,
+LNP1) — every elementary unary op in this chain has a 3-deep wrapper
+and the matrix carried these cells as `T ✓ / V ✓ / M ✓` since
+session 063, but no direct test pinned the *composition* (Tagged
+unwrap → V/M element-wise via temp stack → outer re-tag).  Includes
+the Matrix-axis pin on bespoke ABS (M → R kind change preserves the
+outer tag, mirror of session 125's bespoke V → R pin) and the
+bespoke-Matrix NEG path (NEG has its own Vector/Matrix branch, NOT
+`_withVMUnary`); (2) **BinaryInteger × Rational cross-family on
+`==` / `≠` / `<` / `>` / `≤` / `≥` and SAME's strict no-coerce
+contract** — `_binIntCrossNormalize` (for `==`/`≠`) and `comparePair`'s
+inline mask (for ordered compare) both mask BinInt → Integer with
+the current wordsize, then `promoteNumericPair` routes Integer ×
+Rational through the `'rational'` kind (cross-multiply, no Real
+round-trip).  Session 074 added BinInt to compare widening but only
+pinned B × Z / B × R / B × C; session 110 Cluster 3 pinned Q × Z /
+Q × R / Q × C but not B × Q.  Includes ws=8 mask edges (`#100h ==
+Rational(0,1)` → 1, `#1FFh < Rational(300,1)` → 1) and the SAME
+strict-stay pin (`SAME #10h Rational(16,1)` = 0) extending session
+074's BinInt-strict contract from B × Z to B × Q; (3) **Tagged-of-List
+composition on binary ops via `_withTaggedBinary(_withListBinary(
+handler))`** — session 120 Cluster 2 pinned both-side / left-only /
+right-only tag-drop on the percent family with bare-scalar operands,
+and session 125 Cluster 1 pinned bare-list distribution on the
+combinatorial / divmod / GCD / LCM / MOD / MIN / MAX surface, but
+the *composition* (Tagged outside List on one or both operands)
+was unpinned on this surface.  Includes the inner-Tagged-inside-List
+binary rejection (mirror of session 125 Cluster 2's unary rejection)
+that pins the wrapper composition order: `_withTaggedBinary` sits
+OUTSIDE `_withListBinary`, and `_withListBinary`'s recursive `apply`
+calls the inner handler directly (NOT back through the wrapped
+function), so inner Tagged scalars in a list see the bare scalar
+handler, which is not Tagged-aware.  +35 assertions in
+`tests/test-types.mjs` (637 → 672).  See "Resolved this session
+(130)" below.  Session 125 was the prior widening pass (List
+distribution on arity-2 numeric family + Tagged-of-List composition
+on rounding/sign/abs unary family + Rational Q→R degradation on
+MIN/MAX/MOD).
+
+**Last updated (prior pass before 130).** Session 125 (2026-04-24) — three more hard-assertion
 widening clusters pinning previously-undertested contracts on
 already-widened ops (no source-side changes; ops.js + most other
 source files are lock-held by concurrent session 124 command-support
@@ -48,7 +209,7 @@ plus List distribution edge cases).  Session 110 covered BinInt
 mixed arithmetic + Tagged round-trip on rounding / sign / arg +
 Rational cross-family compare.
 
-**Last updated (prior).** Session 120 (2026-04-24) — three hard-assertion
+**Last updated (prior pass before 125).** Session 120 (2026-04-24) — three hard-assertion
 widening clusters pinning previously-undertested contracts on
 already-widened ops:
 (1) Hyperbolic family (`SINH` / `COSH` / `TANH` / `ASINH` /
@@ -177,11 +338,11 @@ follow-on candidates and listed at the bottom.
 |--------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
 | INV    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | ✓ | ✓ | ✓ | ✗ | ✗ | V = · (no standard vector-inverse); M = matrix inverse. Session 064 added T. Session 120 pinned Q stay-exact: `INV Rational(2,3)` → `Rational(3,2)`; `INV Rational(1,5)` → `Integer(5)` (Rational(5,1) collapses to Integer); APPROX-mode collapses to Real. |
 | SQ     | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | · | ✓ | ✓ | ✗ | ✗ | V/M deliberately · — `SQ/V` = dot product, `SQ/M` = matmul, handled by `*`. Session 064 added T. Session 120 pinned Q stay-exact: `SQ Rational(-3,4)` → `Rational(9,16)`; deliberately does NOT d=1 collapse on `SQ Rational(2,1)` (stays Rational(4,1) — different code path from INV); APPROX-mode collapses to Real. |
-| SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. Session 120 pinned Q routing: perfect-square stays Q (`SQRT Rational(9,16)` → `Rational(3,4)`) with `Rational(0,1)` collapsing to `Integer(0)`; non-square Q lifts to Symbolic in EXACT (`SQRT Rational(2,1)` → Symbolic, no implicit Real coercion); negative Q lifts to Complex (`SQRT Rational(-1,1)` → `Complex(0, 1)`, principal branch). |
-| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. Session 120 pinned Q stay-exact: `ABS Rational(-3,4)` → `Rational(3,4)`. Session 125 pinned Tagged-of-List composition (`:v:{Real(3) Real(-4)} ABS` → `:v:{Real(3) Real(4)}`) and the bespoke Tagged-of-Vector cross-kind path (`:v:Vector(3,4) ABS` → `:v:Real(5)` Frobenius norm — confirms the bespoke V-handler runs *inside* the `_withTaggedUnary` wrapper, so the tag is preserved across the kind-changing op). |
-| SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. Session 120 pinned hyperbolic (SINH/COSH/TANH/ASINH/ACOSH/ATANH) Tagged transparency, List distribution, and Symbolic-lift through Tagged — including the `ATANH(:v:Real(2))` → `Tagged(v, Complex)` principal-branch lift where the inner handler picks Real-vs-Complex after the Tagged unwrap. |
-| FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). Session 120 pinned `Q ✗` rejection: `FACT Rational(5,1)` → 'Bad argument type' even at integer-valued Q (Q is not silently coerced to Real on FACT — deliberate Q-as-first-class-type stance). |
-| LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). Session 100: Sy round-trip verified; `defaultFnEval` folds via `Math.log1p` / `Math.expm1` (LNP1 returns null outside `x > -1`). |
+| SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. Session 120 pinned Q routing: perfect-square stays Q (`SQRT Rational(9,16)` → `Rational(3,4)`) with `Rational(0,1)` collapsing to `Integer(0)`; non-square Q lifts to Symbolic in EXACT (`SQRT Rational(2,1)` → Symbolic, no implicit Real coercion); negative Q lifts to Complex (`SQRT Rational(-1,1)` → `Complex(0, 1)`, principal branch). Session 130 pinned the `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))` composition on Tagged-of-Vector and Tagged-of-Matrix: `:v:Vector(4, 9) SQRT` → `:v:Vector(2, 3)` and `:m:Matrix([[4,9],[16,25]]) SQRT` → `:m:Matrix([[2,3],[4,5]])` (outer tag preserved across element-wise V/M dispatch). |
+| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. Session 120 pinned Q stay-exact: `ABS Rational(-3,4)` → `Rational(3,4)`. Session 125 pinned Tagged-of-List composition (`:v:{Real(3) Real(-4)} ABS` → `:v:{Real(3) Real(4)}`) and the bespoke Tagged-of-Vector cross-kind path (`:v:Vector(3,4) ABS` → `:v:Real(5)` Frobenius norm — confirms the bespoke V-handler runs *inside* the `_withTaggedUnary` wrapper, so the tag is preserved across the kind-changing op). Session 130 extended the bespoke cross-kind pin to the Matrix axis: `:m:Matrix([[3,0],[0,4]]) ABS` → `:m:Real(5)` (Frobenius on Matrix; M → R kind change preserves the outer tag — same shape as the V-axis pin). |
+| SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. Session 120 pinned hyperbolic (SINH/COSH/TANH/ASINH/ACOSH/ATANH) Tagged transparency, List distribution, and Symbolic-lift through Tagged — including the `ATANH(:v:Real(2))` → `Tagged(v, Complex)` principal-branch lift where the inner handler picks Real-vs-Complex after the Tagged unwrap. Session 130 pinned Tagged-of-Vector composition for the trig wrapper-VM path: `SIN :v:Vector(0, 0)` → `:v:Vector(0, 0)` (3-deep wrapper composition `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))` — outer tag preserved across element-wise transcendental dispatch). Session 140 pinned the hyperbolic 3-deep wrapper-VM composition on Tagged-Vector (SINH `:h:V[Z(0),Z(0)]` → `:h:V[Z(0),Z(0)]` EXACT-mode integer-stay-exact via `_exactUnaryLift`; COSH `:v:V[0,0]` → `:v:V[Real(1),Real(1)]` non-identity output value; ASINH/ACOSH/ATANH `:h:V[…]` → `:h:V[0,0]`) and on Tagged-Matrix (SINH/TANH `:m:M[[0,0],[0,0]]` → `:m:M[[0,0],[0,0]]`). Inner-Tagged-inside-Vector rejection on SINH (`V[:x:Real(0), :y:Real(0)] SINH` → 'Bad argument type', mirror of session 130 Cluster 3's inner-Tagged-inside-List rejection on the hyperbolic axis). Inverse-trig family (ASIN/ACOS/ATAN) Tagged-of-V/M composition pinned in RAD with explicit `setAngle('RAD')` + try/finally restore: ASIN `:a:V[0,1]` → `:a:V[0,π/2]` (item[0] clean asin(0)=0, item[1] within 1e-12 of π/2), ACOS `:a:V[1,0]` → `:a:V[0,π/2]` operand-symmetric, ATAN `:a:V[0,0]` → `:a:V[0,0]` (routes through `_trigInvCx`, distinct helper from ASIN/ACOS but same 3-deep wrapper), ASIN/ACOS Matrix-axis closes the inverse-trig pair on M. |
+| FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). Session 120 pinned `Q ✗` rejection: `FACT Rational(5,1)` → 'Bad argument type' even at integer-valued Q (Q is not silently coerced to Real on FACT — deliberate Q-as-first-class-type stance). Session 130 pinned the Tagged-of-Vector wrapper-VM composition: `FACT :v:Vector(0, 5)` → `:v:Vector(Integer(1), Integer(120))` (integer-domain inner handler composes through `_withVMUnary` per element under outer Tagged). |
+| LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). Session 100: Sy round-trip verified; `defaultFnEval` folds via `Math.log1p` / `Math.expm1` (LNP1 returns null outside `x > -1`). Session 130 pinned Tagged-of-Vector wrapper-VM composition on LNP1: `LNP1 :v:Vector(0, 0)` → `:v:Vector(0, 0)` (stable-near-zero log per element through outer Tagged). Session 140 pinned EXPM Tagged-of-Vector and Tagged-of-Matrix wrapper-VM composition (`EXPM :e:V[0,0]` → `:e:V[0,0]`, `EXPM :e:M[[0,0],[0,0]]` → `:e:M[[0,0],[0,0]]`) — closes the LNP1/EXPM dual pair on the Tagged-V/M axis (LNP1 was pinned on V in session 130 but EXPM and the M axis on both ops were unpinned). |
 
 ### Unary — rounding / sign / arg
 
@@ -192,22 +353,22 @@ follow-on candidates and listed at the bottom.
 | IP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Compound uexpr (`m/s^2`) round-trips. Session 110 pinned T transparency (`:z:Real(-7.2) IP` → `:z:-7`, sign-preserving trunc toward zero). Session 120 pinned Q→Z collapse: `IP Rational(7,2)` → `Integer(3)` and `IP Rational(-7,2)` → `Integer(-3)` (trunc toward zero, NOT -4). Session 125 pinned Tagged-of-List composition: `:a:{Real(7.2) Real(-7.2)} IP` → `:a:{Real(7) Real(-7)}` (sign-preserving trunc, per element). |
 | FP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B (`FP #Xb` = `#0b`, same base). `FP(-1.8_m)` = `-0.8_m` (sign preserved). Session 110 pinned T transparency (`:w:Real(7.2) FP` → `:w:0.2`). Session 120 pinned Q stay-exact for non-integer Q (`FP Rational(7,2)` → `Rational(1,2)`, `FP Rational(-7,2)` → `Rational(-1,2)` sign preserved); integer-valued Q (e.g. `Rational(6,3)` canonicalises to 2/1) collapses to `Integer(0)` because there's no fractional part. Session 125 pinned Tagged-of-List composition: `:a:{Real(7.2)} FP` → `:a:{Real(0.2)}`. |
 | SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. Session 110 pinned T transparency (`:u:Real(-5) SIGN` → `:u:-1`, `:u:Real(0) SIGN` → `:u:0`, `:p:Real(42) SIGN` → `:p:1`). Session 120 pinned Q→Z collapse: `SIGN Rational(-3,4)` → `Integer(-1)`, `SIGN Rational(0,1)` → `Integer(0)`, `SIGN Rational(3,4)` → `Integer(1)`. Session 125 pinned Tagged-of-List composition: `:u:{Real(-3) Real(0) Real(5)} SIGN` → `:u:{Integer(-1) Integer(0) Integer(1)}` (per-element Real→Integer collapse, tag re-applied). |
-| ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. Session 110 pinned T transparency (`ARG(:v:Complex(3,4))` → `:v:<atan2(4,3)>`). |
+| ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. Session 110 pinned T transparency (`ARG(:v:Complex(3,4))` → `:v:<atan2(4,3)>`). Session 140 pinned the bare V/M axis on ARG plus the Tagged-of-V composition through the 2-deep-bespoke wrapper shape `_withTaggedUnary(_withListUnary(...))` with bespoke V/M dispatch INSIDE the inner handler (NOT through `_withVMUnary`): `ARG V[Real(3), Real(-2)]` → `V[Real(0), Real(π)]` (Real-axis: non-negative=0, negative=π via atan2 convention); `ARG V[Complex(3,4), Complex(0,1)]` → `V[atan2(4,3), π/2]` (Complex-axis); `ARG M[[Complex(0,1), Real(1)], [Real(-1), Complex(0,-1)]]` → `M[[π/2, 0], [π, -π/2]]` (Matrix-axis with mixed Complex/Real entries); `ARG :v:V[Complex(3,4), Complex(0,1)]` → `:v:V[atan2(4,3), π/2]` (Tagged-of-V composition through 2-deep wrapper — distinct from clusters 1/2's 3-deep wrapper-VM composition; same observable Tagged-preservation behavior). |
 
 ### Binary — MOD / MIN / MAX
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 068 confirmed V/M rejection (HP50 AUR §3 scalar-only).  Session 105 pinned Sy round-trip + MOD(10,3)=1, MOD(-7,3)=2 floor-div sign, MOD(n,0) → null. Session 125 pinned `_withListBinary` distribution (`{10 7} {3 2} MOD` → `{1 1}`) and the Rational `Q→R` degradation contract: `MOD Rational(7,2) Rational(1,3)` → `Real(≈1/6)` (NOT stay-exact — distinct from `+ - * / ^` which preserves Q via the rational kind).  Q×Z and Q×R both degrade through `toRealOrThrow`; Complex(im≠0) rejection still wins over Q. |
-| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MIN(3,5)=3 fold. Session 125 pinned `_withListBinary` distribution (`{1 5 3} 2 MIN` → `{1 2 2}` Real branch; `{1 5 3} {4 2 8} MAX`-shape pairwise on Integer-typed lists keeps Integer fast path) and the `Q→R` degradation contract: `MIN Rational(1,2) Rational(1,3)` → `Real(0.333)`; `MIN Rational(1,2) Integer(1)` → `Real(0.5)` (operand-order symmetric); `MIN Rational(1,2) Name(X)` → `Symbolic` (Sy lift wins over numeric routing — Q survives in the AST). |
+| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 068 confirmed V/M rejection (HP50 AUR §3 scalar-only).  Session 105 pinned Sy round-trip + MOD(10,3)=1, MOD(-7,3)=2 floor-div sign, MOD(n,0) → null. Session 125 pinned `_withListBinary` distribution (`{10 7} {3 2} MOD` → `{1 1}`) and the Rational `Q→R` degradation contract: `MOD Rational(7,2) Rational(1,3)` → `Real(≈1/6)` (NOT stay-exact — distinct from `+ - * / ^` which preserves Q via the rational kind).  Q×Z and Q×R both degrade through `toRealOrThrow`; Complex(im≠0) rejection still wins over Q. Session 130 pinned both-side Tagged-of-List composition: `:a:{10 7} :b:{3 2} MOD` → `{Integer(1), Integer(1)}` (both Tagged unwrap + pairwise List + integer fast path). |
+| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MIN(3,5)=3 fold. Session 125 pinned `_withListBinary` distribution (`{1 5 3} 2 MIN` → `{1 2 2}` Real branch; `{1 5 3} {4 2 8} MAX`-shape pairwise on Integer-typed lists keeps Integer fast path) and the `Q→R` degradation contract: `MIN Rational(1,2) Rational(1,3)` → `Real(0.333)`; `MIN Rational(1,2) Integer(1)` → `Real(0.5)` (operand-order symmetric); `MIN Rational(1,2) Name(X)` → `Symbolic` (Sy lift wins over numeric routing — Q survives in the AST). Session 130 pinned both-side bare-scalar Tagged tag-drop: `:a:Integer(5) :b:Integer(3) MIN` → `Integer(3)` (Tagged unwrap on bare scalars routes through MIN's integer fast path — distinct from the percent family pinned in session 120). |
 | MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MAX(3,5)=5 fold. Session 125 pinned `_withListBinary` distribution on Integer-typed lists (`{1 5 3} {4 2 8} MAX` → `{Integer(4) Integer(5) Integer(8)}` — pairwise Integer fast path fires when both operands are Integer) and the `Q→R` degradation: `MAX Rational(1,2) Rational(1,3)` → `Real(0.5)`; `MAX Rational(3,2) Real(0.7)` → `Real(1.5)`; `MAX Rational(1,2) Complex(0,2)` → `'Bad argument type'` (Q does NOT bypass C rejection). |
 
 ### Binary — GCD / LCM
 
 | Op  | R* | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|----|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| GCD | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added N/Sy/L/T. R accepted only when integer-valued (non-integer Real = Bad argument value).  Session 105 pinned Sy round-trip + GCD(12,18)=6, GCD(0,7)=7, GCD(1.5,3) → null fold. Session 125 pinned pairwise `_withListBinary` distribution: `{12 15} {18 10} GCD` → `{6 5}`. |
-| LCM | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same as GCD.  Session 105 pinned Sy round-trip + LCM(4,6)=12, LCM(0,n)=0 fold. Session 125 pinned scalar×List distribution: `4 {6 9} LCM` → `{12 36}`. |
+| GCD | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added N/Sy/L/T. R accepted only when integer-valued (non-integer Real = Bad argument value).  Session 105 pinned Sy round-trip + GCD(12,18)=6, GCD(0,7)=7, GCD(1.5,3) → null fold. Session 125 pinned pairwise `_withListBinary` distribution: `{12 15} {18 10} GCD` → `{6 5}`. Session 130 pinned left-side Tagged-of-List composition: `:a:{12 18} {6 9} GCD` → `{Integer(6), Integer(9)}` (Tagged unwrap + pairwise List + integer fast path). |
+| LCM | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same as GCD.  Session 105 pinned Sy round-trip + LCM(4,6)=12, LCM(0,n)=0 fold. Session 125 pinned scalar×List distribution: `4 {6 9} LCM` → `{12 36}`. Session 130 pinned right-side Tagged-of-List composition: `4 :lbl:{6 9} LCM` → `{Integer(12), Integer(36)}` (scalar × Tagged-List broadcast — same answer as the bare-list pin via the Tagged-unwrap path). |
 
 *`~` on Real = accepted only when `Number.isInteger(value)`.
 
@@ -215,8 +376,8 @@ follow-on candidates and listed at the bottom.
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| %   | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added L/T; session 072 flipped V/M from blank to ✗ (HP50 AUR §3-1 scalar-only, mirrors MOD/MIN/MAX audit in s068). Session 120 pinned `_withTaggedBinary` tag-drop (either-side-or-both unwrap-and-drop, mirror of the binary-arith pin in session 115 Cluster 1) plus the V/M ✗ rejection plus List-broadcast on the percent base (`{80 40} 25 %` → `{20 10}`). |
-| %T  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. Infinite result on base = 0 preserved. Session 120 pinned both-side Tagged tag-drop. |
+| %   | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added L/T; session 072 flipped V/M from blank to ✗ (HP50 AUR §3-1 scalar-only, mirrors MOD/MIN/MAX audit in s068). Session 120 pinned `_withTaggedBinary` tag-drop (either-side-or-both unwrap-and-drop, mirror of the binary-arith pin in session 115 Cluster 1) plus the V/M ✗ rejection plus List-broadcast on the percent base (`{80 40} 25 %` → `{20 10}`). Session 130 pinned the Tagged-of-List composition through `_withTaggedBinary(_withListBinary(handler))`: `:lbl:{80 40} 25 %` → `{Real(20), Real(10)}` (left-Tagged-of-List + scalar broadcast); `:a:{80 40} :b:{25 50} %` → `{Real(20), Real(20)}` (both-side Tagged + pairwise List); `{:x:80 :y:40} 25 %` rejects with 'Bad argument type' (inner-Tagged-inside-List has no unwrapper at the binary scalar handler — `_withListBinary`'s recursive `apply` calls the inner handler directly, NOT back through the wrapped function). |
+| %T  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. Infinite result on base = 0 preserved. Session 120 pinned both-side Tagged tag-drop. Session 130 pinned right-side Tagged-of-List composition: `50 :p:{25 75} %T` → `{Real(50), Real(150)}` (right-Tagged + scalar × List broadcast). |
 | %CH | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. Session 120 pinned both-side Tagged tag-drop. |
 
 ### Reference rows — already-broad ops from earlier sessions
@@ -227,15 +388,15 @@ candidate flagged in session 063.
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|-------|
-| +   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Concats on String+String; Unit dim-algebra; V+V element-wise (same length). Session 068 added T. Session 110 pinned BinInt × Real/Integer mixed scalar at default ws and ws=8 (BinInt base wins, Real trunc-toward-zero coerces, negative wraps via 2^w). |
-| -   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. Session 110 BinInt audit (routes through `_binaryMathMixed('-')`). |
-| *   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | V·V = dot product, M·M = matmul; Real-by-String = repeat (String rep). Session 068 added T. Session 110 pinned `ws=8 Real(300) * #2h → #58h` (600 masked to 8 bits) + `#20h * Real(2.7) → #40h` (trunc coerce). |
-| /   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. Session 110 pinned BinInt `#5h / Integer(0)` → 'Division by zero' via `binIntBinary`. |
+| +   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Concats on String+String; Unit dim-algebra; V+V element-wise (same length). Session 068 added T. Session 110 pinned BinInt × Real/Integer mixed scalar at default ws and ws=8 (BinInt base wins, Real trunc-toward-zero coerces, negative wraps via 2^w). Session 135 pinned Q×V/Q×M broadcast (Q×R-element → Real per element; Q×Q-element stays-exact + d=1 collapse) and Tagged-of-V/M on the binary surface (`:v:Vec[1,2] + Integer(1)` → `Vec[Real(2),Real(3)]`, `:a:Vec + :b:Vec` → un-Tagged Vec, V+V dimension-mismatch survives Tagged unwrap, inner-Tagged-inside-Vector rejects). |
+| -   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. Session 110 BinInt audit (routes through `_binaryMathMixed('-')`). Session 135 pinned `Vec[Real(3),Real(4)] - Rational(1,2)` → `Vec[Real(2.5),Real(3.5)]` (V−Q broadcast, sign-correct subtraction) and `:v:Vec[5,7] - Integer(1)` → `Vec[Real(4),Real(6)]` (left-Tagged-V − scalar, binary tag-drop on the subtraction surface). |
+| *   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | V·V = dot product, M·M = matmul; Real-by-String = repeat (String rep). Session 068 added T. Session 110 pinned `ws=8 Real(300) * #2h → #58h` (600 masked to 8 bits) + `#20h * Real(2.7) → #40h` (trunc coerce). Session 135 pinned Q×V/Q×M scalar-broadcast on the Vector and Matrix axes (`Vec[Real(2),Real(4)] * Q(1/2)` → `Vec[Real(1),Real(2)]`; `Mat[Z(2),Z(4)|Z(6),Z(8)] * Q(1/2)` → `Mat[Z(1),Z(2)|Z(3),Z(4)]` Z×Q d=1 collapse) and the bespoke V·V dot product through binary tag-drop (`:a:Vec[1,2] * :b:Vec[3,4]` → `Real(11)` — kind change V → R survives the wrapper, mirror of session 125 Cluster 2's bespoke ABS V → R pin on the binary surface) plus matmul through tag-drop (`:m:Mat * Mat` keeps Matrix kind, tag drops). |
+| /   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. Session 110 pinned BinInt `#5h / Integer(0)` → 'Division by zero' via `binIntBinary`. Session 135 pinned `Vec[Q(1,1),Q(2,1)] / Q(1/2)` → `Vec[Integer(2),Integer(4)]` (Q/Q stay-exact + d=1 collapse per element) and `Vec[8,10] / :s:Integer(2)` → `Vec[Real(4),Real(5)]` (right-Tagged-scalar divisor on the V÷scalar surface). |
 | ^   | ✓ | ✓ | ✗ | ✓ | ✓ | ✓  | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | M^n = repeated matmul for integer n. Session 068 added T. Session 110 pinned BinInt `^` via `_modPow` — `ws=8 #2h ^ 10 → #0h` (1024 masked). |
-| NEG | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. |
-| CONJ| ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (KNOWN_FUNCTIONS + `defaultFnEval` fold `CONJ(x) = x` on Real). |
-| RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (`defaultFnEval` fold `RE(x) = x` on Real). |
-| IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (`defaultFnEval` fold `IM(x) = 0` on Real). |
+| NEG | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. Session 130 pinned bespoke-Matrix Tagged composition: `NEG :m:Matrix([[1,-2],[3,-4]])` → `:m:Matrix([[-1,2],[-3,4]])` (NEG has its own bespoke V/M branch — does NOT use `_withVMUnary` — but the outer `_withTaggedUnary(_withListUnary(...))` composes the same way; tag preserved across element-wise Matrix dispatch). |
+| CONJ| ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (KNOWN_FUNCTIONS + `defaultFnEval` fold `CONJ(x) = x` on Real). Session 140 pinned Tagged-of-V/M composition through the 2-deep-bespoke wrapper shape `_withTaggedUnary(_withListUnary((s) => bespoke V/M dispatch))`: `CONJ :z:V[Real(5), Complex(3,4), Real(-1)]` → `:z:V[Real(5), Complex(3,-4), Real(-1)]` (per-element `_conjScalar` flips Complex.im sign, Real stays Real; outer tag preserved + V kind preserved). `CONJ :m:M[[Complex(1,2), Complex(3,4)], [Real(5), Complex(6,-7)]]` → `:m:M[[Complex(1,-2), Complex(3,-4)], [Real(5), Complex(6,7)]]` (Matrix-axis composition; outer tag preserved + M kind preserved across per-entry CONJ). |
+| RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (`defaultFnEval` fold `RE(x) = x` on Real). Session 140 pinned Tagged-of-Matrix composition through the 2-deep-bespoke wrapper shape: `RE :m:M[[Complex(1,2), Complex(3,4)], [Real(5), Complex(6,-7)]]` → `:m:M[[Real(1), Real(3)], [Real(5), Real(6)]]` (every entry collapses to Real-only; M kind preserved across the per-entry Complex→Real collapse — closes the kind-preservation contract on the Matrix axis when EVERY entry undergoes the Complex→Real collapse). |
+| IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (`defaultFnEval` fold `IM(x) = 0` on Real). Session 140 pinned Tagged-of-Vector composition through the 2-deep-bespoke wrapper shape: `IM :z:V[Complex(1,2), Complex(3,-4), Real(5)]` → `:z:V[Real(2), Real(-4), Real(0)]` (per-entry imaginary part — Complex(re,im)→Real(im); Real(x)→Real(0) since Real has no imaginary part; outer tag preserved + V kind preserved across per-entry collapse). |
 
 ### Real decomposition / HP50 special-function family (XPON / MANT / TRUNC / ZETA / LAMBERT / PSI)
 
@@ -290,7 +451,7 @@ NaN.
 
 | Op         | R* | Z | C | N | Sy | L | V | M | T | Notes |
 |------------|----|---|---|---|----|---|---|---|---|-------|
-| COMB       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Binomial coefficient C(n, m).  Rejects m > n, negative args.  Session 105 pinned Sy round-trip + COMB(5,2)=10, COMB(5,0)=1, COMB(5,6)→null, COMB(-1,2)→null. Session 125 pinned all three `_withListBinary` distribution axes (scalar×List `5 COMB {0 2 5}` → `{1 10 1}`; List×scalar `{5 6 7} 2 COMB` → `{10 15 21}`; pairwise `{5 6} {2 3} COMB` → `{10 20}`) plus the size-mismatch rejection (`{5} {2 3} COMB` → `'Invalid dimension'`). |
+| COMB       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Binomial coefficient C(n, m).  Rejects m > n, negative args.  Session 105 pinned Sy round-trip + COMB(5,2)=10, COMB(5,0)=1, COMB(5,6)→null, COMB(-1,2)→null. Session 125 pinned all three `_withListBinary` distribution axes (scalar×List `5 COMB {0 2 5}` → `{1 10 1}`; List×scalar `{5 6 7} 2 COMB` → `{10 15 21}`; pairwise `{5 6} {2 3} COMB` → `{10 20}`) plus the size-mismatch rejection (`{5} {2 3} COMB` → `'Invalid dimension'`). Session 130 pinned left-side Tagged-of-List composition: `:lbl:{5 6} 2 COMB` → `{Integer(10), Integer(15)}` (Tagged unwrap + List × scalar broadcast through the combinatorial path). |
 | PERM       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Falling factorial P(n, m).  Same rejections as COMB.  Session 105 pinned Sy round-trip + PERM(5,2)=20, PERM(5,0)=1, PERM(5,6)→null. Session 125 pinned List×scalar distribution: `{5 6} 2 PERM` → `{20 30}`. |
 | IQUOT      | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Integer division (truncates towards 0).  Session 105 pinned Sy round-trip + IQUOT(17,5)=3, IQUOT(-17,5)=-3, IQUOT(10,0)→null. Session 125 pinned pairwise distribution: `{17 20} {5 3} IQUOT` → `{3 6}`. |
 | IREMAINDER | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | IREMAINDER(a, b) = a - IQUOT(a,b)·b; same sign as dividend.  Session 105 pinned Sy round-trip + IREMAINDER(17,5)=2, IREMAINDER(-17,5)=-2, IREMAINDER(10,0)→null. Session 125 pinned scalar×List distribution: `17 {5 3} IREMAINDER` → `{2 2}`. |
@@ -310,10 +471,10 @@ list below.
 
 | Op   | R | Z | B | C* | N | Sy | L | V | M | T | U | S | Notes |
 |------|---|---|---|----|---|----|---|---|---|---|---|---|-------|
-| `<`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). |
-| `>`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. |
-| `≤`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. |
-| `≥`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. |
+| `<`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). Session 130 pinned BinInt × Rational composition (B → Integer mask + Integer × Rational → rational kind cross-multiply): `#10h < Rational(33,2)` → 1 (16*2=32 < 33*1=33); ws=8 mask edge `#1FFh < Rational(300,1)` → 1 (#1FFh masks to 255 < 300, NOT 511 > 300 — mask BEFORE compare); negative Q boundary `Rational(-3,4) < #0h` → 1 (cross-multiply -3 < 0). Session 135 pinned BinInt cross-base ordered compare `#5h < #6d` → 1 (`comparePair` ignores the formatter `.base` field — both operands are still type `'binaryInteger'`, mask + value compare). |
+| `>`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned operand-order on B × Q: `Rational(33,2) > #10h` → 1 (symmetric to <); ws=8 mask preserved on in-range value `#FFh > Rational(254,1)` → 1 (#FFh stays 255 > 254). |
+| `≤`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned Q × B: `Rational(7,3) ≤ #3h` → 1 (cross-multiply 7 ≤ 9). |
+| `≥`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned the rational-branch equality boundary `Rational(2,1) ≥ #2h` → 1 (Rational(2,1) does not auto-collapse to Integer at the constructor — collapse is op-result-level — but the rational-kind compare still fires correctly). |
 
 *`~` on Complex = accepted only when both `im === 0`; otherwise `Bad argument type`.
 
@@ -327,8 +488,8 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
 
 | Op   | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
 |------|---|---|---|---|---|----|---|---|---|---|---|---|-------|
-| ==   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Session 072 added Sy/L/V/M/T/U structural compare (gap filed s070). Session 074 added BinInt × BinInt (masked against current wordsize) plus cross-family BinInt × Integer / Real / Complex widening at the `==` / `≠` / `<>` outer level via `_binIntCrossNormalize`. Nested lists / matrix rows recurse via `_eqArr`. Tagged: same tag AND same value. Unit: same numeric value AND same `uexpr` (so `1_m == 1_km` = 0). **Session 087**: Program ✓ (structural, pointwise eqValues over `.tokens`); Directory ✓ (reference identity — `a === b`). |
-| SAME | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Same widening — `SAME` always returns Real 1./0., never a Symbolic. Session 074: BinInt × BinInt value compare through the same eqValues branch, BUT `SAME` deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0 — AUR §4-7 "SAME does not type-coerce"). **Session 087**: Program ✓ (structural); Directory ✓ (reference identity — same rule as `==`). |
+| ==   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Session 072 added Sy/L/V/M/T/U structural compare (gap filed s070). Session 074 added BinInt × BinInt (masked against current wordsize) plus cross-family BinInt × Integer / Real / Complex widening at the `==` / `≠` / `<>` outer level via `_binIntCrossNormalize`. Nested lists / matrix rows recurse via `_eqArr`. Tagged: same tag AND same value. Unit: same numeric value AND same `uexpr` (so `1_m == 1_km` = 0). **Session 087**: Program ✓ (structural, pointwise eqValues over `.tokens`); Directory ✓ (reference identity — `a === b`). Session 130 pinned BinInt × Rational composition: `#10h == Rational(16,1)` → 1 (`_binIntCrossNormalize` masks #10h → Integer(16), then `promoteNumericPair` → rational kind eq cross-multiply 16*1 == 16*1); `#10h == Rational(33,2)` → 0; `#10h ≠ Rational(33,2)` → 1 (≠ routes through the same _binIntCrossNormalize); ws=8 mask edge `#100h == Rational(0,1)` → 1 (mask fires before compare). Session 135 pinned the full Tagged tag-identity truth table: `:a:Real(5) == :a:Real(5)` → 1 (same tag + same value); `:a:Real(5) == :a:Real(6)` → 0 (same tag + different value); `:a:Real(5) == :b:Real(5)` → 0 (different tags + same value — tag identity matters); `:a:Real(5) == Real(5)` → 0 (Tagged vs bare; structural compare, no implicit unwrap, contrast with binary-arithmetic surface where binary tag-drop makes Tagged transparent). Session 135 also pinned BinInt cross-base equality `#5h == #5d` → 1 (base is cosmetic — `eqValues` compares masked values, not the `.base` field). |
+| SAME | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Same widening — `SAME` always returns Real 1./0., never a Symbolic. Session 074: BinInt × BinInt value compare through the same eqValues branch, BUT `SAME` deliberately does NOT cross-family widen (so `SAME #10h Integer(16)` = 0 — AUR §4-7 "SAME does not type-coerce"). **Session 087**: Program ✓ (structural); Directory ✓ (reference identity — same rule as `==`). Session 130 extended the strict-no-coerce contract to BinInt × Rational: `SAME #10h Rational(16,1)` → 0 (deliberately stays strict — types differ after the no-op normalize, even though `==` widens to 1 on the same operands; mirrors the session 074 B × Z stay-strict pin on the B × Q surface). Session 135 pinned that SAME mirrors `==` on the Tagged surface (always returns Real, never Symbolic): `SAME :a:Real(5) :a:Real(5)` → 1; `SAME :a:Real(5) :b:Real(5)` → 0 (tag mismatch); `SAME :a:Real(5) Real(5)` → 0 (Tagged vs bare). Session 135 also pinned BinInt base-agnostic SAME: `SAME #5h #5d` → 1 (base is purely cosmetic — both operands are still type `'binaryInteger'`, so this is NOT a type difference and SAME's no-coerce stance does not reject); `SAME #5h #6d` → 0 (different value rejects regardless of base). |
 
 ---
 
@@ -368,6 +529,511 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (140)
+
+- **Cluster 1 — Hyperbolic family Tagged-of-Vector / Tagged-of-
+  Matrix wrapper-VM composition (SINH / COSH / TANH / ASINH /
+  ACOSH / ATANH).**  All six hyperbolic ops dispatch through the
+  3-deep wrapper `_withTaggedUnary(_withListUnary(_withVMUnary(
+  handler)))` — SINH / COSH / TANH / ASINH via `_unaryCx`
+  (`ops.js:7856`), ACOSH / ATANH via direct `_withTaggedUnary(
+  _withListUnary(_withVMUnary(...)))` registration (`ops.js:7992`,
+  `:8012`).  Session 120 Cluster 1 pinned bare-scalar Tagged
+  transparency, List distribution, and Symbolic-lift through
+  Tagged on this family; session 130 Cluster 1 pinned the
+  wrapper-VM composition for SQRT / FACT / LNP1 / SIN — but
+  the hyperbolic 3-deep wrapper-VM composition was unpinned.
+  9 hard assertions:
+  - **SINH Tagged-Matrix:** `:m:Matrix([[0,0],[0,0]]) SINH` →
+    `:m:Matrix([[0,0],[0,0]])` (per-entry sinh(0)=0; wrapper-VM
+    under Tagged on Matrix axis).
+  - **COSH Tagged-Vector (non-identity output value):**
+    `:v:Vector(0, 0) COSH` → `:v:Vector(Real(1), Real(1))`
+    (cosh(0)=1; the non-identity output value pins that the inner
+    handler actually ran — distinguishing this from a hypothetical
+    no-op that just preserves the input).
+  - **TANH Tagged-Matrix:** `:t:Matrix([[0,0],[0,0]]) TANH` →
+    `:t:Matrix([[0,0],[0,0]])` (Matrix-axis wrapper-VM on TANH).
+  - **ASINH Tagged-Vector:** `:h:Vector(0, 0) ASINH` →
+    `:h:Vector(0, 0)` (inverse-hyperbolic Vector axis through
+    `_unaryCx`).
+  - **ACOSH Tagged-Vector:** `:h:Vector(1, 1) ACOSH` →
+    `:h:Vector(0, 0)` (acosh(1)=0 boundary; direct-registered
+    wrapper composition on V — pins that the alternative
+    registration shape composes identically with outer Tagged).
+  - **ATANH Tagged-Vector:** `:h:Vector(0, 0) ATANH` →
+    `:h:Vector(0, 0)` (atanh(0)=0; direct-registered wrapper).
+  - **EXACT-mode Integer-stay-exact path under Tagged-V:**
+    `:h:Vector(Integer(0), Integer(0)) SINH` → `:h:Vector(
+    Integer(0), Integer(0))` — SINH on Integer(0) routes through
+    the `(isInteger(v) || isRational(v)) && !getApproxMode()`
+    branch of `_unaryCx`, which calls `_exactUnaryLift` to produce
+    Integer(0) for the clean-integer sinh(0)=0 fold.  Pins that
+    the EXACT-mode integer preservation composes through the
+    wrapper chain — the inner item type stays `'integer'`, NOT
+    `'real'`, distinct from the Real(0) input case which produces
+    Real(0).
+  - **Inner-Tagged-inside-Vector rejection on hyperbolic:**
+    `Vector(:x:Real(0), :y:Real(0)) SINH` → 'Bad argument type'.
+    The Vector at level 1 is NOT Tagged at the top level, so
+    `_withTaggedUnary` doesn't intercept; the `_withVMUnary`
+    inner dispatch then sees Vector items that are themselves
+    Tagged scalars, and the inner per-element handler is NOT
+    Tagged-aware (the `_withTaggedUnary` wrapper sits OUTSIDE
+    `_withVMUnary` in the wrapper composition chain).  Mirror of
+    session 130 Cluster 3's inner-Tagged-inside-List rejection on
+    the binary surface, extended to the hyperbolic unary V
+    surface.
+
+- **Cluster 2 — Inverse-trig family Tagged-of-V/M wrapper-VM
+  composition (ASIN / ACOS / ATAN) plus EXPM Tagged-of-V/M.**
+  ASIN / ACOS dispatch through direct `_withTaggedUnary(
+  _withListUnary(_withVMUnary(handler)))` registration
+  (`ops.js:8044`, `:8062`); ATAN dispatches through `_trigInvCx`
+  (`ops.js:7929`); EXPM dispatches through direct registration
+  (`ops.js:7249`).  All four use the same 3-deep wrapper shape.
+  Session 130 Cluster 1 pinned LNP1 Tagged-of-Vector wrapper-VM
+  composition; the inverse-trig family was unpinned and EXPM was
+  unpinned (only LNP1 was covered in session 130; LNP1 and EXPM
+  share the same wrapper shape but are distinct registrations at
+  `ops.js:7242` vs `:7249`).  All assertions run with explicit
+  `setAngle('RAD')` and a `try / finally` restore so any prior
+  angle-mode state survives.  9 hard assertions:
+  - **ASIN Tagged-Vector:** `:a:Vector(0, 1) ASIN` →
+    `:a:Vector(Real(0), Real(π/2))` (RAD; clean asin(0)=0 plus
+    π/2 within 1e-12).
+  - **ACOS Tagged-Vector (operand-symmetric):** `:a:Vector(1, 0)
+    ACOS` → `:a:Vector(Real(0), Real(π/2))` (acos(1)=0; same
+    boundaries as ASIN, different result mapping).
+  - **ASIN Tagged-Matrix:** `:m:Matrix([[0,1],[-1,0]]) ASIN` →
+    `:m:Matrix([[0, π/2], [-π/2, 0]])` (Matrix-axis wrapper-VM
+    on ASIN; ±π/2 at ±1).
+  - **ACOS Tagged-Matrix:** `:m:Matrix([[1,0],[-1,1]]) ACOS` →
+    `:m:Matrix([[0, π/2], [π, 0]])` (closes the inverse-trig pair
+    on the Matrix axis).
+  - **ATAN Tagged-Vector:** `:a:Vector(0, 0) ATAN` →
+    `:a:Vector(0, 0)` (ATAN routes through `_trigInvCx` — distinct
+    helper from ASIN/ACOS but same 3-deep wrapper shape; pins
+    that the helper-difference doesn't break the wrapper
+    composition under Tagged).
+  - **EXPM Tagged-Vector:** `:e:Vector(0, 0) EXPM` →
+    `:e:Vector(0, 0)` (LNP1/EXPM dual pair; closes the EXPM
+    Tagged-V axis that session 130 left open).
+  - **EXPM Tagged-Matrix:** `:e:Matrix([[0,0],[0,0]]) EXPM` →
+    `:e:Matrix([[0,0],[0,0]])` (Matrix-axis EXPM under Tagged;
+    closes the LNP1/EXPM pair on M).
+
+- **Cluster 3 — ARG bare V/M axis + ARG / CONJ / RE / IM
+  Tagged-of-V/M composition with bespoke V/M dispatch INSIDE
+  the 2-deep wrapper.**  Distinct wrapper shape from clusters
+  1 / 2: ARG / CONJ / RE / IM use `_withTaggedUnary(_withListUnary(
+  handler))` — only 2-deep — and the V/M dispatch happens BESPOKE
+  inside the inner handler (NOT through `_withVMUnary`).  See
+  `ops.js:1379` (ARG), `:1414` (CONJ), `:1420` (RE), `:1426`
+  (IM); each handler does:
+
+      register('CONJ', _withTaggedUnary(_withListUnary((s) => {
+        const v = s.pop();
+        if (isVector(v))      s.push(Vector(v.items.map(_conjScalar)));
+        else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_conjScalar))));
+        else                  s.push(_conjScalar(v));
+      })));
+
+  The matrix carries `V ✓ M ✓` for these ops since session 064
+  (per-element dispatch via `_<op>Scalar`) and `T ✓` since session
+  068; session 110 pinned ARG Tagged transparency on bare Complex;
+  session 100 pinned Sy round-trip on CONJ / RE / IM via
+  `defaultFnEval` folds — but the bare V/M axis on ARG was
+  unpinned, and the Tagged-of-V/M composition through this
+  2-deep-bespoke wrapper shape was unpinned for all four ops.
+  All assertions run with explicit `setAngle('RAD')` + try/finally
+  restore.  18 hard assertions across 9 blocks (each block with
+  preserve-shape + values pins where applicable):
+  - **ARG bare Vector (Real axis):** `Vector(Real(3), Real(-2))
+    ARG` → `Vector(Real(0), Real(π))` (atan2 convention: non-
+    negative Real = 0, negative Real = π).
+  - **ARG bare Vector (Complex axis):** `Vector(Complex(3,4),
+    Complex(0,1)) ARG` → `Vector(Real(atan2(4,3)), Real(π/2))`
+    (Complex per-element ARG; closes the bare-V axis on the
+    Complex domain that the matrix listed `V ✓` since session
+    063 but no direct test pinned).
+  - **ARG bare Matrix:** `Matrix([[Complex(0,1), Real(1)],
+    [Real(-1), Complex(0,-1)]]) ARG` → `Matrix([[π/2, 0], [π,
+    -π/2]])` (Matrix-axis with mixed Complex/Real entries; pins
+    that the bare-M dispatch handles cross-type elements).
+  - **ARG Tagged-of-Vector:** `:v:Vector(Complex(3,4), Complex(0,1))
+    ARG` → `:v:Vector(Real(atan2(4,3)), Real(π/2))` (Tagged-of-V
+    composition through the 2-deep wrapper with bespoke V dispatch
+    inside — distinct from clusters 1/2's 3-deep wrapper-VM
+    composition; same observable Tagged-preservation behavior on
+    the outside).
+  - **CONJ Tagged-of-Vector (mixed Complex/Real):**
+    `:z:Vector(Real(5), Complex(3,4), Real(-1)) CONJ` →
+    `:z:Vector(Real(5), Complex(3,-4), Real(-1))` (per-element
+    `_conjScalar` flips Complex.im sign, Real stays Real; outer
+    tag preserved + V kind preserved).
+  - **CONJ Tagged-of-Matrix:** `:m:Matrix([[Complex(1,2),
+    Complex(3,4)], [Real(5), Complex(6,-7)]]) CONJ` →
+    `:m:Matrix([[Complex(1,-2), Complex(3,-4)], [Real(5),
+    Complex(6,7)]])` (Matrix-axis composition; outer tag preserved
+    + M kind preserved across per-entry CONJ).
+  - **RE Tagged-of-Matrix (kind preservation across full Complex→Real
+    collapse):** `:m:Matrix([[Complex(1,2), Complex(3,4)], [Real(5),
+    Complex(6,-7)]]) RE` → `:m:Matrix([[Real(1), Real(3)], [Real(5),
+    Real(6)]])` (every entry collapses to Real-only; M kind preserved
+    across the per-entry Complex→Real collapse — closes the kind-
+    preservation contract on the Matrix axis when EVERY entry
+    undergoes the Complex→Real collapse).
+  - **IM Tagged-of-Vector:** `:z:Vector(Complex(1,2), Complex(3,-4),
+    Real(5)) IM` → `:z:Vector(Real(2), Real(-4), Real(0))` (per-
+    entry imaginary part — Complex(re,im)→Real(im); Real(x)→Real(0)
+    since Real has no imaginary part).
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`,
+  or `formatter.js` this session — `ops.js` is lock-held by
+  concurrent session 139 command-support lane.  `tests/test-types.mjs`:
+  +36 assertions (703 → 739).  Test gates green: `test-all` 4635 / 0;
+  `test-persist` 38 / 0; `sanity` 22 / 0.  See `logs/session-140.md`
+  for user-reachable demos and exact gate counts.
+
+### Resolved this session (135)
+
+- **Cluster 1 — Rational × Vector / Rational × Matrix arithmetic
+  broadcast on `+ - * /`.**  The compact reference rows for
+  `+ - * /` carry `V ✓ M ✓` from session 063 and the session-092
+  convention text introduced Rational as a first-class numeric
+  peer (Z ⊂ Q ⊂ R ⊂ C).  Session 115 Cluster 2 pinned the full
+  Q × Q / Q × Z / Q × R / Q × C arithmetic surface on scalar
+  arithmetic, and session 125 Cluster 3 pinned the Q→R degradation
+  contract on MIN / MAX / MOD; but no direct test had pinned the
+  *broadcast* of a Rational scalar onto a Vector or Matrix, nor
+  the per-element type contract on V/M arithmetic.  The relevant
+  code path is `_scalarBinaryMixed → _arithmeticOnArrays`, which
+  runs the inner per-element arithmetic via `promoteNumericPair`;
+  that helper has a `'rational'` kind branch that stays-exact via
+  `Fraction.js` arithmetic, so Q × Q-element stays Rational (with
+  d=1 collapse to Integer at the result layer), Q × Z-element
+  stays-exact via the rational kind and may collapse to Integer
+  at d=1, and Q × R-element degrades to Real per element via
+  the real kind.  Eight hard assertions:
+  - **Q × R-element on Vector (degradation):**
+    `Vec[Real(2), Real(4)] * Rational(1,2)` → `Vec[Real(1),
+    Real(2)]` (Q×R per element degrades to Real; pins the V/M
+    extension of the MIN/MAX/MOD Q→R contract from session 125
+    Cluster 3 to the V/M arithmetic surface).
+  - **Q × R-element, operand-order symmetric:** `Rational(1,2) +
+    Vec[Real(1), Real(2)]` → `Vec[Real(1.5), Real(2.5)]` (left-Q
+    broadcast).
+  - **Q + Q-element stays-exact on Vector:** `Rational(1,2) +
+    Vec[Rational(1,3), Rational(1,4)]` → `Vec[Rational(5,6),
+    Rational(3,4)]` (per-element `_rationalBinary`; V-broadcast
+    extension of session 115 Cluster 2's scalar Q+Q pin).
+  - **Q × Q-element with d=1 collapse on Vector:** `Rational(1,2)
+    * Vec[Rational(2,1), Rational(4,1)]` → `Vec[Integer(1),
+    Integer(2)]` (d=1 collapse fires per element).
+  - **V ÷ Q with Q-typed elements:** `Vec[Rational(1,1),
+    Rational(2,1)] / Rational(1,2)` → `Vec[Integer(2),
+    Integer(4)]` (Q/Q stay-exact + d=1 collapse on the division
+    operator's rational kind).
+  - **V − Q with Real-typed elements:** `Vec[Real(3), Real(4)] -
+    Rational(1,2)` → `Vec[Real(2.5), Real(3.5)]` (sign-correct
+    subtraction — distinct from the addition pins above).
+  - **Z × Q on Matrix (d=1 collapse on M-axis):**
+    `Matrix[[Integer(2), Integer(4)], [Integer(6), Integer(8)]]
+    * Rational(1,2)` → `Matrix[[Integer(1), Integer(2)],
+    [Integer(3), Integer(4)]]` (Z×Q stays-exact + d=1 collapse
+    per entry on the Matrix axis — closes the M-axis on the same
+    Q-broadcast contract).
+  - **V + V with mixed Q / R element types:** `Vec[Rational(1,2),
+    Rational(3,4)] + Vec[Real(1), Real(1)]` → `Vec[Real(1.5),
+    Real(1.75)]` (per-element Q+R degrades to Real on V+V
+    pairwise — different code path from scalar broadcast: each
+    pair sees Q on the left, R on the right at the same index).
+
+- **Cluster 2 — Tagged-of-Vector / Tagged-of-Matrix on BINARY
+  arithmetic via `_withTaggedBinary(_withListBinary(handler))`
+  for `+ - * /`.**  Session 130 Cluster 1 pinned the UNARY surface
+  (SQRT, FACT, LNP1, NEG, ABS) on Tagged-of-V/M with the 3-deep
+  wrapper `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`.
+  This cluster covers the BINARY surface — the wrapper is the
+  2-deep `_withTaggedBinary(_withListBinary(handler))` and the
+  inner handler dispatches to `_arithmeticOnArrays` for V/M
+  scalar-broadcast, V+V/V−V/V·V (dot product), and M·M (matmul).
+  At a `Tagged(label, V|M)` input on either side, the order is:
+  (1) `_withTaggedBinary` checks both top-2 stack slots; if
+  either is Tagged, both are popped and unwrapped (per HP50 AUR
+  §3.4 binary tag-drop, NOT preserving any tag); (2)
+  `_withListBinary` doesn't intercept V/M (only RList); (3) the
+  inner handler runs the V/M dispatch directly on the unwrapped
+  payloads; (4) result is the un-Tagged V/M (or scalar for V·V
+  dot product, Matrix for M·M matmul).  Eleven hard assertions:
+  - **Left-Tagged-V + bare-scalar:** `:v:Vec[1, 2] + Integer(1)`
+    → `Vec[Real(2), Real(3)]` (un-Tagged Vector — binary tag-drop,
+    V scalar-broadcast).
+  - **Right-Tagged-V (operand-order symmetric):** `Integer(1) +
+    :v:Vec[1, 2]` → `Vec[Real(2), Real(3)]`.
+  - **Both-Tagged-V pairwise:** `:a:Vec[1, 2] + :b:Vec[3, 4]` →
+    `Vec[Real(4), Real(6)]` (both tags drop, pairwise V+V).
+  - **Left-Tagged-M scalar-broadcast:** `:m:Mat[[1,2],[3,4]] *
+    Integer(2)` → `Mat[[Real(2), Real(4)], [Real(6), Real(8)]]`
+    (scalar broadcast across all entries; tag drops).
+  - **Bespoke V·V dot product through tag-drop (kind change V →
+    R):** `:a:Vec[1, 2] * :b:Vec[3, 4]` → `Real(11)` (1·3+2·4=11
+    — closes the binary surface analog of session 125 Cluster 2's
+    bespoke ABS V → R kind-change pin).
+  - **Matmul through tag-drop (Matrix kind preserved):**
+    `:m:Mat[[1,2],[3,4]] * Mat[[1,0],[0,1]]` → `Mat[[1,2],[3,4]]`
+    (matmul; tag drops but Matrix kind survives).
+  - **Right-Tagged-scalar divisor on V/scalar:** `Vec[8, 10] /
+    :s:Integer(2)` → `Vec[Real(4), Real(5)]` (operand-order
+    symmetric to left-Tagged on V).
+  - **Left-Tagged-V minus bare-scalar:** `:v:Vec[5, 7] -
+    Integer(1)` → `Vec[Real(4), Real(6)]` (subtraction surface;
+    distinct inner handler from `+`).
+  - **Left-Tagged-scalar × bare-V:** `:s:Integer(2) * Vec[1, 2]`
+    → `Vec[Real(2), Real(4)]` (closes all four operand-shape
+    combinations: T-V × bare-scalar, bare-scalar × T-V, T-V × T-V,
+    T-scalar × bare-V).
+  - **Inner-Tagged-inside-Vector binary rejection:** `Vec[:x:Real(1),
+    :y:Real(2)] + Vec[Real(1), Real(2)]` → 'Bad argument type'.
+    The Vector at level 2 is NOT Tagged at the top level, so
+    `_withTaggedBinary` doesn't intercept; the inner handler sees
+    a Vector with Tagged elements and the per-element arithmetic
+    helper rejects.  Mirror of session 130 Cluster 3's inner-
+    Tagged-inside-List rejection on the V-axis of binary
+    arithmetic.
+  - **Dimension-mismatch survives Tagged unwrap:** `:a:Vec[1, 2,
+    3] + :b:Vec[1, 2]` → 'Invalid dimension' (the V+V size check
+    fires AFTER the Tagged unwrap; user-facing error is the
+    dimension error, NOT a Tagged-related error).
+
+- **Cluster 3 — Tag-identity contract on `==` / `SAME` plus
+  BinInt base-agnostic equality contract.**  The Tagged row in
+  the `==` / `SAME` block of the matrix carried the Notes phrase
+  "same tag AND same value" since session 072, and session 074
+  added BinInt × BinInt with wordsize masking; but no direct
+  test had pinned (a) the *different-tag* failure mode at the
+  same payload value, (b) the missing-tag-on-one-side mismatch
+  (`Tagged ≠ bare`), (c) the same-tag + different-value mismatch,
+  or (d) the BinInt cross-base contract — `eqValues` on BinInt
+  × BinInt compares masked values, NOT the `.base` field.
+  Twelve hard assertions:
+  - **Tagged truth table on `==` (4 combinations):**
+    - `:a:Real(5) == :a:Real(5)` → 1 (same tag + same value).
+    - `:a:Real(5) == :a:Real(6)` → 0 (same tag + different value).
+    - `:a:Real(5) == :b:Real(5)` → 0 (different tags + same
+      value — tag identity matters; the canonical "tags are part
+      of the type-shape" pin).
+    - `:a:Real(5) == Real(5)` → 0 (Tagged vs bare; structural
+      compare, NO implicit unwrap on `==` — contrast with the
+      binary-arithmetic surface where binary tag-drop makes
+      Tagged transparent at the operator level; equality is
+      structural, not arithmetic).
+    - Symmetric: `Real(5) == :a:Real(5)` → 0.
+  - **SAME mirrors `==` on the Tagged surface (3 pins):**
+    `SAME :a:Real(5) :a:Real(5)` → 1; `SAME :a:Real(5)
+    :b:Real(5)` → 0 (tag mismatch); `SAME :a:Real(5) Real(5)` →
+    0 (Tagged vs bare).  All return Real, never Symbolic.
+  - **BinInt base-agnostic equality:** `#5h == #5d` → 1.  Pins
+    that `eqValues` on BinInt × BinInt compares values masked by
+    the current wordsize, NOT the `.base` field — base is purely
+    cosmetic (formatter-only).
+  - **BinInt base-agnostic SAME:** `SAME #5h #5d` → 1.  Distinct
+    from session 074's "SAME does not type-coerce" stance — base
+    difference is NOT a type difference for BinInt × BinInt
+    (both operands are still type `'binaryInteger'`); only the
+    cosmetic `.base` field differs, and SAME does not reject on
+    that.
+  - **BinInt different value, different base:** `SAME #5h #6d`
+    → 0.  Pins that base agnosticism does NOT swallow value
+    differences — value mismatch wins.
+  - **BinInt cross-base ordered compare:** `#5h < #6d` → 1.
+    Pins that `comparePair` also ignores the formatter base —
+    closes the cross-base contract on the comparator family
+    (session 074 pinned BinInt × Z, session 130 pinned BinInt ×
+    Q, but BinInt × BinInt cross-base was unpinned).
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`,
+  or `formatter.js` this session.  `tests/test-types.mjs`: +31
+  assertions (672 → 703).  Test gates green: `test-all` 4522 / 0;
+  `test-persist` 38 / 0; `sanity` 22 / 0.  See `logs/session-135.md`
+  for user-reachable demos and exact gate counts.
+
+### Resolved this session (130)
+
+- **Cluster 1 — Tagged-of-Vector / Tagged-of-Matrix composition
+  through `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`
+  on the wrapper-VM-using unary family.**  Every elementary unary
+  op that uses `_withVMUnary` (SQRT, FACT, LNP1, EXPM, the trig and
+  hyperbolic family, ASIN/ACOS/ATAN, …) has a 3-deep wrapper
+  composition: T → L → VM → handler.  At a `Tagged(label, V|M)`
+  input the order is: (1) `_withTaggedUnary` unwraps and pushes
+  the V/M; (2) `_withListUnary` doesn't intercept V/M; (3)
+  `_withVMUnary` distributes element-wise via a temp-stack pattern;
+  (4) `_withTaggedUnary` re-tags the resulting V/M.  The matrix
+  carried these cells as `T ✓ / V ✓ / M ✓` since session 063 but
+  no direct test pinned the *composition* — session 125 Cluster 2
+  pinned the bespoke ABS-Tagged-Vector path (where ABS does NOT
+  route through `_withVMUnary` — it has a bespoke isVector
+  branch that emits a scalar Frobenius), but the
+  wrapper-VM-with-Tagged composition itself was unpinned, and the
+  Matrix axis on bespoke ABS was also unpinned.  12 hard
+  assertions:
+  - **SQRT wrapper-VM Tagged-Vector:** `:v:Vector(4, 9) SQRT` →
+    `:v:Vector(Real(2), Real(3))` (outer tag preserved across
+    element-wise SQRT through the 3-deep wrapper).
+  - **SIN wrapper-VM Tagged-Vector:** `:v:Vector(0, 0) SIN` →
+    `:v:Vector(0, 0)` (transcendental inner handler at RAD mode;
+    cleanest pin avoids IEEE drift).
+  - **FACT wrapper-VM Tagged-Vector:** `:v:Vector(0, 5) FACT` →
+    `:v:Vector(Integer(1), Integer(120))` (integer-domain inner
+    handler composes through `_withVMUnary` per element under
+    Tagged).
+  - **SQRT wrapper-VM Tagged-Matrix:** `:m:Matrix([[4,9],[16,25]])
+    SQRT` → `:m:Matrix([[2,3],[4,5]])` (per-element SQRT through
+    Matrix axis under outer Tagged).
+  - **NEG bespoke-V/M Tagged-Matrix:** `:m:Matrix([[1,-2],[3,-4]])
+    NEG` → `:m:Matrix([[-1,2],[-3,4]])` (NEG has its own bespoke
+    isMatrix branch — does NOT use `_withVMUnary` — but the outer
+    `_withTaggedUnary(_withListUnary(...))` chain composes the
+    same way; closes the bespoke-V/M-with-Tagged surface that
+    session 125 only covered for ABS-Vector).
+  - **ABS bespoke-Matrix cross-kind:** `:m:Matrix([[3,0],[0,4]])
+    ABS` → `:m:Real(5)` (Frobenius √(9+16) = 5; M → R kind change
+    preserves outer tag, mirror of session 125's bespoke V → R
+    pin on the Matrix axis).
+  - **LNP1 wrapper-VM Tagged-Vector:** `LNP1 :v:Vector(0, 0)` →
+    `:v:Vector(0, 0)` (stable-near-zero log per element through
+    `_withVMUnary` under outer Tagged).
+
+- **Cluster 2 — BinaryInteger × Rational cross-family on `==` /
+  `≠` / `<` / `>` / `≤` / `≥` and SAME's strict no-coerce
+  contract.**  `_binIntCrossNormalize` (`ops.js:4453`) wraps `==`
+  and `≠` / `<>` and masks BinInt → Integer with the current
+  wordsize before routing through `eqValues` →
+  `promoteNumericPair`.  `comparePair` (`ops.js:4502`) does the
+  same masking inline before routing.  Both then send Integer ×
+  Rational through the `'rational'` kind branch — for `==` it's
+  value equality (`n1 * d2 == n2 * d1`), for ordered compare it's
+  a cross-multiply (no Real round-trip — preserves exactness).
+  Session 110 Cluster 3 pinned Q × Z, Q × R, Q × C and the
+  ordered-compare rational branch but stopped short of B × Q —
+  which is the *composition* of two cross-family widenings (B → Z
+  in `_binIntCrossNormalize` / `comparePair`, then Z × Q in
+  `promoteNumericPair`'s rational kind).  Session 074 added
+  BinInt to compare widening directly but only pinned B × Z /
+  B × R / B × C, not B × Q.  SAME deliberately stays strict
+  (`ops.js:4477`) — `_binIntCrossNormalize` is NOT applied — so
+  `SAME #10h Rational(16,1)` = 0 even though `#10h ==
+  Rational(16,1)` = 1.  12 hard assertions:
+  - **`==` cross-widen:** `#10h == Rational(16,1)` → 1 (BinInt
+    masks to Integer(16), then rational kind: 16*1 == 16*1);
+    `#10h == Rational(33,2)` → 0 (16 vs 16.5; cross-multiply
+    32 vs 33).
+  - **`≠` parity:** `#10h ≠ Rational(33,2)` → 1 (routes through
+    the same `_binIntCrossNormalize`).
+  - **SAME strict-stay:** `SAME #10h Rational(16,1)` → 0 (extends
+    session 074's BinInt-strict contract from B × Z to B × Q;
+    pins both halves of the contract — `==` widens, SAME
+    doesn't).
+  - **Ordered compare cross-multiply:**
+    - `#10h < Rational(33,2)` → 1 (cross-multiply 16*2=32 < 33*1=33).
+    - `Rational(33,2) > #10h` → 1 (operand-order symmetric to <).
+    - `Rational(7,3) ≤ #3h` → 1 (Q × B; cross-multiply 7 ≤ 9).
+    - `Rational(2,1) ≥ #2h` → 1 (rational-branch equality
+      boundary; Rational(2,1) does not auto-collapse to Integer
+      at the constructor — collapse happens at op-level result
+      — but the rational-kind compare fires correctly).
+  - **Negative Q vs zero BinInt:** `Rational(-3,4) < #0h` → 1
+    (cross-multiply -3 < 0; pins that BinInt at value 0 still
+    routes through the rational branch with no division-by-zero
+    on the d=1 side).
+  - **Wordsize-mask edges (ws=8, restored to 64 in finally):**
+    - `#100h == Rational(0,1)` → 1 (#100h & 0xFF = 0 = 0/1; mask
+      fires before the rational compare).
+    - `#FFh > Rational(254,1)` → 1 (mask preserves in-range value;
+      255 > 254).
+    - `#1FFh < Rational(300,1)` → 1 (mask BEFORE compare;
+      #1FFh & 0xFF = 255 < 300, NOT 511 > 300 — same masking
+      discipline pinned on B × Z ordered compare in session 074).
+
+- **Cluster 3 — Tagged-of-List composition on binary ops via
+  `_withTaggedBinary(_withListBinary(handler))`.**  The percent
+  family (`%` / `%T` / `%CH`) and the binary-numeric family with
+  list distribution (GCD / LCM / MOD / MIN / MAX / COMB / PERM /
+  IQUOT / IREMAINDER) all wrap with `_withTaggedBinary` OUTSIDE
+  `_withListBinary`.  At a Tagged input on either side the order
+  is: (1) `_withTaggedBinary` checks both top-2 slots; if either
+  is Tagged, both are popped and unwrapped (tag values dropped
+  per HP50 AUR §3.4 binary tag-drop); (2) `_withListBinary` then
+  sees the unwrapped values and distributes if either is a list;
+  (3) the inner scalar handler runs per element; (4) result is
+  the un-Tagged List (binary tag-drop — no re-tag on binary
+  ops).  Session 120 Cluster 2 pinned both-side / left-only /
+  right-only tag-drop on the percent family with bare-scalar
+  operands; session 125 Cluster 1 pinned bare-list distribution
+  on the combinatorial / divmod / GCD / LCM / MOD / MIN / MAX
+  surface; this cluster covers the *composition* — Tagged
+  outside List on one or both operands — on a representative
+  sample, plus the deliberate inner-Tagged-inside-List rejection
+  on the binary surface (mirror of session 125 Cluster 2's unary
+  rejection on NEG).  11 hard assertions:
+  - **Left-Tagged-of-List × scalar on `%`:** `:lbl:{80 40} 25 %`
+    → `{Real(20), Real(10)}` (Tagged unwrap + scalar broadcast;
+    result is un-Tagged List per binary tag-drop).
+  - **Right-Tagged-of-List on `%T`:** `50 :p:{25 75} %T` →
+    `{Real(50), Real(150)}` (right-Tagged-of-List, scalar × List
+    broadcast on the percent base; operand-order symmetric to
+    the left case).
+  - **Both-Tagged-of-List on `%`:** `:a:{80 40} :b:{25 50} %` →
+    `{Real(20), Real(20)}` (both tags drop, both lists pair-
+    distribute through the wrapper chain).
+  - **Left-Tagged-of-List × bare-List on `GCD`:** `:a:{12 18} {6
+    9} GCD` → `{Integer(6), Integer(9)}` (left-Tagged unwrap +
+    pairwise distribution; GCD's integer fast path emits Integer).
+  - **Both-Tagged-of-List on `MOD`:** `:a:{10 7} :b:{3 2} MOD` →
+    `{Integer(1), Integer(1)}` (both-Tagged + pairwise + integer
+    fast path; contrast with MOD's Q→R degradation pinned in
+    session 125 Cluster 3).
+  - **Left-Tagged-of-List × scalar on `COMB`:** `:lbl:{5 6} 2
+    COMB` → `{Integer(10), Integer(15)}` (Tagged unwrap + List ×
+    scalar broadcast through the combinatorial path).
+  - **Both-Tagged-bare-scalar on `MIN`:** `:a:Integer(5)
+    :b:Integer(3) MIN` → `Integer(3)` (both-Tagged scalar without
+    List on a binary-numeric op; integer fast path on MIN —
+    distinct from the percent family pinned in session 120
+    Cluster 2).
+  - **Inner-Tagged-inside-List binary rejection:** `{:x:80 :y:40}
+    25 %` → `'Bad argument type'`.  `_withTaggedBinary` only
+    inspects the top-2 stack slots; the List (level 2) is NOT
+    Tagged at the top level.  Then `_withListBinary`'s recursive
+    `apply` (`ops.js:519`) calls the inner handler DIRECTLY (NOT
+    back through the wrapped function), so inner Tagged scalars
+    in a list see the bare scalar handler, which calls
+    `toRealOrThrow` on a Tagged and rejects.  Mirrors session
+    125 Cluster 2's unary inner-Tagged-inside-List rejection on
+    NEG, with the additional dimension that the binary surface
+    has TWO operand positions both subject to the same wrapper
+    composition order.
+  - **Bare-scalar Tagged tag-drop contrast:** `:a:80 25 %` →
+    `Real(20)` (bare-scalar Tagged tag-drop already pinned in
+    session 120 — repeated here as a contrast pin documenting
+    that the same wrapper chain handles bare-scalar correctly,
+    so the failure mode in the rejection pin above is
+    *specifically* the inner-Tagged-inside-List recursion order,
+    not Tagged-handling per se).
+  - **Right-Tagged-of-List × scalar on `LCM`:** `4 :lbl:{6 9}
+    LCM` → `{Integer(12), Integer(36)}` (right-Tagged-of-List,
+    scalar × Tagged-List path on a combinatorial-adjacent op;
+    same answer as session 125's bare-scalar × bare-List LCM pin
+    via the Tagged-unwrap path).
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`,
+  or `formatter.js` this session.  `tests/test-types.mjs`: +35
+  assertions (637 → 672).  Test gates green: `test-all` 4409 / 0;
+  `test-persist` 38 / 0; `sanity` 22 / 0.  See `logs/session-130.md`
+  for user-reachable demos and exact gate counts.
 
 ### Resolved this session (125)
 

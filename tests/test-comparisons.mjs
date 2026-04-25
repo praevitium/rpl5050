@@ -857,3 +857,246 @@ import { assert, assertThrows } from './helpers.mjs';
   assert(s.peek().value.eq(1),
     'session107: Rational(1/2) SAME Rational(1/2) → 1');
 }
+
+/* ================================================================
+   session127: Rational × Complex + Rational × Real cross-type
+   comparison edges.  Closes a coverage gap around the Q corner of
+   the promotion lattice — the session-107 block pinned Q × Q,
+   Q × Z, and Q × R numerically-equal cases plus a single ordering
+   pin sign-crossing.  This block adds:
+
+     • Q < C is rejected as `Bad argument type` — same Complex-
+       partial-order rejection that exists for Real < Complex
+       (session 069 line ~169) and pinned here for Q to confirm
+       the lattice rejection sits at the Complex side, not at a
+       per-numeric-type wrap.
+     • Q == C with non-zero im → 0 — Q lifts into the C corner
+       and `eqValues` compares { re, im } pairs structurally.
+     • Q == C with zero im and value-equal real part → 1 (the
+       Q lifted into a {re, 0} Complex *is* equal to the existing
+       Complex(re, 0) — Q widens cleanly into ℂ for ==).
+     • Q <> C with non-zero im → 1 — the negation of the above.
+     • Q SAME C with non-zero im → 0 (numeric-promotion SAME
+       within ℂ degrades to value compare; pin the unequal case
+       distinct from the session-107 Q SAME R equal-value case).
+     • Q × R cross-type unequal: Q(1/3) == R(0.333) → 0 (1/3 ≠
+       0.333 exactly — Q widens to its full Decimal at compare
+       time, then `eqValues` numeric branch compares to R(0.333)
+       and returns false).  Companion to session-107's Q(1/2)
+       == R(0.5) = 1 pin.
+     • Q × R cross-type ordering: Q(1/4) < R(0.3) → 1 — pins the
+       cross-type direction the session-107 block didn't cover
+       (its sign-crossing test stayed in Q × Q).
+   ================================================================ */
+
+/* ---- Q < C → Bad argument type (Complex partial-order rejection) ---- */
+{
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Complex(0, 1));
+  assertThrows(() => { lookup('<').fn(s); },
+               /Bad argument type/,
+               'session127: Rational < Complex → Bad argument type (Complex partial-order rejection holds for Q too)');
+}
+
+/* ---- Q == C(non-zero im) → 0 ----------------------------------------- */
+{
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Complex(0, 1));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(0),
+    'session127: Rational(1/2) == Complex(0, 1) → 0 (Q lifted to {1/2, 0} ≠ {0, 1})');
+}
+
+/* ---- Q == C(im=0, value-equal) → 1 ---------------------------------- *
+ * 1/2 widens to 0.5; Complex(0.5, 0) compares element-wise equal.  This
+ * exercises the Q→C widening branch of `eqValues` numeric promotion. */
+{
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Complex(0.5, 0));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(1),
+    'session127: Rational(1/2) == Complex(0.5, 0) → 1 (Q widens cleanly into ℂ for value-equal real-axis Complex)');
+}
+
+/* ---- Q <> C(non-zero im) → 1 ---------------------------------------- */
+{
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Complex(0.5, 1));
+  lookup('<>').fn(s);
+  assert(s.peek().value.eq(1),
+    'session127: Rational(1/2) <> Complex(0.5, 1) → 1 (im≠0 makes the cross-type pair unequal)');
+}
+
+/* ---- Q SAME C(non-zero im) → 0 -------------------------------------- *
+ * SAME on numeric pairs flows through promoteNumericPair (per the
+ * session-107 docstring); Q lifts into ℂ as {1/2, 0}, which is not
+ * SAME as {0, 1}.  Pinning the *unequal* case to balance the
+ * session-107 Q SAME R equal-value pin. */
+{
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Complex(0, 1));
+  lookup('SAME').fn(s);
+  assert(s.peek().value.eq(0),
+    'session127: Rational(1/2) SAME Complex(0, 1) → 0 (numeric promotion to ℂ, then unequal {re, im})');
+}
+
+/* ---- Q × R inequality at non-terminating decimal -------------------- *
+ * 1/3 is not exactly representable in finite Decimal precision — the
+ * session-107 block's Q(1/2) == R(0.5) pin used the exactly-
+ * representable case.  This pin guards the *unequal* branch: 1/3
+ * widens to its 15-digit Decimal (0.333333…), which is not equal to
+ * R(0.333) (the 3-digit-truncated literal).  Anyone who later swaps
+ * the Q→R widener for an exact-rational comparator would flip this
+ * to 0 silently — this assertion catches that. */
+{
+  const s = new Stack();
+  s.push(Rational(1, 3));
+  s.push(Real(0.333));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(0),
+    'session127: Rational(1/3) == Real(0.333) → 0 (Q widens to full-precision Decimal; 0.333… ≠ 0.333)');
+}
+
+/* ---- Q × R cross-type ordering -------------------------------------- *
+ * The session-107 ordering pins all stayed in Q × Q (1/3 < 1/2,
+ * 1/2 > 1/3, 2/3 ≤ 2/3, -1/2 < 1/2) plus one cross-type Q × Z
+ * (3/2 ≥ 1) and one Z × Q (0 < 1/2).  Q × R direction was not pinned.
+ * 1/4 = 0.25 < 0.3 — pin both directions (Q on level 2, R on level 1). */
+{
+  const s = new Stack();
+  s.push(Rational(1, 4));
+  s.push(Real(0.3));
+  lookup('<').fn(s);
+  assert(s.peek().value.eq(1),
+    'session127: Rational(1/4) < Real(0.3) → 1 (Q × R direction)');
+}
+{
+  // Reverse direction — R on level 2, Q on level 1.
+  const s = new Stack();
+  s.push(Real(0.3));
+  s.push(Rational(1, 4));
+  lookup('>').fn(s);
+  assert(s.peek().value.eq(1),
+    'session127: Real(0.3) > Rational(1/4) → 1 (R × Q direction)');
+}
+
+/* ================================================================
+   session132: Rational × Integer reverse-direction edges.
+
+   The session-107 Q × Z block pinned Q-on-level-2 / Z-on-level-1
+   for == (equal + unequal) plus a single ordering pin per
+   direction (3/2 ≥ 1 in Q × Z; 0 < 1/2 in Z × Q).  The reverse
+   direction for == / <> / SAME and the missing ordering ops
+   (≤, < for Z × Q with sign-crossing; <> for Q × Z) were not
+   pinned.  The cross-type comparator lifts both arms through
+   `promoteNumericPair` so direction *should* be symmetric, but
+   pinning the reverse direction per op guards against any future
+   short-circuit that handles `Q on top` and `Z on top` differently
+   (e.g., a fast path that only tries `_ratNumericEq(a, b)` when
+   `isRational(a)`).
+
+   Adds:
+     • Z == Q equal: Integer(3) == Rational(3/1) → 1 (== direction
+       symmetric to session-107's Q == Z = 1).
+     • Z == Q unequal: Integer(0) == Rational(1/2) → 0 (companion).
+     • Z <> Q cross-type: Integer(2) <> Rational(1/3) → 1.
+     • Q <> Z cross-type: Rational(7/4) <> Integer(2) → 1.
+     • Z SAME Q cross-type: Integer(3) SAME Rational(3/1) → 1
+       (numeric promotion holds; reverse-direction companion to
+       session-107 Q SAME Z = 1).
+     • Z SAME Q cross-type unequal: Integer(2) SAME Rational(3/1)
+       → 0 (pins the *unequal* SAME branch in Z × Q direction).
+     • Z × Q sign-crossing < ordering: Integer(-1) < Rational(1/2)
+       → 1 (the one Z × Q ordering pin in session-107 stayed
+       within non-negative inputs).
+     • Q × Z ≤ at equal cross-value: Rational(2/1) ≤ Integer(2)
+       → 1 (≤ at the Q-promotes-to-Z boundary; pins the equal
+       case where the underlying compare returns 0 not -1).
+   ================================================================ */
+
+/* ---- Z == Q reverse direction (Integer first, Rational second) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(3));
+  s.push(Rational(3, 1));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(1),
+    'session132: Integer(3) == Rational(3/1) → 1 (Z × Q direction; symmetric to session-107 Q × Z)');
+}
+{
+  const s = new Stack();
+  s.push(Integer(0));
+  s.push(Rational(1, 2));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(0),
+    'session132: Integer(0) == Rational(1/2) → 0 (Z × Q unequal; reverse-direction companion)');
+}
+
+/* ---- Z <> Q and Q <> Z cross-type direction pins ---- */
+{
+  const s = new Stack();
+  s.push(Integer(2));
+  s.push(Rational(1, 3));
+  lookup('<>').fn(s);
+  assert(s.peek().value.eq(1),
+    'session132: Integer(2) <> Rational(1/3) → 1 (Z × Q <>)');
+}
+{
+  const s = new Stack();
+  s.push(Rational(7, 4));
+  s.push(Integer(2));
+  lookup('<>').fn(s);
+  assert(s.peek().value.eq(1),
+    'session132: Rational(7/4) <> Integer(2) → 1 (Q × Z <>)');
+}
+
+/* ---- Z SAME Q reverse direction — equal + unequal ---- */
+{
+  const s = new Stack();
+  s.push(Integer(3));
+  s.push(Rational(3, 1));
+  lookup('SAME').fn(s);
+  assert(s.peek().value.eq(1),
+    'session132: Integer(3) SAME Rational(3/1) → 1 (numeric promotion, Z × Q direction)');
+}
+{
+  const s = new Stack();
+  s.push(Integer(2));
+  s.push(Rational(3, 1));
+  lookup('SAME').fn(s);
+  assert(s.peek().value.eq(0),
+    'session132: Integer(2) SAME Rational(3/1) → 0 (Z × Q SAME unequal-value branch)');
+}
+
+/* ---- Z × Q sign-crossing ordering ----
+ * Session 107 pinned `0 < 1/2` (positive-only) and `-1/2 < 1/2`
+ * (sign-crossing but Q×Q).  The Z × Q sign-crossing direction
+ * (Integer negative on the left, positive Q on the right) wasn't
+ * pinned. */
+{
+  const s = new Stack();
+  s.push(Integer(-1));
+  s.push(Rational(1, 2));
+  lookup('<').fn(s);
+  assert(s.peek().value.eq(1),
+    'session132: Integer(-1) < Rational(1/2) → 1 (Z × Q sign-crossing ordering)');
+}
+
+/* ---- Q × Z ≤ at the equal-value cross boundary ----
+ * 2/1 promotes to integer 2; ≤ on the equal-value pair must return
+ * 1.  Session 107 covered `≥` at the equal-cross case (3/2 ≥ 1
+ * was sign-crossing-different).  This is the symmetric ≤ at
+ * exact equality. */
+{
+  const s = new Stack();
+  s.push(Rational(2, 1));
+  s.push(Integer(2));
+  lookup('≤').fn(s);
+  assert(s.peek().value.eq(1),
+    'session132: Rational(2/1) ≤ Integer(2) → 1 (Q × Z equal-value boundary; ≤ accepts equal)');
+}

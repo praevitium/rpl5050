@@ -3157,6 +3157,59 @@ function* evalRange(s, toks, from, to, depth) {
       if (_shouldStepYield()) yield;
       continue;
     }
+    // SEQ / MAP — session 126.  List combinators whose body is EVAL'd
+    // once per iteration (per-element).  The generator-flavor helpers
+    // below (`runSeq` / `runMap`) drive each iteration through
+    // `_evalValueGen` so a HALT/PROMPT inside an iteration's body lifts
+    // cleanly through `yield*` up to the EVAL/CONT driver.  CONT
+    // resumes inside the same iteration that suspended; the loop's
+    // local accumulator (`out` array, current `i` for SEQ, the
+    // already-mapped row prefix for MAP) survives across the suspension
+    // because it lives in the generator's stack frame.  The
+    // `register('SEQ', ...)` / `register('MAP', ...)` handlers below
+    // stay as sync fallbacks (Name-dispatch, Tagged-wrapped Name, etc.)
+    // and reject HALT through `_driveGen` with the session-111 caller
+    // labels (`'SEQ expression'` / `'MAP program'`).
+    if (id === 'SEQ') {
+      yield* runSeq(s, depth);
+      i++;
+      if (_shouldStepYield()) yield;
+      continue;
+    }
+    if (id === 'MAP') {
+      yield* runMap(s, depth);
+      i++;
+      if (_shouldStepYield()) yield;
+      continue;
+    }
+    // DOLIST / DOSUBS / STREAM — session 131.  Last three sync-path
+    // callers from session 111's caller-label table.  Same generator-
+    // flavor pattern as MAP / SEQ / IFT / IFTE: each iteration drives
+    // `prog` through `_evalValueGen` so HALT/PROMPT suspends through
+    // `yield*`.  Per-iteration state (`out` accumulator, current `i`,
+    // DOSUBS NSUB/ENDSUB frame) lives in the helper's stack frame, so
+    // CONT resumes mid-iteration with all state intact.  Sync fallbacks
+    // in `register('DOLIST', ...)` / `register('DOSUBS', ...)` /
+    // `register('STREAM', ...)` keep the session-111 caller labels for
+    // the rare Name-dispatch path.
+    if (id === 'DOLIST') {
+      yield* runDoList(s, depth);
+      i++;
+      if (_shouldStepYield()) yield;
+      continue;
+    }
+    if (id === 'DOSUBS') {
+      yield* runDoSubs(s, depth);
+      i++;
+      if (_shouldStepYield()) yield;
+      continue;
+    }
+    if (id === 'STREAM') {
+      yield* runStream(s, depth);
+      i++;
+      if (_shouldStepYield()) yield;
+      continue;
+    }
     if (id && (CF_CLOSERS.has(id) || CF_INNERS.has(id))) {
       // Orphan control keyword at depth 0 — skip silently (matches HP50
       // behavior where a stray END in a program body is a no-op; it
@@ -3595,12 +3648,32 @@ function* runIfte(s, depth) {
 
 function* runWhile(s, toks, openIdx, depth) {
   // WHILE <test> REPEAT <body> END
+  //
+  // Auto-close policy (mirrors IF / IFERR / CASE / parser): a forward
+  // scan that falls off the end of the token list is treated as an
+  // implicit END.  So
+  //   « WHILE test REPEAT body »   runs as if the user had written
+  //                                « WHILE test REPEAT body END » —
+  //                                same convenience the parser already
+  //                                gives for unterminated `«`.
+  // A missing REPEAT stays a hard error: WHILE has no sensible default
+  // body separator.  A spurious NEXT / STEP at depth 0 (in the END
+  // slot) is also still a hard error — those are counter-loop closers
+  // and don't belong here.
+  const bound = toks.length;
   const repeatScan = scanAtDepth0(toks, openIdx + 1, new Set(['REPEAT']));
   if (!repeatScan || repeatScan.kind !== 'REPEAT') {
     throw new RPLError("WHILE without REPEAT");
   }
   const endScan = scanAtDepth0(toks, repeatScan.idx + 1, null);
-  if (!endScan || endScan.kind !== 'END') {
+  let endIdx;
+  let autoClosed = false;
+  if (!endScan) {
+    endIdx = bound;
+    autoClosed = true;
+  } else if (endScan.kind === 'END') {
+    endIdx = endScan.idx;
+  } else {
     throw new RPLError("WHILE/REPEAT without END");
   }
   let iterations = 0;
@@ -3611,19 +3684,36 @@ function* runWhile(s, toks, openIdx, depth) {
     yield* evalRange(s, toks, openIdx + 1, repeatScan.idx, depth + 1);
     const test = s.pop();
     if (!isTruthy(test)) break;
-    yield* evalRange(s, toks, repeatScan.idx + 1, endScan.idx, depth + 1);
+    yield* evalRange(s, toks, repeatScan.idx + 1, endIdx, depth + 1);
   }
-  return endScan.idx + 1;
+  return autoClosed ? bound : endIdx + 1;
 }
 
 function* runDo(s, toks, openIdx, depth) {
   // DO <body> UNTIL <test> END
+  //
+  // Auto-close policy (mirrors WHILE / IF / IFERR / CASE): a forward
+  // scan that falls off the end of the token list is treated as an
+  // implicit END, so
+  //   « DO body UNTIL test »      runs as if the user had written
+  //                               « DO body UNTIL test END ».
+  // A missing UNTIL stays a hard error: DO has no sensible default
+  // test separator.  A spurious NEXT / STEP at depth 0 in the END slot
+  // is still a hard error — those are counter-loop closers.
+  const bound = toks.length;
   const untilScan = scanAtDepth0(toks, openIdx + 1, new Set(['UNTIL']));
   if (!untilScan || untilScan.kind !== 'UNTIL') {
     throw new RPLError("DO without UNTIL");
   }
   const endScan = scanAtDepth0(toks, untilScan.idx + 1, null);
-  if (!endScan || endScan.kind !== 'END') {
+  let endIdx;
+  let autoClosed = false;
+  if (!endScan) {
+    endIdx = bound;
+    autoClosed = true;
+  } else if (endScan.kind === 'END') {
+    endIdx = endScan.idx;
+  } else {
     throw new RPLError("DO/UNTIL without END");
   }
   let iterations = 0;
@@ -3632,15 +3722,24 @@ function* runDo(s, toks, openIdx, depth) {
       throw new RPLError('DO loop iteration limit');
     }
     yield* evalRange(s, toks, openIdx + 1, untilScan.idx, depth + 1);
-    yield* evalRange(s, toks, untilScan.idx + 1, endScan.idx, depth + 1);
+    yield* evalRange(s, toks, untilScan.idx + 1, endIdx, depth + 1);
     const test = s.pop();
     if (isTruthy(test)) break;
   }
-  return endScan.idx + 1;
+  return autoClosed ? bound : endIdx + 1;
 }
 
 function* runStart(s, toks, openIdx, depth) {
   // <start> <end> START <body> NEXT | STEP
+  //
+  // Auto-close policy (mirrors IF / IFERR / CASE / WHILE / DO): a
+  // forward scan that falls off the end of the token list is treated
+  // as an implicit NEXT (step = 1).  So
+  //   « 1 5 START body »          runs as if the user had written
+  //                               « 1 5 START body NEXT ».
+  // A spurious END at depth 0 in the closer slot is still a hard
+  // error: START has no END closer in HP50, only NEXT / STEP.
+  const bound = toks.length;
   const [startVal, endVal] = s.popN(2);
   // Integer-preserving: if both bounds are Integers, keep the counter
   // as BigInt for the duration of the loop.  Otherwise coerce to Real.
@@ -3648,15 +3747,35 @@ function* runStart(s, toks, openIdx, depth) {
   const a = intMode ? startVal.value : Number(isInteger(startVal) ? startVal.value : toRealOrThrow(startVal));
   const b = intMode ? endVal.value   : Number(isInteger(endVal)   ? endVal.value   : toRealOrThrow(endVal));
   const closeScan = scanAtDepth0(toks, openIdx + 1, null);
-  if (!closeScan || (closeScan.kind !== 'NEXT' && closeScan.kind !== 'STEP')) {
+  let closer;
+  let closerIdx;
+  let autoClosed = false;
+  if (!closeScan) {
+    closer = 'NEXT';
+    closerIdx = bound;
+    autoClosed = true;
+  } else if (closeScan.kind === 'NEXT' || closeScan.kind === 'STEP') {
+    closer = closeScan.kind;
+    closerIdx = closeScan.idx;
+  } else {
     throw new RPLError("START without NEXT/STEP");
   }
-  yield* runLoopBody(s, toks, openIdx + 1, closeScan.idx, closeScan.kind, a, b, null, intMode, depth);
-  return closeScan.idx + 1;
+  yield* runLoopBody(s, toks, openIdx + 1, closerIdx, closer, a, b, null, intMode, depth);
+  return autoClosed ? bound : closerIdx + 1;
 }
 
 function* runFor(s, toks, openIdx, depth) {
   // <start> <end> FOR <var> <body> NEXT | STEP
+  //
+  // Auto-close policy (mirrors START / IF / IFERR / CASE / WHILE / DO):
+  // a forward scan that falls off the end of the token list is treated
+  // as an implicit NEXT (step = 1).  So
+  //   « 1 5 FOR i body »          runs as if the user had written
+  //                               « 1 5 FOR i body NEXT ».
+  // A spurious END at depth 0 in the closer slot is still a hard error.
+  // A missing FOR variable is still a hard error: there is no sensible
+  // default name to bind the counter to.
+  const bound = toks.length;
   const [startVal, endVal] = s.popN(2);
   const intMode = isInteger(startVal) && isInteger(endVal);
   const a = intMode ? startVal.value : Number(isInteger(startVal) ? startVal.value : toRealOrThrow(startVal));
@@ -3665,18 +3784,28 @@ function* runFor(s, toks, openIdx, depth) {
   if (!isName(varTok)) throw new RPLError('FOR needs a name');
   const varName = varTok.id;
   const closeScan = scanAtDepth0(toks, openIdx + 2, null);
-  if (!closeScan || (closeScan.kind !== 'NEXT' && closeScan.kind !== 'STEP')) {
+  let closer;
+  let closerIdx;
+  let autoClosed = false;
+  if (!closeScan) {
+    closer = 'NEXT';
+    closerIdx = bound;
+    autoClosed = true;
+  } else if (closeScan.kind === 'NEXT' || closeScan.kind === 'STEP') {
+    closer = closeScan.kind;
+    closerIdx = closeScan.idx;
+  } else {
     throw new RPLError("FOR without NEXT/STEP");
   }
   // Save any prior binding for this name so we can restore it after the loop.
   const saved = varRecall(varName);
   try {
-    yield* runLoopBody(s, toks, openIdx + 2, closeScan.idx, closeScan.kind, a, b, varName, intMode, depth);
+    yield* runLoopBody(s, toks, openIdx + 2, closerIdx, closer, a, b, varName, intMode, depth);
   } finally {
     if (saved === undefined) varPurge(varName);
     else varStore(varName, saved);
   }
-  return closeScan.idx + 1;
+  return autoClosed ? bound : closerIdx + 1;
 }
 
 /* Safety net: HP50 has no hard iteration cap, but we do — a runaway
@@ -7480,6 +7609,29 @@ register('RRB', (s) => { const v = s.pop(); s.push(_rotateRight(v, 8)); });
    not transactional on real firmware either).  Non-container top-of-
    stack throws 'Bad argument type'.
    ---------------------------------------------------------------- */
+// Generator flavor (session 126) — yieldable per-iteration evaluation
+// so a HALT/PROMPT inside `prog` lifts cleanly through the `evalRange`
+// body intercept.  Mirrors the IFT/IFTE pattern from session 121.  The
+// sync `_mapOneValue` helper below stays on for the (now-unused-from-
+// MAP, but still-callable-from-other-callers) sync code path; nothing
+// else in the file references it today, but leaving it in place keeps
+// the helper available for any future op that wants the same shape
+// without committing to a generator caller.
+function* _mapOneValueGen(s, prog, e, depth) {
+  const before = s.depth;
+  s.push(e);
+  yield* _evalValueGen(s, prog, depth + 1);
+  const delta = s.depth - before;
+  if (delta !== 1) {
+    // Match the sync helper's error: a non-+1 delta is a programming
+    // bug in `prog`, not a recoverable runtime condition.  See the
+    // comment in `_mapOneValue` below for why we don't try to undo
+    // the partial effect.
+    throw new RPLError('MAP: bad program');
+  }
+  return s.pop();
+}
+
 function _mapOneValue(s, prog, e) {
   const before = s.depth;
   s.push(e);
@@ -7494,28 +7646,68 @@ function _mapOneValue(s, prog, e) {
   return s.pop();
 }
 
-register('MAP', (s) => {
+/* MAP — generator flavor (session 126).
+ *
+ * `evalRange` intercepts the MAP token and delegates here so a HALT or
+ * PROMPT inside the per-element `prog` body suspends through the same
+ * `yield` channel HALT itself uses.  The accumulator (`out`, `rows`,
+ * `newRow`) lives in this generator's stack frame, so a CONT after a
+ * mid-iteration HALT resumes inside the same iteration with the
+ * already-mapped prefix intact.  When the generator finally returns,
+ * the resulting container is pushed onto the stack — same semantics as
+ * the pre-126 sync path.
+ *
+ * Iteration order: list → left-to-right; vector → left-to-right;
+ * matrix → row-major (whole row 0 before row 1).  An iteration that
+ * yields mid-element preserves the *partial-row* state too — `newRow`
+ * is closed over by the inner for-loop, so CONT picks up at element K
+ * of the row in flight.
+ *
+ * The `register('MAP', ...)` handler below stays as a sync fallback
+ * for the rare path where MAP is reached via Name dispatch
+ * (`'MAP' EVAL`, Tagged-wrapped `Name('MAP')`).  Sync drives this same
+ * generator through `_driveGen`, which still rejects a HALT with
+ * `HALT: cannot suspend inside MAP program`.
+ */
+function* runMap(s, depth) {
+  if (s.depth < 2) throw new RPLError('Too few arguments');
   const prog = s.pop();
   const obj  = s.pop();
   if (!isProgram(prog) && !isName(prog) && !isSymbolic(prog)) {
     throw new RPLError('Bad argument type');
   }
   if (isList(obj)) {
-    const out = obj.items.map((e) => _mapOneValue(s, prog, e));
+    const out = [];
+    for (const e of obj.items) out.push(yield* _mapOneValueGen(s, prog, e, depth));
     s.push(RList(out));
     return;
   }
   if (isVector(obj)) {
-    const out = obj.items.map((e) => _mapOneValue(s, prog, e));
+    const out = [];
+    for (const e of obj.items) out.push(yield* _mapOneValueGen(s, prog, e, depth));
     s.push(Vector(out));
     return;
   }
   if (isMatrix(obj)) {
-    const rows = obj.rows.map((row) => row.map((e) => _mapOneValue(s, prog, e)));
+    const rows = [];
+    for (const row of obj.rows) {
+      const newRow = [];
+      for (const e of row) newRow.push(yield* _mapOneValueGen(s, prog, e, depth));
+      rows.push(newRow);
+    }
     s.push(Matrix(rows));
     return;
   }
   throw new RPLError('Bad argument type');
+}
+
+register('MAP', (s) => {
+  // Sync fallback — drive the generator and reject a yield with the
+  // session-111 caller label.  An RPLError thrown from inside the body
+  // (validation or partial-eval failure) propagates with whatever stack
+  // state the generator left behind; the original sync MAP did not
+  // snap/restore either, so behavior is preserved.
+  _driveGen(runMap(s, 0), 'MAP program');
 });
 
 /* =================================================================
@@ -7943,7 +8135,26 @@ function _toIntCount(v, errLabel) {
   throw new RPLError(errLabel);
 }
 
-register('SEQ', (s) => {
+/* SEQ — generator flavor (session 126).
+ *
+ * `evalRange` intercepts the SEQ token and delegates here so a HALT or
+ * PROMPT inside the per-iteration `expr` body suspends through the
+ * same `yield` channel HALT itself uses.  All loop state — the `out`
+ * accumulator, the current loop counter `i`, the `iterations` cap
+ * counter, the saved binding of the loop variable — lives in this
+ * generator's stack frame, so a CONT after a mid-iteration HALT
+ * resumes inside the same iteration with the partial accumulator
+ * intact.  The loop variable is also saved/restored in `finally`, so
+ * a KILL during a halted SEQ tears down the binding cleanly via
+ * `gen.return()`.
+ *
+ * The `register('SEQ', ...)` handler below stays as a sync fallback
+ * for the rare path where SEQ is reached via Name dispatch
+ * (`'SEQ' EVAL`, Tagged-wrapped `Name('SEQ')`).  Sync drives this
+ * same generator through `_driveGen`, which still rejects a HALT with
+ * `HALT: cannot suspend inside SEQ expression`.
+ */
+function* runSeq(s, depth) {
   if (s.depth < 5) throw new RPLError('Too few arguments');
   const step  = s.pop();
   const end   = s.pop();
@@ -7966,7 +8177,7 @@ register('SEQ', (s) => {
       if (++iterations > MAX_LOOP_ITERATIONS) throw new RPLError('Loop iteration limit');
       varStore(varName, Real(i));
       const baseDepth = s.depth;
-      _evalValueSync(s, expr, 0, 'SEQ expression');
+      yield* _evalValueGen(s, expr, depth + 1);
       const delta = s.depth - baseDepth;
       if (delta !== 1) throw new RPLError('SEQ: bad program');
       out.push(s.pop());
@@ -7977,9 +8188,34 @@ register('SEQ', (s) => {
     else varStore(varName, saved);
   }
   s.push(RList(out));
+}
+
+register('SEQ', (s) => {
+  // Sync fallback — drive the generator and reject a yield with the
+  // session-111 caller label.  Pre-126 the body popped operands then
+  // ran the loop without snap/restore on RPLError; we preserve that
+  // shape (the generator pops first, so an RPLError mid-iteration
+  // leaves the operands consumed — same as before).
+  _driveGen(runSeq(s, 0), 'SEQ expression');
 });
 
-register('DOLIST', (s) => {
+/* DOLIST — generator flavor (session 131).
+ *
+ * `evalRange` intercepts the DOLIST token and delegates here so a HALT
+ * or PROMPT inside the per-iteration `prog` body suspends through the
+ * same `yield` channel HALT itself uses.  Loop state — the `out`
+ * accumulator, the `lists` array, the current `i` — lives in this
+ * generator's stack frame, so a CONT after a mid-iteration HALT
+ * resumes inside the same iteration with the partial accumulator
+ * intact.
+ *
+ * The `register('DOLIST', ...)` handler below stays as a sync fallback
+ * for the rare path where DOLIST is reached via Name dispatch
+ * (`'DOLIST' EVAL`, Tagged-wrapped `Name('DOLIST')`).  Sync drives this
+ * same generator through `_driveGen`, which still rejects a HALT with
+ * `HALT: cannot suspend inside DOLIST program`.
+ */
+function* runDoList(s, depth) {
   if (s.depth < 2) throw new RPLError('Too few arguments');
   const prog = s.pop();
   _combinatorProgCheck(prog);
@@ -8005,24 +8241,63 @@ register('DOLIST', (s) => {
   for (let i = 0; i < len; i++) {
     const baseDepth = s.depth;
     for (const L of lists) s.push(L.items[i]);
-    out.push(_popOneReturn(s, prog, baseDepth, 'DOLIST'));
+    yield* _evalValueGen(s, prog, depth + 1);
+    const delta = s.depth - baseDepth;
+    if (delta !== 1) throw new RPLError('DOLIST: bad program');
+    out.push(s.pop());
   }
   s.push(RList(out));
+}
+
+register('DOLIST', (s) => {
+  // Sync fallback — drive the generator and reject a yield with the
+  // session-111 caller label.  Pre-131 the body inlined the loop and
+  // ran without snap/restore on RPLError; the generator pops first, so
+  // an RPLError mid-iteration still leaves the operands consumed —
+  // same as before.
+  _driveGen(runDoList(s, 0), 'DOLIST program');
 });
 
 /* DOSUBS context stack: a per-call frame pushed while DOSUBS iterates,
    so NSUB / ENDSUB called inside the window-program can read the
    current window index and the total number of windows.  A JS array
    is used as a stack so nested DOSUBS calls nest the context naturally
-   — NSUB/ENDSUB always read the innermost frame. */
+   — NSUB/ENDSUB always read the innermost frame.
+
+   Session 131: the frame is now pushed/popped inside the `runDoSubs`
+   generator's `try/finally`, so a KILL of a halted DOSUBS closes the
+   generator via `gen.return()` and the `finally` tears down the frame.
+   Earlier MAP/SEQ/IFT/IFTE work didn't have a per-call context stack
+   to maintain; DOSUBS's NSUB/ENDSUB frame is the analogous teardown
+   obligation. */
 const _DOSUBS_STACK = [];
 function _currentDosubsFrame() {
   return _DOSUBS_STACK.length === 0
     ? null
     : _DOSUBS_STACK[_DOSUBS_STACK.length - 1];
 }
+// Test-side observer — used by session131 KILL/teardown assertions to
+// pin that the DOSUBS frame stack is empty after a halted-DOSUBS KILL.
+export function dosubsStackDepth() { return _DOSUBS_STACK.length; }
 
-register('DOSUBS', (s) => {
+/* DOSUBS — generator flavor (session 131).
+ *
+ * Window-iteration combinator (HP50 AUR §13.5).  Same generator-flavor
+ * pattern as runMap / runSeq / runDoList: pop the three operands, push
+ * the NSUB/ENDSUB frame, then iterate windows; each window pushes `n`
+ * elements and EVAL's `prog` through `_evalValueGen` so a HALT/PROMPT
+ * inside the body suspends through the `yield` channel.  The
+ * `_DOSUBS_STACK.pop()` call is in the `finally` so KILL of a halted
+ * DOSUBS tears down the frame — `gen.return()` runs the finally
+ * synchronously and NSUB/ENDSUB called outside DOSUBS afterwards
+ * correctly throw `Undefined local name`.
+ *
+ * The `register('DOSUBS', ...)` handler below stays as a sync fallback
+ * (Name dispatch).  Sync drives this same generator through
+ * `_driveGen`, which still rejects a HALT with `HALT: cannot suspend
+ * inside DOSUBS program`.
+ */
+function* runDoSubs(s, depth) {
   if (s.depth < 3) throw new RPLError('Too few arguments');
   const prog = s.pop();
   _combinatorProgCheck(prog);
@@ -8042,12 +8317,21 @@ register('DOSUBS', (s) => {
       frame.index = i + 1;                       // 1-based per HP50
       const baseDepth = s.depth;
       for (let k = 0; k < n; k++) s.push(items[i + k]);
-      out.push(_popOneReturn(s, prog, baseDepth, 'DOSUBS'));
+      yield* _evalValueGen(s, prog, depth + 1);
+      const delta = s.depth - baseDepth;
+      if (delta !== 1) throw new RPLError('DOSUBS: bad program');
+      out.push(s.pop());
     }
   } finally {
     _DOSUBS_STACK.pop();
   }
   s.push(RList(out));
+}
+
+register('DOSUBS', (s) => {
+  // Sync fallback — drive the generator; reject yields with the
+  // session-111 caller label.
+  _driveGen(runDoSubs(s, 0), 'DOSUBS program');
 });
 
 /* NSUB / ENDSUB — only meaningful inside a DOSUBS window-program.
@@ -8069,7 +8353,31 @@ register('ENDSUB', (s) => {
   s.push(Integer(BigInt(fr.total)));
 });
 
-register('STREAM', (s) => {
+/* STREAM — generator flavor (session 131).
+ *
+ * Reduce-over-list combinator (HP50 AUR §13.5).  Pops a list and a
+ * binary `prog`, and folds `prog` over the list left-to-right: with
+ * items `{a b c d}` the sequence is `a b prog → r1; r1 c prog → r2;
+ * r2 d prog → r3` and `r3` is pushed.  Same generator-flavor pattern:
+ * the accumulator lives on the *RPL* stack between iterations
+ * (matching pre-131 sync semantics), and each `prog` invocation goes
+ * through `_evalValueGen` so HALT/PROMPT inside the body suspends
+ * through the `yield` channel.  CONT resumes inside the same fold
+ * step; the in-progress accumulator is *already on the RPL stack* at
+ * suspension time, so the user sees it on the halted-stack display
+ * during the suspension — same observability as a HALT inside any
+ * other structural op.
+ *
+ * One-element list short-circuits before any HALT can fire (matches
+ * pre-131 behavior).  Empty list throws `Invalid dimension` (HP50's
+ * own STREAM-on-empty error) — also matches pre-131.
+ *
+ * The `register('STREAM', ...)` handler below stays as a sync fallback
+ * (Name dispatch).  Sync drives this generator through `_driveGen`,
+ * which still rejects HALT with `HALT: cannot suspend inside STREAM
+ * program`.
+ */
+function* runStream(s, depth) {
   if (s.depth < 2) throw new RPLError('Too few arguments');
   const prog = s.pop();
   _combinatorProgCheck(prog);
@@ -8082,10 +8390,16 @@ register('STREAM', (s) => {
   for (let i = 1; i < items.length; i++) {
     const baseDepth = s.depth - 1;       // the accumulator is already on top
     s.push(items[i]);
-    _evalValueSync(s, prog, 0, 'STREAM program');
+    yield* _evalValueGen(s, prog, depth + 1);
     const delta = s.depth - baseDepth;
     if (delta !== 1) throw new RPLError('STREAM: bad program');
   }
+}
+
+register('STREAM', (s) => {
+  // Sync fallback — drive the generator; reject yields with the
+  // session-111 caller label.
+  _driveGen(runStream(s, 0), 'STREAM program');
 });
 
 /* --------------- Mixed BinInt ↔ Real/Integer arithmetic ---------------
@@ -15526,6 +15840,116 @@ register('COSSIN', (s) => {
   }
   throw new RPLError('Bad argument type');
 });
+
+/* ------------------------------------------------------------------
+   LIN     (HP50 AUR §3-131)        session 139
+   Linearize an expression in exponentials.  Giac's `lin(expr)` collapses
+   products / powers of exponentials so that, e.g., `e^X * e^Y → e^(X+Y)`
+   and `(e^X)^3 → e^(3*X)`.  Single-arg, mirrors PROPFRAC / PARTFRAC /
+   COSSIN: Symbolic routes through Giac; Real / Integer / Rational / Name
+   pass through (a bare number / ratio / name has no non-trivial
+   linearization).  No-fallback policy.
+   ------------------------------------------------------------------ */
+register('LIN', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(v.expr, (e) => `lin(${e})`);
+    s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isRational(v) || isName(v)) {
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* ------------------------------------------------------------------
+   LIMIT / lim    (HP50 AUR §3-131, §lim entry)        session 139
+   Limit of an expression as its variable approaches a value.
+
+     ( expr 'var=val' → limit )      explicit equation form
+     ( expr val       → limit )      use current CAS variable VX
+
+   HP50 fidelity:
+     • Level 2 must be Symbolic (the expression).
+     • Level 1 is either a Symbolic equation `var = val` or a bare
+       numeric value (Real / Integer / Rational).  When level 1 is bare,
+       the variable defaults to VX (`getCasVx()`).  Per the AUR `lim`
+       entry: "If the variable approaching a value is the current CAS
+       variable, it is sufficient to give its value alone."
+     • The HP50 also accepts `∞` for plus/minus infinity; we accept the
+       Symbolic Var nodes `INFINITY` / `+INFINITY` / `-INFINITY` and
+       translate to Giac's `+infinity` / `-infinity`.
+   `LIMIT` is the canonical name (HP49 backward-compat); `lim` is
+   registered as a thin alias that delegates to LIMIT's fn so any
+   future refinement picks up automatically (mirrors XNUM / XQ from
+   session 086 and CHARPOL from session 114).
+   No-fallback policy: Giac not ready → `CAS not ready`.
+   ------------------------------------------------------------------ */
+function _limitPointToGiac(pointArg) {
+  // Returns { varName, valGiac } or throws RPLError.
+  if (isSymbolic(pointArg)) {
+    const ast = pointArg.expr;
+    // Equation form: var = val (HP equality is `=`; AST lays it as
+    // bin('=' or '==', l, r)).  Either operator is acceptable on
+    // input — both render the same on the keypad.
+    if (ast && ast.kind === 'bin' && (ast.op === '=' || ast.op === '==')) {
+      if (!ast.l || ast.l.kind !== 'var') {
+        throw new RPLError('Bad argument value');
+      }
+      return { varName: ast.l.name, valGiac: astToGiac(ast.r) };
+    }
+    // Bare Symbolic value (no equation) — use current VX.
+    return { varName: getCasVx(), valGiac: astToGiac(ast) };
+  }
+  if (isInteger(pointArg))  return { varName: getCasVx(), valGiac: pointArg.value.toString() };
+  if (isReal(pointArg))     return { varName: getCasVx(), valGiac: pointArg.value.toString() };
+  if (isRational(pointArg)) return {
+    varName: getCasVx(),
+    valGiac: `(${pointArg.n.toString()}/${pointArg.d.toString()})`,
+  };
+  if (isName(pointArg)) {
+    // `'INFINITY' LIMIT` is rare in practice (most users push a Symbolic
+    // equation), but accepting bare Names here keeps `'X=INFINITY'`
+    // parsing-compatible — astToGiac handles INFINITY mapping.  Pass the
+    // bare Name as the value (same effect as a leaf Var Symbolic).
+    return { varName: getCasVx(), valGiac: astToGiac(AstVar(pointArg.id)) };
+  }
+  throw new RPLError('Bad argument type');
+}
+
+register('LIMIT', (s) => {
+  const [exprArg, pointArg] = s.popN(2);
+  if (!isSymbolic(exprArg) && !isName(exprArg)) {
+    // Numeric expressions still have a well-defined limit (themselves),
+    // but the HP50 AUR limits the input to "an expression" — non-Symbolic
+    // / non-Name rejects with Bad argument type.  Accepting Name lets
+    // `'X' 'X=2' LIMIT → 2` work (the bare variable is the single-leaf
+    // Symbolic in disguise).
+    throw new RPLError('Bad argument type');
+  }
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const exprAst = isName(exprArg) ? AstVar(exprArg.id) : exprArg.expr;
+  const { varName, valGiac } = _limitPointToGiac(pointArg);
+  const cmd = buildGiacCmd(
+    exprAst,
+    (e) => `limit(${e},${varName},${valGiac})`,
+    [varName],
+  );
+  const ast = giacToAst(giac.caseval(cmd));
+  // Numeric-leaf result (Giac returned e.g. `2`) → push as Real so the
+  // caller can do further numeric math without unwrapping a Symbolic.
+  if (ast && ast.kind === 'num') { s.push(Real(ast.value)); return; }
+  s.push(Symbolic(ast));
+});
+
+// `lim` — HP50 lowercase alias.  Per AUR p.3-131, LIMIT is the HP49G
+// backward-compat name and `lim` is the canonical HP50 form; both behave
+// identically.  Thin wrapper so any future refinement of LIMIT lifts
+// automatically (mirrors CHARPOL, XNUM/XQ alias pattern).
+register('lim', (s) => { OPS.get('LIMIT').fn(s); });
 
 /* ------------------------------------------------------------------
    Matrix-symbolic ops — PCAR / CHARPOL / EGVL       (session 114)

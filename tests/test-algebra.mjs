@@ -6623,3 +6623,285 @@ giac._setFixtures({
                'session124: GBASIS non-list Giac output → Bad argument value');
   giac._clear();
 }
+
+
+// ==================================================================
+// session127: LNAME edge cases — extending the session-124 cluster
+//
+// The session-124 LNAME tests cover: 5-name AUR worked example, lone
+// var, dedup, alpha tiebreak, walk-under-Neg/Bin, plus reject paths
+// for Real and Vector.  The gaps closed here:
+//   • cross-type rejection coverage for non-numeric / non-vector
+//     argument types (String, Name, Complex), confirming the single
+//     `isSymbolic(v)` gate uniformly rejects any non-Symbolic input.
+//   • return-shape pin: the Names emitted by LNAME have `quoted=false`,
+//     so they round-trip through STO / RCL / EVAL the way the HP50 AUR
+//     §3-136 description implies (the user is meant to be able to feed
+//     individual entries from the result back into a CAS pipeline).
+//   • "constant Symbolic via pure built-ins" pin: an expression made
+//     entirely of built-ins applied to numeric literals — `5+SIN(2)` —
+//     contributes zero names.  This complements the existing
+//     `SIN(2)+COS(3)` constant-expr test by exercising the binary-op
+//     descent path under a built-in fn, not just two adjacent fn calls.
+//   • mixed built-in-wrapping-user-fn: `COS(MYFUNC(X))` confirms the
+//     visit() recursion descends into built-in fn args and collects
+//     the user-defined wrapper *inside* — pinning the contract that a
+//     known-fn drops its *own* name but keeps walking, so a user-fn
+//     buried under a built-in is still discovered.
+// ==================================================================
+
+/* ---- LNAME on a String rejects with Bad argument type ----------- */
+{
+  const s = new Stack();
+  s.push(Str('X+1'));               // looks-like-an-expr but is a String
+  assertThrows(() => { lookup('LNAME').fn(s); },
+               /Bad argument type/,
+               'session127: LNAME on String → Bad argument type (only Symbolic accepted)');
+}
+
+/* ---- LNAME on a bare Name rejects ------------------------------- *
+ * A bare Name is *not* a Symbolic — the LNAME §3-136 contract is
+ * "input must be a Symbolic expression."  This is the contrast with
+ * the `lone X` test above, where X is wrapped in `Symbolic(parseAlgebra('X'))`. */
+{
+  const s = new Stack();
+  s.push(Name('X'));
+  assertThrows(() => { lookup('LNAME').fn(s); },
+               /Bad argument type/,
+               'session127: LNAME on bare Name → Bad argument type (Symbolic required, not raw Name)');
+}
+
+/* ---- LNAME on a Complex rejects --------------------------------- */
+{
+  const s = new Stack();
+  s.push(Complex(1, 2));
+  assertThrows(() => { lookup('LNAME').fn(s); },
+               /Bad argument type/,
+               'session127: LNAME on Complex → Bad argument type');
+}
+
+/* ---- LNAME emits unquoted Names --------------------------------- *
+ * The Vector entries are constructed by `Name(id)` with no flags —
+ * default `quoted: false`.  Pinning this so a future refactor that
+ * tries to "round-trip the source quoting" doesn't silently break the
+ * STO/RCL pipeline an LNAME-fed name is expected to flow through. */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('A+B')));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();                          // discard preserved level-2 Symbolic
+  assert(isVector(v) && v.items.length === 2,
+         'session127: LNAME on A+B → 2-name Vector');
+  assert(v.items[0].quoted === false && v.items[1].quoted === false,
+         `session127: LNAME emits unquoted Names (got quoted=${v.items[0].quoted},${v.items[1].quoted})`);
+}
+
+/* ---- LNAME on `5 + SIN(2)` returns empty Vector ------------------ *
+ * Constant-expression contract: built-ins applied to numeric literals
+ * contribute no names.  The existing session-124 SIN(2)+COS(3) test
+ * exercises two adjacent fn calls under a binary `+`; this one
+ * exercises a numeric literal under the binary `+` paired with a
+ * single built-in — the descent into AstBin.l (Num leaf, no var) is
+ * the path that wasn't previously pinned. */
+{
+  const s = new Stack();
+  s.push(Symbolic(AstBin('+', AstNum(5), AstFn('SIN', [AstNum(2)]))));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();
+  assert(isVector(v) && v.items.length === 0,
+         `session127: LNAME on 5+SIN(2) → empty Vector (got len=${v && v.items && v.items.length})`);
+}
+
+/* ---- LNAME walks into a built-in's args and finds the user fn --- *
+ * `COS(MYFUNC(X))` — COS is built-in (drops its own name) but the
+ * recursion descends into its arguments, where MYFUNC is a
+ * user-defined fn (kept) wrapping the bare var X (kept).  Result is a
+ * 2-element Vector: [MYFUNC, X] — both length-equal so alpha-asc:
+ * MYFUNC sorts before X (length-DESC first → 6 vs 1, so MYFUNC
+ * actually wins on length, not alpha — pinning the deterministic
+ * order with the same length-DESC + alpha-ASC contract).
+ *
+ * Note: this can't be expressed via parseAlgebra() because the parser
+ * treats unknown multi-letter calls strictly — built manually with
+ * AstFn / AstVar matching the session-124 5-name worked example pattern. */
+{
+  const s = new Stack();
+  s.push(Symbolic(AstFn('COS', [AstFn('MYFUNC', [AstVar('X')])])));
+  lookup('LNAME').fn(s);
+  const v = s.pop();
+  s.pop();
+  assert(isVector(v) && v.items.length === 2,
+         `session127: LNAME COS(MYFUNC(X)) → 2-name Vector (got len=${v && v.items && v.items.length})`);
+  const ids = v.items.map((n) => n.id);
+  assert(ids[0] === 'MYFUNC' && ids[1] === 'X',
+         `session127: LNAME COS(MYFUNC(X)) length-DESC order MYFUNC,X (got ${ids.join(',')})`);
+  // Cross-check: COS itself is NOT in the result (drops its own name).
+  assert(!ids.includes('COS'),
+         'session127: LNAME drops the built-in COS name even when it wraps a user fn');
+}
+
+/* ==================================================================
+   session 139 — LIN / LIMIT / lim
+   Three Giac-backed CAS ops (use mock fixtures).  LIN is single-arg;
+   LIMIT / lim are 2-arg with both equation-form and bare-value
+   point arguments accepted.  No-fallback policy.
+   ================================================================== */
+
+// ---- LIN — exponential linearization ------------------------------
+
+/* ---- LIN on `e^X * e^Y` collapses to `e^(X+Y)` via Giac lin(...) - */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('exp(X)*exp(Y)')));
+  giac._clear();
+  giac._setFixture('lin(exp(X)*exp(Y))', 'exp(X+Y)');
+  lookup('LIN').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'EXP(X + Y)',
+         `session139: LIN e^X*e^Y → '${formatAlgebra(s.peek().expr)}' (want 'EXP(X + Y)')`);
+  giac._clear();
+}
+
+/* ---- LIN on a Real passes through unchanged ---------------------- */
+{
+  const s = new Stack();
+  s.push(Real(3.14));
+  lookup('LIN').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(3.14),
+         `session139: LIN Real(3.14) passthrough`);
+}
+
+/* ---- LIN on Integer / Rational / Name pass through --------------- */
+{
+  const s = new Stack();
+  s.push(Integer(42n));
+  lookup('LIN').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === 42n,
+         'session139: LIN Integer(42) passthrough');
+}
+{
+  const s = new Stack();
+  s.push(Name('Y', { quoted: true }));
+  lookup('LIN').fn(s);
+  assert(isName(s.peek()) && s.peek().id === 'Y',
+         'session139: LIN Name(Y) passthrough');
+}
+
+/* ---- LIN on a Vector rejects with Bad argument type -------------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n), Integer(2n)]));
+  assertThrows(() => { lookup('LIN').fn(s); },
+               /Bad argument type/,
+               'session139: LIN on Vector → Bad argument type');
+}
+
+// ---- LIMIT — limit at a point ------------------------------------
+
+/* ---- LIMIT on `(X^2-1)/(X-1)` with `X=1` returns 2 (numeric) ----- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('(X^2-1)/(X-1)')));
+  s.push(Symbolic(parseAlgebra('X=1')));
+  giac._clear();
+  giac._setFixture('limit((X^2-1)/(X-1),X,1)', '2');
+  lookup('LIMIT').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(2),
+         `session139: LIMIT (X^2-1)/(X-1) at X=1 → Real(${s.peek() && s.peek().value}) (want 2)`);
+  giac._clear();
+}
+
+/* ---- LIMIT bare-value form uses VX as default variable ---------- */
+{
+  // VX defaults to 'X' on a fresh boot; bare-value pointArg should
+  // resolve to that variable.  Fixture reflects the canonical X.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('SIN(X)/X')));
+  s.push(Integer(0n));
+  giac._clear();
+  giac._setFixture('limit(sin(X)/X,X,0)', '1');
+  lookup('LIMIT').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(1),
+         `session139: LIMIT SIN(X)/X bare-value 0 → Real(${s.peek() && s.peek().value}) (want 1; uses VX)`);
+  giac._clear();
+}
+
+/* ---- LIMIT returning a Symbolic preserves the algebraic form ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('A*X+B')));
+  s.push(Symbolic(parseAlgebra('X=1')));
+  giac._clear();
+  giac._setFixture('limit(A*X+B,X,1)', 'A+B');
+  lookup('LIMIT').fn(s);
+  assert(isSymbolic(s.peek()),
+         `session139: LIMIT A*X+B at X=1 → Symbolic (want algebraic A+B)`);
+  giac._clear();
+}
+
+/* ---- LIMIT with non-Symbolic expression rejects ----------------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n), Integer(2n)]));
+  s.push(Symbolic(parseAlgebra('X=0')));
+  assertThrows(() => { lookup('LIMIT').fn(s); },
+               /Bad argument type/,
+               'session139: LIMIT on Vector expression → Bad argument type');
+}
+
+/* ---- LIMIT with malformed equation (lhs not Var) rejects -------- */
+{
+  // Equation `1=0` has a Num lhs, not a Var.  HP50 rejects with Bad
+  // argument value (no variable to take the limit in).
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  s.push(Symbolic(parseAlgebra('1=0')));
+  assertThrows(() => { lookup('LIMIT').fn(s); },
+               /Bad argument value/,
+               'session139: LIMIT with non-Var equation lhs → Bad argument value');
+}
+
+/* ---- LIMIT with Vector point rejects with Bad argument type ----- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  s.push(Vector([Integer(0n), Integer(1n)]));
+  assertThrows(() => { lookup('LIMIT').fn(s); },
+               /Bad argument type/,
+               'session139: LIMIT with Vector point → Bad argument type');
+}
+
+// ---- lim — HP50 lowercase canonical alias ------------------------
+
+/* ---- lim alias dispatches through LIMIT's registered fn --------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('(X^2-1)/(X-1)')));
+  s.push(Symbolic(parseAlgebra('X=1')));
+  giac._clear();
+  giac._setFixture('limit((X^2-1)/(X-1),X,1)', '2');
+  lookup('lim').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(2),
+         `session139: lim alias delegates to LIMIT (got ${s.peek() && s.peek().value}; want 2)`);
+  giac._clear();
+}
+
+/* ---- lim on Rational point uses VX --------------------------- */
+{
+  // Rational point exercises the third pointArg branch (besides
+  // Symbolic + Real/Integer).  Build the Rational directly via the
+  // exported constructor — parseEntry('1/2') returns a multi-token
+  // Integer/Integer pair on the stack rather than a single Rational.
+  const { Rational } = await import('../www/src/rpl/types.js');
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('1/X')));
+  s.push(Rational(1n, 2n));
+  giac._clear();
+  giac._setFixture('limit(1/X,X,(1/2))', '2');
+  lookup('lim').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(2),
+         `session139: lim 1/X at X=1/2 (Rational point) → Real(${s.peek() && s.peek().value}) (want 2)`);
+  giac._clear();
+}

@@ -4,7 +4,7 @@ import {
   Real, Integer, Rational, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isRational, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
-  isString, isNumber, isTagged, promoteNumericPair, Decimal,
+  isString, isNumber, isTagged, isList, isVector, isMatrix, promoteNumericPair, Decimal,
   isValidHpIdentifier, isReservedHpName, isStorableHpName, registerReservedName,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
@@ -4059,6 +4059,1976 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     const v = s.peek();
     assert(isRational(v) && v.n === 5n && v.d === 6n,
       `session125 (contrast): + Rational(1,2) Rational(1,3) → Rational(5,6) (arithmetic stays Q — contrast with MIN/MAX/MOD's Q→R)`);
+  }
+}
+
+/* ================================================================
+   session 130 — Cluster 1: Tagged-of-Vector / Tagged-of-Matrix
+   composition through `_withTaggedUnary(_withListUnary(
+   _withVMUnary(handler)))` for the wrapper-VM-using unary family.
+
+   Every elementary unary op that uses `_withVMUnary` (SQRT, FACT,
+   LNP1, EXPM, the trig and hyperbolic family, ASIN/ACOS/ATAN, …)
+   has a 3-deep wrapper composition: T → L → VM → handler.  At a
+   `Tagged(label, Vector|Matrix)` input the order is:
+     (1) `_withTaggedUnary` unwraps Tagged and pushes the V/M.
+     (2) `_withListUnary` doesn't intercept V/M (only RList).
+     (3) `_withVMUnary` distributes element-wise via a temp-stack
+         pattern that calls the inner handler per element.
+     (4) `_withListUnary` returns the V/M unchanged.
+     (5) `_withTaggedUnary` re-tags the resulting V/M with the same
+         label.
+
+   Session 125 Cluster 2 pinned the bespoke ABS-of-Tagged-Vector
+   path (where ABS does NOT route through `_withVMUnary` — it has a
+   bespoke isVector/isMatrix branch in the handler that emits a
+   scalar Frobenius norm).  This cluster covers the OTHER code
+   path — the wrapper-VM composition — which is what every op in
+   "Unary — invert / square / sqrt / elementary functions" except
+   ABS / SIGN / INV uses.
+
+   ALSO covered here: Matrix axis on the bespoke ABS branch
+   (session 125 only pinned Vector); the inner V → R kind change
+   composes with the outer Tagged identically for Matrix → R
+   (Frobenius on Matrix is also a Real scalar).  And NEG on
+   Tagged-Matrix — NEG has its own bespoke V/M branch (does not
+   use `_withVMUnary`) that maps element-wise — pinning the
+   Tagged-Matrix path on NEG closes the bespoke-V/M-with-Tagged
+   surface that wasn't covered in session 125. */
+{
+  // SQRT on Tagged-Vector: wrapper-VM composition with the principal-
+  // branch transcendental.  Pins that the inner `_withVMUnary` runs
+  // SQRT per element after Tagged unwrap, and the outer Tagged
+  // re-tags the resulting Vector.
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(4), Real(9)])));
+    lookup('SQRT').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && isVector(v.value),
+      `session130: SQRT :v:Vector(4, 9) preserves outer tag + Vector inner shape (got tag=${v?.tag} inner=${v?.value?.type})`);
+    assert(v.value.items.length === 2
+        && v.value.items[0].value.eq(2) && v.value.items[1].value.eq(3),
+      `session130: SQRT :v:Vector(4, 9) → :v:Vector(Real(2), Real(3)) (got items=${v?.value?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // SIN on Tagged-Vector: pins the trig wrapper-VM path under
+  // Tagged.  At RAD mode (default), sin(0) = 0.  Two-element
+  // Vector with both zeros is the cleanest pin (no IEEE drift).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(0), Real(0)])));
+    lookup('SIN').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && isVector(v.value)
+        && v.value.items.every(x => isReal(x) && x.value.isZero()),
+      `session130: SIN :v:Vector(0, 0) → :v:Vector(0, 0) (Tagged + Vector + transcendental composition; got ${v?.value?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // FACT on Tagged-Vector: pins that the integer-domain inner
+  // handler also composes through `_withVMUnary` under Tagged.
+  // FACT(0) = 1 and FACT(5) = 120 — both valid Integer inputs in
+  // the integer-coerce branch.
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(0), Real(5)])));
+    lookup('FACT').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && isVector(v.value),
+      `session130: FACT :v:Vector(0, 5) preserves outer tag + Vector shape`);
+    // FACT emits Integer for valid integer Real inputs.
+    const items = v.value.items;
+    assert(items.length === 2
+        && (isInteger(items[0]) || isReal(items[0])) && Number(items[0].value) === 1
+        && (isInteger(items[1]) || isReal(items[1])) && Number(items[1].value) === 120,
+      `session130: FACT :v:Vector(0, 5) → :v:{1, 120} (got ${items?.map(x => `${x.type}(${x.value})`).join(',')})`);
+  }
+
+  // SQRT on Tagged-Matrix: pins the wrapper-VM composition on the
+  // Matrix axis.  All four cells are perfect squares so the result
+  // is a clean integer-valued Real grid.
+  {
+    const s = new Stack();
+    s.push(Tagged('m', Matrix([[Real(4), Real(9)], [Real(16), Real(25)]])));
+    lookup('SQRT').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'm' && isMatrix(v.value),
+      `session130: SQRT :m:Matrix([[4,9],[16,25]]) preserves outer tag + Matrix shape (got tag=${v?.tag} inner=${v?.value?.type})`);
+    const r = v.value.rows;
+    assert(r.length === 2 && r[0].length === 2
+        && r[0][0].value.eq(2) && r[0][1].value.eq(3)
+        && r[1][0].value.eq(4) && r[1][1].value.eq(5),
+      `session130: SQRT :m:Matrix([[4,9],[16,25]]) → :m:Matrix([[2,3],[4,5]]) (per-element SQRT through Tagged)`);
+  }
+
+  // NEG on Tagged-Matrix: NEG has a BESPOKE V/M branch (it does
+  // NOT use `_withVMUnary`) — but the outer `_withTaggedUnary` /
+  // `_withListUnary` chain composes the same way.  Pins that the
+  // bespoke handler still re-tags correctly on Matrix.
+  {
+    const s = new Stack();
+    s.push(Tagged('m', Matrix([[Real(1), Real(-2)], [Real(3), Real(-4)]])));
+    lookup('NEG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'm' && isMatrix(v.value),
+      `session130: NEG :m:Matrix([[1,-2],[3,-4]]) preserves tag + Matrix shape`);
+    const r = v.value.rows;
+    assert(r[0][0].value.eq(-1) && r[0][1].value.eq(2)
+        && r[1][0].value.eq(-3) && r[1][1].value.eq(4),
+      `session130: NEG :m:Matrix([[1,-2],[3,-4]]) → :m:Matrix([[-1,2],[-3,4]])`);
+  }
+
+  // ABS on Tagged-Matrix: bespoke Matrix → Real (Frobenius norm)
+  // path, mirror of session 125's bespoke ABS-Tagged-Vector pin
+  // but on the Matrix axis.  Pins that the M → R kind change at
+  // the inner handler still preserves the outer tag.
+  // Frobenius of [[3,0],[0,4]] = √(9 + 16) = √25 = 5.
+  {
+    const s = new Stack();
+    s.push(Tagged('m', Matrix([[Real(3), Real(0)], [Real(0), Real(4)]])));
+    lookup('ABS').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'm' && isReal(v.value),
+      `session130: ABS :m:Matrix([[3,0],[0,4]]) preserves outer tag + M→R kind change (got tag=${v?.tag} inner=${v?.value?.type})`);
+    assert(v.value.value.eq(5),
+      `session130: ABS :m:Matrix([[3,0],[0,4]]) inner = Real(5) Frobenius (got ${v?.value?.value?.toString()})`);
+  }
+
+  // LNP1 on Tagged-Vector: stable-near-zero log on each element.
+  // LNP1(0) = log(1+0) = 0, LNP1(e-1) ≈ 1 (we use exp(1)-1 ≈
+  // 1.71828… for the second element so the asserted value is
+  // exact-as-1 within Decimal precision).  This pins LNP1's
+  // wrapper-VM composition (it lives in the same chain as SQRT).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(0), Real(0)])));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && isVector(v.value)
+        && v.value.items.every(x => isReal(x) && x.value.isZero()),
+      `session130: LNP1 :v:Vector(0, 0) → :v:Vector(0, 0) (LNP1 wrapper-VM pin)`);
+  }
+}
+
+/* ================================================================
+   session 130 — Cluster 2: BinaryInteger × Rational cross-family
+   on `==` / `≠` / `<` / `>` / `≤` / `≥` and SAME's strict no-coerce
+   contract.
+
+   `_binIntCrossNormalize` (ops.js:4453) wraps `==` / `≠` / `<>`
+   and masks BinInt → Integer with the current wordsize before
+   routing through `eqValues` → `promoteNumericPair`.  `comparePair`
+   (ops.js:4502) does the same masking inline before routing
+   through `promoteNumericPair`.  Both then route Integer × Rational
+   through the `'rational'` kind branch — for `==` it's value
+   equality (`n1 * d2 == n2 * d1`) and for ordered compare it's a
+   cross-multiply (no Real round-trip — preserves exactness).
+
+   Session 110 Cluster 3 pinned Q × Z, Q × R, Q × C and the
+   ordered-compare rational branch, but stopped short of B × Q —
+   which exercises a *composition* of two cross-family widenings
+   (BinInt → Integer in `_binIntCrossNormalize` / `comparePair`,
+   then Integer × Rational in `promoteNumericPair`'s rational
+   kind).  Session 074 added BinInt to the comparator widening
+   directly but only pinned B × Z / B × R / B × C, not B × Q.
+
+   SAME deliberately stays strict (ops.js:4477) — `_binIntCrossNormalize`
+   is NOT applied — so `SAME #10h Rational(16,1)` = 0 even though
+   `#10h == Rational(16,1)` = 1.  This pins both halves of the
+   contract. */
+{
+  // `==` cross-widen: BinInt #10h (decimal 16) masks to Integer(16),
+  // then promotes (Integer(16), Rational(16,1)) → rational kind,
+  // 16*1 == 16*1 → true.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(0x10n, 'h'));
+    s.push(Rational(16n, 1n));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session130: #10h == Rational(16,1) → 1 (cross-normalize BinInt → Integer → rational kind eq)`);
+  }
+
+  // Same widening on a *non-equal* pair — Integer(16) vs
+  // Rational(33,2) cross-multiplies to 32 vs 33 → false.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(0x10n, 'h'));
+    s.push(Rational(33n, 2n));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session130: #10h == Rational(33,2) → 0 (16 vs 16.5; rational-kind cross-multiply)`);
+  }
+
+  // `≠` is the outer-level negation of `==` and routes through the
+  // same `_binIntCrossNormalize`.  Pin that the negation lands in
+  // the right cell.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(0x10n, 'h'));
+    s.push(Rational(33n, 2n));
+    lookup('≠').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session130: #10h ≠ Rational(33,2) → 1 (Routes through _binIntCrossNormalize like ==)`);
+  }
+
+  // SAME deliberately does NOT cross-normalize BinInt — types
+  // differ after the no-op normalize, so SAME returns 0 even when
+  // `==` returns 1.  Pin (mirror of session 074's BinInt × Integer
+  // SAME pin extended to BinInt × Rational).
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(0x10n, 'h'));
+    s.push(Rational(16n, 1n));
+    lookup('SAME').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session130: SAME #10h Rational(16,1) → 0 (SAME does NOT cross-normalize BinInt — strict types per AUR §4-7)`);
+  }
+
+  // Ordered compare — `<` masks BinInt #10h → Integer(16), then
+  // promotes (Integer, Rational) → rational kind.  The
+  // cross-multiply branch (ops.js:4549) compares `n1*d2 < n2*d1`
+  // → 16*2 < 33*1 → 32 < 33 → true.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(0x10n, 'h'));
+    s.push(Rational(33n, 2n));
+    lookup('<').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session130: #10h < Rational(33,2) → 1 (cross-multiply 16*2=32 < 33*1=33)`);
+  }
+
+  // Operand-order on `>`: same compare, swapped operands → false.
+  {
+    const s = new Stack();
+    s.push(Rational(33n, 2n));
+    s.push(BinaryInteger(0x10n, 'h'));
+    lookup('>').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session130: Rational(33,2) > #10h → 1 (cross-multiply 33*1=33 > 16*2=32 — operand-order symmetric to <)`);
+  }
+
+  // `≤` on Rational × BinInt: Rational(7,3) ≈ 2.333, #3h = 3 →
+  // 7/3 ≤ 3 → true.  Cross-multiply: 7*1 ≤ 3*3 → 7 ≤ 9 → true.
+  {
+    const s = new Stack();
+    s.push(Rational(7n, 3n));
+    s.push(BinaryInteger(0x3n, 'h'));
+    lookup('≤').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session130: Rational(7,3) ≤ #3h → 1 (Q × B widens via Integer; cross-multiply 7 ≤ 9)`);
+  }
+
+  // `≥` equality boundary: Rational(2,1) (= Integer(2) by canonical
+  // form) ≥ #2h.  At the rational branch, 2*1 ≥ 2*1 → 2 ≥ 2 → true.
+  // Note: Rational(2,1) is constructed as { n: 2n, d: 1n } per
+  // session 092 — does NOT auto-collapse to Integer at the
+  // constructor (collapse happens at op-level result).
+  {
+    const s = new Stack();
+    s.push(Rational(2n, 1n));
+    s.push(BinaryInteger(0x2n, 'h'));
+    lookup('≥').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session130: Rational(2,1) ≥ #2h → 1 (equality at the rational-branch boundary)`);
+  }
+
+  // Negative case for `<`: Rational(-3,4) vs #0h (= Integer(0)) at
+  // the rational branch.  Cross-multiply: -3*1 < 0*4 → -3 < 0 →
+  // true.  Pins that BinInt at value 0 still routes through the
+  // rational branch correctly (no division-by-zero on d=1).
+  {
+    const s = new Stack();
+    s.push(Rational(-3n, 4n));
+    s.push(BinaryInteger(0n, 'h'));
+    lookup('<').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session130: Rational(-3,4) < #0h → 1 (negative Q vs zero BinInt; cross-multiply -3 < 0)`);
+  }
+
+  // Wordsize-mask edge case on `==`: at ws=8, #100h masks to 0,
+  // and Rational(0,1) compares equal.  Pins that the mask in
+  // `_binIntCrossNormalize` fires before the rational kind compare
+  // (cf. session 074's similar pin on B × Z).  Restored ws=64 in
+  // a try/finally to avoid leaking state.
+  {
+    setWordsize(8);
+    try {
+      const s = new Stack();
+      s.push(BinaryInteger(0x100n, 'h'));
+      s.push(Rational(0n, 1n));
+      lookup('==').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(1),
+        `session130: ws=8 #100h == Rational(0,1) → 1 (mask fires before rational compare; #100h & 0xFF = 0)`);
+    } finally {
+      setWordsize(64);
+    }
+  }
+
+  // Wordsize-mask edge case on `>`: at ws=8, #FFh = 255 stays 255,
+  // and 255 > Rational(254,1) = 254 → true.  This pins both that
+  // the mask is value-preserving on in-range values AND that the
+  // rational-branch compare fires.
+  {
+    setWordsize(8);
+    try {
+      const s = new Stack();
+      s.push(BinaryInteger(0xFFn, 'h'));
+      s.push(Rational(254n, 1n));
+      lookup('>').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(1),
+        `session130: ws=8 #FFh > Rational(254,1) → 1 (mask preserves in-range value; 255 > 254)`);
+    } finally {
+      setWordsize(64);
+    }
+  }
+
+  // Wordsize-mask wraparound on `<`: at ws=8, #1FFh masks to #FFh
+  // = 255.  `Rational(300,1)` (= 300) > 255 → so #1FFh < Rational(300,1)
+  // = true.  Pin that the mask happens BEFORE the compare —
+  // without masking, #1FFh = 511 would be > 300, flipping the
+  // result.  This is the same masking discipline pinned on B × Z
+  // ordered compare in session 074.
+  {
+    setWordsize(8);
+    try {
+      const s = new Stack();
+      s.push(BinaryInteger(0x1FFn, 'h'));
+      s.push(Rational(300n, 1n));
+      lookup('<').fn(s);
+      const v = s.peek();
+      assert(isReal(v) && v.value.eq(1),
+        `session130: ws=8 #1FFh < Rational(300,1) → 1 (mask BEFORE compare; #1FFh masks to 255 < 300, NOT 511 > 300)`);
+    } finally {
+      setWordsize(64);
+    }
+  }
+}
+
+/* ================================================================
+   session 130 — Cluster 3: Tagged-of-List composition on binary
+   ops via `_withTaggedBinary(_withListBinary(handler))`.
+
+   The percent family (`%` / `%T` / `%CH`) and the binary-numeric
+   family with list distribution (GCD / LCM / MOD / MIN / MAX /
+   COMB / PERM / IQUOT / IREMAINDER / Beta) all wrap with
+   `_withTaggedBinary` OUTSIDE `_withListBinary`.  At a Tagged input
+   on either side the order is:
+     (1) `_withTaggedBinary` checks both top-2 slots; if either is
+         Tagged, both are popped and unwrapped (tag values dropped
+         per HP50 AUR §3.4 binary tag-drop).
+     (2) `_withListBinary` then sees the unwrapped values and
+         distributes if either is a list (scalar × List, List ×
+         scalar, or pairwise same-size).
+     (3) The inner scalar handler runs per element.
+     (4) Result is the un-Tagged List (binary tag-drop — no
+         re-tag, since binary ops have no single obvious label).
+
+   Session 120 Cluster 2 pinned both-side / left-only / right-only
+   tag-drop on the percent family with bare-scalar operands.
+   Session 125 Cluster 1 pinned the `_withListBinary` distribution
+   axes on the combinatorial / divmod / GCD / LCM / MOD / MIN /
+   MAX surface with bare-list operands.  This cluster covers the
+   *composition* — Tagged outside List on one or both operands —
+   on a representative sample of the binary-list family, plus the
+   deliberate inner-Tagged-inside-List rejection on the binary
+   surface (a binary mirror of session 125 Cluster 2's unary
+   inner-Tagged-inside-List rejection on NEG).  10 hard
+   assertions. */
+{
+  // Tagged-of-List × scalar on `%` — left side has Tagged + List,
+  // right side is bare scalar.  `_withTaggedBinary` unwraps the
+  // tag → push `{80, 40}` and `25`, then `_withListBinary`
+  // broadcasts → `{80*25/100, 40*25/100} = {20, 10}`.  Result is
+  // un-Tagged List (tag-drop on binary).
+  {
+    const s = new Stack();
+    s.push(Tagged('lbl', RList([Real(80), Real(40)])));
+    s.push(Real(25));
+    lookup('%').fn(s);
+    const v = s.peek();
+    assert(isList(v) && !isTagged(v),
+      `session130: :lbl:{80 40} 25 % → un-Tagged List (binary tag-drop on percent; got ${v?.type})`);
+    assert(v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(20)
+        && isReal(v.items[1]) && v.items[1].value.eq(10),
+      `session130: :lbl:{80 40} 25 % → {Real(20), Real(10)} (got ${v?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // Right-side Tagged-of-List on `%T` — `_withTaggedBinary`
+  // unwraps the right tag, list distributes scalar × list →
+  // `{100*25/50, 100*75/50} = {50, 150}`.  Pins the
+  // operand-order symmetry of the wrapper composition.
+  {
+    const s = new Stack();
+    s.push(Real(50));
+    s.push(Tagged('p', RList([Real(25), Real(75)])));
+    lookup('%T').fn(s);
+    const v = s.peek();
+    assert(isList(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(50)
+        && isReal(v.items[1]) && v.items[1].value.eq(150),
+      `session130: 50 :p:{25 75} %T → {Real(50), Real(150)} (right-Tagged-of-List, percent base; got ${v?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // Both-side Tagged-of-List on `%` — both tags drop, both lists
+  // pair-distribute → `{80*25/100, 40*50/100} = {20, 20}`.  Pin
+  // that double-Tagged-and-double-List composes via the same
+  // wrapper chain.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', RList([Real(80), Real(40)])));
+    s.push(Tagged('b', RList([Real(25), Real(50)])));
+    lookup('%').fn(s);
+    const v = s.peek();
+    assert(isList(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(20)
+        && isReal(v.items[1]) && v.items[1].value.eq(20),
+      `session130: :a:{80 40} :b:{25 50} % → {Real(20), Real(20)} (both-Tagged + pairwise List; got ${v?.items?.map(x => x.value.toString()).join(',')})`);
+  }
+
+  // Tagged-of-List × bare-List on `GCD` — left Tagged unwraps,
+  // pairwise GCD → `{GCD(12,6), GCD(18,9)} = {6, 9}`.  Pin
+  // through the integer fast path of `GCD` (both operands are
+  // Integers, so the result stays Integer).
+  {
+    const s = new Stack();
+    s.push(Tagged('a', RList([Integer(12n), Integer(18n)])));
+    s.push(RList([Integer(6n), Integer(9n)]));
+    lookup('GCD').fn(s);
+    const v = s.peek();
+    assert(isList(v) && !isTagged(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 6n
+        && isInteger(v.items[1]) && v.items[1].value === 9n,
+      `session130: :a:{12 18} {6 9} GCD → {Integer(6), Integer(9)} (left-Tagged, pairwise distribution, integer fast path; got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')})`);
+  }
+
+  // Both-side Tagged-of-List on `MOD` — `_withTaggedBinary`
+  // unwraps both tags, `_withListBinary` pairs `{10 mod 3, 7 mod 2} = {1, 1}`.
+  // Pin through MOD's integer fast path (both Integer operands
+  // ⇒ Integer result, contrast with MOD's Q→R degradation pinned
+  // in session 125 Cluster 3).
+  {
+    const s = new Stack();
+    s.push(Tagged('a', RList([Integer(10n), Integer(7n)])));
+    s.push(Tagged('b', RList([Integer(3n), Integer(2n)])));
+    lookup('MOD').fn(s);
+    const v = s.peek();
+    assert(isList(v) && !isTagged(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 1n
+        && isInteger(v.items[1]) && v.items[1].value === 1n,
+      `session130: :a:{10 7} :b:{3 2} MOD → {Integer(1), Integer(1)} (both-Tagged + pairwise + integer fast path; got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')})`);
+  }
+
+  // Tagged-of-List × scalar on `COMB` — left Tagged unwraps,
+  // List × scalar broadcast → `{C(5,2), C(6,2)} = {10, 15}`.  Pin
+  // a combinatorial-family op through the same wrapper chain.
+  {
+    const s = new Stack();
+    s.push(Tagged('lbl', RList([Integer(5n), Integer(6n)])));
+    s.push(Integer(2n));
+    lookup('COMB').fn(s);
+    const v = s.peek();
+    assert(isList(v) && !isTagged(v) && v.items.length === 2
+        && Number(v.items[0].value) === 10 && Number(v.items[1].value) === 15,
+      `session130: :lbl:{5 6} 2 COMB → {Integer(10), Integer(15)} (Tagged-of-List + scalar through combinatorial path)`);
+  }
+
+  // Tagged-of-Tagged scalar on `MIN` — both tags drop, integer
+  // fast path: min(5, 3) = 3.  Pins the bare-scalar both-Tagged
+  // path on a binary-numeric op that's distinct from the percent
+  // family pinned in session 120 Cluster 2.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Integer(5n)));
+    s.push(Tagged('b', Integer(3n)));
+    lookup('MIN').fn(s);
+    const v = s.peek();
+    assert(isInteger(v) && v.value === 3n,
+      `session130: :a:Integer(5) :b:Integer(3) MIN → Integer(3) (both-Tagged scalar, integer fast path on MIN)`);
+  }
+
+  // Inner-Tagged-inside-List on the binary `%` surface —
+  // `_withTaggedBinary` only inspects the top-2 stack slots; the
+  // List (level 2) is NOT Tagged at the top level.  Then
+  // `_withListBinary` recurses into `apply()` which calls the
+  // INNER `handler` directly (NOT back through the wrapped
+  // function — see ops.js:519).  So the inner handler sees a
+  // bare Tagged scalar, calls `toRealOrThrow`, and rejects.  This
+  // is the binary mirror of session 125 Cluster 2's unary
+  // inner-Tagged-inside-List rejection on NEG.
+  assertThrows(
+    () => {
+      const s = new Stack();
+      s.push(RList([Tagged('x', Real(80)), Tagged('y', Real(40))]));
+      s.push(Real(25));
+      lookup('%').fn(s);
+    },
+    /Bad argument/,
+    'session130: {:x:80 :y:40} 25 % → Bad argument type (inner Tagged inside List has no unwrapper at the binary scalar handler; mirror of session 125 unary pin)'
+  );
+
+  // Sanity contrast — Tagged scalar × bare scalar on `%` (no
+  // List).  `_withTaggedBinary` unwraps the tag → `80 25 %` =
+  // `Real(20)`, no Tagged envelope (binary tag-drop).  Single
+  // assertion documenting that bare-scalar both-side tag-drop
+  // (already pinned in session 120) still composes here as
+  // expected — useful as the contrast with the List-recursion
+  // rejection above.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(80)));
+    s.push(Real(25));
+    lookup('%').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(20) && !isTagged(v),
+      `session130 (contrast): :a:80 25 % → Real(20) (bare-scalar Tagged tag-drop — composes the same way as the List-broadcast pins above)`);
+  }
+
+  // Tagged on right-only with scalar × Tagged-of-List on `LCM` —
+  // pins the right-side Tagged-of-List + left-scalar variant on
+  // a combinatorial-adjacent op (LCM).  Pairs with session 125
+  // Cluster 1's bare-scalar × bare-List LCM pin (which used `4
+  // {6 9} LCM` → `{12, 36}`); here the same answer is reached
+  // via the Tagged-unwrap path.
+  {
+    const s = new Stack();
+    s.push(Integer(4n));
+    s.push(Tagged('lbl', RList([Integer(6n), Integer(9n)])));
+    lookup('LCM').fn(s);
+    const v = s.peek();
+    assert(isList(v) && !isTagged(v) && v.items.length === 2
+        && Number(v.items[0].value) === 12 && Number(v.items[1].value) === 36,
+      `session130: 4 :lbl:{6 9} LCM → {Integer(12), Integer(36)} (right-Tagged-of-List, scalar × Tagged-List; got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')})`);
+  }
+}
+
+/* ================================================================
+   session 135 — Cluster 1: Rational × Vector / Rational × Matrix
+   arithmetic broadcast on `+ - * /`.
+
+   The compact reference rows for `+ - * /` carry `V ✓ M ✓` and
+   `Q ✓` (via the session-092 convention text and session-115
+   Cluster 2 arithmetic pin), but no direct test had pinned the
+   *broadcast* of a Rational scalar onto a Vector or Matrix, nor
+   the per-element type contract.  The relevant code path is
+   `_scalarBinaryMixed → _binaryMathMixed → _arithmeticOnArrays`,
+   which calls the inner per-element arithmetic via
+   `promoteNumericPair` — and that helper has a `'rational'` kind
+   branch (session 115 Cluster 2) that stays-exact through
+   `Fraction.js` arithmetic.  So Q × Q-element stays Rational
+   (with d=1 collapse to Integer at the result layer); Q × R-element
+   degrades to Real per element (mirror of session 125 Cluster 3's
+   MIN/MAX/MOD Q→R degradation, but on V/M arithmetic instead);
+   Q × Z-element stays-exact through the rational kind and may
+   collapse to Integer when d=1.  Closes the V/M-axis on the Q
+   stay-exact contract that sessions 092 / 115 / 120 pinned only
+   on the scalar arithmetic surface. */
+{
+  // Q × Vector with Real-typed elements: per-element Q×R degrades
+  // to Real via promoteNumericPair's 'real' kind.  Pins that the
+  // V/M scalar-broadcast path inherits the same Q→R degradation
+  // contract as the scalar case.
+  {
+    const s = new Stack();
+    s.push(Vector([Real(2), Real(4)]));
+    s.push(Rational(1n, 2n));
+    lookup('*').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(1)
+        && isReal(v.items[1]) && v.items[1].value.eq(2),
+      `session135: Vec[Real(2), Real(4)] * Rational(1,2) → Vec[Real(1), Real(2)] (Q×R per element degrades to Real; got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')})`);
+  }
+
+  // Q + Vector with Real-typed elements (operand-order symmetric):
+  // `Rational(1,2) + Vec[Real(1), Real(2)]` → `Vec[Real(1.5), Real(2.5)]`.
+  // Pins that left-Q × right-V broadcast composes the same way as
+  // right-Q (session 115 only pinned scalar Q+R, not V-broadcast).
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Vector([Real(1), Real(2)]));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(1.5)
+        && isReal(v.items[1]) && v.items[1].value.eq(2.5),
+      `session135: Rational(1,2) + Vec[Real(1), Real(2)] → Vec[Real(1.5), Real(2.5)] (left-Q broadcast onto right-V); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Q + Vector with Q-typed elements: stays-exact per element via
+  // the rational kind.  `Q(1/2) + Vec[Q(1/3), Q(1/4)]` →
+  // `Vec[Q(5/6), Q(3/4)]`.  Pins that the V/M broadcast preserves
+  // the Q-stay-exact dispatch through `_rationalBinary` per element
+  // (session 115 Cluster 2 pinned this on scalar arithmetic — this
+  // is the V-broadcast extension).
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Vector([Rational(1n, 3n), Rational(1n, 4n)]));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isRational(v.items[0]) && v.items[0].n === 5n && v.items[0].d === 6n
+        && isRational(v.items[1]) && v.items[1].n === 3n && v.items[1].d === 4n,
+      `session135: Rational(1,2) + Vec[Rational(1,3), Rational(1,4)] → Vec[Rational(5,6), Rational(3,4)] (Q+Q stays exact per element); got ${v?.items?.map(x => x.type === 'rational' ? `Q(${x.n},${x.d})` : `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Q × Vector with Q-typed elements collapses to Integer per
+  // element when d=1 result: `Q(1/2) * Vec[Q(2,1), Q(4,1)]` →
+  // `Vec[Integer(1), Integer(2)]`.  Pins the d=1 collapse (which
+  // session 115 Cluster 2 pinned on scalar `Q*Q` → Integer) survives
+  // the V-broadcast.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Vector([Rational(2n, 1n), Rational(4n, 1n)]));
+    lookup('*').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 1n
+        && isInteger(v.items[1]) && v.items[1].value === 2n,
+      `session135: Rational(1,2) * Vec[Rational(2,1), Rational(4,1)] → Vec[Integer(1), Integer(2)] (Q×Q d=1 collapse per element); got ${v?.items?.map(x => `${x.type}(${x.value ?? x.n + '/' + x.d})`).join(',')}`);
+  }
+
+  // Vector ÷ Q with Q-typed elements: `Vec[Q(1,1), Q(2,1)] /
+  // Q(1/2)` → `Vec[Integer(2), Integer(4)]` (Q/Q stay-exact + d=1
+  // collapse per element).  Pins the V÷Q dispatch on the
+  // division operator's rational kind.
+  {
+    const s = new Stack();
+    s.push(Vector([Rational(1n, 1n), Rational(2n, 1n)]));
+    s.push(Rational(1n, 2n));
+    lookup('/').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isInteger(v.items[0]) && v.items[0].value === 2n
+        && isInteger(v.items[1]) && v.items[1].value === 4n,
+      `session135: Vec[Q(1,1), Q(2,1)] / Q(1/2) → Vec[Integer(2), Integer(4)] (Q/Q d=1 collapse per element); got ${v?.items?.map(x => `${x.type}(${x.value ?? x.n + '/' + x.d})`).join(',')}`);
+  }
+
+  // Vector − Q with Real-typed elements: `Vec[Real(3), Real(4)] -
+  // Rational(1/2)` → `Vec[Real(2.5), Real(3.5)]` (Real-V minus Q
+  // broadcast → Real per element via the real kind).  Pins the
+  // sign-correct subtraction (right-side Q operand) — distinct
+  // from the addition pins above.
+  {
+    const s = new Stack();
+    s.push(Vector([Real(3), Real(4)]));
+    s.push(Rational(1n, 2n));
+    lookup('-').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(2.5)
+        && isReal(v.items[1]) && v.items[1].value.eq(3.5),
+      `session135: Vec[Real(3), Real(4)] - Rational(1,2) → Vec[Real(2.5), Real(3.5)] (V−Q broadcast, sign-correct subtraction); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Q × Matrix with Integer-typed entries: `Mat[[Z(2), Z(4)],
+  // [Z(6), Z(8)]] * Rational(1/2)` → `Mat[[Z(1), Z(2)], [Z(3),
+  // Z(4)]]` (Z×Q stays-exact + d=1 collapse per entry).  Pins the
+  // M-axis on the same Q-broadcast contract.
+  {
+    const s = new Stack();
+    s.push(Matrix([[Integer(2n), Integer(4n)], [Integer(6n), Integer(8n)]]));
+    s.push(Rational(1n, 2n));
+    lookup('*').fn(s);
+    const v = s.peek();
+    assert(isMatrix(v) && !isTagged(v) && v.rows.length === 2
+        && isInteger(v.rows[0][0]) && v.rows[0][0].value === 1n
+        && isInteger(v.rows[0][1]) && v.rows[0][1].value === 2n
+        && isInteger(v.rows[1][0]) && v.rows[1][0].value === 3n
+        && isInteger(v.rows[1][1]) && v.rows[1][1].value === 4n,
+      `session135: Matrix[[Z(2),Z(4)],[Z(6),Z(8)]] * Rational(1,2) → Matrix[[Z(1),Z(2)],[Z(3),Z(4)]] (Z×Q d=1 collapse per entry on Matrix axis)`);
+  }
+
+  // Vector + Vector with mixed Q / R element types: each pair
+  // `Q(1/2)+Real(1)` and `Q(3/4)+Real(1)` degrades to Real via
+  // `promoteNumericPair`'s real kind.  Pins per-element type
+  // routing on V+V (NOT scalar broadcast) — element-wise pairwise
+  // sees Q on the left, Real on the right, and the per-element
+  // dispatch picks the same widening as the scalar case.
+  {
+    const s = new Stack();
+    s.push(Vector([Rational(1n, 2n), Rational(3n, 4n)]));
+    s.push(Vector([Real(1), Real(1)]));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(1.5)
+        && isReal(v.items[1]) && v.items[1].value.eq(1.75),
+      `session135: Vec[Q(1,2), Q(3,4)] + Vec[Real(1), Real(1)] → Vec[Real(1.5), Real(1.75)] (per-element Q+R degrades to Real on V+V pairwise); got ${v?.items?.map(x => `${x.type}(${x.value ?? x.n + '/' + x.d})`).join(',')}`);
+  }
+}
+
+/* ================================================================
+   session 135 — Cluster 2: Tagged-of-Vector / Tagged-of-Matrix
+   composition on BINARY arithmetic via
+   `_withTaggedBinary(_withListBinary(handler))` for `+ - * /`.
+
+   Session 130 Cluster 1 pinned the UNARY surface (SQRT, FACT,
+   LNP1, NEG, ABS) on Tagged-of-V/M with the 3-deep wrapper
+   `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`.
+   This cluster covers the BINARY surface, where the wrapper is
+   `_withTaggedBinary(_withListBinary(handler))` and the inner
+   handler dispatches to `_arithmeticOnArrays` for V/M scalar-
+   broadcast, V+V/V−V/V·V (dot product), and M·M (matmul).  At a
+   `Tagged(label, V|M)` input on either side, the order is:
+     (1) `_withTaggedBinary` checks both top-2 stack slots; if
+         either is Tagged, both are popped and unwrapped (per
+         HP50 AUR §3.4 binary tag-drop, NOT preserving any tag).
+     (2) `_withListBinary` doesn't intercept V/M (only RList).
+     (3) The inner handler runs the V/M dispatch — element-wise,
+         dot product, matmul — directly on the unwrapped
+         payloads.
+     (4) Result is the un-Tagged V/M (or scalar for V·V dot product
+         and M-shape-changing ops; matmul preserves Matrix kind).
+
+   Pins both-sides, left-only, right-only Tagged on V/M operands;
+   pins the bespoke V·V dot product (kind change V → R through
+   the tag-drop wrapper, mirror of the bespoke ABS-of-Tagged-Vector
+   pin from session 125 Cluster 2 but on the binary surface);
+   pins the inner-Tagged-inside-Vector rejection (mirror of session
+   130 Cluster 3's inner-Tagged-inside-List); pins that the
+   pre-existing dimension-mismatch rejection survives the Tagged
+   unwrap. */
+{
+  // Left-Tagged-of-Vector + bare-scalar: tag drops, V scalar-
+  // broadcasts.  `:v:Vec[1, 2] + Integer(1)` →
+  // `Vec[Real(2), Real(3)]` (un-Tagged Vector — binary tag-drop).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(1), Real(2)])));
+    s.push(Integer(1n));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(2)
+        && isReal(v.items[1]) && v.items[1].value.eq(3),
+      `session135: :v:Vec[1, 2] + Integer(1) → Vec[Real(2), Real(3)] (left-Tagged-V + scalar; binary tag-drop, V scalar-broadcast); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Right-Tagged-of-Vector + bare-scalar (operand-order symmetric):
+  // `Integer(1) + :v:Vec[1, 2]` → `Vec[Real(2), Real(3)]`.
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    s.push(Tagged('v', Vector([Real(1), Real(2)])));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(2)
+        && isReal(v.items[1]) && v.items[1].value.eq(3),
+      `session135: Integer(1) + :v:Vec[1, 2] → Vec[Real(2), Real(3)] (right-Tagged-V; symmetric to left-Tagged); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Both-sides Tagged on V+V pairwise: `:a:Vec[1, 2] + :b:Vec[3,
+  // 4]` → `Vec[Real(4), Real(6)]` (both tags drop, pairwise V+V).
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Vector([Real(1), Real(2)])));
+    s.push(Tagged('b', Vector([Real(3), Real(4)])));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(4)
+        && isReal(v.items[1]) && v.items[1].value.eq(6),
+      `session135: :a:Vec[1, 2] + :b:Vec[3, 4] → Vec[Real(4), Real(6)] (both-Tagged-V pairwise; both tags drop); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Left-Tagged-of-Matrix × bare-scalar: `:m:Mat[[1,2],[3,4]] *
+  // Integer(2)` → `Mat[[Real(2),Real(4)],[Real(6),Real(8)]]`
+  // (un-Tagged Matrix — scalar broadcast across all entries).
+  {
+    const s = new Stack();
+    s.push(Tagged('m', Matrix([[Real(1), Real(2)], [Real(3), Real(4)]])));
+    s.push(Integer(2n));
+    lookup('*').fn(s);
+    const v = s.peek();
+    assert(isMatrix(v) && !isTagged(v) && v.rows.length === 2
+        && isReal(v.rows[0][0]) && v.rows[0][0].value.eq(2)
+        && isReal(v.rows[0][1]) && v.rows[0][1].value.eq(4)
+        && isReal(v.rows[1][0]) && v.rows[1][0].value.eq(6)
+        && isReal(v.rows[1][1]) && v.rows[1][1].value.eq(8),
+      `session135: :m:Mat[[1,2],[3,4]] * Integer(2) → Mat[[Real(2),Real(4)],[Real(6),Real(8)]] (left-Tagged-M scalar-broadcast; tag drops)`);
+  }
+
+  // Bespoke V·V dot product through tag-drop: `:a:Vec[1, 2] *
+  // :b:Vec[3, 4]` → `Real(11)` (1·3 + 2·4 = 11).  Kind change V →
+  // R survives the binary tag-drop wrapper — mirror of session 125
+  // Cluster 2's bespoke ABS-of-Tagged-Vector V → R kind-change pin
+  // but on the binary surface.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Vector([Real(1), Real(2)])));
+    s.push(Tagged('b', Vector([Real(3), Real(4)])));
+    lookup('*').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && !isTagged(v) && v.value.eq(11),
+      `session135: :a:Vec[1, 2] * :b:Vec[3, 4] → Real(11) (V·V dot product; kind change V → R survives binary tag-drop wrapper); got ${v?.type}(${v?.value})`);
+  }
+
+  // Matrix multiplication through tag-drop: `:m:Mat[[1,2],[3,4]] *
+  // Mat[[1,0],[0,1]]` → identity-multiplied result; tag drops but
+  // Matrix kind preserved.
+  {
+    const s = new Stack();
+    s.push(Tagged('m', Matrix([[Real(1), Real(2)], [Real(3), Real(4)]])));
+    s.push(Matrix([[Real(1), Real(0)], [Real(0), Real(1)]]));
+    lookup('*').fn(s);
+    const v = s.peek();
+    assert(isMatrix(v) && !isTagged(v) && v.rows.length === 2
+        && isReal(v.rows[0][0]) && v.rows[0][0].value.eq(1)
+        && isReal(v.rows[0][1]) && v.rows[0][1].value.eq(2)
+        && isReal(v.rows[1][0]) && v.rows[1][0].value.eq(3)
+        && isReal(v.rows[1][1]) && v.rows[1][1].value.eq(4),
+      `session135: :m:Mat[[1,2],[3,4]] * I → Mat[[1,2],[3,4]] (matmul through tag-drop wrapper; Matrix kind preserved, tag drops)`);
+  }
+
+  // Vector ÷ Tagged scalar (right-Tagged on the divisor): `Vec[8,
+  // 10] / :s:Integer(2)` → `Vec[Real(4), Real(5)]` (right-Tagged-
+  // scalar; tag drops on result).  Pins the operand-order symmetric
+  // case and the division operator path.
+  {
+    const s = new Stack();
+    s.push(Vector([Real(8), Real(10)]));
+    s.push(Tagged('s', Integer(2n)));
+    lookup('/').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(4)
+        && isReal(v.items[1]) && v.items[1].value.eq(5),
+      `session135: Vec[8, 10] / :s:Integer(2) → Vec[Real(4), Real(5)] (right-Tagged-scalar divisor; tag drops); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Left-Tagged-of-Vector minus bare-scalar: `:v:Vec[5, 7] -
+  // Integer(1)` → `Vec[Real(4), Real(6)]`.  Pins subtraction on
+  // the same Tagged-V surface (distinct inner handler from `+`).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(5), Real(7)])));
+    s.push(Integer(1n));
+    lookup('-').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(4)
+        && isReal(v.items[1]) && v.items[1].value.eq(6),
+      `session135: :v:Vec[5, 7] - Integer(1) → Vec[Real(4), Real(6)] (left-Tagged-V minus scalar); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Tagged scalar × bare-Vector: `:s:Integer(2) * Vec[1, 2]` →
+  // `Vec[Real(2), Real(4)]` (left-Tagged-scalar × right-V; tag
+  // drops, V scalar-broadcast).  Closes the all-four-shapes
+  // Tagged-and-V/M-binary surface: T-V × bare-scalar, bare-scalar
+  // × T-V, T-V × T-V (above), T-scalar × bare-V (this).
+  {
+    const s = new Stack();
+    s.push(Tagged('s', Integer(2n)));
+    s.push(Vector([Real(1), Real(2)]));
+    lookup('*').fn(s);
+    const v = s.peek();
+    assert(isVector(v) && !isTagged(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(2)
+        && isReal(v.items[1]) && v.items[1].value.eq(4),
+      `session135: :s:Integer(2) * Vec[1, 2] → Vec[Real(2), Real(4)] (left-Tagged-scalar × right-V; tag drops); got ${v?.items?.map(x => `${x.type}(${x.value})`).join(',')}`);
+  }
+
+  // Inner-Tagged-inside-Vector binary rejection: `Vec[:x:Real(1),
+  // :y:Real(2)] + Vec[Real(1), Real(2)]` → 'Bad argument type'.
+  // The Vector at level 2 is NOT Tagged at the top level, so
+  // `_withTaggedBinary` doesn't intercept it; the inner handler
+  // sees a Vector with Tagged elements and the per-element
+  // arithmetic helper rejects.  Mirror of session 130 Cluster 3's
+  // inner-Tagged-inside-List rejection on the percent family,
+  // here on the V-axis of the binary arithmetic surface.
+  assertThrows(
+    () => {
+      const s = new Stack();
+      s.push(Vector([Tagged('x', Real(1)), Tagged('y', Real(2))]));
+      s.push(Vector([Real(1), Real(2)]));
+      lookup('+').fn(s);
+    },
+    /Bad argument/,
+    'session135: Vec[:x:Real(1), :y:Real(2)] + Vec[Real(1), Real(2)] → Bad argument type (inner-Tagged-inside-Vector has no unwrapper at the per-element handler; mirror of session 130 List pin)'
+  );
+
+  // Dimension-mismatch survives Tagged unwrap: `:a:Vec[1, 2, 3] +
+  // :b:Vec[1, 2]` → 'Invalid dimension'.  Pins that the V+V
+  // size-check fires AFTER the Tagged unwrap (so the user-facing
+  // error is the dimension error, NOT a Tagged-related error).
+  assertThrows(
+    () => {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Real(1), Real(2), Real(3)])));
+      s.push(Tagged('b', Vector([Real(1), Real(2)])));
+      lookup('+').fn(s);
+    },
+    /Invalid dimension/,
+    'session135: :a:V[1,2,3] + :b:V[1,2] → Invalid dimension (size mismatch survives Tagged unwrap; tags drop before the V+V size check fires)'
+  );
+}
+
+/* ================================================================
+   session 135 — Cluster 3: Tag-identity contract on `==` / `SAME`
+   plus BinInt base-agnostic equality contract.
+
+   The Tagged row in the `==` / `SAME` block of the matrix carries
+   the Notes phrase "same tag AND same value" — but no direct
+   test had pinned the *different-tag* failure mode, the
+   *missing-tag-on-one-side* mismatch (Tagged ≠ bare even at the
+   same payload value), or the same-tag + different-value
+   mismatch.  Session 074 added BinInt × BinInt to `==` / `SAME`,
+   and the matrix Notes mention "BinInt × BinInt (masked against
+   current wordsize)" — but no direct test had pinned the
+   base-agnostic contract: `#5h SAME #5d` = 1 (value matters,
+   base doesn't), `SAME #5h #6d` = 0 (different value rejects
+   regardless of base).
+
+   The handlers live in `eqValues()` (`ops.js`).  For Tagged: the
+   isTagged branch returns `(a.label === b.label) && eqValues(
+   a.value, b.value)`; for `Tagged × bare`, neither is Tagged on
+   both sides so the cross-type guard fires (different `type`
+   fields → `0`).  For BinaryInteger × BinaryInteger: both
+   operands route through `(a.value & mask) === (b.value & mask)`
+   regardless of the `.base` field — the formatter base is purely
+   cosmetic.  This cluster pins all of those contracts. */
+{
+  // Same tag + same value → 1.  `:a:Real(5) == :a:Real(5)` = 1.
+  // The full positive case for the Tagged equality path.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(5)));
+    s.push(Tagged('a', Real(5)));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session135: :a:Real(5) == :a:Real(5) → 1 (same tag AND same value); got ${v?.type}(${v?.value})`);
+  }
+
+  // Same tag + different value → 0.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(5)));
+    s.push(Tagged('a', Real(6)));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session135: :a:Real(5) == :a:Real(6) → 0 (same tag, different value); got ${v?.type}(${v?.value})`);
+  }
+
+  // Different tags + same value → 0.  This is the canonical
+  // "tag identity matters" pin.  Even though both payloads are
+  // `Real(5)`, the labels `'a'` and `'b'` differ, so the Tagged
+  // equality path returns 0 *before* descending to compare values.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(5)));
+    s.push(Tagged('b', Real(5)));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session135: :a:Real(5) == :b:Real(5) → 0 (different tags + same value; tag identity matters); got ${v?.type}(${v?.value})`);
+  }
+
+  // Tagged × bare on `==`: `:a:Real(5) == Real(5)` → 0.  Pins
+  // that Tagged is its own type-shape — there is no implicit
+  // unwrap for `==`-comparison against a bare scalar.  Contrast
+  // with the binary-arithmetic surface (sessions 115 / 130 / 135)
+  // where binary tag-drop makes Tagged transparent at the
+  // operator level.  Equality is structural, not arithmetic.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(5)));
+    s.push(Real(5));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session135: :a:Real(5) == Real(5) → 0 (Tagged vs bare; structural compare, no implicit unwrap on ==); got ${v?.type}(${v?.value})`);
+  }
+
+  // Symmetric: `Real(5) == :a:Real(5)` → 0.  Operand order does
+  // not coerce Tagged.
+  {
+    const s = new Stack();
+    s.push(Real(5));
+    s.push(Tagged('a', Real(5)));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session135: Real(5) == :a:Real(5) → 0 (operand-order symmetric to the prior pin); got ${v?.type}(${v?.value})`);
+  }
+
+  // SAME mirrors the above on all four combinations — same tag/
+  // value, same tag/different value, different tag/same value,
+  // Tagged × bare — and always returns Real (not Symbolic).  Five
+  // pins below.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(5)));
+    s.push(Tagged('a', Real(5)));
+    lookup('SAME').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session135: :a:Real(5) SAME :a:Real(5) → 1 (SAME mirrors == on the positive case)`);
+  }
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(5)));
+    s.push(Tagged('b', Real(5)));
+    lookup('SAME').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session135: :a:Real(5) SAME :b:Real(5) → 0 (SAME mirrors == on tag-mismatch)`);
+  }
+  {
+    const s = new Stack();
+    s.push(Tagged('a', Real(5)));
+    s.push(Real(5));
+    lookup('SAME').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session135: :a:Real(5) SAME Real(5) → 0 (SAME mirrors == on Tagged-vs-bare)`);
+  }
+
+  // BinInt base-agnostic equality.  `#5h == #5d` → 1 — same
+  // value, the formatter base ('h' vs 'd') does not affect
+  // equality.  Pins that `eqValues` on BinInt × BinInt compares
+  // values masked by the current wordsize, NOT the `.base` field.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(5n, 'h'));
+    s.push(BinaryInteger(5n, 'd'));
+    lookup('==').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session135: #5h == #5d → 1 (BinInt equality is base-agnostic — only the value matters); got ${v?.type}(${v?.value})`);
+  }
+
+  // SAME mirrors `==` on base-agnostic BinInt: `SAME #5h #5d` →
+  // 1.  Distinct contract from session 074's "SAME does not
+  // type-coerce" — base difference is NOT a type difference for
+  // BinInt × BinInt (both operands are still type
+  // `'binaryInteger'`); only the cosmetic `.base` field differs.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(5n, 'h'));
+    s.push(BinaryInteger(5n, 'd'));
+    lookup('SAME').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session135: SAME #5h #5d → 1 (SAME mirrors == on base-agnostic BinInt — base is cosmetic, both are type 'binaryInteger')`);
+  }
+
+  // BinInt different value, different base: `SAME #5h #6d` → 0.
+  // Pins that base agnosticism does NOT swallow value differences.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(5n, 'h'));
+    s.push(BinaryInteger(6n, 'd'));
+    lookup('SAME').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session135: SAME #5h #6d → 0 (different value rejects regardless of base)`);
+  }
+
+  // BinInt cross-base ordered compare: `#5h < #6d` → 1.  Pins
+  // that ordered compare also ignores the formatter base — just
+  // compares masked values.  Closes the cross-base contract on
+  // the ordered comparator family; session 074 pinned BinInt × Z
+  // ordered compare and session 130 pinned BinInt × Q, but the
+  // BinInt × BinInt cross-base path was unpinned.
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(5n, 'h'));
+    s.push(BinaryInteger(6n, 'd'));
+    lookup('<').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session135: #5h < #6d → 1 (BinInt cross-base ordered compare; base is cosmetic for compare)`);
+  }
+}
+
+/* ================================================================
+   session 140 — Cluster 1: Hyperbolic family Tagged-of-Vector /
+   Tagged-of-Matrix wrapper-VM composition (SINH / COSH / TANH /
+   ASINH / ACOSH / ATANH).
+
+   All six hyperbolic ops dispatch through the 3-deep wrapper
+   `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))` —
+   SINH / COSH / TANH / ASINH via `_unaryCx` (`ops.js:7856`),
+   ACOSH / ATANH via direct `_withTaggedUnary(_withListUnary(
+   _withVMUnary(...)))` registration.  At a `Tagged(label, V|M)`
+   input the order is: (1) `_withTaggedUnary` unwraps and pushes
+   the V/M; (2) `_withListUnary` doesn't intercept V/M; (3)
+   `_withVMUnary` distributes element-wise; (4) `_withTaggedUnary`
+   re-tags the resulting V/M with the SAME label.
+
+   Session 120 Cluster 1 pinned bare-scalar Tagged transparency
+   and List distribution on this family ("Hyperbolic family
+   Tagged transparency, List distribution, and Symbolic-lift
+   through Tagged"), and session 130 Cluster 1 pinned the
+   wrapper-VM composition for SQRT / FACT / LNP1 / SIN — but
+   the hyperbolic 3-deep wrapper-VM composition was unpinned.
+   This cluster closes that surface, plus the deliberate inner-
+   Tagged-inside-Vector rejection (mirror of session 130 Cluster
+   3's inner-Tagged-inside-List rejection on the V-axis), and
+   the `_exactUnaryLift` integer-stay-exact path on Tagged-V
+   (SINH(Integer(0)) → Integer(0) inside the Tagged Vector,
+   distinct from Real(0) → Real(0) — the EXACT-mode integer
+   preservation in `_unaryCx` survives the wrapper composition). */
+{
+  // SINH on Tagged-Matrix: 3-deep wrapper composition on the
+  // Matrix axis.  All zeros so sinh(0) = 0 per element; the
+  // resulting Matrix is wrapped back in Tagged with the same tag.
+  {
+    const s = new Stack();
+    s.push(Tagged('m', Matrix([[Real(0), Real(0)], [Real(0), Real(0)]])));
+    lookup('SINH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'm' && isMatrix(v.value),
+      `session140: SINH :m:Matrix([[0,0],[0,0]]) preserves outer tag + Matrix shape (got tag=${v?.tag} inner=${v?.value?.type})`);
+    const r = v.value.rows;
+    assert(r.length === 2 && r[0].length === 2
+        && r[0][0].value.eq(0) && r[0][1].value.eq(0)
+        && r[1][0].value.eq(0) && r[1][1].value.eq(0),
+      `session140: SINH :m:Matrix([[0,0],[0,0]]) → :m:Matrix([[0,0],[0,0]]) (per-entry sinh(0)=0; wrapper-VM under Tagged on Matrix axis)`);
+  }
+
+  // COSH on Tagged-Vector: cosh(0) = 1 per element.  Pins the
+  // Vector axis with a non-identity output value (distinct from
+  // SINH/TANH/ASINH/ATANH where sinh/tanh/asinh/atanh of zero is
+  // also zero — this assertion fires on the all-ones output to
+  // confirm the inner handler actually ran and re-tagged).
+  {
+    const s = new Stack();
+    s.push(Tagged('v', Vector([Real(0), Real(0)])));
+    lookup('COSH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'v' && isVector(v.value)
+        && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(1)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(1),
+      `session140: COSH :v:Vector(0, 0) → :v:Vector(Real(1), Real(1)) (cosh(0)=1; non-identity output value pins inner handler ran); got ${v?.value?.items?.map(x => `${x.type}(${x.value?.toString()})`).join(',')}`);
+  }
+
+  // TANH on Tagged-Matrix: tanh(0) = 0 per entry.  Closes the
+  // Matrix axis on the third forward-hyperbolic op.
+  {
+    const s = new Stack();
+    s.push(Tagged('t', Matrix([[Real(0), Real(0)], [Real(0), Real(0)]])));
+    lookup('TANH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 't' && isMatrix(v.value)
+        && v.value.rows.every(r => r.every(x => isReal(x) && x.value.isZero())),
+      `session140: TANH :t:Matrix([[0,0],[0,0]]) → :t:Matrix([[0,0],[0,0]]) (Matrix-axis wrapper-VM on TANH; outer tag preserved)`);
+  }
+
+  // ASINH on Tagged-Vector: asinh(0) = 0 per element.  Closes
+  // the inverse-hyperbolic Vector axis (ASINH dispatches through
+  // `_unaryCx` like SINH/COSH/TANH).
+  {
+    const s = new Stack();
+    s.push(Tagged('h', Vector([Real(0), Real(0)])));
+    lookup('ASINH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h' && isVector(v.value)
+        && v.value.items.every(x => isReal(x) && x.value.isZero()),
+      `session140: ASINH :h:Vector(0, 0) → :h:Vector(0, 0) (inverse-hyperbolic Vector axis through _unaryCx)`);
+  }
+
+  // ACOSH on Tagged-Vector: acosh(1) = 0 per element.  ACOSH is
+  // registered via direct `_withTaggedUnary(_withListUnary(
+  // _withVMUnary(...)))` (NOT `_unaryCx`) — pins that this
+  // alternative registration shape composes identically with
+  // outer Tagged on the Vector axis.  Domain edge: acosh(1) is
+  // the boundary of the real-valued domain; works on Real-mode.
+  {
+    const s = new Stack();
+    s.push(Tagged('h', Vector([Real(1), Real(1)])));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h' && isVector(v.value)
+        && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(0)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session140: ACOSH :h:Vector(1, 1) → :h:Vector(0, 0) (acosh(1)=0 boundary; direct-registered wrapper composition on V); got ${v?.value?.items?.map(x => `${x.type}(${x.value?.toString()})`).join(',')}`);
+  }
+
+  // ATANH on Tagged-Vector: atanh(0) = 0 per element.  ATANH
+  // also uses the direct `_withTaggedUnary(_withListUnary(
+  // _withVMUnary(...)))` registration shape (like ACOSH).
+  {
+    const s = new Stack();
+    s.push(Tagged('h', Vector([Real(0), Real(0)])));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h' && isVector(v.value)
+        && v.value.items.every(x => isReal(x) && x.value.isZero()),
+      `session140: ATANH :h:Vector(0, 0) → :h:Vector(0, 0) (atanh(0)=0; direct-registered wrapper on V)`);
+  }
+
+  // EXACT-mode integer-stay-exact path under Tagged-V: SINH on
+  // Integer(0) routes through the `(isInteger(v) || isRational(v))
+  // && !getApproxMode()` branch of `_unaryCx`, which calls
+  // `_exactUnaryLift` to produce Integer(0) for the clean-integer
+  // sinh(0)=0 fold.  Pins that the EXACT-mode integer preservation
+  // composes through the wrapper chain — the inner item type
+  // stays `'integer'`, NOT `'real'`.  Distinct from the prior
+  // SINH(Real(0)) pin (above on the Matrix axis), which produces
+  // Real(0) because the input is already Real.
+  {
+    const s = new Stack();
+    s.push(Tagged('h', Vector([Integer(0n), Integer(0n)])));
+    lookup('SINH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h' && isVector(v.value)
+        && v.value.items.length === 2
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 0n
+        && isInteger(v.value.items[1]) && v.value.items[1].value === 0n,
+      `session140: SINH :h:Vector(Integer(0), Integer(0)) → :h:Vector(Integer(0), Integer(0)) (EXACT-mode Integer-stay-exact via _exactUnaryLift composes through wrapper-VM under Tagged); got ${v?.value?.items?.map(x => `${x.type}(${x.value?.toString()})`).join(',')}`);
+  }
+
+  // Inner-Tagged-inside-Vector rejection on hyperbolic family:
+  // `Vec[:x:Real(0), :y:Real(0)] SINH` → 'Bad argument type'.
+  // The Vector at level 1 is NOT Tagged at the top level, so
+  // `_withTaggedUnary` doesn't intercept; the `_withVMUnary`
+  // inner dispatch then sees Vector items that are themselves
+  // Tagged scalars, and the inner per-element handler is NOT
+  // Tagged-aware (the `_withTaggedUnary` wrapper sits OUTSIDE
+  // `_withVMUnary` in the wrapper composition chain).  Mirror
+  // of session 130 Cluster 3's inner-Tagged-inside-List rejection
+  // on the binary surface, extended to the hyperbolic unary V
+  // surface.
+  {
+    const s = new Stack();
+    s.push(Vector([Tagged('x', Real(0)), Tagged('y', Real(0))]));
+    assertThrows(() => lookup('SINH').fn(s), /Bad argument type/i,
+      `session140: Vec[:x:Real(0), :y:Real(0)] SINH → 'Bad argument type' (inner-Tagged-inside-Vector has no unwrapper at the per-element handler; mirror of session 130 Cluster 3's inner-Tagged-inside-List rejection on the hyperbolic axis)`);
+  }
+}
+
+/* ================================================================
+   session 140 — Cluster 2: Inverse-trig family Tagged-of-V/M
+   wrapper-VM composition (ASIN / ACOS / ATAN) plus EXPM
+   Tagged-of-V/M.
+
+   ASIN / ACOS dispatch through direct `_withTaggedUnary(
+   _withListUnary(_withVMUnary(handler)))` registration; ATAN
+   dispatches through `_trigInvCx` (`ops.js:7929`).  EXPM
+   dispatches through direct registration with the same 3-deep
+   wrapper.  All three inverse-trig ops emit results in the
+   active angle mode (RAD by default).
+
+   Session 130 Cluster 1 pinned LNP1 Tagged-of-Vector wrapper-VM
+   composition; session 120 Cluster 1 pinned hyperbolic List/
+   Tagged transparency on bare scalars; but the inverse-trig
+   Tagged-of-V/M composition was unpinned, and EXPM Tagged-of-
+   V/M was unpinned (only LNP1 was covered in session 130 — they
+   share the same wrapper shape but EXPM is a distinct registration
+   at `ops.js:7249`).  Closes the inverse-trig surface plus the
+   EXPM/LNP1 pair on the Tagged-V/M axis. */
+{
+  // Set RAD mode explicitly — ASIN(1) and ACOS(0) emit results
+  // in the active angle mode.  RAD makes ASIN(1) = π/2 ≈
+  // 1.5707963267948966 (exact Decimal precision).  Restore RAD
+  // at the end (it's the default but be defensive in case prior
+  // tests left state).
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+    // ASIN on Tagged-Vector: ASIN(0) = 0, ASIN(1) = π/2 in RAD.
+    // Pins both the zero element (clean Real(0)) and the π/2
+    // element (Decimal precision, asserted via `.eq` on a
+    // Math.PI/2 value).
+    {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Real(0), Real(1)])));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'a' && isVector(v.value)
+          && v.value.items.length === 2,
+        `session140: ASIN :a:Vector(0, 1) preserves outer tag + Vector shape (got tag=${v?.tag} inner=${v?.value?.type})`);
+      const items = v.value.items;
+      assert(isReal(items[0]) && items[0].value.eq(0),
+        `session140: ASIN :a:Vector(0, 1) item[0] = Real(0) (clean asin(0)=0 fold)`);
+      assert(isReal(items[1]) && Math.abs(Number(items[1].value) - Math.PI / 2) < 1e-12,
+        `session140: ASIN :a:Vector(0, 1) item[1] ≈ π/2 (RAD; got ${items[1]?.value?.toString()})`);
+    }
+
+    // ACOS on Tagged-Vector: ACOS(1) = 0, ACOS(0) = π/2 in RAD.
+    // Operand-symmetric to ASIN above (same boundaries on the
+    // domain, different result mapping).
+    {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Real(1), Real(0)])));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'a' && isVector(v.value)
+          && v.value.items.length === 2,
+        `session140: ACOS :a:Vector(1, 0) preserves outer tag + Vector shape`);
+      const items = v.value.items;
+      assert(isReal(items[0]) && items[0].value.eq(0),
+        `session140: ACOS :a:Vector(1, 0) item[0] = Real(0) (acos(1)=0 fold)`);
+      assert(isReal(items[1]) && Math.abs(Number(items[1].value) - Math.PI / 2) < 1e-12,
+        `session140: ACOS :a:Vector(1, 0) item[1] ≈ π/2 (RAD; got ${items[1]?.value?.toString()})`);
+    }
+
+    // ASIN on Tagged-Matrix: extends ASIN to the M-axis.  Four
+    // values covering the [-1, 1] domain corners — zero result
+    // at 0, ±π/2 at ±1.
+    {
+      const s = new Stack();
+      s.push(Tagged('m', Matrix([[Real(0), Real(1)], [Real(-1), Real(0)]])));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'm' && isMatrix(v.value),
+        `session140: ASIN :m:Matrix([[0,1],[-1,0]]) preserves outer tag + Matrix shape`);
+      const r = v.value.rows;
+      assert(r[0][0].value.eq(0)
+          && Math.abs(Number(r[0][1].value) - Math.PI / 2) < 1e-12
+          && Math.abs(Number(r[1][0].value) - (-Math.PI / 2)) < 1e-12
+          && r[1][1].value.eq(0),
+        `session140: ASIN :m:Matrix([[0,1],[-1,0]]) → :m:Matrix([[0,π/2],[-π/2,0]]) (Matrix-axis wrapper-VM on ASIN; outer tag preserved)`);
+    }
+
+    // ATAN on Tagged-Vector: atan(0) = 0 per element.  ATAN
+    // routes through `_trigInvCx` (`ops.js:7929`) — distinct
+    // registration helper from ASIN/ACOS but same 3-deep wrapper
+    // shape.  Pins that the helper-difference doesn't break the
+    // wrapper composition under Tagged.
+    {
+      const s = new Stack();
+      s.push(Tagged('a', Vector([Real(0), Real(0)])));
+      lookup('ATAN').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'a' && isVector(v.value)
+          && v.value.items.every(x => isReal(x) && x.value.isZero()),
+        `session140: ATAN :a:Vector(0, 0) → :a:Vector(0, 0) (ATAN routes through _trigInvCx; same 3-deep wrapper as ASIN/ACOS)`);
+    }
+
+    // EXPM on Tagged-Vector: expm1(0) = 0 per element.  Session
+    // 130 Cluster 1 pinned LNP1 Tagged-of-Vector but EXPM was
+    // unpinned (LNP1 and EXPM share the same wrapper shape but
+    // are registered at distinct `ops.js` lines 7242 vs 7249).
+    // The two ops are duals — `LNP1(EXPM(x)) ≈ x` for stable-
+    // near-zero — so pinning EXPM under Tagged closes the pair
+    // on the V/M axis.
+    {
+      const s = new Stack();
+      s.push(Tagged('e', Vector([Real(0), Real(0)])));
+      lookup('EXPM').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'e' && isVector(v.value)
+          && v.value.items.every(x => isReal(x) && x.value.isZero()),
+        `session140: EXPM :e:Vector(0, 0) → :e:Vector(0, 0) (LNP1/EXPM dual pair; closes the EXPM Tagged-V axis that session 130 left open)`);
+    }
+
+    // EXPM on Tagged-Matrix: closes the Matrix axis on the
+    // EXPM/LNP1 stable-near-zero family.
+    {
+      const s = new Stack();
+      s.push(Tagged('e', Matrix([[Real(0), Real(0)], [Real(0), Real(0)]])));
+      lookup('EXPM').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'e' && isMatrix(v.value)
+          && v.value.rows.every(r => r.every(x => isReal(x) && x.value.isZero())),
+        `session140: EXPM :e:Matrix([[0,0],[0,0]]) → :e:Matrix([[0,0],[0,0]]) (Matrix-axis EXPM under Tagged; closes the LNP1/EXPM pair on M)`);
+    }
+
+    // ACOS on Tagged-Matrix (operand-symmetric to ASIN above):
+    // Pins ACOS Matrix-axis with the same domain corners,
+    // confirming the symmetric result mapping (ACOS(1)=0,
+    // ACOS(-1)=π, ACOS(0)=π/2).
+    {
+      const s = new Stack();
+      s.push(Tagged('m', Matrix([[Real(1), Real(0)], [Real(-1), Real(1)]])));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'm' && isMatrix(v.value),
+        `session140: ACOS :m:Matrix([[1,0],[-1,1]]) preserves outer tag + Matrix shape`);
+      const r = v.value.rows;
+      assert(r[0][0].value.eq(0)
+          && Math.abs(Number(r[0][1].value) - Math.PI / 2) < 1e-12
+          && Math.abs(Number(r[1][0].value) - Math.PI) < 1e-12
+          && r[1][1].value.eq(0),
+        `session140: ACOS :m:Matrix([[1,0],[-1,1]]) → :m:Matrix([[0,π/2],[π,0]]) (ACOS Matrix-axis; closes the inverse-trig pair on M)`);
+    }
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+
+/* ================================================================
+   session 140 — Cluster 3: ARG bare V/M axis + ARG / CONJ / RE /
+   IM Tagged-of-V/M composition with bespoke V/M dispatch INSIDE
+   the 2-deep wrapper.
+
+   Distinct wrapper shape from clusters 1 / 2: the ARG / CONJ /
+   RE / IM ops use `_withTaggedUnary(_withListUnary(handler))` —
+   only 2-deep — and the V/M dispatch happens BESPOKE inside the
+   inner handler (NOT through `_withVMUnary`).  See `ops.js:1379`
+   (ARG), `:1414` (CONJ), `:1420` (RE), `:1426` (IM):
+
+       register('CONJ', _withTaggedUnary(_withListUnary((s) => {
+         const v = s.pop();
+         if (isVector(v))      s.push(Vector(v.items.map(_conjScalar)));
+         else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_conjScalar))));
+         else                  s.push(_conjScalar(v));
+       })));
+
+   The matrix carries `V ✓ M ✓` for these ops since session
+   064 (CONJ / RE / IM via `_<op>Scalar` element-wise dispatch)
+   and `T ✓` since session 068; session 110 pinned ARG Tagged
+   transparency on bare Complex (`ARG(:v:Complex(3,4))`); session
+   100 pinned Sy round-trip on CONJ / RE / IM via `defaultFnEval`
+   folds — but the bare V/M axis on ARG was unpinned, and the
+   Tagged-of-V/M composition through this 2-deep-bespoke wrapper
+   shape was unpinned for all four ops.
+
+   Closes:
+   (a) ARG on bare Vector / Matrix (Real and Complex element types
+       on V; mixed Complex/Real on M).
+   (b) ARG / CONJ / RE / IM Tagged-of-V/M composition where the
+       outer tag preserves the Vector/Matrix kind (no kind change
+       — these ops are shape-preserving).
+   (c) The "bespoke V/M inside 2-deep wrapper" composition shape
+       contrasts with the wrapper-VM 3-deep composition pinned in
+       sessions 130 / 140 Cluster 1 / 2 — different code paths,
+       same observable Tagged-of-V/M behavior on the outside. */
+{
+  // ARG on bare Vector with Real elements: ARG of a non-negative
+  // Real is 0, ARG of a negative Real is π (HP50 atan2 convention,
+  // RAD mode).  Pins the bare-V Real axis.
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+    {
+      const s = new Stack();
+      s.push(Vector([Real(3), Real(-2)]));
+      lookup('ARG').fn(s);
+      const v = s.peek();
+      assert(isVector(v) && !isTagged(v) && v.items.length === 2
+          && isReal(v.items[0]) && v.items[0].value.eq(0)
+          && isReal(v.items[1]) && Math.abs(Number(v.items[1].value) - Math.PI) < 1e-12,
+        `session140: ARG Vector(Real(3), Real(-2)) → Vector(Real(0), Real(π)) (bespoke per-element ARG inside 2-deep wrapper, Real axis); got ${v?.items?.map(x => `${x.type}(${x.value?.toString()})`).join(',')}`);
+    }
+
+    // ARG on bare Vector with Complex elements: ARG(3+4i) =
+    // atan2(4, 3) ≈ 0.9273; ARG(0+1i) = π/2.  Pins the Complex
+    // axis on bare-V — closes the bare-V/M axis (matrix shows V✓
+    // since session 063 but no direct test had pinned the bare-V
+    // path independently of Tagged).
+    {
+      const s = new Stack();
+      s.push(Vector([Complex(3, 4), Complex(0, 1)]));
+      lookup('ARG').fn(s);
+      const v = s.peek();
+      assert(isVector(v) && !isTagged(v) && v.items.length === 2
+          && isReal(v.items[0]) && Math.abs(Number(v.items[0].value) - Math.atan2(4, 3)) < 1e-12
+          && isReal(v.items[1]) && Math.abs(Number(v.items[1].value) - Math.PI / 2) < 1e-12,
+        `session140: ARG Vector(Complex(3,4), Complex(0,1)) → Vector(atan2(4,3), π/2) (bespoke per-element ARG, Complex axis); got ${v?.items?.map(x => `${x.type}(${x.value?.toString()})`).join(',')}`);
+    }
+
+    // ARG on bare Matrix with mixed Complex/Real entries: closes
+    // the bare-M axis.  Matrix `[[i, 1], [-1, -i]]` →
+    // `[[π/2, 0], [π, -π/2]]`.
+    {
+      const s = new Stack();
+      s.push(Matrix([[Complex(0, 1), Real(1)], [Real(-1), Complex(0, -1)]]));
+      lookup('ARG').fn(s);
+      const v = s.peek();
+      assert(isMatrix(v) && !isTagged(v) && v.rows.length === 2,
+        `session140: ARG Matrix preserves Matrix kind, no Tagged on bare-M`);
+      const r = v.rows;
+      assert(Math.abs(Number(r[0][0].value) - Math.PI / 2) < 1e-12
+          && r[0][1].value.eq(0)
+          && Math.abs(Number(r[1][0].value) - Math.PI) < 1e-12
+          && Math.abs(Number(r[1][1].value) - (-Math.PI / 2)) < 1e-12,
+        `session140: ARG Matrix([[i,1],[-1,-i]]) → Matrix([[π/2,0],[π,-π/2]]) (bespoke per-element ARG, Matrix axis with mixed Complex/Real); got ${r?.map(row => row.map(x => x.value?.toString()).join(',')).join('|')}`);
+    }
+
+    // ARG Tagged-of-Vector (Complex elements): outer tag preserved
+    // through the 2-deep wrapper, bespoke V dispatch inside.
+    // Different wrapper shape from the 3-deep wrapper-VM ops —
+    // but same Tagged-preservation behavior on the outside.
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Vector([Complex(3, 4), Complex(0, 1)])));
+      lookup('ARG').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && isVector(v.value),
+        `session140: ARG :v:Vector(Complex(3,4), Complex(0,1)) preserves tag + V shape (got tag=${v?.tag} inner=${v?.value?.type})`);
+      const items = v.value.items;
+      assert(isReal(items[0]) && Math.abs(Number(items[0].value) - Math.atan2(4, 3)) < 1e-12
+          && isReal(items[1]) && Math.abs(Number(items[1].value) - Math.PI / 2) < 1e-12,
+        `session140: ARG :v:Vector(Complex(3,4), Complex(0,1)) → :v:Vector(atan2(4,3), π/2) (Tagged-of-V composition through 2-deep wrapper with bespoke V dispatch inside)`);
+    }
+
+    // CONJ Tagged-of-Vector (mixed Complex/Real): outer tag
+    // preserved, V kind preserved (no kind change — CONJ is
+    // shape-preserving), per-element CONJ flips Complex.im sign,
+    // Real stays Real.
+    {
+      const s = new Stack();
+      s.push(Tagged('z', Vector([Real(5), Complex(3, 4), Real(-1)])));
+      lookup('CONJ').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'z' && isVector(v.value),
+        `session140: CONJ :z:Vector(5, 3+4i, -1) preserves tag + V shape`);
+      const items = v.value.items;
+      assert(isReal(items[0]) && items[0].value.eq(5)
+          && isComplex(items[1]) && items[1].re === 3 && items[1].im === -4
+          && isReal(items[2]) && items[2].value.eq(-1),
+        `session140: CONJ :z:Vector(5, 3+4i, -1) → :z:Vector(5, 3-4i, -1) (Tagged-of-V composition; CONJ flips Complex.im sign, Real stays Real)`);
+    }
+
+    // CONJ Tagged-of-Matrix (mixed Complex/Real entries): closes
+    // the Matrix axis on CONJ.  Same shape preservation as V —
+    // the bespoke M-handler inside the 2-deep wrapper preserves
+    // outer Tagged.
+    {
+      const s = new Stack();
+      s.push(Tagged('m', Matrix([[Complex(1, 2), Complex(3, 4)], [Real(5), Complex(6, -7)]])));
+      lookup('CONJ').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'm' && isMatrix(v.value),
+        `session140: CONJ :m:Matrix preserves tag + M shape`);
+      const r = v.value.rows;
+      assert(isComplex(r[0][0]) && r[0][0].re === 1 && r[0][0].im === -2
+          && isComplex(r[0][1]) && r[0][1].re === 3 && r[0][1].im === -4
+          && isReal(r[1][0]) && r[1][0].value.eq(5)
+          && isComplex(r[1][1]) && r[1][1].re === 6 && r[1][1].im === 7,
+        `session140: CONJ :m:Matrix([[1+2i,3+4i],[5,6-7i]]) → :m:Matrix([[1-2i,3-4i],[5,6+7i]]) (Tagged-of-M; per-entry CONJ flips Complex.im, Real stays Real)`);
+    }
+
+    // RE Tagged-of-Matrix: V/M kind preserved, every entry
+    // becomes Real (Complex(re, im) → Real(re), Real → Real).
+    // Pins that the kind preservation holds even when EVERY
+    // Complex entry collapses to its real part.
+    {
+      const s = new Stack();
+      s.push(Tagged('m', Matrix([[Complex(1, 2), Complex(3, 4)], [Real(5), Complex(6, -7)]])));
+      lookup('RE').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'm' && isMatrix(v.value),
+        `session140: RE :m:Matrix preserves tag + M shape (M kind preserved across per-entry Complex→Real collapse)`);
+      const r = v.value.rows;
+      assert(r.every(row => row.every(x => isReal(x)))
+          && r[0][0].value.eq(1) && r[0][1].value.eq(3)
+          && r[1][0].value.eq(5) && r[1][1].value.eq(6),
+        `session140: RE :m:Matrix([[1+2i,3+4i],[5,6-7i]]) → :m:Matrix([[Real(1),Real(3)],[Real(5),Real(6)]]) (per-entry Real-only result)`);
+    }
+
+    // IM Tagged-of-Vector: per-entry imaginary part — Complex(re,im)
+    // → Real(im); Real(x) → Real(0) (no imaginary part).
+    {
+      const s = new Stack();
+      s.push(Tagged('z', Vector([Complex(1, 2), Complex(3, -4), Real(5)])));
+      lookup('IM').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'z' && isVector(v.value),
+        `session140: IM :z:Vector preserves tag + V shape`);
+      const items = v.value.items;
+      assert(items.every(x => isReal(x))
+          && items[0].value.eq(2)
+          && items[1].value.eq(-4)
+          && items[2].value.eq(0),
+        `session140: IM :z:Vector(1+2i, 3-4i, 5) → :z:Vector(Real(2), Real(-4), Real(0)) (per-entry imaginary part; Real → Real(0))`);
+    }
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+
+/* ================================================================
+   session 142 — Cluster 1: Inverse-trig + inverse-hyp family
+   EXACT-mode `_exactUnaryLift` Integer-stay-exact path.
+
+   Surfaced as a candidate at the end of session 140's log:
+
+     "EXACT-mode `_exactUnaryLift` Integer-stay-exact path on the
+      inverse-trig family — Cluster 1 pinned the SINH(Integer(0))
+      → Integer(0) path through Tagged-V; the analog on
+      ASIN/ACOS/ATAN is a separate code path (different
+      `_exactUnaryLift` value mapping for inverse-trig clean folds
+      — e.g. `ASIN(Integer(0)) → Integer(0)`?) and was not pinned."
+
+   Inverse-trig dispatches through `_trigInvCx` (`ops.js:7929`) /
+   ASIN/ACOS direct registration (`ops.js:8054` / `:8072`); the
+   EXACT-mode Integer/Rational input branch routes through
+   `_exactUnaryLift(name, fromRadians(Math.asin(x)), v)` (and the
+   ACOS / ATAN analogs).  Inverse-hyp ASINH/ACOSH/ATANH
+   (`ops.js:8002` / `:8023` / `:7960` etc.) likewise routes through
+   `_exactUnaryLift` for clean integer folds.
+
+   This cluster pins the bare-scalar (un-Tagged, un-V/M) Integer-
+   stay-exact path on each of the six functions, plus the Rational
+   input variant (Q stay-exact via `Number(n)/Number(d)` → Math.fn
+   → fromRadians + integer-clean check), plus the stay-symbolic
+   branch when the result is NOT integer-clean.  The session-140
+   Cluster 1 SINH pin only covered the hyperbolic family (SINH /
+   COSH / TANH / ASINH / ACOSH / ATANH all share `_unaryCx`-via-
+   _exactUnaryLift) but only the SINH variant under Tagged-V — bare-
+   scalar Integer-stay-exact for the inverse-hyp trio was unpinned. */
+{
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+    // ASIN(Integer(0)) → Integer(0).  asin(0) = 0; the round-to-
+    // integer tolerance in `_exactUnaryLift` (1e-12) folds the
+    // Real to Integer.  Distinct from `ASIN(Real(0))` which produces
+    // Real(0) — the Integer-stay-exact path requires Integer/Rational
+    // input AND the result to round-to-integer.  Mirrors session
+    // 140's SINH(Integer(0)) → Integer(0) pin on the inverse-trig
+    // axis (different code path: _trigInvCx vs _unaryCx).
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session142: ASIN(Integer(0)) RAD → Integer(0) (EXACT-mode _exactUnaryLift fold; asin(0)=0 round-to-integer); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // ACOS(Integer(1)) → Integer(0).  acos(1) = 0; same fold path.
+    // ACOS uses a distinct registration helper from ASIN — both
+    // dispatch through `_exactUnaryLift` but the value mapping
+    // differs (acos vs asin).
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session142: ACOS(Integer(1)) RAD → Integer(0) (acos(1)=0 round-to-integer fold); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // ATAN(Integer(0)) → Integer(0).  atan(0) = 0; ATAN routes
+    // through `_trigInvCx` — distinct helper from ASIN/ACOS but
+    // same `_exactUnaryLift` integer-clean check.
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('ATAN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session142: ATAN(Integer(0)) RAD → Integer(0) (atan(0)=0 round-to-integer fold via _trigInvCx); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // RAD-mode stay-symbolic: ATAN(Integer(1)) = π/4 ≈ 0.785… is
+    // NOT integer-clean, so `_exactUnaryLift` returns
+    // Symbolic(AstFn('ATAN', [Integer(1)])).  Pins the
+    // negative side of the integer-clean branch — a future change
+    // that loosened the tolerance would surface here.
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('ATAN').fn(s);
+      const v = s.peek();
+      assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'ATAN'
+          && v.expr.args.length === 1 && v.expr.args[0]?.kind === 'num' && v.expr.args[0].value === 1,
+        `session142: ATAN(Integer(1)) RAD → Symbolic ATAN(1) (atan(1)=π/4 not integer-clean — stay-symbolic via _exactUnaryLift); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+    }
+
+    // DEG-mode integer-clean fold: ASIN(Integer(1)) under DEG = 90,
+    // which IS integer-clean → Integer(90).  Pins that
+    // `fromRadians` is applied INSIDE `_exactUnaryLift` (the value
+    // converted to the active angle mode is what gets the integer-
+    // clean check, not the radian value).
+    setAngle('DEG');
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 90n,
+        `session142: ASIN(Integer(1)) DEG → Integer(90) (asin(1)=π/2; fromRadians(π/2)=90 integer-clean); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // DEG-mode integer-clean fold on Rational input:
+    // ASIN(Rational(1,2)) DEG = 30 (asin(1/2) = π/6; fromRadians(π/6) = 30).
+    // Pins the Rational arm of the EXACT-mode integer-stay-exact
+    // path (the `isRational(v)` branch in `_unaryCx`-style ops
+    // computes `Number(v.n) / Number(v.d)` before passing to the
+    // numeric primitive).
+    {
+      const s = new Stack();
+      s.push(Rational(1n, 2n));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 30n,
+        `session142: ASIN(Rational(1,2)) DEG → Integer(30) (Q→double=0.5; asin(0.5)=π/6; fromRadians=30 integer-clean); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // DEG-mode stay-symbolic on Rational that doesn't fold cleanly:
+    // ASIN(Rational(1,3)) DEG ≈ 19.47… is NOT integer-clean →
+    // Symbolic ASIN(1/3).  Negative side of the Rational arm.
+    {
+      const s = new Stack();
+      s.push(Rational(1n, 3n));
+      lookup('ASIN').fn(s);
+      const v = s.peek();
+      assert(v?.type === 'symbolic' && v.expr?.kind === 'fn' && v.expr.name === 'ASIN',
+        `session142: ASIN(Rational(1,3)) DEG → Symbolic ASIN(1/3) (asin(1/3)≈19.47°, not integer-clean); got ${v?.type} expr=${JSON.stringify(v?.expr)}`);
+    }
+
+    // ATAN(Integer(1)) DEG → Integer(45).  Different boundary on
+    // ATAN — atan(1)=π/4; fromRadians(π/4)=45 integer-clean (in
+    // RAD mode the same input stays-symbolic per the second pin
+    // above).  Pins angle-mode dependence of the integer-clean
+    // branch.
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('ATAN').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 45n,
+        `session142: ATAN(Integer(1)) DEG → Integer(45) (atan(1)=π/4; fromRadians=45 integer-clean — angle-mode flips this branch from the RAD stay-symbolic case); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // ACOS(Integer(0)) DEG → Integer(90).  acos(0)=π/2; fromRadians=90
+    // integer-clean.  Closes the ASIN/ACOS/ATAN trio under DEG mode.
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 90n,
+        `session142: ACOS(Integer(0)) DEG → Integer(90) (acos(0)=π/2; fromRadians=90 integer-clean); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    setAngle('RAD');
+
+    // Inverse-hyperbolic Integer-stay-exact: ASINH(Integer(0)) →
+    // Integer(0).  asinh(0)=0; no angle-mode involvement on the
+    // hyperbolic family — `_exactUnaryLift` directly applies to
+    // the asinh result.  Mirror of session-140 Cluster 1's SINH
+    // pin but on the inverse-hyp axis (which session 140
+    // explicitly only pinned on Tagged-V, not bare-scalar).
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('ASINH').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session142: ASINH(Integer(0)) → Integer(0) (asinh(0)=0; no angle-mode on hyp; integer-clean fold); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // ACOSH(Integer(1)) → Integer(0).  acosh(1)=0; the boundary
+    // of the acosh domain ([1, ∞)) — pins that the boundary value
+    // does NOT throw and folds cleanly to Integer(0).
+    {
+      const s = new Stack();
+      s.push(Integer(1n));
+      lookup('ACOSH').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session142: ACOSH(Integer(1)) → Integer(0) (acosh(1)=0 boundary; integer-clean fold); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+
+    // ATANH(Integer(0)) → Integer(0).  atanh(0)=0; pins the
+    // ASINH/ACOSH/ATANH trio.
+    {
+      const s = new Stack();
+      s.push(Integer(0n));
+      lookup('ATANH').fn(s);
+      const v = s.peek();
+      assert(isInteger(v) && v.value === 0n,
+        `session142: ATANH(Integer(0)) → Integer(0) (atanh(0)=0; closes inverse-hyp ASINH/ACOSH/ATANH integer-clean trio); got ${v?.type}(${v?.value?.toString?.()})`);
+    }
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+
+/* ================================================================
+   session 142 — Cluster 2: CONJ / RE / IM / ARG on Tagged-of-
+   Symbolic — wrapper composition through the 2-deep
+   `_withTaggedUnary(_withListUnary(handler))` shape on the Sy axis.
+
+   Surfaced as a candidate at the end of session 140's log:
+
+     "CONJ/RE/IM on Tagged-of-Symbolic — matrix lists `T ✓` and
+      `Sy ✓` independently but the composition wasn't pinned."
+
+   The matrix gives `T ✓` and `Sy ✓` per op since session 100 / 110
+   landed Tagged transparency and Symbolic round-trip via
+   `defaultFnEval` folds, but the COMPOSITION (Tagged-of-Symbolic)
+   was not pinned.  Distinct from session 140 Cluster 3, which
+   pinned Tagged-of-V/M with bespoke V/M dispatch INSIDE the
+   wrapper — Tagged-of-Symbolic exercises the `_isSymOperand`
+   branch in the bespoke handler, which lifts to
+   `Symbolic(AstFn('CONJ', [_toAst(v)]))` / RE / IM / ARG.
+
+   Closes the Sy axis on the Tagged-of-X composition surface for
+   the four-op cluster, completing the wrapper-composition pass on
+   the bespoke V/M-handler family. */
+{
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+    // CONJ on Tagged-of-Symbolic: `:v:Symbolic(X) CONJ` →
+    // `:v:Symbolic(CONJ(X))`.  Outer Tagged preserved; inner
+    // Symbolic gets wrapped in an AstFn('CONJ', [Name(X)]).
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Symbolic({ k: 'var', id: 'X' })));
+      lookup('CONJ').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'symbolic',
+        `session142: CONJ :v:Symbolic(X) preserves outer Tagged + Symbolic kind`);
+      const expr = v.value.expr;
+      assert(expr?.kind === 'fn' && expr.name === 'CONJ' && expr.args?.length === 1
+          && expr.args[0]?.k === 'var' && expr.args[0].id === 'X',
+        `session142: CONJ :v:Symbolic(X) → :v:Symbolic(CONJ(X)) (inner Sy lifted via Symbolic(AstFn('CONJ', [...]))); got expr=${JSON.stringify(expr)}`);
+    }
+
+    // RE on Tagged-of-Symbolic: same wrapper shape as CONJ — pins
+    // that RE's bespoke handler also routes through the
+    // `_isSymOperand` branch under Tagged.
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Symbolic({ k: 'var', id: 'X' })));
+      lookup('RE').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'symbolic'
+          && v.value.expr?.kind === 'fn' && v.value.expr.name === 'RE'
+          && v.value.expr.args?.[0]?.id === 'X',
+        `session142: RE :v:Symbolic(X) → :v:Symbolic(RE(X)) (Tagged-of-Sy composition through 2-deep wrapper); got tag=${v?.tag} expr=${JSON.stringify(v?.value?.expr)}`);
+    }
+
+    // IM on Tagged-of-Symbolic: closes the CONJ/RE/IM trio on the
+    // Sy axis.  Note that IM(Real(x)) collapses to Real(0) on bare
+    // input, but on a Symbolic name (where realness is
+    // indeterminate) IM stays symbolic.
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Symbolic({ k: 'var', id: 'X' })));
+      lookup('IM').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'symbolic'
+          && v.value.expr?.kind === 'fn' && v.value.expr.name === 'IM'
+          && v.value.expr.args?.[0]?.id === 'X',
+        `session142: IM :v:Symbolic(X) → :v:Symbolic(IM(X)) (closes CONJ/RE/IM Sy-axis trio under Tagged); got tag=${v?.tag} expr=${JSON.stringify(v?.value?.expr)}`);
+    }
+
+    // ARG on Tagged-of-Symbolic: extends to ARG; closes the four-op
+    // bespoke V/M-handler family on Tagged-of-Sy.  Symbolic argument
+    // means the angle is indeterminate — stay-symbolic.
+    {
+      const s = new Stack();
+      s.push(Tagged('v', Symbolic({ k: 'var', id: 'X' })));
+      lookup('ARG').fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'v' && v.value?.type === 'symbolic'
+          && v.value.expr?.kind === 'fn' && v.value.expr.name === 'ARG'
+          && v.value.expr.args?.[0]?.id === 'X',
+        `session142: ARG :v:Symbolic(X) → :v:Symbolic(ARG(X)) (closes ARG / CONJ / RE / IM bespoke-V/M-handler family on Tagged-of-Sy); got tag=${v?.tag} expr=${JSON.stringify(v?.value?.expr)}`);
+    }
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+
+/* ================================================================
+   session 142 — Cluster 3: Inner-Tagged-inside-Vector / Matrix
+   rejection on bespoke V/M handlers (ARG / CONJ / RE / IM).
+
+   Surfaced as a candidate at the end of session 140's log:
+
+     "Inner-Tagged-inside-Vector rejection on bespoke V/M handlers
+      (ARG/CONJ/RE/IM) — the Cluster 1 inner-Tagged-inside-Vector
+      rejection on SINH was pinned but the analogous case on the
+      bespoke-V/M family (`Vector(:x:Complex(3,4)) ARG`) wasn't
+      pinned this session — the per-element handlers (`_argScalar`,
+      `_conjScalar`, `_reScalar`, `_imScalar`) explicitly throw
+      'Bad argument type' on Tagged inputs since they're not
+      Tagged-aware."
+
+   The bespoke V/M dispatch chain on ARG/CONJ/RE/IM is:
+   `_withTaggedUnary(_withListUnary(s => { … per-element via
+   `_argScalar`/`_conjScalar`/`_reScalar`/`_imScalar` … }))`.  The
+   `_withTaggedUnary` wrapper sees a Vector at top-level (not a
+   Tagged), so it doesn't unwrap.  The bespoke handler then iterates
+   `v.items.map(_argScalar)`; the per-element handlers receive
+   Tagged scalars and reject with 'Bad argument type' since they're
+   not Tagged-aware (in contrast to the wrapper-VM handlers in
+   session 140 Clusters 1 / 2 where `_withVMUnary` sat between the
+   per-element handler and the wrapper-Tagged unwrap).
+
+   Mirror of session 140 Cluster 1's `Vec[:x:Real(0), :y:Real(0)]
+   SINH` rejection but on the four bespoke-V/M ops, plus the
+   Matrix-axis variant for completeness. */
+{
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+    // ARG: Vector with inner Tagged element — bespoke per-element
+    // `_argScalar` is not Tagged-aware, rejects with 'Bad argument
+    // type'.
+    {
+      const s = new Stack();
+      s.push(Vector([Tagged('x', Complex(3, 4))]));
+      assertThrows(() => lookup('ARG').fn(s), /Bad argument type/i,
+        `session142: Vector(:x:Complex(3,4)) ARG → 'Bad argument type' (bespoke _argScalar inside 2-deep wrapper is not Tagged-aware; mirror of session-140 Cluster 1 inner-Tagged-inside-Vector SINH rejection on the ARG axis)`);
+    }
+
+    // CONJ: same shape — `_conjScalar` rejects Tagged.
+    {
+      const s = new Stack();
+      s.push(Vector([Tagged('x', Complex(3, 4))]));
+      assertThrows(() => lookup('CONJ').fn(s), /Bad argument type/i,
+        `session142: Vector(:x:Complex(3,4)) CONJ → 'Bad argument type' (bespoke _conjScalar not Tagged-aware)`);
+    }
+
+    // RE: same shape — `_reScalar` rejects Tagged.
+    {
+      const s = new Stack();
+      s.push(Vector([Tagged('x', Complex(3, 4))]));
+      assertThrows(() => lookup('RE').fn(s), /Bad argument type/i,
+        `session142: Vector(:x:Complex(3,4)) RE → 'Bad argument type' (bespoke _reScalar not Tagged-aware)`);
+    }
+
+    // IM: closes the four-op rejection trio.
+    {
+      const s = new Stack();
+      s.push(Vector([Tagged('x', Complex(3, 4))]));
+      assertThrows(() => lookup('IM').fn(s), /Bad argument type/i,
+        `session142: Vector(:x:Complex(3,4)) IM → 'Bad argument type' (bespoke _imScalar not Tagged-aware; closes ARG/CONJ/RE/IM inner-Tagged-V rejection)`);
+    }
+
+    // Matrix axis: the same rejection holds on the M-axis.  Matrix
+    // dispatch is `v.rows.map(r => r.map(_argScalar))` — the same
+    // per-element handler — so a single Matrix-axis pin per op
+    // confirms the inner-Tagged-inside-Matrix rejection is
+    // symmetric to the V-axis.
+    {
+      const s = new Stack();
+      s.push(Matrix([[Tagged('x', Complex(3, 4))]]));
+      assertThrows(() => lookup('ARG').fn(s), /Bad argument type/i,
+        `session142: Matrix([[:x:Complex(3,4)]]) ARG → 'Bad argument type' (bespoke _argScalar in r.map(_argScalar) chain not Tagged-aware; M-axis mirror of V-axis inner-Tagged rejection)`);
+    }
+
+    {
+      const s = new Stack();
+      s.push(Matrix([[Tagged('x', Real(5))]]));
+      assertThrows(() => lookup('CONJ').fn(s), /Bad argument type/i,
+        `session142: Matrix([[:x:Real(5)]]) CONJ → 'Bad argument type' (M-axis CONJ inner-Tagged rejection; pins symmetry with V-axis)`);
+    }
+  } finally {
+    setAngle(_prevAngle);
   }
 }
 

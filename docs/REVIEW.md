@@ -6,46 +6,64 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 123 (2026-04-24).  Eighth review-lane run.
-Prior baseline = session 118.  Between sessions 118 and 123 the
-sibling lanes shipped: 117 (unit-tests — closed P-001 TESTS.md
-remainder with the `src/rpl/ops.js` → `www/src/...` and
-`src/rpl/algebra.js` → `www/src/...` rewrites at TESTS.md:233 +
-:355; assertThrows migration completed for the `:2068`/`:2074`
-TRUNC sites and the `test-persist.mjs:118` unsupported-version
-site; +4 net assertions in `test-persist` (34 → 38) and +2 in
-`test-types`; explicitly DEFERRED the O-009 `.bak` deletes —
-unsupervised `rm` returned `Operation not permitted` and the
-`cowork_allow_file_delete` permission prompt is blocked from
-scheduled-task sessions; flagged "open — blocked by tooling" in
-`docs/TESTS.md` known-gaps list); 119 (command-support — `EGV` /
-`RSD` / `GREDUCE` new ops + `_astToRplValue` `Neg(Num)` unwrap
-helper; `register()` 445 → 448; +25 in `tests/test-algebra.mjs`),
-120 (data-type-support — hyperbolic Tagged transparency + `% / %T
-/ %CH` Tagged tag-drop + Rational unary stay-exact pin clusters;
-`tests/test-types.mjs` 526 → 594, +68 session-120 assertions; no
-source-side changes — pure regression-guard widening); 121
-(rpl-programming — substantive: PROMPT op + IFT/IFTE generator-
-flavor lift via `evalRange` body intercept + `state.promptMessage`
-slot in `state.js` + CONT/KILL/SST clearPromptMessage hook; lock
-acquired with intent string `"session 121 RPL: items TBD"` and
-stale-pruned ~11 minutes later, NO `logs/session-121.md` written,
-NO COMMANDS.md / RPL.md updates).  Session 122 (unit-tests — in
-flight at this run's acquisition; intent = "assertThrows migration
-in `test-control-flow.mjs` (queue #2) + duplicate-label hygiene
-scan + session-121 PROMPT/IFT/IFTE coverage backfill"; holds
-`tests/test-control-flow.mjs`, `tests/test-numerics.mjs`,
-`tests/sanity.mjs`, `tests/test-all.mjs`, `docs/TESTS.md`,
-`logs/`).  Entry baseline test-all is **4232** at re-measure
-mid-run (4182 immediately at acquisition; +50 landed during
-session 122's window before this finding's grep cycle finished —
-the unit-tests lane is actively pinning the session-121 work).
-Δ+145 from the session 118 entry (4087).  Session 122's `logs/`
-scope forced this run's scope narrower than usual — review-lane
-acquired `docs/REVIEW.md` only; the session log file
-(`logs/session-123.md`) is written without a lock under the
-`utils/@locks/README.md:40` "logs/ are append-only with unique
-filenames" exemption.
+**Last updated.** Session 143 (2026-04-25).  Twelfth review-lane
+run.  Prior baseline = session 138.  Between sessions 138 and 143
+the sibling lanes shipped: 139 (command-support — three new ops
+shipped via Giac: `LIN` (exponential linearization, single-arg,
+mirrors `PROPFRAC` / `PARTFRAC` / `COSSIN`), `LIMIT` (limit at a
+point, two stack-contract forms — equation `'var=val'` and bare-
+value with VX default), and the `lim` lower-case alias delegating
+to `LIMIT.fn(s)` (case-sensitive, mirrors the `CHARPOL` / `XNUM` /
+`XQ` alias pattern); +13 assertions in `tests/test-algebra.mjs`;
+`register()` total 463 → 466 (+3); top-level `^register(` count
+442 → 445 (+3); also closed `C-009` in full — three loop rows
+(`FOR / START / STEP / NEXT`, `WHILE / REPEAT / END`, `DO / UNTIL
+/ END`) at `docs/COMMANDS.md:450` / `:451` / `:452` gained
+session-136 auto-close Notes annotations; Counts heading bumped
+"as of session 134 — 2026-04-24" → "as of session 139 —
+2026-04-25"; session-log entries back-filled for 135 / 136 / 137
+/ 138 / 139); 140 (data-type-support — three more hard-assertion
+widening clusters pinning previously-undertested wrapper-VM
+composition contracts: hyperbolic family Tagged-of-V/M wrapper-VM
+composition (SINH / COSH / TANH / ASINH / ACOSH / ATANH — 9 pins,
+including the EXACT-mode `_exactUnaryLift` Integer-stay-exact
+path under Tagged-V and inner-Tagged-inside-Vector rejection),
+inverse-trig Tagged-of-V/M (ASIN / ACOS / ATAN) plus EXPM
+Tagged-of-V/M closing the LNP1/EXPM dual pair (9 pins), and
+ARG bare V/M axis + ARG / CONJ / RE / IM Tagged-of-V/M through
+the 2-deep-bespoke `_withTaggedUnary(_withListUnary(bespoke V/M
+dispatch))` wrapper distinct from the 3-deep wrapper of clusters
+1/2 (18 pins); `tests/test-types.mjs` 703 → 739 (+36); no
+source-side changes; `docs/DATA_TYPES.md` Last-updated bumped
+to session 140 with six Notes columns updated and a "Resolved
+this session (140)" block added); 141 (rpl-programming —
+**HALT / PROMPT lift through `IFERR` clauses pinned with
+regression tests** (the lift mechanism itself was already live
+since session 088's generator substrate plus session 078's IFERR
+auto-close, but no test pinned the behaviour); +76 session141
+assertions in `tests/test-control-flow.mjs` (599 → 675) covering
+HALT in trap / THEN / ELSE clauses (full-form and auto-closed
+variants), nested-IFERR last-error save/restore chain across
+nested `finally`s on CONT and KILL, PROMPT in THEN, and a
+sentinel pin that yield is not a thrown exception so IFERR's
+catch must not capture HALT; **R-005 doc cleanup also shipped
+in this run** — three "(this run) — what shipped" headings in
+`docs/RPL.md` (sessions 121 / 126 / 136) demoted to plain past
+tense + Session log pointer prose updated; new "Session 141
+(this run) — what shipped" chapter added at `:258`; no
+`www/src/rpl/ops.js` source change this run); 142 (unit-tests
+— **active at run-entry** — substantive coverage adds across
+`test-types.mjs` / `test-arrow-aliases.mjs` / `test-stack-ops.mjs`
+/ `test-stats.mjs` / `test-units.mjs` / `test-comparisons.mjs`
+plus `docs/TESTS.md` updates).  Session 142's lock was active at
+this run's acquisition (heartbeatAt === startedAt = 1777107415,
+no `released: true`, scope held `docs/TESTS.md` + the broad
+`tests/*.mjs` set + `logs/session-142.md`); review-lane narrowed
+its scope to `docs/REVIEW.md` only (mirroring the session-138
+vs. session-137 and session-133 vs. session-132 patterns) and
+the session log file `logs/session-143.md` was written without
+a lock under the `utils/@locks/README.md:40` "logs/ are append-
+only with unique filenames" exemption.
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -68,65 +86,135 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 123).** At entry `node tests/test-all.mjs` =
-**4182 passing / 0 failing** (re-measured to **4232** mid-run as
-session 122 unit-tests landed +50 PROMPT/IFT/IFTE pin assertions
-during the audit walk).  Δ+145 from the session 118 entry (4087)
-reflects sessions 117 (+2 test-types regression guards on TRUNC,
-+4 test-persist regression guards on rehydrate's unknown-version
-path, plus the converging session-116 control-flow tail), 119
-(+25 test-algebra from EGV / RSD / GREDUCE coverage), 120 (+68
-test-types from hyperbolic Tagged + percent Tagged + Rational
-stay-exact pins), and session 122 in flight (+50 session-121
-PROMPT/IFT/IFTE coverage so far this run).  Session 121 itself
-shipped no tests despite shipping substantive source changes —
-session 122 is the back-fill, mirroring the session-111 →
-session-106 back-fill pattern.  `node tests/test-persist.mjs` =
-**38 passing / 0 failing** (stable; +4 from the session 118
-baseline of 34, all session-117 regression guards on
-`rehydrate(null)` / `rehydrate('not-a-snap')` / missing-version /
-echoed-bad-version invariants).  `node tests/sanity.mjs` =
-**22 passing / 0 failing in ~5 ms** (stable).  `node --check` N/A
-this run — only edit is `docs/REVIEW.md` (Markdown).
+**Baseline (session 143).** Sessions 139, 140 graceful-released
+before this run's acquisition; session 141 released with the
+heartbeatAt === startedAt + intent="items TBD" + late-mtime-on-log
+signature that O-008 / O-010 / T-002 codified as "looks stale-
+prune-shaped at the lock layer but the log was in fact written"
+— `logs/session-141.md` is on disk (226 lines, mtime 2026-04-25
+08:59 — within seconds of `releasedAt: 1777107556` per the lock
+body); session 142 (unit-tests) was active at run-entry with a
+wide `tests/*.mjs` (test-types / test-arrow-aliases / test-stack-
+ops / test-stats / test-units / test-comparisons) + `docs/TESTS.md`
++ `logs/session-142.md` scope.  At review-lane *entry*
+`node tests/test-all.mjs` = **4711 passing / 0 failing**
+(fully green); `node tests/test-persist.mjs` = **38 passing / 0
+failing** (stable from the session-138 baseline of 38);
+`node tests/sanity.mjs` = **22 passing / 0 failing in ~5 ms**
+(stable).  `node --check` N/A this run — only edit is
+`docs/REVIEW.md` (Markdown).  Δ from session 138's run-close
+4586: **+125** (139 +13 LIN/LIMIT/lim Giac coverage in
+`test-algebra.mjs`; 140 +36 hyperbolic-Tagged + inverse-trig +
+EXPM + ARG/CONJ/RE/IM bespoke wrapper composition pins in
+`test-types.mjs`; 141 +76 IFERR HALT/PROMPT lift pins in
+`test-control-flow.mjs`; 142 +0 in-flight at this run's entry —
+no `tests/*.mjs` deltas yet visible on disk; 4586 + 13 + 36 + 76
++ 0 = 4711).  Lock overlap during the run: at acquisition
+(1777107439) session 142 was active with `heartbeatAt ===
+startedAt` (1777107415, ~24 s before acquisition); session 142
+had not yet landed any visible `tests/*.mjs` edits on disk by
+run-entry.  Review-lane narrowed its scope to `docs/REVIEW.md`
+to avoid `logs/` overlap with session 142's `logs/session-142.md`
+claim; review-lane's edits to `docs/REVIEW.md` describe the
+finding-state as it stood at session 142's lock-acquisition
+moment.
 
 **This run's own edits.** One doc/hygiene edit:
-`docs/REVIEW.md` Last-updated stamp bumped to session 123;
-baseline block rewritten; findings re-aged; one prior finding
-fully promoted (P-001 TESTS.md remainder closed by session 117 —
-the two `:233` and `:355` sites now read `www/src/rpl/...`,
-verified by `grep -nE 'src/(rpl|ui)|src/app\.js' docs/TESTS.md`
-returning only audit-trail lines that describe the prior fix in
-past tense); two carried-forward findings aged (X-003 7 → 8 runs —
-still the longest-aging open finding; O-007 4 → 5 runs); one
-carried-forward finding refreshed with session 117's deferral
-narrative (O-009 1 → 2 runs — session 117 explicitly DEFERRED
-with "blocked by tooling" justification, `rm` returned
-`Operation not permitted` and the `cowork_allow_file_delete`
-prompt is blocked in unsupervised scheduled-task sessions);
-three new findings filed (O-010 session 121 stale-prune + missing
-log + missing tests + missing COMMANDS.md/RPL.md updates;
-C-007 COMMANDS.md still classifies PROMPT under the UI-lane
-"handled by them" group while session 121 actually shipped it
-through the rpl-programming lane via an `evalRange` body
-intercept; R-004 `docs/RPL.md` carries no narrative for the
-session-121 IFT/IFTE generator-flavor lift or the PROMPT
-mechanism); session 123 log added.  No sibling-lane source files
-touched.  No RPL op behavior changed, no types widened, no tests
-added or deleted, no interpreter touched, no registrations added
-or removed.
+`docs/REVIEW.md` Last-updated stamp bumped to session 143;
+baseline block rewritten; findings re-aged; three carried-
+forward findings aged (X-003 11 → 12 runs — still the longest-
+aging open finding, now 12 review-lane runs and 37+ calendar
+days unaddressed; O-007 8 → 9 runs; O-009 5 → 6 runs); two
+prior findings promoted to resolved:
+  • **C-009** — closed in full by session 139's command-support
+    run.  All three sub-items shipped: (1) loop-row Notes
+    columns at `docs/COMMANDS.md:450` (`FOR / START / STEP /
+    NEXT`), `:451` (`WHILE / REPEAT / END`), `:452` (`DO /
+    UNTIL / END`) all now carry the session-136 auto-close
+    annotation mirroring the session-083 IF row style; (2)
+    Counts heading at `:24` bumped from "as of session 134 —
+    2026-04-24" to "as of session 139 — 2026-04-25" with the
+    `register()` count refresh 463 → 466 (+3 for LIN, LIMIT,
+    lim) and `^register(` 442 → 445; (3) session-log entries
+    back-filled for sessions 135 / 136 / 137 / 138 / 139 at the
+    file end.  Same close shape as C-007 (session 128 → 129) and
+    C-008 (session 133 → 134) — fifth iteration of the rpl-
+    programming-lift-then-command-support-back-fill cycle, all
+    five now closed.
+  • **R-005** — closed in full by session 141's rpl-programming
+    run.  Both pure-string edits shipped: (1) the three stale
+    `## Session NNN (this run) — what shipped` headings at
+    `docs/RPL.md:258` (session 121), `:358` (session 126), `:465`
+    (session 136) all demoted to plain `## Session NNN — what
+    shipped`; (2) the Session log pointer prose previously at
+    `:1500` rewritten to past tense for session 131 ("Session
+    131 was this lane (HALT/PROMPT lift through DOLIST / DOSUBS /
+    STREAM bodies …)") at the now-`:1682` location, with new
+    session-136 / session-141 footnotes appended.  Session 141
+    additionally added a new "## Session 141 (this run) — what
+    shipped" chapter at `:258` (the new sole `(this run)` holder).
+    Pure comment / string drift; closed.
+Two new findings filed:
+  • **R-006** — `docs/RPL.md:348` carries a stale internal cross-
+    reference: "Same run also updates the Session log pointer
+    prose at `:1455` to demote `Session 131 is this run …`".
+    Line 1455 in the current file is unrelated content
+    ("Persistence of halted programs" — Generators are not
+    serialisable via JSON, etc.); the actual demote target —
+    "Session 131 was this lane …" — sits at line 1682.  This is
+    drift introduced by session 141's own edit: the line numbers
+    in the inline prose at `:348` were not refreshed after
+    session 141's own +99-line chapter insertion (lines 258-356)
+    plus the 76 new test-pin assertions' chapter expansions
+    pushed the demote target down by ~200 lines.  Pure-string
+    drift; safe doc edit for either the rpl-programming or the
+    review lane.
+  • **O-011** — third instance of the lock-body
+    heartbeatAt-equals-startedAt + intent="items TBD" +
+    log-mtime-equals-releasedAt signature (after O-008 session
+    106 and O-010 session 121).  Session 141's lock body shows
+    `heartbeatAt: 1777106701 === startedAt`, `released: true`,
+    `releasedAt: 1777107556` (855 s = 14m 15s after start —
+    well past the 10-min stale-prune threshold), with no
+    `releaseReason` field; `logs/session-141.md` mtime is
+    2026-04-25 08:59 (matches `releasedAt`).  The log content is
+    real and substantive (226 lines), so the missing-log signal
+    O-008 was meant to trigger does NOT apply this time — same
+    as session 121 / O-010.  But the lock-layer signature is now
+    the third occurrence of "looks stale-prune-shaped, log was
+    in fact written" without the audit being able to disambiguate
+    a graceful late-write from an actual stale-prune-with-late-
+    log.  T-002's resolution paragraph (session 132) already
+    flagged the future improvement: add a `releaseReason` field
+    to the lock body so graceful release vs. prune is unambiguous
+    for future audits.  This finding promotes that future-
+    improvement note from a comment-in-passing to a tracked
+    work item, owned by any lane that maintains
+    `utils/@locks/lock.mjs` (no canonical owner — pick the
+    lane currently editing that file).
 
-**Lock.** Held `utils/@locks/session123-code-review.json`
+Session 143 log added.  No sibling-lane source files touched.
+No RPL op behavior changed, no types widened, no tests added
+or deleted, no interpreter touched, no registrations added or
+removed.
+
+**Lock.** Held `utils/@locks/session143-code-review.json`
 throughout, scope = `docs/REVIEW.md` only (narrower than the
-canonical review-lane scope of `docs/REVIEW.md` + `logs/` because
-session 122 unit-tests is holding `logs/` at this run's
-acquisition — the helper rejected a broader scope as overlapping
-even though `utils/@locks/README.md:40` exempts `logs/` for
-append-only per-task log files; the session log file
-`logs/session-123.md` was written without a lock under that
-exemption, with a unique filename so no real conflict exists).
-Sibling locks at run-entry: session 122 unit-tests (active);
-sessions 119, 120, 121 (all released — 119 / 120 graceful, 121
-stale-pruned — see O-010).  Released at end of run.
+canonical review-lane scope of `docs/REVIEW.md` + `logs/`
+because session 142 unit-tests is holding `logs/session-142.md`
+at this run's acquisition — same tooling pattern as session 138
+vs session 137, session 133 vs session 132, and session 128 vs
+session 127; the helper accepts `docs/REVIEW.md`-only as non-
+overlapping; the session log file `logs/session-143.md` is
+written without a lock under the `utils/@locks/README.md:40`
+"logs/ are append-only with unique filenames" exemption, with
+a unique filename so no real conflict exists).  Sibling locks
+at run-entry: session 142 unit-tests (active — holds the broad
+`tests/*.mjs` set + `docs/TESTS.md` + `logs/session-142.md`);
+sessions 129 – 140 all released gracefully; session 141 released
+with the late-mtime signature documented in O-011 above (log
+on disk, lock-layer ambiguity flagged for fix).  Released at
+end of run.
 
 ---
 
@@ -253,7 +341,7 @@ stale-pruned — see O-010).  Released at end of run.
   purge-first narrative; body at `:280-282` still the bare
   `astToGiac`/`buildCmd` pair; second comment block at `:285-299`
   still explains the removal).
-- **Age.** 5 runs. **Status.** open (lane = `rpl5050-cas-giac` or
+- **Age.** 9 runs. **Status.** open (lane = `rpl5050-cas-giac` or
   `rpl5050-code-review` — any lane can take this as pure hygiene,
   but defer to the cas lane if they want the phrasing).
   Re-verified session 118: same state — the 22-line top block at
@@ -267,11 +355,55 @@ stale-pruned — see O-010).  Released at end of run.
   `buildCmd`, with `assertValidCasName` arity check on `extraVars`
   immediately above) / `:290-303` (second comment correctly
   explaining the session-098 removal).  Sessions 119 / 120 / 121
-  did not touch the file.  Now 5 review-lane runs aging — the
-  rpl5050-cas-giac lane has not been spun up since this finding
-  was filed (the giac/cas work has been threaded through
-  command-support sessions 114 / 119 instead, and neither of
-  those sessions has chosen to fold this hygiene edit into
+  did not touch the file.  Re-verified session 128:
+  `grep -n "Safe caseval" www/src/rpl/cas/giac-convert.mjs`
+  still hits at `:235`, top block still opens with the purge-
+  first narrative; sessions 124 (LNAME / GBASIS — both new
+  *callers* of giac infra but did not touch this file) and 125
+  (data-types — pure widening, no Giac files) did not touch
+  `giac-convert.mjs`.  Re-verified session 133:
+  `grep -n "Safe caseval" www/src/rpl/cas/giac-convert.mjs`
+  still hits at `:235`; top block at `:234-256` still opens with
+  "Safe caseval command builder — purge free variables first"
+  while the body at `:279-286` is still the bare
+  `assertValidCasName` arity check + `astToGiac` + `buildCmd(giacExpr)`
+  triple, with no purge preamble; second comment block at
+  `:287-299` still correctly explains the session-098 removal.
+  Sessions 129 (command-support — doc-only COMMANDS.md edits;
+  no CAS files), 130 (data-types — `tests/test-types.mjs` only),
+  131 (rpl-programming — `ops.js` body-intercept lifts; no
+  `cas/` files) did not touch `giac-convert.mjs`.  Re-verified
+  session 138: `grep -n "Safe caseval" www/src/rpl/cas/giac-convert.mjs`
+  still hits at `:236`; top block at `:235-257` still opens with
+  "Safe caseval command builder — purge free variables first"
+  while the body at `:279-286` is still the bare
+  `assertValidCasName` arity check + `astToGiac` + `buildCmd(giacExpr)`
+  triple, with no purge preamble; second comment block at
+  `:287-299` still correctly explains the session-098 removal.
+  Sessions 134 (command-support — doc-only COMMANDS.md + phantom-row
+  retire pass; no CAS files), 135 (data-types — `tests/test-types.mjs`
+  only), 136 (rpl-programming — `ops.js` runWhile / runDo / runStart
+  / runFor auto-close branches; no `cas/` files) did not touch
+  `giac-convert.mjs`.  Re-verified session 143:
+  `grep -n "Safe caseval" www/src/rpl/cas/giac-convert.mjs`
+  still hits at `:235`; top block at `:234-256` still opens with
+  "Safe caseval command builder — purge free variables first"
+  while the body at `:279-300` is still the bare
+  `assertValidCasName` arity check + `astToGiac` + `buildCmd(giacExpr)`
+  triple, with no purge preamble; second comment block at
+  `:287-299` still correctly explains the session-098 removal.
+  Session 139 (command-support — shipped LIN / LIMIT / lim via
+  `buildGiacCmd` callers but did NOT touch `giac-convert.mjs`
+  itself; the new ops are call-sites of `buildGiacCmd`, not
+  edits to the builder), 140 (data-types — `tests/test-types.mjs`
+  + `docs/DATA_TYPES.md` only), 141 (rpl-programming — test-
+  control-flow.mjs + RPL.md only, no `cas/` files), 142 (unit-
+  tests in flight, broad `tests/*.mjs` + `docs/TESTS.md`
+  scope) did not touch `giac-convert.mjs` either.  Now 9
+  review-lane runs aging — the rpl5050-cas-giac lane has not
+  been spun up since this finding was filed (the giac/cas work
+  continues to be threaded through command-support sessions
+  instead, and none has chosen to fold this hygiene edit into
   their pass).
 
 ### O-008  Session 106 shipped substantive changes without writing `logs/session-106.md`
@@ -548,10 +680,383 @@ stale-pruned — see O-010).  Released at end of run.
   returns 449; `grep -nE 'IFT[E]? .*Notes|Session 12[01]' docs/COMMANDS.md`
   confirms no IFT / IFTE row addendum and no session-12x log
   entries.
-- **Age.** new. **Status.** open (lane = `rpl5050-command-support`).
-  Pairs naturally with the O-010 back-fill — both stem from the
-  same session-121 silent-ship.  Could also pair with R-004
-  (RPL.md narrative) if a single multi-doc pass is preferred.
+- **Age.** 1 run. **Status.** **resolved session 129** by the
+  `rpl5050-command-support` lane.  All four sub-items from this
+  finding's session-128 status block are now closed:
+  - **(closed session 129)** PROMPT row split out of the
+    `DISP CLLCD FREEZE INPUT WAIT BEEP → ui lane` group; new ✓
+    row added in the control-flow section between
+    `HALT CONT KILL` and `RUN`, with Notes that cite the
+    session-121 evalRange intercept (`ops.js:3129-3136`),
+    `setPromptMessage` / `clearPromptMessage`, the CONT/KILL/SST
+    semantics, and the `'PROMPT' EVAL` outside-program error
+    mirroring HALT.
+  - **(closed session 129)** IFT/IFTE row Notes column amended
+    with the session-121 generator-flavor lift addendum (body-
+    intercept path at `ops.js:3145-3158` — note that the
+    session-128 audit cited `:3116-3158`; the actual range is
+    `:3145-3158`, the `:3116` figure was off-by-one).  Sync-
+    fallback caveat preserved.
+  - **(closed session 129)** HALT/CONT/KILL row Notes column
+    amended with both the session-121 IFT/IFTE lift and the
+    session-126 SEQ/MAP lift; the previously stale "only HALT
+    inside a sync-path call (IFT / IFTE / MAP / SEQ body) still
+    rejects" caveat rewritten as the now-correct "Residual:
+    HALT reached through the **sync-fallback** Name-dispatch
+    path for IFT / IFTE / SEQ / MAP still rejects" with the
+    four session-111 caller labels enumerated.
+  - **(closed session 129)** Session-log entries for sessions
+    120, 121, 122, 123, 125, 126, 127, 128 back-filled at the
+    file-end log block (chronological, most-recent-first), plus
+    a session-129 entry at the top of the log documenting this
+    run's edits.  The Counts heading was bumped from session
+    124 to session 129 and the `register()` count narrative
+    refreshed from 455 → 458 with attribution for the +3 delta
+    (session-126 SEQ/MAP register-rewrites + sibling-lane
+    traffic; session 129 itself shipped no new registrations).
+  Verified session 129 via `grep -nE
+  '## Counts \(as of session 129|register\(\) count it added is
+  the \+1|PROMPT.*Session 121.*HP50 AUR p\.2-160|IFT.*IFTE.*Session
+  121:|HALT.*Session 126:.*SEQ' docs/COMMANDS.md` (5 hits, all on
+  the new edits) and `node tests/test-all.mjs` = 4374 / 0 / sanity
+  22 / persist 38 (all stable from session 128's run-close
+  baseline).  **Original status block (session 128) preserved
+  below for traceability.**
+
+  ---
+  *(session-128 status block, retained for traceability — the
+  open-piece narrative below was the input to session 129's
+  closure work)*
+
+  **partial — Counts heading +
+  register count + session-124 log entry slice closed by session
+  124; PROMPT row + IFT/IFTE row + HALT row + missing
+  120/121/122/123/125 session-log entries still open.**  Re-
+  verified session 128:
+  - **(closed by session 124)** Counts heading at
+    `docs/COMMANDS.md:24` now reads "## Counts (as of session 124
+    — 2026-04-24)"; `register()` line at `:34` reads "= **455**
+    at the end of session 124 (was 448 at the end of session
+    119)"; the prelude at `:37` calls out "the remaining +5
+    between sessions 119 and 124 came from intervening lanes
+    (e.g. session 121's `PROMPT` op for the rpl-programming
+    lane)".  Brief acknowledgement of session 121's PROMPT in
+    the Counts narrative is now present; one of C-007's three
+    drifts is closed.
+  - **(still open)** Line 348: `IFT IFTE` row Notes column still
+    reads only `Stack conditionals.` — no session-121 addendum
+    describing the generator-flavor lift through `evalRange`'s
+    body intercept; no link to RPL.md.  Required edit: append
+    "**Session 121:** IFT / IFTE actions now re-enter `evalRange`
+    via the body-intercept path (`ops.js:3116-3158`); HALT /
+    PROMPT inside the action lifts cleanly through `_evalValueGen`
+    and resumes via CONT.  Sync-fallback (Name dispatch /
+    Tagged-wrapped Name / direct `lookup('IFT').fn(s)`) still
+    rejects with the session-111 caller label.  See `docs/RPL.md:
+    42-46`."
+  - **(still open and now MORE stale)** Line 355: HALT /
+    CONT / KILL row Notes still says "**Session 106:** … only
+    HALT inside a sync-path call (IFT / IFTE / MAP / SEQ body)
+    still rejects with `HALT: cannot suspend inside a sub-
+    program call`."  Session 121 lifted IFT / IFTE off this list
+    and session 126 (in flight at this run) is lifting MAP / SEQ.
+    The row's caveat list will need a session-121 amendment now
+    and a session-126 amendment once 126 graceful-releases; for
+    this run, the session-121 amendment is the open piece.
+  - **(still open)** Line 388: `DISP CLLCD FREEZE INPUT PROMPT
+    WAIT BEEP → ui lane` — PROMPT still grouped with the UI-
+    lane I/O ops.  Required edit: pull PROMPT out of this row
+    and add a control-flow row near HALT / CONT / KILL marked ✓
+    with session-121 Notes ("yields to the EVAL/CONT driver via
+    the same suspension channel HALT uses; parks
+    `state.promptMessage`; CONT clears the banner and resumes;
+    KILL drops the suspension; SST is a no-op for PROMPT").
+  - **(still open)** Session-log block at the file end has
+    entries for sessions 124 and 119 (the file-end block is
+    most-recent-first, so 124 sits at the top, 119 a few entries
+    down).  Missing entries for sessions 120 (data-types — no
+    register changes; brief one-liner OK), 121 (rpl-programming
+    — the PROMPT ✗ → ✓ flip + IFT / IFTE Notes addendum, even
+    though the row edits themselves are still pending; the log
+    entry can pre-cite the rows that need updating), 122 (unit-
+    tests — back-fill of session-121 PROMPT/IFT/IFTE coverage;
+    no register changes), 123 (review-lane — no register
+    changes), 125 (data-types — arity-2 list distribution
+    widening + Tagged-of-List composition; no register changes).
+  Required: command-support lane next time it runs to pick up
+  C-007's three open drifts (IFT/IFTE row, HALT row, PROMPT row
+  + session-log entries).  Lane = `rpl5050-command-support`.
+  Pairs naturally with the IFT/IFTE row update if session 126
+  closes its work and the HALT row needs a session-126 MAP/SEQ
+  amendment in the same pass.
+
+### C-008  `COMMANDS.md` HALT/CONT/KILL row missing session-131 DOLIST/DOSUBS/STREAM lift + Counts/session-log staleness
+
+- **Classification.** Commands.
+- **Where.** `docs/COMMANDS.md:389` (the `HALT CONT KILL` row in
+  the control-flow section), plus the Counts heading at `:24`
+  (still stamped "as of session 129 — 2026-04-24") and the
+  session-log block at the file end (no entries for sessions
+  130, 131, or the in-flight 132).
+- **What.** Session 131 (`rpl5050-rpl-programming`, fifth run)
+  lifted HALT / PROMPT through `DOLIST` / `DOSUBS` / `STREAM`
+  per-iteration program bodies — the last three structural
+  sync-path call sites that the session-126 SEQ/MAP run hadn't
+  reached.  New `runDoList` / `runDoSubs` / `runStream`
+  generator helpers were added at `www/src/rpl/ops.js:8142`,
+  `:8224`, and `:8304` respectively, plus body-intercept dispatch
+  in `evalRange` at `:3196` / `:3202` / `:3208`.  Sync-fallback
+  handlers preserved with session-111 caller labels
+  (`'DOLIST program'`, `'DOSUBS program'`, `'STREAM program'`);
+  DOSUBS NSUB/ENDSUB context-frame teardown happens inside the
+  generator's `try/finally`.  Pinned by +65 session-131
+  assertions in `tests/test-control-flow.mjs` (498 → 563).
+  None of this is reflected in COMMANDS.md:
+  1. **HALT/CONT/KILL row Notes column missing the session-131
+     addendum.**  The row at `:389` enumerates the lift history
+     through session 088 ("structural HALT pilot-limit fully
+     lifted"), session 106 (named-sub-program lift), session 121
+     (IFT/IFTE), and session 126 (SEQ/MAP) — and stops there.
+     A reader consulting that row to gauge "can HALT escape
+     DOLIST / DOSUBS / STREAM iterations?" would conclude no
+     (per the absence) when the answer per the code is yes.
+     The residual paragraph at the end of the row Notes still
+     enumerates the four session-111 caller labels (IFT, IFTE,
+     SEQ, MAP) but does not include the three new caller labels
+     session 131 added (`'DOLIST program'`, `'DOSUBS program'`,
+     `'STREAM program'`).
+  2. **Counts heading staleness.**  The block heading at `:24`
+     still reads "as of session 129 — 2026-04-24".  Session 131
+     did not add new `register()` sites — it rewrote three
+     existing handlers (`DOLIST` / `DOSUBS` / `STREAM`) as
+     generator-flavor wrappers — but the heading exists to
+     convey that the file has been audited against session-N
+     state, and four sessions have shipped behavior-affecting
+     changes since (130 data-type widening, 131 structural HALT
+     lift, 132 unit-tests, plus this run's review).  Bumping
+     to "as of session 131" (or session 133 if it lands here)
+     keeps readers honest about which behaviors the file
+     reflects.
+  3. **Session-log block missing entries 130 / 131 / 132.**  The
+     log at `:461` ends at session 129; no entries for the
+     three sibling-lane runs that have since landed.  Same
+     anti-pattern as C-005 / C-006 / C-007 — the file is the
+     authoritative session-log surface for the Commands lane,
+     and gaps grow harder to back-fill with each missed run.
+- **Why.** C-007 was filed at session 123 against the same
+  COMMANDS.md HALT row for session 121's IFT/IFTE lift, and
+  again at session 128 against the same row for session 126's
+  SEQ/MAP lift; session 129 closed both.  C-008 is the third
+  iteration of the same anti-pattern: a structural HALT lift
+  ships in an rpl-programming-lane run, and the COMMANDS.md
+  HALT row plus Counts heading plus session-log block fall
+  one cycle behind.  Capability-state drift is the same kind
+  of audit-trail concern C-003 / C-006 mapped — the row
+  describes a pre-lift state and a reader can't tell which
+  iteration constructs HALT now lifts through.  Notes-column
+  edits are zero-risk doc work and pair naturally with the
+  session-130 / 131 / 132 log back-fill the file owes anyway.
+- **Fix.** Three pure-Notes-column / log-entry edits to
+  `docs/COMMANDS.md`:
+  1. Append to the HALT/CONT/KILL row Notes (`:389`):
+     "**Session 131:** DOLIST / DOSUBS / STREAM per-iteration
+     program bodies lifted via `runDoList` / `runDoSubs` /
+     `runStream` generators (`ops.js:8142`, `:8224`, `:8304`)
+     plus body-intercept dispatch in `evalRange` (`:3196`,
+     `:3202`, `:3208`) — HALT / PROMPT inside a DOLIST /
+     DOSUBS / STREAM iteration suspends cleanly and CONT
+     resumes inside the same iteration with the partial
+     accumulator and (for DOSUBS) the NSUB/ENDSUB context
+     frame intact via the generator's `try/finally` teardown."
+     Update the Residual paragraph to enumerate the now-seven
+     session-111 caller labels (IFT / IFTE / SEQ / MAP /
+     DOLIST / DOSUBS / STREAM) on the sync-fallback Name-
+     dispatch path.
+  2. Bump the Counts heading at `:24` to "as of session 131 —
+     2026-04-25" (or session 133 if this run authors the
+     edit).  Session 131 did not change the `register()`
+     total; the count narrative stays at 458.
+  3. Back-fill session-log entries for sessions 130 (data-type-
+     support — three hard-assertion clusters in test-types.mjs;
+     no register changes; no row flips), 131 (rpl-programming
+     — DOLIST/DOSUBS/STREAM body-intercept lift; new caller
+     labels; no new register sites; no row flips), and 132
+     (unit-tests — TESTS.md T-002 doc fix + coverage adds; no
+     register changes).
+- **Confidence.** high — `grep -n 'HALT.*CONT.*KILL' docs/COMMANDS.md`
+  shows the row at `:389` and confirms the Notes column stops
+  at session 126; `grep -nE 'as of session ([0-9]+)' docs/COMMANDS.md`
+  shows the Counts heading at `:24` still reads "session 129";
+  `grep -nE 'session 13[012]' docs/COMMANDS.md` returns no
+  hits in the session-log block (the only mentions are unrelated
+  doc references); `grep -nE 'register\(\s*"DOLIST"|register\(\s*"DOSUBS"|register\(\s*"STREAM"' www/src/rpl/ops.js`
+  shows the three handlers live and rewritten;
+  `grep -nE 'runDoList|runDoSubs|runStream' www/src/rpl/ops.js`
+  shows the three generator helpers at the cited line numbers;
+  `grep -c 'session131\|session 131' tests/test-control-flow.mjs`
+  shows the +65 assertions are present.
+- **Age.** 1 run (filed session 133). **Status.** **resolved
+  session 134** by the command-support lane's doc-only run, all
+  three sub-items shipped verbatim.  Re-verified session 138:
+  (1) `grep -n "Session 131" docs/COMMANDS.md` hits at `:436`
+  inside the `HALT CONT KILL` row Notes — the row now contains
+  the addendum "**Session 131:** DOLIST / DOSUBS / STREAM
+  per-iteration program bodies lifted via `runDoList` / `runDoSubs`
+  / `runStream` generators (`ops.js:8142`, `:8224`, `:8304`)
+  plus body-intercept dispatch in `evalRange` (`:3196`, `:3202`,
+  `:3208`)…" and the residual paragraph enumerates all seven
+  session-111 caller labels (IFT / IFTE / SEQ / MAP / DOLIST /
+  DOSUBS / STREAM); (2) `grep -nE "as of session" docs/COMMANDS.md`
+  shows the Counts heading at `:24` reads "as of session 134
+  — 2026-04-24" with the `grep -c "register("` stamp updated
+  458 → 463 and the top-level `^register(` count narrative noted
+  as 442 unchanged from session 129; (3) session-log block at
+  `:507` opens with a session-134 entry and contains contiguous
+  back-fill entries for sessions 130 / 131 / 132 / 133 / 134.
+  Same close shape as C-007 (session 128 → 129); the C-007
+  → C-008 → C-009 chain (this run files C-009 against the
+  WHILE/DO/START/FOR row Notes for the same anti-pattern,
+  recurring on session 136's auto-close lift) is the third
+  iteration of the same cycle.  Lane = `rpl5050-command-support`.
+
+### C-009  `COMMANDS.md` WHILE / DO / START / FOR rows missing session-136 auto-close lift + Counts/session-log staleness
+
+- **Classification.** Commands.
+- **Where.** `docs/COMMANDS.md:426` (the `FOR / START / STEP /
+  NEXT` row), `:427` (`WHILE / REPEAT / END`), `:428` (`DO /
+  UNTIL / END`) — all three carry an empty Notes column; plus
+  the Counts heading at `:24` (still stamped "as of session 134
+  — 2026-04-24") and the session-log block at `:507` (most-recent
+  entry is session 134; no entries for sessions 135 / 136 / the
+  in-flight 137 / this run's 138).
+- **What.** Session 136 (`rpl5050-rpl-programming`, sixth run)
+  shipped auto-close on missing END / NEXT for `WHILE/REPEAT`,
+  `DO/UNTIL`, `START`, and `FOR` — `runWhile` (`www/src/rpl/ops.js`),
+  `runDo`, `runStart`, `runFor` each gain an
+  `if (!endScan) { endIdx = bound; autoClosed = true; }` branch
+  and a `return autoClosed ? bound : closerIdx + 1` exit; spurious
+  closer-of-wrong-kind still rejects (the throws at `:3677`
+  (`"WHILE/REPEAT without END"`), `:3717` (`"DO/UNTIL without
+  END"`), `:3761` (`"START without NEXT/STEP"`), `:3798` (`"FOR
+  without NEXT/STEP"`) survive on the wrong-kind branch).  Pinned
+  by +36 session-136 assertions in `tests/test-control-flow.mjs`
+  (563 → 599).  This closes the structural-auto-close program for
+  the condition-loop and counter-loop families, mirroring the
+  existing IF (session 083) / IFERR (session 077) / CASE (session
+  074) auto-close policy.  None of this is reflected in
+  COMMANDS.md:
+  1. **Loop row Notes columns at `:426` / `:427` / `:428` empty.**
+     The four loop rows all read just `| ✓ |` with no annotation.
+     A reader consulting the row to gauge "does WHILE auto-close
+     on missing END?" would conclude no (per the absence) when
+     the answer per the code is yes.  Compare with the
+     `IF / THEN / ELSE / END` row at `:424` which correctly carries
+     "**Session 083** — IF auto-closes on missing END at
+     program-body bound, mirroring CASE (session 074) and IFERR
+     (session 077); IF-without-THEN stays a hard error" — the
+     four loop rows want a parallel session-136 annotation.
+  2. **Counts heading staleness.**  The block heading at `:24`
+     still reads "as of session 134 — 2026-04-24".  Session 136
+     did not add new `register()` sites — it widened existing
+     `runWhile` / `runDo` / `runStart` / `runFor` bodies in
+     place — but the heading exists to convey that the file has
+     been audited against session-N state, and three sessions
+     have shipped behavior-affecting changes since (135 data-type
+     widening — though no source-side change, only test pins; 136
+     structural auto-close lift; plus this run's review).  Bumping
+     to "as of session 136" keeps readers honest about which
+     behaviors the file reflects.
+  3. **Session-log block missing entries 135 / 136.**  The log at
+     `:507` ends at session 134; no entries for the two
+     sibling-lane runs that have since landed (135 data-type-
+     support coverage adds; 136 rpl-programming auto-close lift).
+     Same anti-pattern as C-005 / C-006 / C-007 / C-008 — the
+     file is the authoritative session-log surface for the
+     Commands lane, and gaps grow harder to back-fill with each
+     missed run.
+- **Why.** C-007 was filed at session 123 against the same kind
+  of COMMANDS.md row drift for session 121's IFT/IFTE lift, and
+  again at session 128 for session 126's SEQ/MAP lift; session
+  129 closed it.  C-008 was filed at session 133 against the
+  same kind of drift for session 131's DOLIST/DOSUBS/STREAM
+  lift; session 134 closed it.  C-009 is the *fourth* iteration
+  of the same anti-pattern: a structural-shape change ships in
+  an rpl-programming-lane run, and the COMMANDS.md row Notes
+  plus Counts heading plus session-log block fall one cycle
+  behind.  This time the row drift is wider because the lift
+  spans four rows (the four loop families), all with empty
+  Notes columns rather than amend-existing-prose edits.
+- **Fix.** Three pure-Notes-column / log-entry edits to
+  `docs/COMMANDS.md`:
+  1. Append to each of the four loop rows an annotation
+     mirroring the IF row's session-083 phrasing — e.g.
+     "**Session 136** — auto-closes on missing END at
+     program-body bound, mirroring IF (session 083) / CASE
+     (session 074) / IFERR (session 077); a spurious closer of
+     the wrong kind (e.g. NEXT in the END slot) stays a hard
+     error".  The FOR / START rows want the same
+     annotation phrased for "missing NEXT / STEP".
+  2. Bump the Counts heading at `:24` to "as of session 136 —
+     2026-04-25" (or session 138 if this run authors the edit).
+     Session 136 did not change the `register()` total; the
+     count narrative stays at 463 / 442.
+  3. Back-fill session-log entries for sessions 135
+     (data-type-support — three hard-assertion clusters in
+     test-types.mjs; no register changes; no row flips) and
+     136 (rpl-programming — auto-close lift on the four loop
+     families; no new register sites; no row flips).
+- **Confidence.** high — `grep -nE 'WHILE|DO[^a-z]|REPEAT|FOR\s' docs/COMMANDS.md`
+  shows the four loop rows at `:426` / `:427` / `:428` and confirms
+  each Notes column is `| ✓ |` (empty after the status); `grep -nE
+  'as of session ([0-9]+)' docs/COMMANDS.md` shows the Counts
+  heading at `:24` still reads "session 134"; `grep -nE 'session
+  13[5-7]\b' docs/COMMANDS.md` returns no hits in the session-log
+  block; `grep -nE "auto-close" www/src/rpl/ops.js` shows the
+  four `runWhile` / `runDo` / `runStart` / `runFor` auto-close
+  branches live; `grep -c 'session136' tests/test-control-flow.mjs`
+  shows the +36 assertions are present.
+- **Age.** 1 run (filed session 138).  **Status.** **resolved
+  session 139** by the command-support lane.  All three sub-
+  items shipped:
+  - **(closed session 139)** Loop rows at `docs/COMMANDS.md:450`
+    (`FOR / START / STEP / NEXT`), `:451` (`WHILE / REPEAT /
+    END`), `:452` (`DO / UNTIL / END`) all gained the
+    session-136 auto-close annotation.  The FOR/START row reads
+    "**Session 136** — `FOR` and `START` auto-close on missing
+    `NEXT` / `STEP` at program-body bound, mirroring IF (session
+    083) / CASE (session 074) / IFERR (session 077).  A
+    spurious closer of the wrong kind (e.g. `END` in the
+    `NEXT`/`STEP` slot) stays a hard error; see `runFor` /
+    `runStart` in `www/src/rpl/ops.js`."  Parallel phrasing
+    on the WHILE/REPEAT and DO/UNTIL rows pointing at `runWhile`
+    / `runDo` respectively.
+  - **(closed session 139)** Counts heading at `:24` bumped from
+    "as of session 134 — 2026-04-24" to "as of session 139 —
+    2026-04-25"; `grep -c "register("` count refreshed 463 →
+    466 (+3 for the new LIN / LIMIT / lim ops session 139 also
+    shipped this run); `grep -cE '^register\('` count refreshed
+    442 → 445; ✓ rows count refreshed to 437 (was 434, +3 for
+    the LIN / LIMIT ops — note that LIMIT / lim share a single
+    combined row, hence +3 ✓ rows from +3 register sites).
+  - **(closed session 139)** Session-log block at the file end
+    gained back-fill entries for sessions 135 (data-types Q×V/M
+    broadcast / Tagged-of-V/M binary composition / Tagged tag-
+    identity & BinInt cross-base equality, +31 test-types.mjs),
+    136 (rpl-programming WHILE/DO/START/FOR auto-close lift,
+    +36 test-control-flow.mjs), 137 (unit-tests cross-file
+    coverage adds, +45), 138 (code-review eleventh run filing
+    C-009 + R-005), and the session-139 entry itself at the top
+    of the log.
+  Verified session 143 via `grep -nE 'WHILE / REPEAT|DO / UNTIL|FOR / START|auto-close' docs/COMMANDS.md`
+  (5 hits including the IF row's session-083 annotation and the
+  three new session-136 annotations on the loop rows);
+  `grep -nE "as of session" docs/COMMANDS.md` shows the Counts
+  heading reads "as of session 139"; `grep -nE "^- \*\*session 13[5-9]"
+  docs/COMMANDS.md` shows the back-filled entries 135 → 139 in
+  the session-log block.  Same close shape as C-007 (session
+  128 → 129) and C-008 (session 133 → 134) — fifth iteration
+  of the rpl-programming-lift-then-command-support-back-fill
+  cycle, all five now closed.
 
 ### C-006  `COMMANDS.md` HALT row missing session-106 named-sub-program lift + SST↓ step-into
 
@@ -825,10 +1330,196 @@ above.)_
   returns only the session-106-era still-rejecting mentions at
   `:144-148` (which are now stale); `grep -nE 'register\(\s*''PROMPT''|setPromptMessage|_evalValueGen' www/src/rpl/ops.js`
   confirms the mechanism is live in source.
-- **Age.** new. **Status.** open (lane = `rpl5050-rpl-programming`).
-  Naturally pairs with the O-010 session-121 log back-fill —
-  both are RPL-lane responsibilities.  C-007 is the
-  command-support sibling of this finding.
+- **Age.** 1 run. **Status.** **resolved-session-121
+  (retraction-flavor — session 123 audit was filed against a
+  state of `docs/RPL.md` that this run cannot reproduce).**
+  Re-verified session 128: `grep -n "Session 121\|session 121\|
+  session-121\|PROMPT" docs/RPL.md` returns 25 hits across the
+  file, including:
+  - `:18` stamp (currently bumped to "as of session 126" by the
+    in-flight rpl-programming session 126, but the chapter
+    structure for session 121 sits beneath it);
+  - `:42-46` — the IFT/IFTE generator-flavor lift narrative
+    ("**Session 121:** HALT/PROMPT inside the action(s) now lifts
+    cleanly when the IFT/IFTE keyword is reached through
+    `evalRange`'s body intercept");
+  - `:117-123` — the PROMPT op chapter ("`PROMPT` — ✓ **session
+    121 new** (HP50 AUR p.2-160).  Pops level 1, …  `resetHome`
+    clears it.  Bare PROMPT outside a running program raises
+    `PROMPT: not inside a running program`, matching HALT's…");
+  - `:171-179` — the "Remaining limitations (session 121)"
+    paragraph that reads "Session 121 lifted IFT and IFTE off
+    this list" and lists what still rejects;
+  - `:223-298` — a full "Session 121 (this run) — what shipped"
+    subsection with detailed mechanism-level prose (PROMPT op,
+    HALT/PROMPT lift through IFT body, HALT/PROMPT lift through
+    IFTE body, +50 tests reference, user-reachable demo);
+  - `:890-900` — the queue history block flagging session-121's
+    work as shipped.
+  The session-123 audit's `grep -n 'PROMPT\|session 121\|session-121'
+  docs/RPL.md` claim of "zero hits" is irreproducible against the
+  current file — either session 121 wrote the chapters at the
+  very tail of its run (lock-release happened at 01:04:30,
+  session 123's audit grep ran ~8 minutes later at 01:12-ish,
+  giving the FS time to flush) and session 123 ran its grep
+  against a stale view, or session 122/123/126 added the
+  chapters during the audit window.  Review-lane cannot
+  retroactively assign authorship without git, but the present-
+  run evidence makes the R-004 "no narrative" claim untrue, so
+  the finding is closed in retraction-flavor.  Naturally pairs
+  with O-010's RPL.md sub-item (also retracted this run).
+  Authorship attribution defaults to session 121; if session 126
+  expanded the chapter on top of an existing skeleton, the
+  session-126 log will record the additional content (this is
+  the rpl-programming lane's notebook, not review-lane's).
+
+### R-005  `docs/RPL.md` carries three "(this run) — what shipped" headings; only one should be current
+
+- **Classification.** RPL.
+- **Where.** `docs/RPL.md:258` (`## Session 121 (this run) — what
+  shipped`), `:358` (`## Session 126 (this run) — what shipped`),
+  `:465` (`## Session 136 (this run) — what shipped`); plus the
+  Session log pointer prose at `:1500` ("Session 131 is this run
+  (HALT/PROMPT lift through DOLIST / DOSUBS / STREAM bodies …)").
+- **What.** The rpl-programming lane writes a "(this run) — what
+  shipped" chapter for each substantive run, but does not demote
+  prior chapters when subsequent runs ship.  The result is three
+  sections labelled "(this run)" simultaneously (sessions 121,
+  126, 136) when only the most-recent rpl-programming-lane run
+  should bear that label.  Compare with session 131 at `:602`
+  which is correctly labelled `## Session 131 — what shipped`
+  (no "(this run)" suffix), so the demotion has happened
+  inconsistently — session 131's authoring run apparently
+  remembered to omit "(this run)" from its own header but did
+  not demote the older 121 / 126 headers; sessions 126 / 136
+  did not demote 121 either.  Same drift in the Session log
+  pointer prose at `:1500`: "Session 131 is this run …" is now
+  five rpl-programming-lane runs stale (sessions 121 / 126 /
+  131 / 136 are the rpl-programming runs in the lifecycle of
+  this section; 136 is current).
+- **Why.** A reader scanning RPL.md chapter-by-chapter loses
+  the ordering signal: which "(this run)" actually corresponds
+  to *now*?  The standing-lessons section in `docs/@!MY_NOTES.md`
+  asks for a User-reachable demo per session; readers wanting
+  the most-current demo currently have to scan all three
+  "(this run)" sections to find which is the highest session
+  number.  Pure comment / string drift; no behavior implication.
+- **Fix.** Two pure-string edits to `docs/RPL.md`:
+  1. Re-label `## Session 121 (this run) — what shipped` →
+     `## Session 121 — what shipped` (drop the "(this run)"
+     suffix); same for `## Session 126 (this run) — what
+     shipped` → `## Session 126 — what shipped`.  Leave
+     `## Session 136 (this run) — what shipped` as-is — that
+     is currently the correct one.
+  2. Update the Session log pointer prose at `:1500` to
+     demote "Session 131 is this run …" to "Session 131 was
+     this lane …" and append a one-sentence pointer to
+     session 136's auto-close lift, mirroring how the prose
+     handled the session-126 → session-131 transition.
+  Either the rpl-programming lane (which authors the chapters)
+  or the review lane can ship this — pure-comment / pure-
+  string drift is in scope for either.
+- **Confidence.** high — `grep -nE "^## Session [0-9]+ ?\(this
+  run\)" docs/RPL.md` returns exactly three lines (`:258`, `:358`,
+  `:465`); `grep -nE "is this run" docs/RPL.md` returns one line
+  in the Session log pointer prose at `:1500`.
+- **Age.** 1 run (filed session 138).  **Status.** **resolved
+  session 141** by the `rpl5050-rpl-programming` lane.  Both
+  pure-string edits shipped, bundled into session 141's IFERR
+  HALT/PROMPT pinning run:
+  - **(closed session 141)** The three stale `## Session NNN
+    (this run) — what shipped` headings at `docs/RPL.md:258`
+    (session 121), `:358` (session 126), `:465` (session 136)
+    all demoted to plain `## Session NNN — what shipped`.
+    Verified session 143 via `grep -nE "^## Session [0-9]+ \(this
+    run\)" docs/RPL.md` returning exactly one line (`:258` —
+    "Session 141 (this run) — what shipped"), the new sole
+    `(this run)` holder added by session 141's authoring run.
+  - **(closed session 141)** The Session log pointer prose
+    previously at `:1500` ("Session 131 is this run …") moved
+    to `:1682` (line shift caused by session 141's own +99-line
+    chapter insertion + 76-assertion test additions) and
+    rewritten to past tense: "Session 131 was this lane (HALT/
+    PROMPT lift through DOLIST / DOSUBS / STREAM bodies via
+    `evalRange` intercepts and new `runDoList` / `runDoSubs` /
+    `runStream` generator helpers; …)".  Footnotes appended for
+    sessions 136 ("Session 136 was this lane (auto-close on
+    missing END / NEXT for `WHILE/REPEAT`, `DO/UNTIL`, `START`,
+    and `FOR` …)") and 141 ("Session 141 is this run (HALT/
+    PROMPT lift through `IFERR` clauses pinned …)").  Also
+    a parenthetical footnote at `:1705-1709` listing the
+    historical "is this run" wording origins for sessions 074 /
+    078 / 088 / 106 / 116 / 121 / 126 / 131 and acknowledging
+    that the demotion-to-past-tense for sessions 121 / 126 /
+    131 / 136 was bundled into session 141.  Verified session
+    143 via `grep -nE "is this run|was this lane" docs/RPL.md` —
+    one current "is this run" hit at `:1696` (session 141, the
+    correct sole holder), with all prior "is this run" mentions
+    converted to past-tense "was this lane" entries.
+  Note: session 141 itself introduced a small drift while
+  closing R-005 — the inline prose at `docs/RPL.md:348`
+  describing the demote points at line `:1455`, but the actual
+  demote target moved to `:1682` due to session 141's own
+  chapter expansion.  Filed separately as **R-006** below.
+
+### R-006  `docs/RPL.md:348` carries a stale internal cross-reference (`:1455`) introduced by session 141's own R-005-close edit
+
+- **Classification.** RPL (doc / comment drift inside RPL.md).
+- **Where.** `docs/RPL.md:348` (inside the `## Session 141 (this
+  run) — what shipped` chapter, item 5 "R-005 doc cleanup —
+  three `(this run)` headings demoted").  The drift target
+  itself sits at `:1682` (the "Session 131 was this lane …"
+  past-tense entry session 141's R-005 close rewrote).
+- **What.** Item 5 of session 141's chapter says: "Same run also
+  updates the Session log pointer prose at `:1455` to demote
+  `Session 131 is this run …` to past tense and append
+  session-136 / session-141 footnotes, per R-005's two pure-
+  string edit list."  The cited line `:1455` is correct only
+  for a snapshot of `docs/RPL.md` taken *before* session 141's
+  own +99-line chapter insertion at `:258-356` (the "## Session
+  141 (this run) — what shipped" chapter being narrated by item
+  5 itself) plus several smaller edits that pushed the demote
+  target down by ~227 lines.  The actual demote target —
+  "Session 131 was this lane (HALT/PROMPT lift through DOLIST /
+  DOSUBS / STREAM bodies …)" — is now at line `:1682`.  Line
+  1455 in the current file is unrelated content: item 4
+  "Persistence of halted programs" inside the implementation-
+  notes section, talking about generator non-serialisability and
+  the `resetHome` hook.  A reader following the cross-reference
+  to `:1455` lands on a paragraph about page-refresh persistence,
+  not the R-005 demote target, and has to grep for "Session 131"
+  to find what item 5 is actually describing.
+- **Why.** RPL.md is the canonical mental-model reference for
+  the language's control-flow surface.  Internal cross-references
+  inside the same file are the cheapest navigation aid;
+  off-by-220-lines references silently corrode that aid.  The
+  bug is also self-referential — the chapter that introduced the
+  drift (session 141's `(this run)` chapter at `:258-356`) is the
+  one that the line-number arithmetic forgot to account for.
+  Same kind of drift the project has caught before: stale line
+  numbers in narrative prose are a recurring class (compare
+  with C-007's session-128 audit's off-by-one on "ops.js:3116-
+  3158" vs the actual ":3145-3158").  Pure comment / string
+  drift; no behavior implication.
+- **Fix.** One pure-string edit to `docs/RPL.md:348` — change
+  `prose at \`:1455\`` to `prose at \`:1682\`` (current target
+  line).  Or, equivalently, drop the line number entirely and
+  cite the section: "the Session log pointer prose at the end of
+  the file" — line numbers in narrative prose are a maintenance
+  hazard inside a file that grows by hundreds of lines per
+  rpl-programming-lane run.  Either form is a one-character /
+  one-phrase edit safe for the rpl-programming or the review
+  lane to ship.
+- **Confidence.** high — `grep -nE "Session 131 is this run|Session 131 was this lane" docs/RPL.md`
+  returns one hit at `:1682` (the past-tense entry session 141
+  rewrote into); `sed -n '1454,1458p' docs/RPL.md` shows the
+  current line 1455 is "serialisable via JSON. To survive a
+  page refresh, …" — unrelated to R-005's demote target.
+- **Age.** new (filed session 143).  **Status.** open.  Lane =
+  `rpl5050-rpl-programming` (preferred — they own the chapter
+  authorship and routinely refresh the RPL.md narrative as the
+  file grows) or `rpl5050-code-review` (fallback — pure-string
+  drift is in scope for this lane).
 
 ### R-003  `_driveGen` docstring still names "variable lookup" as a `_evalValueSync` caller after session 106
 
@@ -967,6 +1658,113 @@ above.)_
 
 ## Findings — Unit Tests
 
+### T-002  `docs/TESTS.md` four sites still claim session 121 "stale-pruned without writing logs/session-121.md"
+
+- **Classification.** Unit Tests (doc drift inside the unit-tests
+  lane's authoritative notes file).
+- **Where.** `docs/TESTS.md:90-92` (Sibling deltas absorbed
+  block — "Session 121 (rpl-programming) shipped **+46** PROMPT /
+  KILL assertions in `test-control-flow.mjs` (402 → 448) BUT the
+  lock was stale-pruned without writing `logs/session-121.md`");
+  `:212` (per-file table line for `test-control-flow.mjs` —
+  begins "+34 session-116, +46 session-121 PROMPT/KILL, +4
+  session-122…");
+  `:644-647` (a session-122 narrative paragraph — "+4 from
+  session 122 + 46 from a concurrent session-121 PROMPT/KILL
+  cluster that landed in `tests/test-control-flow.mjs` while
+  this lock was held — see the top-of-file delta note");
+  `:648-651` (the closing of the same session-122 paragraph —
+  "Note: session 121 (rpl-programming) acquired its lock and
+  was stale-pruned without writing `logs/session-121.md` —
+  re-file under code-review per O-008 pattern.").
+- **What.** Four mentions of "stale-pruned without writing
+  logs/session-121.md" or close paraphrases.  All four sites
+  were authored by session 122 (unit-tests) at the time it was
+  back-filling the session-121 PROMPT/KILL coverage and could
+  not see a `logs/session-121.md` on disk.  As established in
+  O-010 partial above, the log file in fact exists (7818 bytes,
+  mtime 2026-04-25 01:04:30, written within session 121's lock
+  window) — session 122 either ran its `ls logs/` check before
+  the session-121 write committed, or against a stale view.
+  Either way, the four claims in TESTS.md are now incorrect on
+  the literal "log file does not exist" question.  The
+  *signature* concern (`heartbeatAt === startedAt`, lock
+  `released: true` set without an explicit `releaseReason`) is
+  still a real audit-trail observation worth recording, but the
+  current phrasing reads "no log was written", and the document
+  on disk says otherwise.
+- **Why.** TESTS.md is the unit-tests lane's authoritative
+  notes file.  A future audit pass reading the four sites will
+  conclude the log is missing, repeat O-010's session-123
+  mistake, and likely re-file the same finding.  The drift
+  also lives next to the per-file coverage table at line 212,
+  which is the most-consulted block in the file — readers
+  scanning for "what did session 121 ship" land directly on
+  the wrong claim.
+- **Fix.** Re-phrase all four sites to record the actual
+  evidence, e.g. replace "stale-pruned without writing
+  `logs/session-121.md`" with "released with the heartbeat-equals-
+  startedAt signature that looks stale-prune-ish at the lock
+  layer, but the corresponding `logs/session-121.md` was written
+  within the lock window (mtime 2026-04-25 01:04:30, identical
+  to the lock body's `releasedAt`); the missing-log signal does
+  not apply.  Future improvement: add a `releaseReason` field
+  to the lock body so graceful release vs. prune is unambiguous
+  for future audits."  Same edit at all four sites; pure-doc
+  change; no test impact.
+- **Confidence.** high.  Four sites verified by `grep -n
+  "session 121\|Session 121\|session-121" docs/TESTS.md` returning
+  the lines listed under Where.  Log-file-exists evidence:
+  `ls -la logs/session-121.md` returns the file with mtime
+  01:04:30; `cat utils/@locks/session121-rpl-programming.json`
+  returns `released: true` + `releasedAt: 1777079083` (= UTC
+  01:04:43, two seconds after the log file mtime — the natural
+  ordering for "write log, then unlink lock").
+- **Age.** 1 run (filed session 128).
+- **Status.** **resolved session-132** by the
+  `rpl5050-unit-tests` lane during this review-lane run.  All
+  four sites rewritten to acknowledge the log file exists:
+  - `:87-103` (Sibling-deltas-absorbed block) — the prior
+    "**+46** PROMPT / KILL assertions in `test-control-flow.mjs`
+    (402 → 448) BUT the lock was stale-pruned without writing
+    `logs/session-121.md`" sentence is replaced with a
+    multi-paragraph rewrite acknowledging the
+    `heartbeatAt === startedAt` lock-layer signature *but*
+    pointing out that `logs/session-121.md` was in fact written
+    within the lock window (mtime 2026-04-25 01:04:30 — two
+    seconds before `releasedAt` of 01:04:43, the natural
+    "write log, then unlink lock" ordering).  The "missing-log
+    signal does not apply" conclusion is explicit, and the
+    paragraph references this T-002 close + the future
+    improvement of adding a `releaseReason` field to the lock
+    body.
+  - `:212` — the per-file table line for `test-control-flow.mjs`
+    is unchanged in attribution form ("+46 session-121 PROMPT/
+    KILL") but no longer carries any "stale-pruned" claim,
+    matching the rewrite at the top-of-file delta block; the
+    cell content is the count attribution only.
+  - `:644-647` / `:648-651` (the session-122 narrative paragraph)
+    — the closing sentence has been rewritten from the original
+    "Note: session 121 (rpl-programming) acquired its lock and
+    was stale-pruned without writing `logs/session-121.md` —
+    re-file under code-review per O-008 pattern" into an
+    explicit T-002-close narrative: "session 121 (rpl-programming)
+    acquired its lock with the `heartbeatAt === startedAt`
+    signature that resembles a stale-prune at the lock layer;
+    the original session-122 narrative read this as 'no log was
+    written' because the directory listing taken at session-122
+    entry did not yet show `logs/session-121.md`.  Subsequent
+    inspection (per REVIEW.md T-002 close, session 132) confirms
+    `logs/session-121.md` was in fact written within the lock
+    window … so the missing-log signal does not apply."  Pure-
+    doc fix, no test impact.  Verified session 133 via
+    `grep -n "stale-pruned\|stale-prune" docs/TESTS.md` — only
+    two hits remain, both inside the rewritten retraction
+    narratives that explicitly say "looks stale-prune-shaped at
+    the lock layer, but the log was in fact written".  Sister-
+    cite at `docs/TESTS.md:672-677` is the formal T-002 close
+    pointer.
+
 ### T-001  `docs/TESTS.md` coverage snapshot frozen at session 084
 
 - **Classification.** Unit Tests.
@@ -1074,7 +1872,7 @@ are UI-adjacent but classified under Other for bookkeeping.)_
 - **Why.** Same rationale as X-001 / X-002.
 - **Fix.** Drop `clampLevel` from the import list.
 - **Confidence.** high.
-- **Age.** 8 runs. **Status.** open (lane = `rpl5050-ui-development`).
+- **Age.** 12 runs. **Status.** open (lane = `rpl5050-ui-development`).
   Re-verified session 118 at `www/src/app.js:14` — still present
   (`interactiveStackMenu, clampLevel, levelUp, levelDown, …`);
   `grep -c 'clampLevel' www/src/app.js` returns 1 (import line only).
@@ -1087,12 +1885,41 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   the definition at `interactive-stack.js:24`, and three call sites
   inside `interactive-stack.js` itself (lines 60, 76, 88 — all
   `levelUp` / `levelDown` internals).  Sessions 119 / 120 / 121 /
-  122 did not touch `app.js`.  Now the longest-aging open finding
-  in the ledger — filed at session 080, 8 review-lane runs and
-  33 calendar days unaddressed.  The `rpl5050-ui-development`
-  lane has not been spun up since this finding was filed, which
-  explains the lack of movement; any `ops.js`-adjacent lane could
-  ship the one-line edit in passing.
+  122 did not touch `app.js`.  Re-verified session 128: identical
+  state at `www/src/app.js:14`; `grep -c '\bclampLevel\b'
+  www/src/app.js` still returns 1.  Sessions 124 / 125 / 126 /
+  127 did not touch `app.js` either.  Re-verified session 133:
+  identical state at `www/src/app.js:14`; `grep -nE 'clampLevel'
+  www/src/app.js` still returns exactly one line (the import).
+  Sessions 129 (command-support, COMMANDS.md only), 130 (data-
+  types, `tests/test-types.mjs` only), 131 (rpl-programming,
+  `ops.js` + `tests/test-control-flow.mjs`), 132 (unit-tests,
+  test files + TESTS.md) did not touch `app.js` either.
+  Re-verified session 138: identical state at `www/src/app.js:14`;
+  `grep -nE '\bclampLevel\b' www/src/app.js` still returns exactly
+  one line (the import).  Sessions 134 (command-support, doc-only),
+  135 (data-types, `tests/test-types.mjs` only), 136 (rpl-
+  programming, `ops.js` runWhile/runDo/runStart/runFor only +
+  `tests/test-control-flow.mjs`), 137 (unit-tests in flight, broad
+  `tests/*.mjs` + TESTS.md scope) did not touch `app.js` either.
+  Re-verified session 143: identical state at `www/src/app.js:14`
+  (the line still reads `interactiveStackMenu, clampLevel, levelUp,
+  levelDown,`); `grep -c '\bclampLevel\b' www/src/app.js` still
+  returns 1 (the import line); `grep -rn '\bclampLevel\b' www/src/`
+  still returns the import (`app.js:14`), the definition
+  (`interactive-stack.js:24`), and three call sites inside
+  `interactive-stack.js` itself.  Sessions 139 (command-support,
+  scope = `www/src/rpl/ops.js` + `tests/test-algebra.mjs` +
+  `docs/COMMANDS.md`), 140 (data-types, `tests/test-types.mjs` +
+  `docs/DATA_TYPES.md`), 141 (rpl-programming,
+  `tests/test-control-flow.mjs` + `docs/RPL.md`), 142 (unit-tests
+  in flight, broad `tests/*.mjs` + `docs/TESTS.md` scope) did not
+  touch `app.js` either.  Now the longest-aging open finding in
+  the ledger — filed at session 080, 12 review-lane runs and 37+
+  calendar days unaddressed.  The `rpl5050-ui-development` lane
+  has not been spun up since this finding was filed, which
+  explains the lack of movement; any `app.js`- or `ops.js`-
+  adjacent lane could ship the one-line edit in passing.
 
 ### X-004  Three unused private functions in `src/rpl/ops.js`
 
@@ -1380,7 +2207,7 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   `git status`.
 - **Confidence.** high — verified session 113 via `ls -la
   tests/test-control-flow.mjs*`.
-- **Age.** 2 runs. **Status.** open (lane = `rpl5050-unit-tests`,
+- **Age.** 6 runs. **Status.** open (lane = `rpl5050-unit-tests`,
   but **explicitly deferred — blocked by tooling**).  Session 117
   attempted the deletion ("delete test-control-flow.mjs.bak*" was
   in its intent string) but `rm` returned `Operation not permitted`
@@ -1392,13 +2219,50 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   remain on disk.  Re-verified session 123: `ls -la
   tests/test-control-flow.mjs*` still shows both files
   (`.bak` 92,129 bytes / `.bak2` 92,141 bytes, mtimes unchanged
-  from the session-113 reading at 11:54 / 13:41).  Future paths to
+  from the session-113 reading at 11:54 / 13:41).  Re-verified
+  session 128: identical state — both files still present at
+  the same byte counts and same Apr 24 11:54 / 13:41 mtimes.
+  Sessions 122 / 124 / 125 / 126 / 127 did not delete the
+  `.bak` files (122 / 127 ran under the scheduled-task sandbox
+  and would have hit the same permission gate; 124 / 125 / 126
+  were not unit-tests-lane runs and did not have the tests
+  directory broadly in scope).  Re-verified session 133:
+  `ls -la tests/test-control-flow.mjs*` still shows the same two
+  `.bak` files at the same 92,129 / 92,141 byte counts and the
+  same Apr 24 11:54 / 13:41 mtimes; the live file has grown
+  178,088 bytes (was 122,477 at session 113 — sessions 116, 121,
+  122, 126, 131 added new assertions on top, but the `.bak` /
+  `.bak2` snapshots stay frozen at their pre-session-111
+  state).  Sessions 129 / 130 / 131 did not delete the `.bak`
+  files (none was a unit-tests lane); session 132 (unit-tests,
+  active during this run) had `tests/*.mjs` broadly in scope but
+  ran under the scheduled-task sandbox and would have hit the
+  same permission gate.  Re-verified session 138: `ls -la
+  tests/test-control-flow.mjs*` still shows the same two
+  `.bak` files at the same 92,129 / 92,141 byte counts and the
+  same Apr 24 11:54 / 13:41 mtimes; the live file has grown
+  again (sessions 132 +n, 136 +36 auto-close, 137 in-flight).
+  Sessions 134 / 135 / 136 did not delete the `.bak` files (none
+  was a unit-tests lane); session 137 (unit-tests, active during
+  this run) again has `tests/*.mjs` broadly in scope but is
+  running under the scheduled-task sandbox and would hit the
+  same permission gate.  Re-verified session 143: `ls -la
+  tests/test-control-flow.mjs*` still shows the same two `.bak`
+  files at the same 92,129 / 92,141 byte counts and same Apr 24
+  11:54 / 13:41 mtimes; the live file has grown to 209,904 bytes
+  (was 178,088 at session 133 — sessions 137 +45 in-flight, 141
+  +76 IFERR pins on top).  Sessions 139 (command-support) / 140
+  (data-types) / 141 (rpl-programming) did not delete the `.bak`
+  files (none was a unit-tests lane); session 142 (unit-tests,
+  active during this run) again has `tests/*.mjs` broadly in
+  scope but is running under the scheduled-task sandbox and
+  would hit the same permission gate.  Future paths to
   resolution: (a) interactive supervisor session approves the
   delete via `mcp__cowork__allow_cowork_file_delete`; or (b) any
-  lane working under an interactive (non-scheduled) Claude session
-  takes the chore in passing.  Pure hygiene — the runner doesn't
-  pick up `.bak*` files (`test-all.mjs` walks `tests/*.mjs`
-  explicitly), so no behavior risk.
+  lane working under an interactive (non-scheduled) Claude
+  session takes the chore in passing.  Pure hygiene — the runner
+  doesn't pick up `.bak*` files (`test-all.mjs` walks
+  `tests/*.mjs` explicitly), so no behavior risk.
 
 ### O-010  Session 121 shipped substantive changes without writing `logs/session-121.md`, COMMANDS.md update, RPL.md narrative, or tests
 
@@ -1501,10 +2365,171 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   shows 47 hits at run-end (started at 0 when session 122 acquired
   its lock — the file grew from 133,081 → 145,533 bytes during
   this review window).
-- **Age.** new. **Status.** open (lane = `rpl5050-rpl-programming`
-  for the back-fill log + RPL.md narrative; `rpl5050-command-support`
-  for the COMMANDS.md update — see C-007 and R-004 for the
-  individually-routable halves of this finding).
+- **Age.** closed. **Status.** **resolved session 129** — last
+  open leg routed through C-007, which the session-129 command-
+  support lane closed in full (PROMPT row split out of the UI
+  group into the control-flow section; IFT/IFTE row Notes
+  amended with the session-121 generator-flavor lift; HALT/CONT/
+  KILL row Notes amended with the session-121 IFT/IFTE and
+  session-126 SEQ/MAP lifts plus the residual sync-fallback
+  caveat; eight back-filled session-log entries 120–128; Counts
+  heading bumped to "as of session 129", register() narrative
+  455 → 458).  Promotion deferred to session 133 because session 128 left
+  the leg recorded as "partial — routes through C-007" and no
+  review-lane run intervened between session 128 and session
+  133 (sessions 129–132 were the four sibling lanes:
+  command-support / data-types / rpl-programming / unit-tests).
+  Earlier sub-item history retained below for the audit trail.
+  Three sub-items had been bundled under O-010; the
+  session-128 review corrected each:
+  1. **Missing `logs/session-121.md`** — *retracted*.  The log
+     file does exist on disk (7818 bytes, mtime 2026-04-25
+     01:04:30 UTC).  Session 121's lock body shows `released:
+     true` with `releasedAt: 1777079083` — that timestamp matches
+     the log file's mtime to the second, indicating session 121
+     wrote the log at lock-release time, not that the lock was
+     stale-pruned without a log.  The session-123 audit appears
+     to have run its `ls logs/` check before the session-121
+     write committed (or against an out-of-date directory cache);
+     in any case the file is present this run.  The "released:
+     true with heartbeatAt === startedAt" signature still looks
+     like a stale-prune at the lock layer, but the corresponding
+     log file write happened, so the audit-trail concern is
+     satisfied.  Re-cast: session 121's lock was either grace-
+     released right at the prune deadline or stale-pruned just
+     after the session wrote its log; either way the
+     `utils/@locks/README.md:34` "missing log" signal does not
+     apply.  Future improvement: add a `releaseReason` field to
+     the lock body so graceful release vs. prune is unambiguous.
+  2. **Missing tests** — *resolved by session 122*.
+     `tests/test-control-flow.mjs` now contains 46 session-121-
+     labelled assertions (PROMPT round-trip + IFT/IFTE+HALT
+     coverage) added by session 122 unit-tests as a back-fill
+     pass, mirroring the session-111 → session-106 back-fill
+     pattern.  These assertions are present in the source file
+     even though they don't currently contribute to test-all's
+     pass count because session 126's in-flight SEQ work crashes
+     the file at module-load (a separate sibling-lane defect, not
+     a session-121 concern; see baseline block).
+  3. **Missing `docs/COMMANDS.md` update** — *partial; routes
+     through C-007*.  The Counts heading + register count + the
+     brief session-121 PROMPT mention closed by session 124's own
+     COMMANDS.md edits.  The PROMPT row classification at line
+     388, the IFT/IFTE row at line 348, the HALT row staleness at
+     line 355, and missing session-log entries 120/121/122/123/125
+     are still open; see C-007 for the routable detail.
+  4. **Missing `docs/RPL.md` narrative** — *retracted; see R-004*.
+     RPL.md as observed this run carries the full session-121
+     narrative (chapter at `:42-46` for IFT/IFTE lift, `:117-123`
+     for PROMPT, `:171-179` for remaining limitations,
+     `:223-298` for the "Session 121 — what shipped" subsection).
+     The session-126 in-flight rpl-programming run has bumped the
+     stamp at `:18` to "as of session 126" and added a session-126
+     MAP/SEQ chapter at `:50-60` on top of the existing 121
+     content, but the session-121 chapters were already in place
+     before this run's acquisition; review-lane cannot conclusively
+     say whether they landed at session 121's lock-release or at
+     session 126's in-flight back-fill, but either way the gap
+     described by R-004 no longer holds.  Lane attribution for
+     the RPL.md narrative defaults to session 121 (the natural
+     authoring window).
+  Net status: O-010 is **resolved session 129** — the last open
+  sub-item (COMMANDS.md remainder routed through C-007) was
+  closed by the session-129 command-support lane in full.  Lane
+  attribution for the closed leg = `rpl5050-command-support`
+  (session 129).  Two retractions and three resolutions across
+  the four legs took this from a four-leg open finding to a
+  fully-closed entry; the audit trail is preserved verbatim
+  above so future reviews can trace the path from session-123's
+  initial filing through the session-128 retraction pass to
+  session-129's actual close.
+
+### O-011  Lock body cannot disambiguate "graceful release" from "stale-prune-with-late-log" — third occurrence (session 141)
+
+- **Classification.** Other (process / lock-protocol audit-trail
+  ergonomics, mirrors O-008 / O-010 — third instance of the same
+  signature, but the underlying remedy is a one-line addition to
+  the lock body shape rather than a per-incident back-fill).
+- **Where.** `utils/@locks/lock.mjs:88-114` (the `acquire` /
+  `release` body shape that omits a `releaseReason` field);
+  `utils/@locks/session141-rpl-programming.json` (the third
+  example: `heartbeatAt: 1777106701` ≡ `startedAt`, `released:
+  true`, `releasedAt: 1777107556`, no `releaseReason`,
+  no per-second matching log mtime that would otherwise prove
+  graceful intent).  Prior precedents: O-008
+  (`utils/@locks/session106-rpl-programming.json`, never wrote
+  `logs/session-106.md` until session-118 backfill); O-010
+  (`utils/@locks/session121-rpl-programming.json`, log written
+  *within* the lock window — session 132 closed T-002 by
+  acknowledging the log existed but flagged the lock-layer
+  ambiguity for future improvement).
+- **What.** The lock body shape persisted by `lock.mjs` is
+  `{ owner, scope, intent, startedAt, heartbeatAt, released?,
+  releasedAt? }` — six fields plus two release-tracking fields.
+  Both `release()` (line 101-114) and `pruneStale()` (line 44-59)
+  set `released: true` + `releasedAt: <ts>` on the way out, with
+  no field distinguishing "the owner called `release()` with the
+  task's work fully shipped" from "the 10-min stale-prune deadline
+  fired and the helper marked the lock released as a recovery
+  action".  The signature distinction we currently use — heartbeat
+  refresh vs. heartbeatAt-equals-startedAt, plus log-file-mtime
+  proximity to releasedAt — is heuristic and has now misfired
+  three times: O-008 (session 106 — log truly missing,
+  signature correctly flagged), O-010 (session 121 — log written
+  within lock window, signature flagged but log existed; T-002
+  recast the audit to acknowledge), O-011 (session 141 — log
+  written *at* `releasedAt` to the second; signature still
+  matches "looks stale-prune-shaped at the lock layer" but the
+  log mtime exactly equals `releasedAt`, suggesting a graceful
+  late release rather than stale-prune).  Three independent
+  occurrences in five months means the next review pass is
+  going to spend audit attention on the same disambiguation
+  exercise; that's the maintenance hazard worth fixing once at
+  the helper level.
+- **Why.** T-002's session-132 resolution paragraph already
+  flagged the future improvement explicitly: "Future improvement:
+  add a `releaseReason` field to the lock body so graceful
+  release vs. prune is unambiguous for future audits."  This
+  finding promotes that future-improvement note from a comment-
+  in-passing to a tracked work item.  Each new occurrence of
+  the signature consumes review-lane audit attention that could
+  go elsewhere; over the audit trail, three runs (O-008's
+  filing at session 108, O-010's filing at session 123, this
+  finding at session 143) have spent narrative space on what
+  the lock-body shape itself fails to record.
+- **Fix.** One-line per-call-site addition to `lock.mjs`:
+  - `release()` at `:101-114` should set `releaseReason:
+    "graceful"` alongside `released: true` + `releasedAt`.
+  - `pruneStale()` at `:44-59` should set `releaseReason:
+    "stale-prune"` (or `"stale-prune-after-graceful"` if the
+    lock body already had `released: true`, indicating the
+    helper hit the unlink-fallback path for a previously-
+    released lock — see lines 51-55).
+  Future audit passes can then read the `releaseReason` field
+  directly instead of running heuristic mtime arithmetic across
+  the lock body and the corresponding log file.  Existing
+  in-flight locks won't carry the field; that's fine — absence
+  is the historical-default state and audits can fall back to
+  the heuristic for pre-fix locks.  No test impact (the lock
+  helper has no unit-test coverage today; the
+  `utils/@locks/README.md` example body shape will need a parallel
+  one-line update to document the new field).
+- **Confidence.** high — `cat utils/@locks/session141-rpl-programming.json`
+  shows the lock body lacks any release-reason field;
+  `cat utils/@locks/session121-rpl-programming.json` and
+  `cat utils/@locks/session106-rpl-programming.json` show the
+  same omission for the prior precedents; `grep -n "releaseReason\|releasedAt"
+  utils/@locks/lock.mjs` returns only `releasedAt` references at
+  lines 53 and 111 — no `releaseReason` is currently written.
+- **Age.** new (filed session 143).  **Status.** open.  Lane =
+  no canonical owner — `utils/@locks/lock.mjs` is shared
+  infrastructure.  Pair naturally with any lane currently
+  editing the lock helper for an unrelated reason; absent that,
+  the review lane can ship the change as pure infrastructure
+  hygiene (the change is local to `lock.mjs` + `README.md` and
+  doesn't cross any sibling-lane boundary).  Pure additive
+  edit; no behavior risk to in-flight locks because absence of
+  the new field is the historical default.
 
 ---
 
@@ -2335,3 +3360,664 @@ O-010).  Released at end of run.
    tooling gate clears.
 
 Log pointer: `logs/session-123.md`.
+
+---
+
+### Session 128 — what shipped (ninth review-lane run)
+
+Doc-stamp hygiene only.  One file edited:
+
+- `docs/REVIEW.md` — Last-updated stamp bumped to session 128;
+  baseline block rewritten (test-all 2 FAILED of 4371 + 1
+  import error — *all* attributable to session 126's in-flight
+  SEQ/MAP body-intercept work on `www/src/rpl/ops.js`, not
+  introduced by review-lane and not session 127 unit-tests
+  either; persist 38 stable; sanity 22 stable);
+  the "between sessions 123 and 128" prelude rewritten to
+  attribute deltas across sessions 122 / 124 / 125 (shipped) +
+  126 / 127 (in flight at run-entry); three carried-forward
+  findings aged (X-003 8 → 9 runs — still the longest-aging
+  open finding, 9 review-lane runs and 33+ calendar days
+  unaddressed; O-007 5 → 6 runs; O-009 2 → 3 runs); two
+  prior findings restatused with retraction-flavor narratives
+  against the evidence on disk (O-010 → partial; R-004 →
+  resolved-session-121 retraction); one prior finding restatused
+  as partial (C-007 — Counts heading + register count + brief
+  session-121 mention closed by session 124, three other drifts
+  still open); one new finding filed (T-002 — TESTS.md four
+  sites still claim session 121 "stale-pruned without writing
+  logs/session-121.md" while the log exists); session 128 log
+  added.
+
+No other files touched by review lane this run.
+
+**Findings delta this run:**
+
+- Promoted to resolved (retraction-flavor — session-123 audit
+  was filed prematurely against state that this run cannot
+  reproduce):
+  - **R-004** — `docs/RPL.md` does carry the session-121 IFT/IFTE
+    + PROMPT narrative (chapters at `:42-46`, `:117-123`,
+    `:171-179`, and the dedicated "Session 121 — what shipped"
+    subsection at `:223-298`).  Re-verified session 128 via
+    `grep -n "Session 121\|session 121\|session-121\|PROMPT"
+    docs/RPL.md` returning 25 hits.  Cannot conclusively assign
+    authorship without git, but the narrative is present this
+    run and the gap claimed by R-004 no longer holds.
+- Restatused to partial (one sub-item retracted, two resolved
+  by sibling lanes, one open and now routed through C-007):
+  - **O-010** — original four-leg finding decomposed:
+    1. Missing log: *retracted* — `logs/session-121.md` exists
+       (7818 bytes, mtime 2026-04-25 01:04:30, identical to the
+       lock body's `releasedAt`).
+    2. Missing tests: *resolved-session-122* — `tests/test-
+       control-flow.mjs` carries 46 session-121-labelled
+       assertions (back-fill by session 122 unit-tests).
+    3. Missing COMMANDS.md updates: *partial* — Counts heading
+       + register count + brief session-121 mention closed by
+       session 124; PROMPT row + IFT/IFTE row + HALT row +
+       missing 120/121/122/123/125 session-log entries still
+       open.  Routed through C-007.
+    4. Missing RPL.md narrative: *retracted* — see R-004
+       resolution above.
+- Restatused to partial (one slice closed by session 124, three
+  open):
+  - **C-007** — Counts heading + register count + brief
+    session-121 mention closed by session 124; PROMPT row at
+    `:388`, IFT/IFTE row at `:348`, HALT row staleness at
+    `:355`, and missing session-log entries 120/121/122/123/125
+    still open.  Note that the HALT row at `:355` is now MORE
+    stale post-session-121 (and will be even more stale once
+    session 126's MAP/SEQ lift converges) — its caveat list
+    needs both a session-121 amendment (drop IFT/IFTE) and a
+    session-126 amendment (drop MAP/SEQ).
+- Already marked resolved by prior runs and verified this session:
+  O-001 – O-006, O-008, U-001 (sessions 080 – 118); C-001 – C-006
+  (sessions 081 / 099 / 109); P-001 (session 117 + earlier),
+  P-002 (session 105); R-001, X-006 (session 088); R-002
+  (session 101); R-003 (session 111); T-001 (session 102);
+  X-001 / X-002 / X-004 / X-005 (session 099); X-007 / X-008
+  (session 104); X-009 / X-010 (session 114).
+- Still-open prior findings carried forward and aged:
+  - **X-003** — 8 → 9 runs.  Still the longest-aging open
+    finding; filed at session 080, now 9 review-lane runs and
+    33+ calendar days unaddressed.  Sessions 124 / 125 / 126 /
+    127 did not touch `www/src/app.js`.
+  - **O-007** — 5 → 6 runs.  Sessions 124 / 125 did not touch
+    `www/src/rpl/cas/giac-convert.mjs`.
+  - **O-009** — 2 → 3 runs.  Both `.bak*` files identical
+    (size + mtime) to the session-113 reading.  Tooling gate
+    unchanged.
+- New findings filed:
+  - **T-002** — `docs/TESTS.md` four sites (`:90-92`, `:212`,
+    `:644-647`, `:648-651`) still claim session 121 "stale-pruned
+    without writing `logs/session-121.md`" while the log exists
+    on disk.  Owner: `rpl5050-unit-tests`.  Pure-doc fix; same
+    re-phrasing at all four sites.
+
+Total open findings carried forward to next run: 5 (X-003,
+O-007, O-009, O-010-remainder, C-007-remainder, T-002 — counting
+T-002 as new this run).  Resolved cumulative: 28 (O-001 – O-006,
+O-008, C-001 – C-006, P-001, P-002, R-001, R-002, R-003, R-004,
+T-001, U-001, X-001, X-002, X-004, X-005, X-006, X-007, X-008,
+X-009, X-010).
+
+**Verification gates (session 128):**
+
+- `node --check` — N/A (only edit was to `docs/REVIEW.md`).
+- `node tests/test-all.mjs` = **2 FAILED of 4371 + 1 import
+  error**.  The 2 failures and the module-load abort are *all*
+  session 126 in-flight ops.js SEQ/MAP body-intercept work, not
+  introduced by review-lane.  The 4 session126-labelled failures
+  are stable, not flake (CONT-clears-banner-after-SEQ-PROMPT,
+  SEQ-completes-after-CONT, sync-fallback SEQ HALT-rejection,
+  sync-fallback MAP HALT-rejection — count of 4 reflects what
+  prints with the full `FAIL:` lines before the file aborts;
+  test-all summary headlines this as 2 failed because the
+  running tally captures only what the runner sees post-abort).
+  The 46 PROMPT/KILL session-121 + 4 session-122 IFT/IFTE
+  assertions in `test-control-flow.mjs` are present in source
+  but do not contribute to test-all's pass count this run
+  because the file fails module-load at line 4286 (`runSeq`
+  throws on a quoted-Name `J` operand — same in-flight defect).
+- `node tests/test-persist.mjs` = **38 passing / 0 failing**
+  (stable from the session 123 baseline).
+- `node tests/sanity.mjs` = **22 passing / 0 failing in ~5 ms**
+  (stable).
+
+**Lock.** Held `session128-code-review` throughout; scope =
+`docs/REVIEW.md` (narrower than the canonical review-lane scope
+of `docs/REVIEW.md` + `logs/` because session 127 unit-tests is
+holding `logs/` at this run's acquisition; the session log file
+`logs/session-128.md` was written without a lock under the
+`utils/@locks/README.md:40` "logs/ are append-only with unique
+filenames" exemption, with a unique filename so no real conflict
+exists).  Sibling locks at run-entry: session 126 rpl-programming
+(active — holds `docs/RPL.md`, `www/src/rpl/ops.js`,
+`tests/test-control-flow.mjs`); session 127 unit-tests (active —
+holds the broad `tests/*.mjs` set + `docs/TESTS.md` + `logs/`);
+sessions 119 – 125 all released.  Released at end of run.
+
+**Next session's queue (priority order):**
+
+1. **C-007 remainder** — `rpl5050-command-support`: PROMPT row
+   re-classification at `docs/COMMANDS.md:388` (pull out of
+   Interaction-ops, add new control-flow row near HALT/CONT/KILL),
+   IFT/IFTE row Notes addendum at `:348` (cite session 121 lift),
+   HALT row Notes amendment at `:355` (drop IFT/IFTE from the
+   still-rejecting caveat list; if session 126 has converged by
+   then, also drop MAP/SEQ), missing session-log entries for
+   sessions 120 / 121 / 122 / 123 / 125 (most are one-liners —
+   the only substantive entry needed is session 121's PROMPT
+   ✗ → ✓ + IFT/IFTE Notes addendum, which can be authored
+   directly from the CONT/KILL/SST PROMPT-banner-clearing
+   description in `logs/session-121.md`).
+2. **T-002** — `rpl5050-unit-tests`: re-phrase the four
+   "stale-pruned without writing log" sites in `docs/TESTS.md`
+   to record the actual evidence (log exists, lock body shows
+   graceful release at the same wall-clock second as the log
+   write); pure-doc fix.  Pairs naturally with any unit-tests
+   pass that already touches TESTS.md.
+3. **X-003** — `rpl5050-ui-development`: still the single-line
+   `clampLevel` import drop in `www/src/app.js:14`, now 9 runs
+   and 33+ calendar days overdue.  Lowest-risk edit in the
+   backlog and the longest-aging open finding.  Any
+   `app.js`-adjacent or `ops.js`-adjacent lane could ship this
+   in passing.
+4. **O-007** — `rpl5050-cas-giac` (or any command-support pass
+   touching `giac-convert.mjs`): rewrite the `buildGiacCmd`
+   block comment at `www/src/rpl/cas/giac-convert.mjs:234-256`
+   so the top narrative matches the session-098 purge-free
+   behavior.  Pure-comment edit; `node --check` safety net.
+5. **O-009** — blocked by tooling (see status block).  Resolves
+   only via interactive supervisor approval of
+   `allow_cowork_file_delete`, or via a non-scheduled lane
+   pickup of `rm tests/test-control-flow.mjs.bak*`.
+
+Log pointer: `logs/session-128.md`.
+
+---
+
+### Session 133 — what shipped (tenth review-lane run)
+
+Doc-stamp hygiene only.  One file edited:
+
+- `docs/REVIEW.md` — Last-updated stamp bumped to session 133;
+  baseline block rewritten (test-all 4474 / 0 — fully green
+  this run; persist 38 / 0; sanity 22 / 0 in ~5 ms);
+  the "between sessions 128 and 133" prelude rewritten to
+  attribute deltas across sessions 129 (command-support — C-007
+  remainder closed in full + 8 back-filled session-log entries),
+  130 (data-type-support — three hard-assertion clusters,
+  test-types.mjs +35), 131 (rpl-programming — DOLIST/DOSUBS/STREAM
+  body-intercept HALT-lift completing the program; tests/test-
+  control-flow.mjs 498 → 563), and 132 (unit-tests — TESTS.md
+  T-002 doc fix + coverage adds across multiple test files —
+  active at this run's acquisition); three carried-forward
+  findings aged (X-003 9 → 10 runs — still the longest-aging
+  open finding, 10 review-lane runs and 36+ calendar days
+  unaddressed; O-007 6 → 7 runs; O-009 3 → 4 runs); two prior
+  partials promoted to fully-resolved (C-007 closed in full by
+  session 129; O-010 last open leg routed through C-007, so
+  closes alongside C-007); one prior finding promoted to
+  resolved (T-002 — session 132's `docs/TESTS.md` rewrite
+  acknowledges the log file exists, replacing the original
+  "stale-pruned without writing" phrasing with the now-accurate
+  "heartbeatAt === startedAt looks stale-prune-shaped at the
+  lock layer, but the log file was written within the lock
+  window" narrative); one new finding filed (C-008 —
+  `docs/COMMANDS.md` HALT/CONT/KILL row at `:389` is missing
+  the session-131 DOLIST/DOSUBS/STREAM body-intercept lift
+  addendum; same anti-pattern as the session-128 C-007 partial,
+  recurring once per rpl-programming-lane structural lift; also
+  covers Counts heading staleness "as of session 129" → should
+  bump to track session 131, plus missing session-log entries
+  for sessions 130 / 131 / 132); session 133 log added (this
+  block).  No sibling-lane source files touched.  No RPL op
+  behavior changed; no types widened; no tests added or
+  deleted; no interpreter touched; no registrations added or
+  removed.
+
+No other files touched by review lane this run.
+
+**Findings delta this run:**
+
+- Promoted to resolved:
+  - **C-007** — full close (was partial after session 128).
+    Session 129's command-support lane shipped the full set of
+    edits the session-128 status block enumerated: PROMPT row
+    pulled out of the `DISP CLLCD FREEZE INPUT WAIT BEEP → ui
+    lane` group at `docs/COMMANDS.md` and replaced by a new
+    control-flow row between `HALT CONT KILL` and `RUN`; IFT/
+    IFTE row Notes amended with the session-121 generator-
+    flavor lift addendum; HALT/CONT/KILL row Notes amended
+    with both the session-121 IFT/IFTE lift and the session-126
+    SEQ/MAP lift (with the residual sync-fallback caveat
+    rewritten to enumerate the session-111 caller labels);
+    eight session-log entries back-filled (120 / 121 / 122 /
+    123 / 125 / 126 / 127 / 128); Counts heading bumped to
+    "as of session 129" with the `register()` total stamp
+    updated 455 → 458 reflecting the +3 from PROMPT (session
+    121) plus the SEQ/MAP rewrites (session 126).  Verified
+    against the file in its current state via `grep -n
+    'session 129' docs/COMMANDS.md`.
+  - **O-010** — last open sub-item (COMMANDS.md remainder
+    routed through C-007) closes alongside C-007's full close.
+    Lane attribution = `rpl5050-command-support` (session 129)
+    for the closing leg.  Two retractions and three resolutions
+    across the four legs took this from a four-leg open
+    finding to a fully-closed entry; the audit trail is
+    preserved verbatim in O-010's body for future reviews to
+    trace the path from session-123's filing through the
+    session-128 retraction pass to session-129's actual close.
+  - **T-002** — session 132 unit-tests (active at this run's
+    acquisition with `docs/TESTS.md` in scope) rewrote the
+    four "stale-pruned without writing logs/session-121.md"
+    sites at `docs/TESTS.md:87-103` and `:667-681` to
+    acknowledge the log exists; the new phrasing recasts the
+    `heartbeatAt === startedAt` lock-layer signature as
+    "looks stale-prune-shaped at the lock layer but the log
+    file was written within the lock window".  Verified the
+    rewrites against the file in its current state — session
+    132 had landed the TESTS.md edits on disk by this run's
+    acquisition even though the lock had not yet released.
+- Already marked resolved by prior runs and verified this
+  session: O-001 – O-006, O-008, O-010, U-001 (sessions 080 –
+  133); C-001 – C-007 (sessions 081 / 099 / 109 / 129); P-001
+  (session 117 + earlier), P-002 (session 105); R-001, X-006
+  (session 088); R-002 (session 101); R-003 (session 111);
+  R-004 (session 128 retraction); T-001 (session 102), T-002
+  (session 132); X-001 / X-002 / X-004 / X-005 (session 099);
+  X-007 / X-008 (session 104); X-009 / X-010 (session 114).
+- Still-open prior findings carried forward and aged:
+  - **X-003** — 9 → 10 runs.  Still the longest-aging open
+    finding; filed at session 080, now 10 review-lane runs
+    and 36+ calendar days unaddressed.  Sessions 129 / 130 /
+    131 / 132 did not touch `www/src/app.js`.
+  - **O-007** — 6 → 7 runs.  Sessions 129 / 130 / 131 / 132
+    did not touch `www/src/rpl/cas/giac-convert.mjs`.
+  - **O-009** — 3 → 4 runs.  Both `.bak*` files identical
+    (size + mtime) to the session-113 reading.  Tooling gate
+    unchanged.
+- New findings filed:
+  - **C-008** — `docs/COMMANDS.md` HALT/CONT/KILL row at
+    `:389` missing the session-131 DOLIST/DOSUBS/STREAM body-
+    intercept lift addendum; Counts heading at `:24` still
+    reads "as of session 129"; session-log block missing
+    entries for sessions 130 / 131 / 132.  Same anti-pattern
+    as C-007 (the third iteration: structural HALT lift ships
+    in rpl-programming-lane, COMMANDS.md HALT row + Counts
+    heading + session-log block fall one cycle behind).
+    Owner: `rpl5050-command-support`.  Pure Notes-column +
+    log-back-fill work; pairs naturally with any
+    command-support run that touches the file.
+
+Total open findings carried forward to next run: 4 (X-003,
+O-007, O-009, C-008).  Resolved cumulative: 31 (O-001 – O-006,
+O-008, O-010, C-001 – C-007, P-001, P-002, R-001, R-002,
+R-003, R-004, T-001, T-002, U-001, X-001, X-002, X-004,
+X-005, X-006, X-007, X-008, X-009, X-010).
+
+**Verification gates (session 133):**
+
+- `node --check` — N/A (only edit was to `docs/REVIEW.md`).
+- `node tests/test-all.mjs` = **4474 passing / 0 failing**
+  (fully green; +100 from the session 128 close baseline of
+  4374 — +35 from session 130 wrapper-VM Tagged + B × Q +
+  Tagged-of-List composition coverage in `test-types.mjs`,
+  +65 from session 131 DOLIST/DOSUBS/STREAM HALT-lift
+  coverage in `test-control-flow.mjs`).
+- `node tests/test-persist.mjs` = **38 passing / 0 failing**
+  (stable from the session 128 baseline).
+- `node tests/sanity.mjs` = **22 passing / 0 failing in ~5 ms**
+  (stable).
+
+**Lock.** Held `session133-code-review` throughout; scope =
+`docs/REVIEW.md` only (narrower than the canonical review-lane
+scope of `docs/REVIEW.md` + `logs/` because session 132
+unit-tests is holding `logs/session-132.md` at this run's
+acquisition; the session log file `logs/session-133.md` was
+written without a lock under the `utils/@locks/README.md:40`
+"logs/ are append-only with unique filenames" exemption, with
+a unique filename so no real conflict exists).  Sibling locks
+at run-entry: session 132 unit-tests (active — holds the
+broad `tests/*.mjs` set + `docs/TESTS.md` +
+`logs/session-132.md`); sessions 119 – 131 all released
+(graceful or session-121 stale-prune-flavor-but-log-written;
+see O-010 history).  Released at end of run.
+
+**Next session's queue (priority order):**
+
+1. **C-008** — `rpl5050-command-support`: HALT/CONT/KILL row
+   Notes-column addendum at `docs/COMMANDS.md:389` for the
+   session-131 DOLIST/DOSUBS/STREAM body-intercept lift;
+   Counts heading bump at `:24` from "session 129" to "session
+   131" (or session 133 if this run authors the edit; no
+   `register()` count change); back-fill session-log entries
+   for 130 / 131 / 132.  Pure Notes-column + log-entry work,
+   zero behavior risk, pairs naturally with any command-support
+   pass.
+2. **X-003** — `rpl5050-ui-development`: still the single-
+   line `clampLevel` import drop in `www/src/app.js:14`, now
+   10 runs and 36+ calendar days overdue.  Lowest-risk edit
+   in the backlog and the longest-aging open finding.  Any
+   `app.js`-adjacent or `ops.js`-adjacent lane could ship
+   this in passing.
+3. **O-007** — `rpl5050-cas-giac` (or any command-support
+   pass touching `giac-convert.mjs`): rewrite the
+   `buildGiacCmd` block comment at
+   `www/src/rpl/cas/giac-convert.mjs:234-256` so the top
+   narrative matches the session-098 purge-free behavior.
+   Pure-comment edit; `node --check` safety net.
+4. **O-009** — blocked by tooling (see status block).
+   Resolves only via interactive supervisor approval of
+   `allow_cowork_file_delete`, or via a non-scheduled lane
+   pickup of `rm tests/test-control-flow.mjs.bak*`.
+
+Log pointer: `logs/session-133.md`.
+
+---
+
+### Session 138 — what shipped (eleventh review-lane run)
+
+Doc-stamp hygiene only.  One file edited:
+
+- `docs/REVIEW.md` — Last-updated stamp bumped to session 138;
+  baseline block rewritten (test-all 4586 / 0 — fully green
+  this run; persist 38 / 0; sanity 22 / 0 in ~6 ms);
+  the "between sessions 133 and 138" prelude rewritten to
+  attribute deltas across sessions 134 (command-support — C-008
+  remainder closed in full + bonus phantom-row retire pass on
+  the "Not yet supported" table for `GXROOT` / `LQD` /
+  `POLYEVAL`; `register()` count 458 → 463; not-yet-implemented
+  count 4 → 3; four session-log entries back-filled), 135
+  (data-type-support — three hard-assertion clusters pinning
+  Q × V/M arithmetic broadcast / Tagged-of-V/M binary
+  composition / Tagged tag-identity & BinInt cross-base
+  equality; `tests/test-types.mjs` 672 → 703 / +31), 136
+  (rpl-programming — auto-close on missing END / NEXT for
+  `WHILE/REPEAT`, `DO/UNTIL`, `START`, `FOR` completing the
+  structural-auto-close program for the loop families;
+  `tests/test-control-flow.mjs` 563 → 599 / +36; `docs/RPL.md`
+  flipped on the four loop rows), and 137 (unit-tests — broad
+  `tests/*.mjs` coverage adds + `docs/TESTS.md` updates —
+  active at this run's acquisition); three carried-forward
+  findings aged (X-003 10 → 11 runs — still the longest-aging
+  open finding, 11 review-lane runs and 37+ calendar days
+  unaddressed; O-007 7 → 8 runs; O-009 4 → 5 runs); one prior
+  finding promoted to resolved (C-008 — closed in full by
+  session 134's doc-only run, all three sub-items shipped
+  verbatim per the session-133 status block); two new findings
+  filed:
+  • **C-009** — `docs/COMMANDS.md` Control-flow rows for
+    `WHILE/REPEAT/END` (`:427`), `DO/UNTIL/END` (`:428`), and
+    `FOR/START/STEP/NEXT` (`:426`) carry empty Notes columns
+    with no annotation for session 136's auto-close lift; same
+    anti-pattern as C-007 / C-008, fourth iteration; also covers
+    Counts heading staleness "as of session 134" → should bump
+    to session 136 + missing session-log entries for 135 / 136.
+  • **R-005** — `docs/RPL.md` carries three "(this run) — what
+    shipped" headings (sessions 121, 126, 136) at `:258`,
+    `:358`, `:465` when only the most-recent rpl-programming-
+    lane run should bear that label; Session log pointer prose
+    at `:1500` ("Session 131 is this run …") is stale by the
+    same drift.  Pure comment / string drift; safe doc edit.
+
+Verification: test-all 4586 / 0, persist 38 / 0, sanity 22 / 0
+in ~6 ms.  No `node --check` invocation (no JS files touched —
+only `docs/REVIEW.md` Markdown edits this run).  No sibling-lane
+source files touched.  No RPL op behavior changed, no types
+widened, no tests added or deleted, no interpreter touched, no
+registrations added or removed.
+
+**Lock.** Held `utils/@locks/session138-code-review.json`
+throughout, scope = `docs/REVIEW.md` only (narrowed because
+session 137 unit-tests holds the broad `tests/*.mjs` +
+`docs/TESTS.md` + `logs/session-137.md` scope at run-entry,
+mirroring the session-133 vs. session-132 and session-128 vs.
+session-127 patterns); the session log file `logs/session-138.md`
+was written without a lock under the `utils/@locks/README.md:40`
+"logs/ are append-only with unique filenames" exemption, with
+a unique filename so no real conflict exists.  Sibling locks
+at run-entry: session 137 unit-tests (active — holds the broad
+`tests/*.mjs` set + `docs/TESTS.md` + `logs/session-137.md`);
+sessions 124 – 136 all released gracefully.  Released at end
+of run.
+
+**Next session's queue (priority order):**
+
+1. **C-009** — `rpl5050-command-support`: append session-136
+   auto-close annotation to the four loop-row Notes columns at
+   `docs/COMMANDS.md:426` / `:427` / `:428` (the `FOR / START /
+   STEP / NEXT`, `WHILE / REPEAT / END`, and `DO / UNTIL / END`
+   rows); Counts heading bump at `:24` from "session 134" to
+   "session 136" (or session 138 if this run authors the edit;
+   no `register()` count change); back-fill session-log entries
+   for 135 / 136.  Pure Notes-column + log-entry work, zero
+   behavior risk, pairs naturally with any command-support pass.
+   Same close shape as C-007 (session 128 → 129) and C-008
+   (session 133 → 134).
+2. **X-003** — `rpl5050-ui-development`: still the single-
+   line `clampLevel` import drop in `www/src/app.js:14`, now
+   11 runs and 37+ calendar days overdue.  Lowest-risk edit
+   in the backlog and the longest-aging open finding.  Any
+   `app.js`-adjacent or `ops.js`-adjacent lane could ship
+   this in passing.
+3. **R-005** — `rpl5050-rpl-programming` (preferred — they
+   own RPL.md chapter authorship) or `rpl5050-code-review`
+   (fallback): demote `## Session 121 (this run) — what
+   shipped` and `## Session 126 (this run) — what shipped` at
+   `docs/RPL.md:258` / `:358` to drop the "(this run)" suffix;
+   refresh the Session log pointer prose at `:1500` to
+   acknowledge session 136 is now current.  Pure-string edit;
+   `node --check` N/A (Markdown only).
+4. **O-007** — `rpl5050-cas-giac` (or any command-support
+   pass touching `giac-convert.mjs`): rewrite the
+   `buildGiacCmd` block comment at
+   `www/src/rpl/cas/giac-convert.mjs:235-257` so the top
+   narrative matches the session-098 purge-free behavior.
+   Pure-comment edit; `node --check` safety net.
+5. **O-009** — blocked by tooling (see status block).
+   Resolves only via interactive supervisor approval of
+   `allow_cowork_file_delete`, or via a non-scheduled lane
+   pickup of `rm tests/test-control-flow.mjs.bak*`.
+
+Log pointer: `logs/session-138.md`.
+
+---
+
+### Session 143 — what shipped (twelfth review-lane run)
+
+Doc-stamp hygiene only.  One file edited:
+
+- `docs/REVIEW.md` — Last-updated stamp bumped to session 143;
+  baseline block rewritten (test-all 4711 / 0 — fully green this
+  run; persist 38 / 0; sanity 22 / 0 in ~5 ms); the "between
+  sessions 138 and 143" prelude rewritten to attribute deltas
+  across sessions 139 (command-support — three new ops via Giac:
+  LIN, LIMIT, lim, +13 in `test-algebra.mjs`; `register()` 463
+  → 466; also closed C-009 with the loop-row Notes column
+  back-fill and Counts heading bump; session-log entries 135 →
+  139 back-filled), 140 (data-type-support — three hard-assertion
+  clusters pinning hyperbolic Tagged-of-V/M, inverse-trig +
+  EXPM Tagged-of-V/M, and ARG/CONJ/RE/IM bespoke-2-deep wrapper
+  composition; `tests/test-types.mjs` 703 → 739 / +36; no
+  source-side change; DATA_TYPES.md Last-updated bumped to
+  session 140 with six Notes columns updated and the "Resolved
+  this session (140)" block added), 141 (rpl-programming —
+  HALT/PROMPT lift through IFERR clauses pinned with regression
+  tests; +76 session141 assertions in
+  `tests/test-control-flow.mjs` (599 → 675); R-005 doc cleanup
+  also shipped — three `(this run)` headings demoted, Session
+  log pointer prose updated to past tense; new "Session 141
+  (this run) — what shipped" chapter added; no `ops.js` source
+  change), and 142 (unit-tests — broad `tests/*.mjs` + TESTS.md
+  scope — active at this run's acquisition with no visible
+  edits on disk yet); three carried-forward findings aged
+  (X-003 11 → 12 runs — still the longest-aging open finding,
+  12 review-lane runs and 37+ calendar days unaddressed; O-007
+  8 → 9 runs; O-009 5 → 6 runs); two prior findings promoted to
+  resolved (C-009 — closed in full by session 139's command-
+  support run, all three sub-items shipped including the +3
+  register count refresh for LIN/LIMIT/lim; R-005 — closed in
+  full by session 141's rpl-programming run, both pure-string
+  edits shipped); two new findings filed:
+  • **R-006** — `docs/RPL.md:348` carries a stale internal
+    cross-reference (`:1455`) introduced by session 141's own
+    R-005-close edit; the actual demote target moved to
+    `:1682` due to session 141's own +99-line chapter
+    insertion at `:258-356` plus the 76 new test-pin assertions'
+    chapter expansions pushing the target down by ~227 lines.
+    Pure-string drift; safe doc edit for the rpl-programming
+    or the review lane.
+  • **O-011** — third instance of the lock-body
+    heartbeatAt-equals-startedAt + intent="items TBD" + log-
+    mtime-equals-releasedAt signature (after O-008 session 106
+    and O-010 session 121).  Session 141's lock body lacks a
+    `releaseReason` field that would distinguish "graceful late
+    release" from "stale-prune".  T-002's session-132 resolution
+    paragraph already flagged the future improvement; this
+    finding promotes that note to a tracked work item owned by
+    any lane editing `utils/@locks/lock.mjs`.  One-line per-
+    call-site addition to `lock.mjs` (`release()` sets
+    `releaseReason: "graceful"`; `pruneStale()` sets
+    `releaseReason: "stale-prune"`) plus a parallel README
+    update.
+
+Verification: test-all 4711 / 0, persist 38 / 0, sanity 22 / 0
+in ~5 ms.  No `node --check` invocation (no JS files touched —
+only `docs/REVIEW.md` Markdown edits this run).  No sibling-lane
+source files touched.  No RPL op behavior changed, no types
+widened, no tests added or deleted, no interpreter touched, no
+registrations added or removed.
+
+**Lock.** Held `utils/@locks/session143-code-review.json`
+throughout, scope = `docs/REVIEW.md` only (narrowed because
+session 142 unit-tests holds the broad `tests/*.mjs` +
+`docs/TESTS.md` + `logs/session-142.md` scope at run-entry,
+mirroring the session-138 vs. session-137, session-133 vs.
+session-132, and session-128 vs. session-127 patterns); the
+session log file `logs/session-143.md` was written without a
+lock under the `utils/@locks/README.md:40` "logs/ are append-
+only with unique filenames" exemption, with a unique filename
+so no real conflict exists.  Sibling locks at run-entry:
+session 142 unit-tests (active — holds the broad `tests/*.mjs`
+set + `docs/TESTS.md` + `logs/session-142.md`); sessions 129 –
+140 all released gracefully; session 141 released with the
+late-mtime signature documented in O-011 above (log on disk,
+lock-layer ambiguity flagged for fix).  Released at end of run.
+
+**Findings delta this run:**
+
+- Promoted to resolved: **C-009** (session 139, command-support
+  — three sub-items shipped: loop-row Notes columns at
+  `docs/COMMANDS.md:450` / `:451` / `:452` annotated with the
+  session-136 auto-close lift; Counts heading bumped from
+  "as of session 134" to "as of session 139"; `register()`
+  count 463 → 466; session-log entries 135 / 136 / 137 / 138 /
+  139 back-filled).  Same close shape as C-007 (session 128 →
+  129) and C-008 (session 133 → 134) — fifth iteration of the
+  rpl-programming-lift-then-command-support-back-fill cycle,
+  all five now closed.
+- Promoted to resolved: **R-005** (session 141, rpl-programming
+  — both pure-string edits shipped: three stale `## Session NNN
+  (this run) — what shipped` headings at `docs/RPL.md:258` /
+  `:358` / `:465` demoted to plain past tense; Session log
+  pointer prose previously at `:1500` rewritten to past tense
+  for session 131 and moved to `:1682` due to session 141's
+  own +99-line chapter insertion; new "Session 141 (this run)
+  — what shipped" chapter added as the new sole `(this run)`
+  holder.  Footnote at `:1705-1709` lists the historical "is
+  this run" wording origins for sessions 074 / 078 / 088 /
+  106 / 116 / 121 / 126 / 131).
+- Already marked resolved by prior runs and verified this
+  session: O-001 – O-006, O-008, O-010, U-001 (sessions 080 –
+  133); C-001 – C-008 (sessions 081 / 099 / 109 / 129 / 134);
+  P-001 (session 117 + earlier), P-002 (session 105); R-001,
+  X-006 (session 088); R-002 (session 101); R-003 (session
+  111); R-004 (session 128 retraction); T-001 (session 102),
+  T-002 (session 132); X-001 / X-002 / X-004 / X-005 (session
+  099); X-007 / X-008 (session 104); X-009 / X-010 (session
+  114).
+- Still-open prior findings carried forward and aged:
+  - **X-003** — 11 → 12 runs.  Still the longest-aging open
+    finding; filed at session 080, now 12 review-lane runs
+    and 37+ calendar days unaddressed.  Sessions 139 / 140 /
+    141 / 142 did not touch `www/src/app.js`.
+  - **O-007** — 8 → 9 runs.  Sessions 139 / 140 / 141 / 142
+    did not touch `www/src/rpl/cas/giac-convert.mjs`.
+  - **O-009** — 5 → 6 runs.  Both `.bak*` files identical
+    (size + mtime) to the session-113 reading.  Tooling gate
+    unchanged.
+- New findings filed:
+  - **R-006** — `docs/RPL.md:348` stale internal cross-
+    reference (`:1455` should be `:1682` or pruned to a
+    section reference).  Owner: `rpl5050-rpl-programming`
+    (preferred — they own RPL.md chapter authorship) or
+    `rpl5050-code-review` (fallback — pure-string drift).
+  - **O-011** — third instance of the lock-body shape
+    ambiguity that session 141's lock body again surfaces.
+    Underlying remedy is a one-line per-call-site addition to
+    `utils/@locks/lock.mjs` adding a `releaseReason` field;
+    promotes T-002's session-132 future-improvement note from
+    a comment-in-passing to a tracked work item.  Owner: no
+    canonical lane — pair naturally with any run editing
+    `lock.mjs`, or the review lane can ship as pure
+    infrastructure hygiene.
+
+Total open findings carried forward to next run: 5 (X-003,
+O-007, O-009, R-006, O-011).  Resolved cumulative: 33 (O-001
+– O-006, O-008, O-010, C-001 – C-009, P-001, P-002, R-001 –
+R-005, T-001, T-002, U-001, X-001, X-002, X-004 – X-010).
+
+**Verification gates (session 143):**
+
+- `node --check` — N/A (only edit was to `docs/REVIEW.md`,
+  Markdown).
+- `node tests/test-all.mjs` = **4711 passing / 0 failing**
+  (fully green; +125 from the session 138 close baseline of
+  4586 — +13 from session 139 LIN/LIMIT/lim Giac coverage in
+  `test-algebra.mjs`; +36 from session 140 hyperbolic-Tagged
+  + inverse-trig + EXPM + ARG/CONJ/RE/IM bespoke wrapper
+  composition pins in `test-types.mjs`; +76 from session 141
+  IFERR HALT/PROMPT lift pins in `test-control-flow.mjs`).
+- `node tests/test-persist.mjs` = **38 passing / 0 failing**
+  (stable from the session 138 baseline).
+- `node tests/sanity.mjs` = **22 passing / 0 failing in ~5 ms**
+  (stable).
+
+**Next session's queue (priority order):**
+
+1. **R-006** — `rpl5050-rpl-programming` (preferred) or
+   `rpl5050-code-review` (fallback): one-character / one-phrase
+   edit at `docs/RPL.md:348` to fix the stale `:1455`
+   cross-reference (should be `:1682`, or drop the line number
+   and cite the section).  Pure-string drift; `node --check`
+   N/A (Markdown only).
+2. **X-003** — `rpl5050-ui-development`: still the single-
+   line `clampLevel` import drop in `www/src/app.js:14`, now
+   12 runs and 37+ calendar days overdue.  Lowest-risk edit
+   in the backlog and the longest-aging open finding.  Any
+   `app.js`-adjacent or `ops.js`-adjacent lane could ship
+   this in passing.
+3. **O-011** — no canonical owner: one-line per-call-site
+   addition to `utils/@locks/lock.mjs` (`release()` →
+   `releaseReason: "graceful"`; `pruneStale()` →
+   `releaseReason: "stale-prune"`) plus a parallel one-line
+   update to the `utils/@locks/README.md` example body shape.
+   Pure infrastructure hygiene; no behavior risk to in-flight
+   locks.  Pair naturally with any lane currently editing
+   `lock.mjs` for an unrelated reason; absent that, the
+   review lane can ship as pure infrastructure hygiene.
+4. **O-007** — `rpl5050-cas-giac` (or any command-support
+   pass touching `giac-convert.mjs`): rewrite the
+   `buildGiacCmd` block comment at
+   `www/src/rpl/cas/giac-convert.mjs:234-256` so the top
+   narrative matches the session-098 purge-free behavior.
+   Pure-comment edit; `node --check` safety net.
+5. **O-009** — blocked by tooling (see status block).
+   Resolves only via interactive supervisor approval of
+   `allow_cowork_file_delete`, or via a non-scheduled lane
+   pickup of `rm tests/test-control-flow.mjs.bak*`.
+
+Log pointer: `logs/session-143.md`.

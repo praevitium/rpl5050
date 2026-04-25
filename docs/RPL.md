@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 121)
+## Current implementation status (as of session 141)
 
 
 ### Program value — parser & round-trip
@@ -46,6 +46,28 @@ open, and the next-session queue.
   (`'IFT' EVAL`, Tagged-wrapped Name) still rejects through
   `_driveGen` with the session-111 `cannot suspend inside <IFT|IFTE> action`
   label.
+- `MAP` / `SEQ` / `DOLIST` / `DOSUBS` / `STREAM` — list combinators with
+  body programs.
+  **Session 126** lifted MAP and SEQ; **session 131** lifted the
+  remaining three (DOLIST, DOSUBS, STREAM).  HALT/PROMPT inside the body
+  now lifts cleanly when any of these keywords is reached through
+  `evalRange`'s body intercept (`runMap` / `runSeq` / `runDoList` /
+  `runDoSubs` / `runStream` are generator helpers; per-iteration body
+  EVAL is driven by `_evalValueGen` with `yield*`).  Per-iteration suspension is
+  the natural shape: the partial accumulator (`out` array, current `i`,
+  in-progress matrix row, restored variable binding, DOSUBS NSUB/ENDSUB
+  frame, in-flight STREAM accumulator on the RPL stack) lives in the
+  generator's stack frame, so CONT resumes mid-iteration with all state
+  intact.  The Name-dispatch fallback (`'MAP' EVAL`, Tagged-wrapped
+  `Name('SEQ')`, direct `lookup('DOLIST').fn(s)`, etc.) still goes
+  through `_driveGen` with the session-111 caller labels (`MAP program` /
+  `SEQ expression` / `DOLIST program` / `DOSUBS program` /
+  `STREAM program`); KILL of a halted MAP-in-→ (or DOLIST-in-→ /
+  DOSUBS-in-→) tears down the `→` frame via `gen.return()`'s finally
+  chain, and DOSUBS additionally pops its NSUB/ENDSUB frame in the same
+  `finally`.  `resetHome` closes the generator before clearing the home
+  directory, so a halted DOSUBS's frame stack is cleared correctly on
+  refresh.
 - Symbolic lift on most arithmetic ops via the `_isSymOperand` /
   `_toAst` pair — programs carrying bare `Name` tokens will auto-lift
   when the operand reaches a numeric op.
@@ -55,10 +77,10 @@ open, and the next-session queue.
 |-----------|--------|----------------|
 | `IF…THEN…ELSE…END`           | ✓ green (**session 083: auto-close on missing END**) | `runIf` in ops.js |
 | `IFERR…THEN…ELSE…END`         | ✓ green (**session 078: auto-close on missing END**) | `runIfErr` (last-error slot, save/restore of outer) |
-| `WHILE…REPEAT…END`            | ✓ green | `runWhile` |
-| `DO…UNTIL…END`                | ✓ green | `runDo` |
-| `START…NEXT`/`…STEP`          | ✓ green | `runStart` (Integer-mode preserving) |
-| `FOR…NEXT`/`…STEP`            | ✓ green | `runFor` (bound name save/restore) |
+| `WHILE…REPEAT…END`            | ✓ green (**session 136: auto-close on missing END**) | `runWhile` |
+| `DO…UNTIL…END`                | ✓ green (**session 136: auto-close on missing END**) | `runDo` |
+| `START…NEXT`/`…STEP`          | ✓ green (**session 136: auto-close on missing NEXT/STEP, implicit step=1**) | `runStart` (Integer-mode preserving) |
+| `FOR…NEXT`/`…STEP`            | ✓ green (**session 136: auto-close on missing NEXT/STEP, implicit step=1**) | `runFor` (bound name save/restore) |
 | `CASE…THEN…END … END`         | ✓ green (**session 074: auto-close on missing END**) | `runCase` |
 | `« … »` nested programs       | ✓ (transparent; Programs push themselves) |
 
@@ -168,24 +190,37 @@ open, and the next-session queue.
   body call to `_evalValueSync` was wired with a caller label
   (`'→ algebraic body'`) — defensive consistency with the sibling
   sync-path call sites.
-- Remaining limitations (session 121):
-  - HALT inside a sync-path call (MAP / SEQ / DOLIST / DOSUBS / STREAM
-    bodies, plus `runArrow`'s Symbolic body) still rejects.  Session 111
-    refined the error text: the message is now
-    `HALT: cannot suspend inside <caller>` — where `<caller>` is
-    `MAP program`, `SEQ expression`, `DOLIST program`, `DOSUBS program`,
-    `STREAM program`, or the default `a sub-program call`.
-    **Session 121 lifted IFT and IFTE off this list** — both now have a
-    program-body intercept in `evalRange` that lifts HALT/PROMPT through
-    `runIft` / `runIfte` (generator helpers driving `_evalValueGen`).
-    The Name-dispatch fallback (`'IFT' EVAL`, Tagged-wrapped Name(IFT))
-    still goes through `_driveGen` with the session-111 caller labels, so
-    the rejection message is unchanged on that narrow path.
-    Low urgency for the rest — the workaround is `IF … THEN … END`
-    (structural, yields).  Session 111 threads the caller label through
-    `_evalValueSync` into `_driveGen`; internal recursion on
-    Name / Tagged wrappers forwards the original label so the
-    outermost originator's name survives the recursion.
+- Remaining limitations (session 131):
+  - **Session 131 closes the structural-HALT lift program for the body-
+    intercept family.**  All seven body-intercept ops — IFT, IFTE, MAP,
+    SEQ, **DOLIST, DOSUBS, STREAM** — now lift HALT/PROMPT through
+    `evalRange` body intercepts that delegate to generator helpers
+    (`runIft` / `runIfte` / `runMap` / `runSeq` / `runDoList` /
+    `runDoSubs` / `runStream`) driving `_evalValueGen`.  The Name-
+    dispatch fallback for each (`'DOLIST' EVAL`, Tagged-wrapped
+    `Name('DOSUBS')`, direct `lookup('STREAM').fn(s)`, etc.) still
+    routes through the registered handler, which now drives the same
+    generator through `_driveGen` — so the session-111 reject-with-
+    caller-label messages are unchanged on that narrow path.  Session
+    111 threads the caller label through `_evalValueSync` into
+    `_driveGen`; internal recursion on Name / Tagged wrappers forwards
+    the original label so the outermost originator's name survives the
+    recursion.
+  - The only structural sync-path call site that still rejects HALT is
+    `runArrow`'s Symbolic body (`'→ algebraic body'` caller label, see
+    session 116 narrative below).  This site is currently unreachable
+    in practice — the Symbolic AST cannot carry a Program subnode — but
+    the label is wired defensively for any future Symbolic refactor.
+  - DOSUBS additionally maintains an `_DOSUBS_STACK` frame stack for
+    `NSUB` / `ENDSUB`.  The frame is now pushed/popped inside
+    `runDoSubs`'s `try/finally`, so a KILL of a halted DOSUBS closes
+    the generator via `gen.return()` and the `finally` tears down the
+    frame.  Pinned by the session-131 KILL-during-halted-window
+    assertions in `tests/test-control-flow.mjs`.  STREAM has no
+    auxiliary frame to maintain — its accumulator lives on the user-
+    visible RPL stack between fold steps, so a HALT mid-fold leaves the
+    accumulator visible exactly as it would be for any other in-flight
+    program.
   - No serialisation across `persist.js`; page refresh drops the halted
     stack (`clearAllHalted` fires on `resetHome`).
 
@@ -220,7 +255,171 @@ open, and the next-session queue.
 
 ---
 
-## Session 121 (this run) — what shipped
+## Session 141 (this run) — what shipped
+
+This run is a test-pinning + doc-cleanup run.  No source-code logic
+in `www/src/rpl/ops.js` changed; the IFERR ⇄ suspension-substrate
+behaviour exercised below has been live since the session-088
+generator substrate plus session-078's IFERR auto-close, but was
+never explicitly pinned.  Every assertion below corresponds to a
+keypress sequence a real user can type from the keypad.
+
+1. **HALT / PROMPT lift through `IFERR` clauses pinned (full-form
+   `« IFERR … THEN … ELSE … END »`).**  `runIfErr` has been a
+   generator since session 088 and uses `yield* evalRange(...)` for
+   each of its three clauses (trap, THEN, ELSE), so HALT and PROMPT
+   inside any of them already lifted mechanically through the
+   `yield*` chain up to the EVAL/CONT driver.  The session-088 /
+   session-121 narrative never pinned this directly — the new
+   session-141 assertions in `tests/test-control-flow.mjs` close
+   that gap.  Specifically:
+   - HALT inside the trap clause suspends the program; CONT
+     resumes; the trap pushes its post-HALT residue; with no
+     thrown error the ELSE branch runs (sentinel: `« 10 IFERR
+     HALT 99 THEN 7 ELSE 8 END »` lands `⟦10 99 8⟧`, never `⟦…
+     7 …⟧`).
+   - HALT inside the THEN clause (after a real caught error) keeps
+     the *trapped* last-error visible to ERRM / ERRN during the
+     halt window — `restoreLastError(savedOuterError)` lives in a
+     `finally` that wraps the THEN-clause `yield*`, so it does NOT
+     run on suspension (yield is not return).  CONT runs the rest
+     of THEN; the finally then restores the outer last-error to
+     its pre-IFERR value.
+   - HALT inside the ELSE clause (no thrown error) sees the trap
+     residue on the stack at suspension; CONT pushes the
+     post-HALT result; the trap residue survives the suspension
+     intact.
+   - PROMPT inside the THEN clause sets `state.promptMessage`
+     mid-trap-handler; CONT clears the banner and finishes THEN;
+     the outer last-error finally still restores at THEN
+     completion.
+
+2. **HALT lift through *auto-closed* `IFERR` clauses pinned (no
+   END).**  Session 078's `runIfErr` auto-close treats end-of-token-
+   list as an implicit END for either the THEN clause (no ELSE,
+   no END) or the ELSE clause (ELSE present, no END).  The
+   resulting `yield*` chain composes with HALT/CONT/KILL the same
+   way the explicit-END form does:
+   - `« 10 IFERR HALT 5 THEN 99 »` (no END, no error path) →
+     trap halts, CONT resumes, trap pushes 5, no error → THEN
+     does not run, final stack `⟦10 5⟧`.
+   - `« 10 IFERR 1 0 / THEN HALT 7 »` (no END, error path) →
+     trap errors, THEN halts mid-clause; CONT pushes the post-
+     HALT 7; finally restores outer last-error.
+   - `« IFERR 1 2 + THEN 9 ELSE HALT 7 »` (no END) → trap
+     pushes 3, ELSE auto-closes and halts; CONT pushes 7, trap
+     residue 3 survives the cycle.
+
+3. **Nested IFERR — last-error save/restore chain across nested
+   `finally`s on CONT and KILL.**  The interesting structural
+   invariant: each `runIfErr` frame snapshots its outer last-error
+   before calling `setLastError(caught)` and restores it in a
+   `finally` that wraps the THEN-clause `yield*`.  Two pins:
+   - Inner-IFERR-THEN halts inside outer-IFERR-THEN.  During the
+     inner halt, ERRM sees the *inner* caught error (the inner
+     `setLastError(caughtInner)` ran before the yield).  CONT
+     completes inner THEN → inner `finally` restores to outer
+     caught → outer THEN finishes → outer `finally` restores to
+     entry-null.  Final state: last-error is null.
+   - KILL of the same halted inner-IFERR-THEN runs both
+     `finally`s in LIFO via `gen.return()` — inner restores to
+     outer-caught, then outer restores to entry-null.  Final
+     state: last-error is null.  `localFramesDepth() === 0`.
+
+4. **Sentinel pin: `yield` is not a thrown exception, so IFERR's
+   `catch` block must not capture a HALT yield.**  If it ever
+   did, `« IFERR HALT 1 THEN 999 ELSE 2 END »` would mistakenly
+   run the THEN clause on resumption and the sentinel `999`
+   would land on the stack.  The new pin runs this exact program
+   and asserts the THEN-clause sentinel is absent at every stack
+   level after CONT, plus that the ELSE result `2` is on top of
+   the trap residue `1`.  This is a regression guard against any
+   future refactor that switches `runIfErr`'s `try`/`catch` to
+   capture more aggressively.
+
+5. **R-005 doc cleanup — three `(this run)` headings demoted.**
+   Section headers for sessions 121, 126, and 136 in this file
+   used to all read `## Session NNN (this run) — what shipped`,
+   but the lane writes a fresh chapter every substantive run, so
+   only the most-recent run should bear that label.  This run
+   demotes those three to plain `## Session NNN — what shipped`,
+   and adds the present session-141 chapter as the new `(this
+   run)` holder.  Same run also updates the Session log pointer
+   prose at `:1455` to demote `Session 131 is this run …` to
+   past tense and append session-136 / session-141 footnotes,
+   per R-005's two pure-string edit list.
+
+Totals: **76 new session141-labelled assertions** in
+`tests/test-control-flow.mjs` (control-flow file 599 → 675).
+`test-all.mjs` at **4711 passing / 0 failing** (entry baseline
+this run was 4635, Δ+76 — entirely this lane this run; sibling
+lanes quiescent during the audit window).
+`test-persist.mjs` unchanged.
+`sanity.mjs` at **22 passing / ≈5 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`tests/test-control-flow.mjs`).  `www/src/rpl/ops.js` was not
+modified this run — the lift mechanism was already live.
+
+User-reachable demo (HALT lift through IFERR THEN clause):
+
+```
+« 10 IFERR 1 0 / THEN HALT 99 ELSE 8 END »   ENTER, EVAL
+   → display halts inside THEN with stack ⟦10⟧.  ERRM (typed at
+     keypad) returns "Infinite result" — the trapped error is
+     visible during the halt window.
+   Press CONT → THEN finishes (push 99), outer last-error
+     restored to whatever it was before IFERR (typically null /
+     no error).  Final stack ⟦10 99⟧.
+```
+
+User-reachable demo (HALT lift through IFERR trap clause; sentinel
+that yield is not an exception):
+
+```
+« IFERR HALT 1 THEN 999 ELSE 2 END »          ENTER, EVAL
+   → display halts inside the trap with stack ⟦⟧.  Press CONT →
+     trap pushes 1, no error caught (yield ≠ throw), ELSE runs
+     (push 2).  Final stack ⟦1 2⟧.  THEN-clause sentinel 999
+     never appears.
+```
+
+User-reachable demo (HALT lift through auto-closed IFERR ELSE
+clause):
+
+```
+« IFERR 1 2 + THEN 9 ELSE HALT 7 »            ENTER, EVAL
+   → trap pushes 3 (no error) → ELSE runs → display halts with
+     stack ⟦3⟧.  Press CONT → ELSE pushes 7.  Final stack ⟦3 7⟧.
+     No closing END; the auto-close path absorbs trailing tokens
+     into the ELSE clause.
+```
+
+User-reachable demo (PROMPT lift through IFERR THEN clause):
+
+```
+« IFERR 1 0 / THEN "wait" PROMPT 99 END »     ENTER, EVAL
+   → trap errors → THEN runs → "wait" pushed and consumed by
+     PROMPT → display halts with the banner reading "wait" and
+     the stack empty.  Press CONT → banner clears, THEN
+     finishes (push 99), outer last-error restored.  Final
+     stack ⟦99⟧.
+```
+
+User-reachable demo (KILL of HALT inside IFERR THEN restores
+outer last-error via `finally`):
+
+```
+« IFERR 1 0 / THEN HALT 99 END »              ENTER, EVAL
+   → trap errors → THEN runs HALT → display halts with last-
+     error visible to ERRM / ERRN.
+   Press KILL → halt slot cleared, gen.return() runs the
+     `runIfErr` `finally`, outer last-error restored to its
+     pre-IFERR value.
+```
+
+---
+
+## Session 121 — what shipped
 
 1. **`PROMPT` op shipped (HP50 AUR p.2-160).**  Three pieces:
    `state.promptMessage` (a new state slot with setter / getter /
@@ -316,6 +515,399 @@ User-reachable demo (HALT lift through IFTE body):
 0 « 1 » « HALT 2 » IFTE 100
    → false branch chosen; halts after HALT; stack empty.
    Press CONT → 2 then 100 push; final stack ⟦100, 2⟧.
+```
+
+---
+
+## Session 126 — what shipped
+
+1. **HALT/PROMPT lift through `SEQ` body.**  New `runSeq(s, depth)`
+   generator helper in `ops.js`: pop the five SEQ args, validate the
+   loop variable name, recall the prior binding for the `finally`-time
+   restore, then loop over `[start, end]` by `step`.  Each iteration
+   `varStore`s the current counter and EVAL's the expression through
+   `_evalValueGen` (`yield*`), checks the +1 stack delta, and pushes the
+   produced value into the accumulator `out` array.  `evalRange`'s body
+   intercept calls `yield* runSeq(...)` after the existing IFTE branch,
+   so a `SEQ` keyword *encountered while running a Program body*
+   suspends mid-iteration on a HALT or PROMPT inside the expression.
+   The partial accumulator and the current loop variable both live in
+   the generator's stack frame, so CONT resumes inside the same
+   iteration — the previously-pushed `out` entries survive intact and
+   the loop continues from `i = i + step` once the suspended iteration
+   completes.  KILL closes the generator and runs the `finally` block
+   that restores the prior binding of the loop variable.
+
+   `register('SEQ', (s) => { _driveGen(runSeq(s, 0), 'SEQ expression'); })`
+   keeps the sync-fallback path: a HALT inside the body of a SEQ
+   reached via Name dispatch (`'SEQ' EVAL`, Tagged-wrapped
+   `Name('SEQ')`) or via direct `lookup('SEQ').fn(s)` calls still
+   throws `HALT: cannot suspend inside SEQ expression` with the
+   session-111 caller label.
+
+2. **HALT/PROMPT lift through `MAP` body.**  Same shape: new
+   `runMap(s, depth)` generator helper plus a `_mapOneValueGen(s, prog,
+   e, depth)` per-element worker that pushes the input element, EVAL's
+   the program through `_evalValueGen` (`yield*`), and pops/returns the
+   one produced value.  `runMap` walks the input — List items array,
+   Vector items array, or Matrix rows-of-rows — calling
+   `_mapOneValueGen` per element and assembling the output container of
+   the same type.  `evalRange`'s body intercept calls
+   `yield* runMap(...)` immediately after the SEQ branch, so HALT
+   inside the body of a MAP iterates correctly: the produced-so-far
+   array and the in-progress matrix row both live in the generator's
+   stack frame.  Session 121's `_combinatorProgCheck` argument-type
+   guard is preserved (Program / Name / Symbolic accepted; everything
+   else rejected with `Bad argument type`), and the original `_mapOneValue`
+   sync helper is retained in source for any future caller (no current
+   reference path uses it; see ops.js comment).
+
+   `register('MAP', (s) => { _driveGen(runMap(s, 0), 'MAP program'); })`
+   keeps the sync-fallback path with the session-111 `MAP program`
+   caller label.
+
+3. **34 new session126-labelled regression assertions** in
+   `tests/test-control-flow.mjs`.  Coverage:
+
+   - 5 — SEQ HALT in iter 1 lifts; CONT runs to completion;
+     accumulator across HALT/CONT yields `{ 10 20 30 }`.
+   - 4 — SEQ HALT in iter 3 (via IFT-conditional inside the body)
+     preserves all five iterations after CONT (`{ 1 2 3 4 5 }`).
+   - 3 — SEQ KILL during a halted iteration restores the prior
+     binding of the loop variable through the `finally` chain.
+   - 4 — SEQ PROMPT inside the body sets the banner mid-iteration;
+     CONT clears it; both iterations complete.
+   - 2 — sync-fallback SEQ still rejects HALT with session-111 label;
+     no leaked halts or `_localFrames`.
+   - 2 — SEQ on an empty range never halts and produces `{}`.
+   - 5 — MAP HALT in iter 1 over a List lifts; CONT yields a 3-element
+     result with no leaked halts.
+   - 3 — MAP HALT in iter 3 (via IFT-conditional) preserves the
+     partial accumulator across HALT/CONT (`{ 2 3 4 5 }`).
+   - 2 — MAP HALT lift preserves Vector type after CONT.
+   - 2 — MAP HALT lift preserves 2×2 Matrix shape after CONT.
+   - 3 — MAP PROMPT inside the body sets the banner; CONT clears it.
+   - 2 — sync-fallback MAP still rejects HALT with session-111 label.
+   - 2 — MAP on an empty list never halts and produces `{}`.
+   - 4 — KILL of HALT-inside-MAP-inside-`→` cleans up halt + `→`
+     frame (closure of `runMap` propagates `gen.return()` through
+     `runArrow`'s finally so the local frame tears down).
+   - 3 — `resetHome` during a halted SEQ closes the generator and
+     leaves no `_localFrames` leak.
+
+User-reachable demo (HALT lift through SEQ body):
+
+```
+« X 1 == « HALT » IFT X 10 * » 'X' 1 3 1 SEQ
+   → display halts on iter 1 (X==1); stack empty after the partial
+     iteration accumulator is preserved in the generator.
+   Press CONT → SEQ resumes inside iter 1, finishes 1*10=10, then
+   iter 2 (20), then iter 3 (30).  Final stack ⟦{ 10 20 30 }⟧.
+```
+
+User-reachable demo (HALT lift through MAP body):
+
+```
+{ 1 2 3 } « DUP 1 == « HALT » IFT 100 * » MAP
+   → display halts on iter 1 (input==1); the MAP generator holds
+     the input list and the partial output array in its frame.
+   Press CONT → iter 1 completes 1*100=100, iters 2/3 run straight
+     through to 200/300.  Final stack ⟦{ 100 200 300 }⟧.
+```
+
+User-reachable demo (PROMPT lift through SEQ body):
+
+```
+« K K 1 == « "wait!" PROMPT » IFT 7 * » 'K' 1 2 1 SEQ
+   → display halts on iter 1 (K==1) with banner "wait!".
+   Press CONT → banner clears; iter 1 produces 7, iter 2 produces 14.
+   Final stack ⟦{ 7 14 }⟧.
+```
+
+---
+
+## Session 136 — what shipped
+
+1. **Auto-close on missing END for `WHILE/REPEAT`.**  Symmetric with
+   the existing IF / IFERR / CASE auto-close policy and with the
+   parser's auto-close on unterminated `«` / `{` / `[`.  In
+   `runWhile`, when `scanAtDepth0` for the END returns `null` (forward
+   scan ran off the end of the token list) we now treat
+   `endIdx = toks.length` as an implicit END and set an `autoClosed`
+   flag that's used to return `bound` (mirrors `runIf`'s pattern).  A
+   missing REPEAT stays a hard error: WHILE has no sensible default
+   body separator.  A spurious NEXT / STEP at depth 0 in the END slot
+   (counter-loop closer in a condition-loop's slot) also stays a hard
+   error.  So
+   ```
+   « WHILE test REPEAT body »          ≡  « WHILE test REPEAT body END »
+   « WHILE 1 1 + »                     still throws "WHILE without REPEAT"
+   « WHILE 1 REPEAT 2 NEXT »           still throws "WHILE/REPEAT without END"
+   ```
+
+2. **Auto-close on missing END for `DO/UNTIL`.**  Same shape.  In
+   `runDo`, a `null` `endScan` becomes the implicit END at
+   `toks.length`.  A missing UNTIL stays a hard error.  A spurious
+   NEXT / STEP in the END slot stays a hard error.
+
+3. **Auto-close on missing NEXT / STEP for `START`.**  In `runStart`,
+   a `null` `closeScan` (forward scan ran off the end) is treated as
+   an implicit `NEXT` (step = 1) at `toks.length`.  Result: the body
+   runs `(end - start + 1)` times, advancing the counter by 1 each
+   iteration — same as if the user had typed `NEXT`.  A spurious END
+   at depth 0 in the closer slot is still a hard error: START has no
+   END closer in HP50, only NEXT / STEP.
+
+4. **Auto-close on missing NEXT / STEP for `FOR`.**  Same shape as
+   START.  The bound-variable save/restore via `runFor`'s `try /
+   finally` is preserved across the auto-close path: a pre-existing
+   binding for the FOR variable is restored on completion (or on
+   KILL of a halted auto-closed FOR body); a fresh binding is purged
+   on completion.  A missing variable name (`Name` token after FOR)
+   is still a hard error.  A spurious END at depth 0 in the closer
+   slot is still a hard error.
+
+These four lifts are pure runtime auto-close — no parser change.  The
+policy is uniform: any `scanAtDepth0` inside a structural runner
+(`runIf` / `runIfErr` / `runCase` / `runWhile` / `runDo` / `runStart`
+/ `runFor`) that runs off the end of the token list now treats end-
+of-program as the implicit closer.  Whatever closer would have made
+the construct well-formed is the one that's substituted (`END` for the
+condition-loops and the dispatchers; `NEXT` for the counter-loops).
+
+Composition with HALT/CONT/KILL is automatic — the runner is still a
+generator, so HALT inside an auto-closed body suspends through the
+same `yield*` chain as a fully-closed body, CONT resumes inside the
+same iteration, and KILL closes the generator and runs the loop's
+`finally` block (FOR's bound-name save/restore in particular).  The
+only behavioral surface that changes is what *throws* — three previously-
+throwing programs (the four "missing END/NEXT" shapes above) now run.
+Programs that already had explicit closers behave identically.
+
+5. **36 new session136-labelled regression assertions** in
+   `tests/test-control-flow.mjs`.  Coverage:
+
+   - 7 — WHILE auto-close: simple loop to 3, false-test no-op, parsed-
+     source `<< 0 WHILE DUP 4 < REPEAT 1 + >>` happy path, missing-
+     REPEAT still throws, missing-REPEAT stack-rollback, spurious-
+     NEXT-in-END-slot still throws.
+   - 6 — DO/UNTIL auto-close: 3-iteration counter loop, body runs at
+     least once, missing-UNTIL throws, spurious-NEXT-in-END-slot
+     throws.
+   - 4 — START auto-close: 5-iteration loop, start>end runs body once
+     (HP50 semantics), spurious END in closer slot still throws.
+   - 8 — FOR auto-close: sum 1..4 to 10, var purged on exit, prior
+     binding restored via finally, spurious END in closer slot still
+     throws, FOR-without-NEXT/STEP error leaves no leaked binding.
+   - 2 — Nested auto-close: WHILE-inside-IF where both are missing
+     their END both auto-close correctly; parsed-source FOR with no
+     NEXT runs a sum-to-15.
+   - 9 — HALT/CONT/KILL composition with auto-close: HALT in an auto-
+     closed START suspends, three CONTs complete the full 3-iteration
+     run, final stack matches the explicit-NEXT version; KILL of a
+     halted auto-closed FOR purges the loop var via finally and
+     leaves no `_localFrames` leak.
+
+Totals: **36 new session136-labelled assertions** (all in
+`tests/test-control-flow.mjs`).
+Test-control-flow at **599 passing** (prior baseline 563 — Δ+36, all
+from this lane).
+`test-all.mjs` at **4558 passing / 0 failing** (prior baseline 4522,
+Δ+36 — entirely this lane this run; sibling lanes quiescent during
+the audit window).
+`test-persist.mjs` at **38 passing / 0 failing** (unchanged).
+`sanity.mjs` at **22 passing / 5 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`www/src/rpl/ops.js`, `tests/test-control-flow.mjs`).
+
+User-reachable demo (WHILE auto-close):
+
+```
+« 0 WHILE DUP 4 < REPEAT 1 + »   ENTER, EVAL
+   → final stack ⟦4⟧.  Note no closing END inside the program; the
+     program parser auto-closes the outer `«` and the runtime auto-
+     closes the WHILE/REPEAT.  The same source with `END` before
+     `»` is identical.
+```
+
+User-reachable demo (DO/UNTIL auto-close):
+
+```
+« 0 DO 1 + UNTIL DUP 3 ≥ »       ENTER, EVAL
+   → final stack ⟦3⟧.
+```
+
+User-reachable demo (START auto-close):
+
+```
+0 ENTER « 1 5 START 1 + »        EVAL
+   → final stack ⟦5⟧ (body runs 5 times, accumulator 0 + 5×1 = 5).
+```
+
+User-reachable demo (FOR auto-close):
+
+```
+0 ENTER « 1 4 FOR i i + »        EVAL
+   → final stack ⟦10⟧ (sum 1..4).  After the loop the loop var
+     `i` is purged automatically.
+```
+
+User-reachable demo (HALT inside an auto-closed START):
+
+```
+« 1 3 START HALT 7 »             ENTER, EVAL
+   → display halts on iter 1 with stack empty.  Press CONT three
+     times.  After the third CONT the final stack is ⟦7 7 7⟧ — same
+     as if the source had been written « 1 3 START HALT 7 NEXT ».
+```
+
+---
+
+## Session 131 — what shipped
+
+1. **HALT/PROMPT lift through `DOLIST` body.**  New `runDoList(s, depth)`
+   generator helper in `ops.js`: pop the program, decide whether the
+   next operand is a count or the implicit-1 single-list form, pop the
+   count and N lists, validate types, find the min length, and loop.
+   Each iteration pushes the i-th element of every list onto the stack
+   and EVAL's the program through `_evalValueGen` (`yield*`), checks
+   the +1 stack delta, and pushes the produced value into the
+   accumulator `out` array.  `evalRange`'s body intercept calls
+   `yield* runDoList(...)` immediately after the MAP branch, so a
+   `DOLIST` keyword *encountered while running a Program body* suspends
+   mid-iteration on a HALT or PROMPT inside the body.  The partial
+   accumulator and the input lists both live in the generator's stack
+   frame, so CONT resumes inside the same iteration with the
+   previously-produced `out` entries intact.  KILL closes the
+   generator; there is no auxiliary frame to tear down (DOLIST has no
+   NSUB-like context).
+
+   `register('DOLIST', (s) => { _driveGen(runDoList(s, 0), 'DOLIST program'); })`
+   keeps the sync-fallback path with the session-111 caller label.
+
+2. **HALT/PROMPT lift through `DOSUBS` body, with NSUB/ENDSUB frame
+   teardown on KILL.**  New `runDoSubs(s, depth)` generator helper:
+   pop program / window-size / list, push the NSUB/ENDSUB frame onto
+   `_DOSUBS_STACK` inside a `try/finally`, then iterate windows.
+   Each window pushes `n` consecutive elements and EVAL's the program
+   through `_evalValueGen` (`yield*`).  The frame's `index` is updated
+   per-window, so `NSUB` / `ENDSUB` called from inside a halted-and-
+   CONT'd body read the correct (preserved-across-suspension) values.
+   `evalRange`'s body intercept calls `yield* runDoSubs(...)` after
+   the DOLIST branch.
+
+   The frame `pop()` lives in the `finally`, so a KILL of a halted
+   DOSUBS closes the generator via `gen.return()`, which runs the
+   finally and tears down the frame — `NSUB` / `ENDSUB` called outside
+   DOSUBS afterward correctly throw `Undefined local name`.  Pinned by
+   the session-131 KILL-tears-down-frame assertions.  A new
+   module-private observer `dosubsStackDepth()` is exported so tests
+   can pin the frame-stack invariant directly.
+
+   `register('DOSUBS', (s) => { _driveGen(runDoSubs(s, 0), 'DOSUBS program'); })`
+   keeps the sync-fallback path with the session-111 caller label.
+
+3. **HALT/PROMPT lift through `STREAM` body.**  New `runStream(s, depth)`
+   generator helper: pop program and list, validate types,
+   short-circuit on empty / single-element lists (matches pre-131
+   behavior — `Invalid dimension` on empty, push the bare element on
+   single-item).  Otherwise push `items[0]` as the seed accumulator,
+   then for each subsequent element push it and EVAL the program
+   through `_evalValueGen` (`yield*`).  The accumulator lives on the
+   *user-visible RPL stack* between fold steps (matching pre-131 sync
+   semantics), so a HALT mid-fold leaves the in-flight accumulator
+   visible at the suspension — same observability as a HALT inside any
+   other structural op.  `evalRange`'s body intercept calls
+   `yield* runStream(...)` after the DOSUBS branch.
+
+   `register('STREAM', (s) => { _driveGen(runStream(s, 0), 'STREAM program'); })`
+   keeps the sync-fallback path with the session-111 caller label.
+
+4. **65 new session131-labelled regression assertions** in
+   `tests/test-control-flow.mjs`.  Coverage:
+
+   - 5 — DOLIST HALT in iter 1 over a list lifts; CONT runs to
+     completion; accumulator across HALT/CONT yields `{ 10 20 30 }`.
+   - 5 — DOLIST HALT in iter 3 preserves the partial accumulator;
+     final result is `{ 1 2 3 4 5 }`.
+   - 4 — DOLIST 2-list parallel form HALT in iter 1; CONT completes;
+     yields `{ 11 22 33 }`.
+   - 4 — DOLIST PROMPT inside the body sets the banner; CONT clears it;
+     final result is `{ 7 14 }`.
+   - 3 — DOLIST KILL during a halted iteration leaves no halt residue
+     and no leaked local frames.
+   - 2 — sync-fallback DOLIST still rejects HALT with session-111
+     caller label; no leaked halts or `_localFrames`.
+   - 2 — DOLIST on empty list never halts and produces `{}`.
+   - 6 — DOSUBS HALT in iter 1 lifts; frame stays alive across the
+     halted window; CONT completes; frame torn down on completion;
+     yields `{ 3 5 7 }`.
+   - 4 — DOSUBS NSUB/ENDSUB-readable-from-body across a halted-and-
+     CONT'd window: index continues correctly from 2 → 3.
+   - 6 — DOSUBS KILL during halted window tears down the NSUB/ENDSUB
+     frame — `dosubsStackDepth()` drops to 0; bare `NSUB` / `ENDSUB`
+     called afterward correctly throw `Undefined local name`.
+   - 3 — sync-fallback DOSUBS still rejects HALT with session-111
+     caller label; cleans up halts, frames, and DOSUBS frame.
+   - 3 — DOSUBS empty-window-set short-circuit (n > list length) never
+     halts; produces empty list; pushes no NSUB frame.
+   - 4 — STREAM HALT mid-fold suspends; accumulator (3) visible on the
+     RPL stack at suspension; CONT yields final accumulator (10).
+   - 4 — STREAM PROMPT inside the body sets the banner; CONT clears it;
+     final accumulator is 6.
+   - 2 — sync-fallback STREAM still rejects HALT with session-111
+     caller label; no leaked halts or `_localFrames`.
+   - 2 — STREAM single-element short-circuit never halts and pushes
+     the bare element.
+   - 4 — KILL of HALT-inside-DOLIST-inside-`→` cleans up halt + `→`
+     frame (closure of `runDoList` propagates `gen.return()` through
+     `runArrow`'s finally so the local frame tears down).
+   - 4 — KILL of HALT-inside-DOSUBS-inside-`→` tears down both `→`
+     frame and DOSUBS frame in one finally chain.
+   - 4 — `resetHome` during a halted DOSUBS closes the generator,
+     clears the DOSUBS frame, and leaves no local-frame leak.
+
+Totals: **65 new session131-labelled assertions** (all in
+`tests/test-control-flow.mjs`).
+Test-control-flow at **563 passing** (prior baseline 498 — Δ+65,
+all from this lane).
+`test-all.mjs` at **4474 passing / 0 failing** (prior baseline 4409 —
+Δ+65; entirely this lane).
+`test-persist.mjs` at **38 passing / 0 failing** (unchanged).
+`sanity.mjs` at **22 passing / 5 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`www/src/rpl/ops.js`, `tests/test-control-flow.mjs`).
+
+User-reachable demo (HALT lift through DOLIST body):
+
+```
+{ 1 2 3 } « DUP 1 == « HALT » IFT 10 * » DOLIST
+   → display halts on iter 1 (input==1); the DOLIST generator holds
+     the input list and the partial output array in its frame.
+   Press CONT → iter 1 finishes 1*10=10, iters 2/3 run straight
+     through to 20/30.  Final stack ⟦{ 10 20 30 }⟧.
+```
+
+User-reachable demo (HALT lift through DOSUBS body, with NSUB
+preserved across the suspension):
+
+```
+{ 10 20 30 } 1 « DROP NSUB DUP 2 == « HALT » IFT ENDSUB + » DOSUBS
+   → DOSUBS walks 1-wide windows over the list.  In window 2 (NSUB=2),
+     the conditional HALT fires; display halts.  Press CONT → window 2
+     finishes (NSUB=2, ENDSUB=3, 2+3=5 pushed); window 3 runs straight
+     through (NSUB=3, ENDSUB=3, 3+3=6).  Final stack ⟦{ 4 5 6 }⟧.
+```
+
+User-reachable demo (HALT lift through STREAM body, accumulator
+visible at suspension):
+
+```
+{ 1 2 3 4 } « + DUP 3 == « HALT » IFT » STREAM
+   → STREAM folds + over the list.  After the first step (1+2=3) the
+     conditional HALT fires; the running accumulator (3) is on the
+     stack at suspension — same observability as any HALT mid-program.
+   Press CONT → fold continues 3+3=6, 6+4=10.  Final stack ⟦10⟧.
 ```
 
 ---
@@ -895,21 +1487,71 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
    added with setter / getter / clearer; cleared on CONT, SST,
    KILL, and `resetHome`.
 
-8. **HALT lift through MAP / SEQ / DOLIST / DOSUBS / STREAM
-   bodies (next remaining sync-path callers).**  Same shape as
-   session 121's IFT/IFTE work: each op currently drives
-   `_evalValueSync` with a session-111 caller label
-   (`MAP program`, `SEQ expression`, etc.).  Lifting any of these
-   would require either an `evalRange` intercept (only viable when
-   the op is reached as a Name token in a program body) or a
-   structural rework of the op so it `yield*`s its body call
-   directly.  IFT/IFTE were the simplest cases — single body, no
-   iteration loop — so they shipped first.  MAP-family lift needs
-   thinking about per-iteration yield semantics (what does HALT
-   inside iteration 3 of MAP over a 10-element list mean? CONT
-   resumes mid-iteration — does the partially-mapped result
-   survive?).  Defer to a future session that scopes those
-   semantics carefully.
+8. **[shipped session 126]** HALT/PROMPT lift through MAP and SEQ
+   bodies via `evalRange` intercepts that delegate to new `runMap`
+   / `runSeq` generator helpers.  Per-iteration suspension is the
+   natural shape: the partial accumulator (`out` array, current
+   loop counter, in-progress matrix row, restored variable
+   binding) lives in the generator's stack frame, so CONT resumes
+   mid-iteration with all state intact and previously-completed
+   iterations are preserved.  Sync fallbacks (Name dispatch +
+   direct `lookup('MAP').fn(s)` calls) keep the session-111
+   reject-with-caller-label behavior.
+
+9. **[shipped session 131]** HALT lift through DOLIST / DOSUBS /
+   STREAM bodies (last remaining sync-path callers).  Same shape
+   as session 126's MAP/SEQ work — each op now has an `evalRange`
+   intercept that delegates to a generator helper (`runDoList` /
+   `runDoSubs` / `runStream`) driving `_evalValueGen`.  DOSUBS
+   additionally pops its NSUB/ENDSUB frame in the helper's
+   `finally`, so KILL of a halted DOSUBS tears down the frame
+   stack via `gen.return()`.  STREAM's accumulator lives on the
+   user-visible RPL stack between fold steps, so a HALT mid-fold
+   leaves the accumulator visible at suspension.  Sync fallbacks
+   (`'DOLIST' EVAL`, etc.) preserve the session-111 reject-with-
+   caller-label behavior.  +65 session131 assertions in
+   `tests/test-control-flow.mjs`.  This closes the body-intercept
+   lift program — the only structural sync-path call site that
+   still rejects HALT is `runArrow`'s Symbolic body, which is
+   currently unreachable in practice (Symbolic AST cannot carry a
+   Program subnode).
+
+10. **[shipped session 136]** Auto-close on missing END / NEXT for
+    `WHILE/REPEAT`, `DO/UNTIL`, `START`, and `FOR`.  Symmetric
+    with the existing IF (session 083) / IFERR (session 078) /
+    CASE (session 074) auto-close policy and with the parser's
+    auto-close on unterminated `«` / `{` / `[`.  A `scanAtDepth0`
+    that runs off the end of the token list inside `runWhile` /
+    `runDo` / `runStart` / `runFor` is now treated as the implicit
+    closer (`END` for the condition-loops, `NEXT` for the counter-
+    loops).  Missing-separator errors (WHILE-without-REPEAT, DO-
+    without-UNTIL, FOR-without-name) and spurious-closer errors
+    (END in a START closer slot, NEXT/STEP in a WHILE END slot)
+    stay as hard errors.  HALT/CONT/KILL composition is automatic
+    via the existing generator substrate; FOR's bound-name
+    save/restore in `runArrow`-style `try/finally` carries through
+    the auto-close path.  +36 session136 assertions in
+    `tests/test-control-flow.mjs`.  This closes the structural
+    auto-close program — every structural opener now auto-closes
+    at end-of-program if its closer is missing.
+
+11. **[shipped session 141]** HALT / PROMPT lift through `IFERR`
+    clauses pinned with regression tests; R-005 doc cleanup
+    (demote three `(this run)` headings + Session log pointer
+    prose update).  The lift mechanism itself was already live —
+    `runIfErr` has been a generator since session 088 and uses
+    `yield* evalRange(...)` for trap, THEN, and ELSE clauses, so
+    HALT / PROMPT lifted mechanically through the `yield*` chain
+    as soon as the substrate landed.  But no test pinned the
+    behaviour, so a future refactor that broke it would not have
+    been caught.  +76 session141 assertions in
+    `tests/test-control-flow.mjs`.  Coverage: HALT in trap / THEN
+    / ELSE (full-form and auto-closed variants); nested-IFERR
+    last-error save/restore chain across nested `finally`s on
+    CONT and KILL; PROMPT in THEN; sentinel pin that yield ≠
+    throw so IFERR's catch never captures a HALT yield; HALT-
+    then-DOERR-after-CONT triggers the catch correctly.  No
+    `www/src/rpl/ops.js` source change this run.
 
 ### Medium priority
 5. **`CONT` across a `resetHome` — UI signal** — `resetHome`
@@ -1028,4 +1670,40 @@ lifts through Tagged-wrapped Programs and Name-on-stack EVALs;
 DBUG widened to peel Tagged in its argument-type guard;
 `runArrow` Symbolic body wired with the `'→ algebraic body'`
 caller label); test-file prefix is `session116:` and the log file
-is `logs/session-116.md`.
+is `logs/session-116.md`.  Session 121 was this lane (`PROMPT` op
++ HALT/PROMPT lift through IFT and IFTE bodies via `evalRange`
+intercepts driving new `runIft` / `runIfte` generator helpers);
+test-file prefix is `session121:` and the log file is
+`logs/session-121.md`.  Session 126 was this lane (HALT/PROMPT lift
+through MAP and SEQ bodies via `evalRange` intercepts and new
+`runMap` / `runSeq` generator helpers, plus the parallel
+`_mapOneValueGen` per-element worker for the MAP path); test-file
+prefix is `session126:` and the log file is
+`logs/session-126.md`.  Session 131 was this lane (HALT/PROMPT lift
+through DOLIST / DOSUBS / STREAM bodies via `evalRange` intercepts
+and new `runDoList` / `runDoSubs` / `runStream` generator helpers;
+DOSUBS additionally tears down its NSUB/ENDSUB frame on KILL via
+the helper's `try/finally`; new `dosubsStackDepth()` observer
+exported for tests).  This closes the body-intercept HALT-lift
+program — the only structural sync-path call site that still
+rejects HALT is `runArrow`'s Symbolic body, which is currently
+unreachable in practice.  Test-file prefix is `session131:` and
+the log file is `logs/session-131.md`.  Session 136 was this lane
+(auto-close on missing END / NEXT for `WHILE/REPEAT`, `DO/UNTIL`,
+`START`, and `FOR` — symmetric with the existing IF / IFERR / CASE
+auto-close policy and with the parser's auto-close on unterminated
+`«` / `{` / `[`); test-file prefix is `session136:` and the log
+file is `logs/session-136.md`.  Session 141 is this run (HALT/
+PROMPT lift through `IFERR` clauses pinned: trap, THEN, ELSE — both
+fully-terminated and auto-closed forms; nested-IFERR last-error
+save/restore chain across nested `finally`s on CONT and KILL;
+sentinel pin that yield is not a thrown exception so IFERR's catch
+must not capture HALT; demote of stale `(this run)` headings in
+this file per R-005); test-file prefix is `session141:` and the log
+file is `logs/session-141.md`.
+
+(Footnote — sessions 074 / 078 / 088 / 106 / 116 / 121 / 126 / 131
+used the historical "is this run" wording in their authoring
+session; that label has since been demoted to plain past tense as
+the lane runs forward.  Demotion to plain past tense for sessions
+121 / 126 / 131 / 136 was bundled into this run, per R-005.)

@@ -21,8 +21,112 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 124 — 2026-04-24)
+## Counts (as of session 139 — 2026-04-25)
 
+- Fully shipped (✓): 437 (this lane's net since session 134 — session
+  139 ships three new ops via Giac: `LIN`, `LIMIT`, `lim` — the last
+  registered as a thin alias delegating to `LIMIT`'s fn, mirroring
+  CHARPOL / XNUM / XQ pattern; row count is 2 because LIMIT and lim
+  share a row.  +3 ✗→✓ transitions and one ✗-side reshape on the
+  "Not yet supported" table)
+- Partially shipped (~): 0
+- Not yet implemented (✗): 1 (down from 3 — `LIMIT` was not actually
+  on the not-yet-supported table because it had been a long-horizon
+  CAS wishlist item rather than an explicit row, but `JORDAN` /
+  `SCHUR` and `MULTMOD` rows remain.  Session 139 doesn't change
+  those rows.)
+- Will-not-support (by design): 9 menu groups
+
+The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
+`grep -c "register(" www/src/rpl/ops.js` = **466** at the end of session
+139 (was 463 at the end of session 134, was 458 at the end of session
+129, was 455 at the end of session 124, was 448 at the end of session
+119).  Session 139 added three top-level register sites: `register('LIN',
+…)`, `register('LIMIT', …)`, and `register('lim', …)` (the lim alias
+counts as a real register call — it lives at the top level even though
+its body delegates to `OPS.get('LIMIT').fn(s)`).  The actual top-level
+`register()` *call* count (`grep -cE '^register\(' www/src/rpl/ops.js`)
+is **445** (was 442 from session 129 onward through session 134).
+Session-139 row transitions:
+- **3 ops newly shipped** (✗ → ✓): `LIN` (HP50 AUR §3-131; new row in
+  CAS section between `COSSIN` and `GREDUCE`), `LIMIT`, `lim` (HP50
+  AUR §lim entry / §3-131; new combined row between `LIN` and
+  `GREDUCE`).
+- **3 row Notes amendments** (✗-empty → session-136 annotation):
+  the four loop rows (`FOR / START / STEP / NEXT`, `WHILE / REPEAT /
+  END`, `DO / UNTIL / END`) at `:426`-`:428` had empty Notes columns
+  before this run; the session-136 auto-close annotations now mirror
+  the session-083 IF row style ("auto-closes on missing END / NEXT
+  at program-body bound, mirroring IF (session 083) / CASE (session
+  074) / IFERR (session 077)").  Closes `C-009`.
+- **2 session-log entries back-filled** (sessions 135 / 136) plus
+  this session's entry at the top of the log.
+
+Prior baseline (session 134):
+- Fully shipped (✓): 434 (this lane's net since session 129 — session
+  134 is a doc-only run resolving the `C-008` finding routed by
+  session 133 and retiring three phantom rows; no ✗→✓ transitions
+  that session)
+- Partially shipped (~): 0
+- Not yet implemented (✗): 3 (down from 4 — the `GXROOT` / `LQD` /
+  `POLYEVAL` phantoms were retired session 134; `JORDAN` and `SCHUR`
+  are folded into one row, `MULTMOD` keeps its own row.)
+- Will-not-support (by design): 9 menu groups
+
+Session-134 row transitions:
+- **0 rows newly shipped** (no ✗ → ✓).
+- **3 phantom rows retired**: `GXROOT` (CAS row dropped — zero hits
+  across the AUR / User Guide / User Manual when run through
+  `pdftotext`; the Grœbner-family CAS gap is now empty since GBASIS
+  shipped session 124 and GREDUCE shipped session 119).  `LQD`
+  (Matrix decomps row — zero hits across all three PDFs; the row
+  collapses to `JORDAN` `SCHUR` only).  `POLYEVAL` (modular row —
+  zero hits across all three PDFs; the real HP50 polynomial
+  evaluator is `PEVAL` and has been ✓ since pre-session-061; the
+  row collapses to `MULTMOD` only).  Same pattern as the
+  session-124 retire of `ACKER` / `CTRB` / `OBSV`.
+- **1 row Notes amendment**: `HALT CONT KILL` row (session-131
+  DOLIST/DOSUBS/STREAM body-intercept lift addendum + 7-label residual
+  paragraph rewrite enumerating the full sync-fallback set).
+- **4 session-log entries back-filled** (sessions 130 / 131 / 132 /
+  133) — closes the audit-trail gap C-008 had catalogued, plus a
+  session-134 entry at the top of the log.
+
+Prior baseline (session 129):
+- Fully shipped (✓): 434 (this lane's net since session 124 — the
+  session-121 `PROMPT` op was already shipped on disk but was missing
+  a row in this file; session 129 added the row, which is the only
+  ✗→✓ transition this session)
+- Partially shipped (~): 0
+- Not yet implemented (✗): 4 (see "Not yet supported" below)
+- Will-not-support (by design): 9 menu groups
+
+`grep -c "register(" www/src/rpl/ops.js` = **458** at the end of session
+129 (was 455 at the end of session 124, was 448 at the end of session
+119).  Session 129 itself shipped no new registrations — the +3 since
+session 124 came from intervening lanes (session 126 rewrote the
+`register('SEQ', ...)` and `register('MAP', ...)` handlers as
+`_driveGen` sync-fallback wrappers that delegate into new `runSeq` /
+`runMap` generator helpers; that pattern adds register sites for the
+caller-label split, accounting for +2 of the delta — the remaining +1
+is sibling-lane traffic between sessions 124 and 126).  Session-129
+row transitions:
+- **1 row newly shipped** (✗ → ✓): the new `PROMPT` row in the
+  control-flow section (session-121 op on disk, no prior row in this
+  file; pulled out of the `DISP CLLCD FREEZE INPUT WAIT BEEP → ui
+  lane` group).
+- **2 row Notes amendments**: `IFT IFTE` row (session-121 generator-
+  flavor lift addendum) and `HALT CONT KILL` row (session-121 IFT/IFTE
+  body-intercept lift + session-126 SEQ/MAP body-intercept lift; the
+  former "only HALT inside a sync-path call (IFT / IFTE / MAP / SEQ
+  body) still rejects" caveat is rewritten as the now-correct
+  "Residual: HALT reached through the **sync-fallback** Name-dispatch
+  path for IFT / IFTE / SEQ / MAP still rejects").
+- **8 session-log entries back-filled** (sessions 120 / 121 / 122 /
+  123 / 125 / 126 / 127 / 128) — closes the audit-trail gap C-007 had
+  catalogued, plus a session-129 entry at the top of the log.
+
+Prior baseline (session 124):
 - Fully shipped (✓): 433 (this lane's net since session 119; other
   lanes may have shipped additional ops between sessions 119 and 124
   without bumping this counter — see register() delta below)
@@ -30,9 +134,8 @@ touched the row, and any known caveats worth carrying forward.
 - Not yet implemented (✗): 4 (see "Not yet supported" below)
 - Will-not-support (by design): 9 menu groups
 
-The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
 `grep -c "register(" www/src/rpl/ops.js` = **455** at the end of session 124
-(was 448 at the end of session 119).  +2 from this session (`LNAME`,
+(was 448 at the end of session 119).  +2 from session 124 (`LNAME`,
 `GBASIS`); the remaining +5 between sessions 119 and 124 came from
 intervening lanes (e.g. session 121's `PROMPT` op for the rpl-programming
 lane).  Row transitions this session:
@@ -316,6 +419,8 @@ not fallbacks.  Migration is incremental — rows below are flagged
 | `PROPFRAC` | ✓ | **Session 104 [Giac]** — proper-fraction form via `propfrac(...)`.  Symbolic routed through Giac; Rational lifts to Symbolic via `_toAst` so `43 12 / PROPFRAC → '3 + 7/12'` (HP50 AUR §3-197).  Real/Integer/Name pass-through.  No-fallback policy. |
 | `PARTFRAC` | ✓ | **Session 104 [Giac]** — partial-fraction decomposition via `partfrac(...)`.  Symbolic routed through Giac; Real/Integer/Rational/Name pass-through (no non-trivial decomp on a bare number). HP50 AUR §3-180.  No-fallback policy. |
 | `COSSIN` | ✓ | **Session 104 [Giac]** — rewrite in SIN/COS basis via Giac `tan2sincos(...)` (TAN(x) → SIN(x)/COS(x)).  Symbolic routed through Giac; Real/Integer/Rational/Name pass-through.  HP50 AUR §3-64.  No-fallback policy. |
+| `LIN` | ✓ | **Session 139 [Giac]** — exponential linearization via Giac `lin(...)`.  HP50 AUR §3-131.  Single-arg; Symbolic routes through `buildGiacCmd` + `lin(${e})` (e.g. `e^X·e^Y` → `e^(X+Y)`); Real/Integer/Rational/Name pass-through (no non-trivial linearization on a bare scalar).  Vector / Matrix / List / Tagged / etc. reject `Bad argument type`.  No-fallback policy. |
+| `LIMIT` `lim` | ✓ | **Session 139 [Giac]** — limit at a point via Giac `limit(expr,var,val)`.  HP50 AUR §lim entry / §3-131.  `( expr 'var=val' → limit )` (explicit equation form, top-level `=` or `==` Symbolic) or `( expr val → limit )` (bare Real/Integer/Rational point — variable defaults to `getCasVx()`, default `X`, per AUR p.3-131 "if the variable approaching a value is the current CAS variable, it is sufficient to give its value alone").  Numeric-leaf Giac result lifts to Real; non-numeric stays Symbolic.  Non-Symbolic / non-Name expression → `Bad argument type`; equation lhs not a `Var` → `Bad argument value`; non-Symbolic / non-numeric / non-Name point → `Bad argument type`.  `LIMIT` is the HP49G backward-compat name; `lim` is the HP50 lowercase canonical alias (thin `OPS.get('LIMIT').fn(s)` wrapper, mirrors CHARPOL / XNUM / XQ alias pattern).  No-fallback policy. |
 | `GREDUCE` | ✓ | **Session 119 [Giac]** — `( poly basis vars → reduced )` Grœbner reduction via `greduce(p,[basis],[vars])`.  HP50 AUR §3-99.  Level 1 must be a Vector of bare Names; level 2 a Vector of polynomials (Symbolic / Name / Integer / Real / Rational); level 3 the polynomial to reduce.  Empty basis or empty vars list → `Invalid dimension`.  Result lifts back through `giacToAst` + `_astToRplValue` so a numeric remainder lands as Real and a polynomial remainder stays Symbolic (`_astToRplValue`'s session-119 `Neg(Num)` unwrap fixes the AUR `-1` worked example).  No-fallback policy. |
 | `GBASIS` | ✓ | **Session 124 [Giac]** — `( polys vars → basis )` Grœbner basis via `gbasis([polys],[vars])`.  HP50 AUR §3-92.  Level 1 must be a Vector of bare Names; level 2 a Vector of polynomials (Symbolic / Name / Integer / Real / Rational).  Empty polys or empty vars list → `Invalid dimension`; non-Vector args → `Bad argument type`; non-Name in vars → `Bad argument type`; non-list Giac output (e.g. unit ideal `[1]` is still a list — but `gbasis(...)` errors come back as bare strings) → `Bad argument value`.  Result Vector items lift through `giacToAst` + `_astToRplValue` (Names stay Names, numeric polynomials become Symbolic, scalar `1` lifts to `Real(1)`).  No-fallback policy. |
 
@@ -342,17 +447,18 @@ not fallbacks.  Migration is incremental — rows below are flagged
 |---------|--------|-------|
 | `IF` `THEN` `ELSE` `END` | ✓ | **Session 083** — IF auto-closes on missing END at program-body bound, mirroring CASE (session 074) and IFERR (session 077); IF-without-THEN stays a hard error. |
 | `CASE` `THEN` `END` | ✓ | Session 067. |
-| `FOR` `START` `STEP` `NEXT` | ✓ | |
-| `WHILE` `REPEAT` `END` | ✓ | |
-| `DO` `UNTIL` `END` | ✓ | |
-| `IFT` `IFTE` | ✓ | Stack conditionals. |
+| `FOR` `START` `STEP` `NEXT` | ✓ | **Session 136** — `FOR` and `START` auto-close on missing `NEXT` / `STEP` at program-body bound, mirroring IF (session 083) / CASE (session 074) / IFERR (session 077).  A spurious closer of the wrong kind (e.g. `END` in the `NEXT`/`STEP` slot) stays a hard error; see `runFor` / `runStart` in `www/src/rpl/ops.js`. |
+| `WHILE` `REPEAT` `END` | ✓ | **Session 136** — `WHILE/REPEAT` auto-closes on missing `END` at program-body bound, mirroring IF (session 083) / CASE (session 074) / IFERR (session 077).  A spurious closer of the wrong kind (e.g. `NEXT` in the `END` slot) stays a hard error; see `runWhile` in `www/src/rpl/ops.js`. |
+| `DO` `UNTIL` `END` | ✓ | **Session 136** — `DO/UNTIL` auto-closes on missing `END` at program-body bound, mirroring IF (session 083) / CASE (session 074) / IFERR (session 077).  A spurious closer of the wrong kind (e.g. `NEXT` in the `END` slot) stays a hard error; see `runDo` in `www/src/rpl/ops.js`. |
+| `IFT` `IFTE` | ✓ | Stack conditionals.  **Session 121:** IFT / IFTE actions now re-enter `evalRange` via the body-intercept path (`ops.js:3145-3158`); HALT / PROMPT inside the action lifts cleanly through `_evalValueGen` and resumes via CONT.  The `register('IFT', …)` / `register('IFTE', …)` handlers stay as sync fallbacks for the rare Name-dispatch path (`'IFT' EVAL`, Tagged-wrapped `Name(IFT)`); those still reject HALT through `_driveGen` with the session-111 caller labels (`'IFT action'` / `'IFTE action'`).  See `docs/RPL.md:42-46`. |
 | `IFERR` `THEN` `ELSE` `END` | ✓ | |
 | `ERRM` `ERRN` `ERR0` `DOERR` | ✓ | |
 | `EVAL` | ✓ | |
 | `→PRG` `OBJ→` (on Program) | ✓ | Session 067. |
 | `ABORT` | ✓ | Session 067. |
 | `DECOMP` | ✓ | |
-| `HALT` `CONT` `KILL` | ✓ | Session 074 pilot — top-level program bodies only; HALT inside control flow or `→` raises a pilot-limit error. **Session 083:** multi-slot halted LIFO (`state.haltedStack`) matches HP50 AUR p.2-135; CONT/KILL pop one slot off the top, new `clearAllHalted()` drains, `haltedDepth()` exposes depth. **Session 088:** generator-based `evalRange` — structural HALT pilot-limit fully lifted; HALT now works from inside `FOR`, `IF`, `WHILE`, `DO`, `IFERR`, and `→` bodies. **Session 106:** named-sub-program HALT lifted via `evalToken` → `_evalValueGen` for Name-binding evaluations; only HALT inside a sync-path call (IFT / IFTE / MAP / SEQ body) still rejects with `HALT: cannot suspend inside a sub-program call`.  See `docs/RPL.md:144-148`. |
+| `HALT` `CONT` `KILL` | ✓ | Session 074 pilot — top-level program bodies only; HALT inside control flow or `→` raises a pilot-limit error. **Session 083:** multi-slot halted LIFO (`state.haltedStack`) matches HP50 AUR p.2-135; CONT/KILL pop one slot off the top, new `clearAllHalted()` drains, `haltedDepth()` exposes depth. **Session 088:** generator-based `evalRange` — structural HALT pilot-limit fully lifted; HALT now works from inside `FOR`, `IF`, `WHILE`, `DO`, `IFERR`, and `→` bodies. **Session 106:** named-sub-program HALT lifted via `evalToken` → `_evalValueGen` for Name-binding evaluations. **Session 121:** IFT / IFTE bodies lifted via the body-intercept path in `evalRange` (`ops.js:3145-3158`) — HALT / PROMPT inside an IFT or IFTE action now suspends cleanly. **Session 126:** SEQ / MAP per-iteration bodies lifted via `runSeq` / `runMap` generators (`ops.js:7568-7607`, `8053-8096`) — HALT / PROMPT inside a SEQ expression or MAP program suspends cleanly and CONT resumes inside the same iteration with the partial accumulator intact. **Session 131:** DOLIST / DOSUBS / STREAM per-iteration program bodies lifted via `runDoList` / `runDoSubs` / `runStream` generators (`ops.js:8142`, `:8224`, `:8304`) plus body-intercept dispatch in `evalRange` (`:3196`, `:3202`, `:3208`) — HALT / PROMPT inside a DOLIST / DOSUBS / STREAM iteration suspends cleanly and CONT resumes inside the same iteration with the partial accumulator and (for DOSUBS) the NSUB/ENDSUB context frame intact via the generator's `try/finally` teardown.  Residual: HALT reached through the **sync-fallback** Name-dispatch path for IFT / IFTE / SEQ / MAP / DOLIST / DOSUBS / STREAM (e.g. `'IFT' EVAL`, Tagged-wrapped `Name('SEQ')`) still rejects through `_driveGen` with the session-111 caller labels (`'IFT action'` / `'IFTE action'` / `'SEQ expression'` / `'MAP program'` / `'DOLIST program'` / `'DOSUBS program'` / `'STREAM program'`); body-intercept is the supported path.  See `docs/RPL.md:42-46`, `:117-123`, `:171-179`. |
+| `PROMPT` | ✓ | **Session 121** — HP50 AUR p.2-160 form: pop level 1, stash it as the active prompt banner via `setPromptMessage(msg)`, then yield up to the EVAL/CONT driver via the same generator-suspension channel HALT uses (`evalRange` intercept at `ops.js:3129-3136`).  CONT clears the banner via `clearPromptMessage()` and resumes the suspended generator; KILL drops the suspension and clears the banner; SST is a no-op for PROMPT (the suspension already happened).  Outside a running program — i.e. reaching the registered handler via Name dispatch (`'PROMPT' EVAL` from the keypad) — throws `PROMPT: not inside a running program`, mirroring HALT.  Owned by the rpl-programming lane (suspension protocol), not the UI lane (the prompt banner is rendered by the UI but the op itself is a control-flow primitive). |
 | `RUN` | ✓ | **Session 083** — registered as a CONT synonym for the no-DBUG case (AUR p.2-177). Will upgrade to debug-aware resume once DBUG substrate lands. |
 | `SST` `SST↓` `DBUG` | ✓ | **Session 101** — single-step debugger.  `SST` steps token-by-token through the most-recently-halted program (AUR p.2-184); `DBUG` installs a freshly-pushed Program as halted so the user can step from the first token (AUR p.2-77); `SST↓` originally registered as an alias for `SST`.  **Session 106:** `SST↓` shipped as a real step-into op via `_stepInto` + `_insideSubProgram` + `_shouldStepYield` (`ops.js:2944-3118`) — single-stepping now descends into the body of a sub-program reached by name lookup, while plain `SST` keeps stepping over.  See `docs/RPL.md:75-148`. |
 
@@ -382,7 +488,10 @@ These are tracked here only to mark them out-of-scope for the command-support
 lane; `rpl5050-ui-development` owns them.
 
 - `DRAW` `DRAX` `DRAWMENU` `ERASE` `PICT` → ui lane
-- `DISP` `CLLCD` `FREEZE` `INPUT` `PROMPT` `WAIT` `BEEP` → ui lane
+- `DISP` `CLLCD` `FREEZE` `INPUT` `WAIT` `BEEP` → ui lane (PROMPT moved
+  to the control-flow section session 129 — it ships through the
+  rpl-programming lane as a HALT-flavored suspension op, not through
+  the UI render loop)
 - `MENU` `TMENU` `RCLMENU` → ui lane
 - `PVIEW` `PXC` `CPX` `GOR` `GXOR` → ui lane
 
@@ -394,11 +503,10 @@ can be picked up as a group.
 
 | Command | Cluster | Priority | Notes |
 |---------|---------|----------|-------|
-| `GXROOT` | CAS | low | Variant of `GBASIS` extracting common roots — `GBASIS` itself shipped session 124 and `GREDUCE` shipped session 119, so this is the last CAS Grœbner-family gap.  Giac's `gbasis` already returns the basis; `gxroot` is the common-root extractor that needs a separate wrapper. |
-| `JORDAN` `SCHUR` `LQD` | Matrix | low | Advanced decomps.  (`RSD` shipped session 119 — was previously grouped on this row.) |
+| `JORDAN` `SCHUR` | Matrix | low | Advanced decomps.  (`RSD` shipped session 119, `LQD` retired session 134 as a phantom — neither was previously grouped on this row.) |
 | `BARPLOT` `HISTPLOT` `SCATRPLOT` | graphics | ui-lane | (graphics — not in this lane) |
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
-| `POLYEVAL` `MULTMOD` | modular | low | Modular poly ops — `EUCLID` / `INVMOD` shipped session 076; these two remain (need MODULO state). |
+| `MULTMOD` | modular | low | Modular poly multiplication — `EUCLID` / `INVMOD` shipped session 076; this is the last gap (needs MODULO state).  (`POLYEVAL` retired session 134 as a phantom — see session-134 log; the real HP50 polynomial evaluator is `PEVAL`, already ✓ since pre-session-061.) |
 
 ## Will-not-support (by design deviation)
 
@@ -424,6 +532,319 @@ If a user asks for one of these, the correct response is to point at
 
 Maintain chronologically, most recent first.
 
+- **session 139** (2026-04-25) — Three ops newly shipped (`LIN`,
+  `LIMIT`, `lim`) plus the four loop-row Notes-column amendments
+  closing `C-009`.  Three Giac-backed CAS ops added between COSSIN
+  and GREDUCE in the CAS section:
+  1. **`LIN`** (HP50 AUR §3-131) — exponential linearization via
+     Giac `lin(...)`.  Single-arg, mirrors PROPFRAC / PARTFRAC /
+     COSSIN: Symbolic routes through `buildGiacCmd` + `lin(${e})`;
+     Real / Integer / Rational / Name pass-through; everything else
+     rejects `Bad argument type`.  No-fallback policy.
+  2. **`LIMIT`** + **`lim`** (HP50 AUR §lim entry / §3-131) — limit
+     of an expression at a point via Giac `limit(expr,var,val)`.
+     Two-arg: level 2 = expression Symbolic, level 1 = either a
+     `var=val` Symbolic equation (top-level `=` or `==` bin) OR a
+     bare numeric point (Real / Integer / Rational — variable
+     defaults to the current CAS variable `getCasVx()`, default
+     `'X'`, per AUR p.3-131 "if the variable approaching a value is
+     the current CAS variable, it is sufficient to give its value
+     alone").  Numeric-leaf Giac result lifts to Real; non-numeric
+     stays Symbolic.  `LIMIT` is the HP49G backward-compat name and
+     `lim` is the HP50 lowercase canonical alias — `lim` registered
+     as a thin `OPS.get('LIMIT').fn(s)` wrapper, mirroring CHARPOL
+     (session 114) / XNUM, XQ (session 086).  No-fallback policy.
+  3. **C-009 close** — four loop-row Notes columns at `:426`-`:428`
+     (the `FOR / START / STEP / NEXT`, `WHILE / REPEAT / END`,
+     `DO / UNTIL / END` rows) gained the session-136 auto-close
+     annotation (verbatim mirror of the session-083 IF row style:
+     "auto-closes on missing END / NEXT at program-body bound,
+     mirroring IF (session 083) / CASE (session 074) / IFERR
+     (session 077)…").  Counts heading bumped from "as of session
+     134 — 2026-04-24" to "as of session 139 — 2026-04-25".  Session
+     -log entries below for sessions 135 (data-types Q×V/M broadcast
+     + Tagged-of-V/M binary composition + Tagged tag-identity &
+     BinInt cross-base equality, +31 test-types.mjs, no register
+     changes), 136 (rpl-programming WHILE/DO/START/FOR auto-close
+     lift, +36 test-control-flow.mjs, no register changes), 137
+     (unit-tests coverage adds across stats / comparisons /
+     numerics / binary-int / units / helpers / stack-ops /
+     arrow-aliases, +45 assertions, no register changes), 138
+     (code-review eleventh run — REVIEW.md doc-only edits filing
+     C-009 + R-005 and re-aging X-003 / O-007 / O-009; no register
+     changes), 139 (this run).
+  Test gates: `node --check www/src/rpl/ops.js tests/test-algebra.mjs`
+  pass; `node tests/test-all.mjs` = **4635 passing / 0 failing**
+  at run-end (was 4586 at session-138 baseline; +13 of the +49 are
+  this run's LIN/LIMIT/lim assertions in `tests/test-algebra.mjs`,
+  the remaining +36 came in via concurrent session 140 data-type-
+  support's `tests/test-types.mjs` widening — locks confirmed
+  session 140 active during this run with scope `tests/test-types.mjs`
+  + `docs/DATA_TYPES.md`, no overlap with this run's scope);
+  `node tests/test-persist.mjs` = **38 / 0** (stable);
+  `node tests/sanity.mjs` = **22 / 0** (stable).
+  `register()` total = **466** (was 463 at session 134 — +3 for the
+  three new register sites).  Top-level `^register(` count = **445**
+  (was 442 — same +3).  See `logs/session-139.md`.
+  Closes `C-009` from `docs/REVIEW.md`.
+- **session 138** (2026-04-25) — Code-review lane (eleventh run).
+  Doc-only edits to `docs/REVIEW.md`: Last-updated stamp bumped to
+  session 138; baseline block rewritten; one new finding (`C-009`
+  — this file's loop-row Notes-column drift against the session-136
+  auto-close lift on WHILE / DO / START / FOR) filed and routed to
+  `rpl5050-command-support` (closed by session 139, this run); one
+  new R-bucket finding (`R-005`) filed against `docs/RPL.md`
+  multiple-"this run" labelling drift; one prior finding promoted to
+  resolved (C-008 — closed by session 134).  Three long-aging
+  open findings re-aged (X-003 10→11 runs, O-007 7→8 runs, O-009
+  4→5 runs).  No source-side changes; no row flips here; no
+  `register()` count change.  Lock scope = `docs/REVIEW.md` only
+  (narrower than canonical review-lane scope to avoid `logs/`
+  overlap with active session 137).
+- **session 137** (2026-04-25) — Unit-tests lane.  Substantive
+  coverage adds across `test-stats.mjs` / `test-comparisons.mjs` /
+  `test-numerics.mjs` / `test-binary-int.mjs` / `test-units.mjs` /
+  `test-helpers.mjs` / `test-stack-ops.mjs` / `test-arrow-aliases.mjs`
+  plus `docs/TESTS.md` updates.  +45 session-137 assertions.  No
+  new ops; no row flips; no `register()` count change.
+- **session 136** (2026-04-25) — RPL-programming lane (sixth run).
+  Auto-close on missing `END` / `NEXT` for the four condition-loop
+  and counter-loop families (`WHILE/REPEAT`, `DO/UNTIL`, `START`,
+  `FOR`) — completes the structural-auto-close program for loops,
+  mirroring the existing IF (session 083) / IFERR (session 077) /
+  CASE (session 074) auto-close policy.  `runWhile` / `runDo` /
+  `runStart` / `runFor` (`www/src/rpl/ops.js`) each gain a fall-
+  through `if (!endScan) { endIdx = bound; autoClosed = true; }`
+  branch and a `return autoClosed ? bound : closerIdx + 1` exit;
+  spurious closer-of-wrong-kind still rejects (the throws at
+  `:3677` / `:3717` / `:3761` / `:3798` survive on the wrong-kind
+  branch).  +36 session-136 assertions in `tests/test-control-flow.mjs`
+  (563 → 599).  `docs/RPL.md` status table flipped on the four loop
+  rows with the session-136 auto-close annotation.  No new register
+  sites — auto-close lift was an in-place body widening of the four
+  existing `runFor` / `runStart` / `runWhile` / `runDo` helpers.
+  COMMANDS.md row-Notes back-fill is session 139's follow-up
+  (captured above as the C-009 close).
+- **session 135** (2026-04-24) — Data-type-support lane.  Three
+  hard-assertion widening clusters in `tests/test-types.mjs`
+  pinning previously-undertested broadcast and identity contracts
+  on already-widened ops: Q × V/M arithmetic broadcast on `+ - * /`
+  (8 pins — Q×R-element → Real degradation, Q×Q-element stays-
+  exact via `_rationalBinary` with d=1 collapse, Q×Z-element on the
+  Matrix axis, per-element Q+R degradation on V+V pairwise),
+  Tagged-of-V/M binary composition via `_withTaggedBinary(_with
+  ListBinary(handler))` (11 pins), Tagged tag-identity & BinInt
+  cross-base equality (12 pins).  +31 assertions (672 → 703).  No
+  source-side changes; no row flips; no `register()` count change.
+  `docs/DATA_TYPES.md` Last-updated bumped to session 135 with six
+  Notes columns updated and a "Resolved this session (135)" block
+  added at the top of the Resolved sections.
+- **session 134** (2026-04-24) — Doc-only run resolving the
+  `C-008` remainder routed by session 133, plus a phantom-row
+  cleanup pass on the "Not yet supported" table.  Two row/heading
+  edits + three phantom retires + four session-log back-fills +
+  this entry:
+  1. `HALT CONT KILL` row Notes column at `:389` amended with the
+     session-131 DOLIST/DOSUBS/STREAM body-intercept lift addendum
+     (`runDoList` / `runDoSubs` / `runStream` generators at
+     `ops.js:8142`, `:8224`, `:8304` plus body-intercept dispatch in
+     `evalRange` at `:3196`, `:3202`, `:3208`).  The Residual
+     paragraph was expanded from the four-label session-126 form
+     (`'IFT action'` / `'IFTE action'` / `'SEQ expression'` /
+     `'MAP program'`) to the now-complete seven-label form, adding
+     `'DOLIST program'` / `'DOSUBS program'` / `'STREAM program'`
+     for the sync-fallback Name-dispatch path.
+  2. Counts heading bumped from "as of session 129 — 2026-04-24" to
+     "as of session 134 — 2026-04-24"; `grep -c "register("` stamp
+     refreshed from 458 → 463 with the session-131 attribution
+     spelled out (the +5 is comment-only — the new `runDoList` /
+     `runDoSubs` / `runStream` docstrings each carry a `register(
+     'NAME', ...)` mention, plus the body-intercept block in
+     `evalRange` references all three sync-fallback sites; the actual
+     top-level `register()` call count `grep -cE '^register\('` is
+     442, unchanged from session 129).  Session 131 rewrote the
+     three handler bodies in place — no new register sites added.
+  3. Session-log entries back-filled below for sessions 130
+     (data-type-support, sixth run), 131 (rpl-programming, sixth
+     run), 132 (unit-tests, seventh run), 133 (code-review, tenth
+     run).  All four sibling-lane runs landed between session 129's
+     close and session 134's acquisition.
+  4. Three phantom rows retired from the "Not yet supported (in-lane
+     candidates for future runs)" table: `GXROOT` (CAS row — zero
+     hits across the AUR / User Guide / User Manual), `LQD` (Matrix
+     decomps row — zero hits across all three PDFs; row collapses
+     to `JORDAN` `SCHUR` only), `POLYEVAL` (modular row — zero hits
+     across all three PDFs; the real HP50 polynomial evaluator is
+     `PEVAL`, ✓ since pre-session-061; row collapses to `MULTMOD`
+     only).  Same pattern as the session-124 retire of `ACKER` /
+     `CTRB` / `OBSV`.  Verification: `for f in docs/HP50*.pdf; do
+     pdftotext "$f" - | grep -c "GXROOT"; done` → `0 0 0`; same for
+     `LQD` and `POLYEVAL`.  Not-yet-supported count drops 4 → 3.
+  No source-side changes; no row flips; no ops registered or removed.
+  Closes `C-008` from `docs/REVIEW.md`.  See `logs/session-134.md`.
+- **session 133** (2026-04-24) — Code-review lane (tenth run).
+  Doc-only edits to `docs/REVIEW.md`: Last-updated stamp bumped
+  to session 133; baseline block rewritten; one new finding
+  (`C-008` — this file's HALT row + Counts staleness against the
+  session-131 DOLIST/DOSUBS/STREAM lift) filed and routed to
+  `rpl5050-command-support`; two prior partials promoted to
+  fully-resolved (`C-007` closed by session 129, `O-010` closed
+  alongside `C-007`); one prior finding promoted to resolved
+  (`T-002` — closed by session 132's TESTS.md rewrite); three
+  long-aging open findings re-aged (X-003 9→10 runs, O-007
+  6→7 runs, O-009 3→4 runs).  No source-side changes; no row
+  flips here; no `register()` count change.  See
+  `logs/session-133.md`.
+- **session 132** (2026-04-24) — Unit-tests lane (seventh run).
+  T-002 doc fix in `docs/TESTS.md` (the four "stale-pruned
+  without writing logs/session-121.md" sites rewritten to
+  acknowledge the session-128 audit found the log file does
+  exist) + assertion coverage adds across `test-stats.mjs`,
+  `test-comparisons.mjs`, `test-algebra.mjs`, `test-types.mjs`.
+  No new ops; no row flips; no `register()` count change.
+  Test count moved into the session-133 baseline (4474
+  passing).  See `logs/session-132.md`.
+- **session 131** (2026-04-25 UTC) — RPL-programming lane (fifth
+  run, sixth structural HALT lift since the session-088
+  generator pivot).  HALT/PROMPT lift through DOLIST + DOSUBS
+  + STREAM per-iteration program bodies — the last three
+  structural sync-path call sites that the session-126 SEQ/MAP
+  run hadn't reached.  New `runDoList` / `runDoSubs` /
+  `runStream` generator helpers at `ops.js:8142`, `:8224`,
+  `:8304`; body-intercept dispatch in `evalRange` at `:3196`,
+  `:3202`, `:3208`; sync-fallback handlers preserved with
+  session-111 caller labels (`'DOLIST program'`, `'DOSUBS
+  program'`, `'STREAM program'`).  DOSUBS NSUB/ENDSUB
+  context-frame teardown happens inside the generator's
+  `try/finally` so a HALT mid-iteration cleans up correctly on
+  KILL.  +65 session-131 assertions in
+  `tests/test-control-flow.mjs` (498 → 563).  Top-level
+  `register()` call count unchanged (in-place body rewrites);
+  comment-grep count moved by the new docstrings.  No new ops;
+  no row flips here — the row-Notes back-fill is session 134's
+  follow-up captured above.  See `logs/session-131.md`.
+- **session 130** (2026-04-24) — Data-type-support lane (sixth
+  run).  Three hard-assertion widening clusters in
+  `tests/test-types.mjs` pinning previously-undertested wrapper-
+  composition and cross-family contracts: Tagged-of-V/M
+  composition through `_withTaggedUnary(_withListUnary(
+  _withVMUnary(handler)))`, BinaryInteger × Rational cross-
+  family on `==/≠/</>/≤/≥` and SAME's strict no-coerce
+  contract, Tagged-of-List binary composition.  +35
+  assertions (637 → 672 within `test-types.mjs`).  No source-
+  side changes; no row flips; no `register()` count change.
+  `docs/DATA_TYPES.md` Last-updated bumped to session 130.
+  See `logs/session-130.md`.
+- **session 129** (2026-04-24) — Doc-only run resolving the
+  `C-007` remainder routed by session 128.  Four edits to this file:
+  1. `PROMPT` row pulled out of the `DISP CLLCD FREEZE INPUT WAIT BEEP
+     → ui lane` group at `:385`; replaced by a new control-flow row
+     between `HALT CONT KILL` and `RUN` describing the session-121
+     suspension protocol (yield via `evalRange:3129-3136`,
+     `setPromptMessage` / `clearPromptMessage`, CONT/KILL semantics,
+     `'PROMPT' EVAL` outside-program error mirroring HALT).
+  2. `IFT IFTE` row Notes amended with the session-121 generator-
+     flavor lift addendum (body-intercept path at `ops.js:3145-3158`,
+     sync-fallback caveat preserved).
+  3. `HALT CONT KILL` row Notes amended with both the session-121
+     IFT/IFTE lift and the session-126 SEQ/MAP lift; the previous
+     "only HALT inside a sync-path call (IFT / IFTE / MAP / SEQ
+     body) still rejects" caveat is now obsolete and rewritten as
+     "Residual: HALT reached through the **sync-fallback** Name-
+     dispatch path for IFT / IFTE / SEQ / MAP still rejects" — which
+     is the correct residual after sessions 121 and 126.
+  4. Session-log backfill for sessions 120, 121, 122, 123, 125, 126,
+     127, 128 below.
+  Counts heading bumped to "as of session 129 — 2026-04-24";
+  `register()` total stamp now reads **458** (was 455 at session
+  124; +3 from sessions 121 / 126 — `PROMPT` registered session
+  121 + the sync-fallback `register('SEQ', ...)` and
+  `register('MAP', ...)` rewrites in session 126 added two more
+  register sites for the session-111 caller-label pattern).  No
+  rows flipped this session — purely descriptive doc work
+  catching up to the actual on-disk capability state.  Test
+  baseline preserved: `node tests/test-all.mjs` = **4374
+  passing / 0 failing**, `test-persist.mjs` = **38 / 0**,
+  `sanity.mjs` = **22 / 0**.  See `logs/session-129.md`.
+  Closes `C-007` from `docs/REVIEW.md`.
+- **session 128** (2026-04-25 UTC) — Code-review lane
+  (ninth run).  No source changes; doc-only edit to
+  `docs/REVIEW.md`.  Restatuses: O-010 partial (decomposed,
+  three of four sub-items closed by sibling lanes),
+  R-004 resolved-with-retraction (RPL.md does carry session-121
+  PROMPT narrative on disk), C-007 partial (Counts heading +
+  register count + brief session-121 mention closed by session
+  124; PROMPT row + IFT/IFTE row + HALT row + missing
+  session-log entries still open — routed back to this lane,
+  closed by session 129).  New finding: T-002 (TESTS.md
+  stale-prune drift).  No `register()` count change.  See
+  `logs/session-128.md`.
+- **session 127** (2026-04-25 UTC) — Unit-tests lane
+  (sixth run).  +28 assertions: LNAME edge cluster, Q × C/R
+  cross-type comparisons, Y-family stats rejection catchup.
+  Test count 4346 → 4374.  No `register()` count change.
+  Mid-session 4 transient failures in `test-control-flow.mjs`
+  (session-126's pre-pinned HALT/PROMPT-lift assertions ahead
+  of implementation) cleared by session 126's close.  See
+  `logs/session-127.md`.
+- **session 126** (2026-04-25 UTC) — RPL-programming lane
+  (sixth run).  HALT/PROMPT lift through SEQ + MAP per-iteration
+  bodies via new `runSeq` / `runMap` generator helpers
+  (`ops.js:7568-7607`, `8053-8096`) plus `evalRange` body-
+  intercept at `ops.js:3173-3184`.  Sync-fallback handlers
+  preserved with session-111 caller labels (`'SEQ expression'`,
+  `'MAP program'`) — `register('SEQ')` and `register('MAP')` got
+  rewritten as `_driveGen` wrappers; net `register()` count
+  delta is +0 (same registrations, new bodies).  +46 session-126
+  assertions in `tests/test-control-flow.mjs`.  4232 → 4346
+  passing.  No row flips here — the row-Notes back-fill is the
+  session-129 follow-up captured above.  See `logs/session-126.md`.
+- **session 125** (2026-04-24) — Data-type-support lane (sixth
+  run).  +43 assertions in `tests/test-types.mjs`: List
+  distribution on the arity-2 numeric family, Tagged-of-List
+  composition on the rounding/sign/abs family, and Q→R
+  degradation on MIN / MAX / MOD.  No new ops; no row flips
+  here (DATA_TYPES.md owns type-coverage rows).  4257 → 4300
+  passing.  No `register()` count change.  See
+  `logs/session-125.md`.
+- **session 123** (2026-04-24) — Code-review lane (eighth run).
+  Doc-only; no source or test changes.  Filed three new
+  findings (R-004, O-010, C-007) and aged the longest-aging
+  open finding (X-003) to 8 runs.  Counts/register stamps in
+  this file stayed at session-119 phrasing through this run
+  (the gap that C-007 then catalogued and routed back here).
+  No `register()` count change.  See `logs/session-123.md`.
+- **session 122** (2026-04-24) — Unit-tests lane (fifth run).
+  `assertThrows` migration in `tests/test-control-flow.mjs`
+  (queue #2 from session 117).  +4 direct assertions plus the
+  concurrent +46 PROMPT/KILL cluster from session 121's
+  rpl-programming lock landing in the same file.  4182 → 4232
+  passing.  No `register()` count change.  See
+  `logs/session-122.md`.
+- **session 121** (2026-04-24) — RPL-programming lane (fifth
+  run).  `PROMPT` op shipped (HP50 AUR p.2-160) — the
+  `register()` count it added is the +1 between session 119's
+  448 and session 124's 455 attributed to "intervening lanes".
+  Mechanism: `evalRange` body-intercept yields up to the
+  EVAL/CONT driver via the same channel HALT uses; `state.
+  promptMessage` is the prompt banner store.  Same session also
+  lifted IFT / IFTE bodies onto the body-intercept path
+  (`ops.js:3145-3158`) so HALT / PROMPT inside the action
+  suspends cleanly.  PROMPT row is captured under the new
+  control-flow entry above (added session 129); IFT / IFTE row
+  Notes were amended session 129 (this back-fill).  +50
+  assertions in `tests/test-control-flow.mjs` (session 121 and
+  session 122 combined, since session 122 back-filled the
+  assertThrows-migration coverage on the same file).  4114 →
+  4182 passing on session 121's own close (before session 122
+  adjusted the form).  See `logs/session-121.md`.
+- **session 120** (2026-04-24) — Data-type-support lane (fifth
+  run).  +68 assertions in `tests/test-types.mjs`: hyperbolic
+  Tagged transparency, percent Tagged tag-drop / List
+  broadcast, Rational unary stay-exact / APPROX collapse /
+  out-of-domain rejection.  No new ops; DATA_TYPES.md owns
+  type-coverage rows.  4114 → 4182 passing.  No `register()`
+  count change.  See `logs/session-120.md`.
 - **session 124** (2026-04-24) — `LNAME` + `GBASIS` ship as two new ops,
   plus a phantom-row retire.  `LNAME` (HP50 AUR §3-136) is a native AST
   walker — no Giac dependency — that visits `Var` and `Fn` nodes,

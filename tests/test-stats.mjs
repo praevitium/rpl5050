@@ -182,6 +182,136 @@ function makeXYMatrix() {
     'session064: ΣX on Matrix with String entry → Bad argument type');
 }
 
+/* ================================================================
+   session127: stats-op rejection-path coverage.
+
+   The session-064 block has thorough rejection coverage for ΣY (the
+   third op in the file) but the symmetric Y-family ops ΣY2 and
+   ΣXY share its rejection contract and were not pinned.  Likewise
+   ΣX2 has a positive pin only — its non-Vector/non-Matrix reject
+   path is still uncovered.  The MAXΣ / MINΣ ops have positive
+   coverage on Vector and Matrix shapes but their three rejection
+   branches (non-Vector/non-Matrix → Bad argument type; empty Vector
+   / empty Matrix → Bad argument value) are not pinned.
+
+   This block adds:
+     • ΣY2 1-col-Matrix → Invalid dimension (mirrors the existing
+       ΣY pin and the source-shared `M.rows[0].length < 2` guard).
+     • ΣXY on Real → Bad argument type
+     • ΣXY on 1-col Matrix → Invalid dimension
+     • ΣXY on empty Matrix → Bad argument value
+     • ΣX2 on Real → Bad argument type (the symmetric uncovered
+       sibling of ΣX's already-pinned Real rejection).
+     • MAXΣ on Real → Bad argument type (catches the bottom-of-fn
+       fallthrough).
+     • MAXΣ on empty Vector → Bad argument value
+     • MAXΣ on empty Matrix → Bad argument value
+     • MINΣ on a 3-column Matrix returns 3-element per-column min
+       (positive multi-col coverage; existing MINΣ tests only do
+        Vector or 2-col).
+     • SXY ASCII alias matches ΣXY (the only Y-family alias not yet
+       end-to-end pinned — the existing block pins SX, SY2, MAXS).
+   ================================================================ */
+
+/* ---- ΣY2 rejection: 1-col Matrix → Invalid dimension ---- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Real(1)], [Real(2)]]));
+  assertThrows(() => lookup('ΣY2').fn(s), /Invalid dimension/,
+    'session127: ΣY2 on single-column matrix → Invalid dimension');
+}
+
+/* ---- ΣXY rejection branches (non-Matrix / 1-col / empty) ---- */
+{
+  // Non-Matrix → Bad argument type (the `!isMatrix(M)` guard).
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('ΣXY').fn(s), /Bad argument type/,
+    'session127: ΣXY on Real → Bad argument type');
+}
+{
+  // 1-col Matrix → Invalid dimension (needs ≥2 cols).
+  const s = new Stack();
+  s.push(Matrix([[Real(1)], [Real(2)]]));
+  assertThrows(() => lookup('ΣXY').fn(s), /Invalid dimension/,
+    'session127: ΣXY on single-column matrix → Invalid dimension');
+}
+{
+  // Empty Matrix → Bad argument value (rows.length === 0 guard).
+  const s = new Stack();
+  s.push(Matrix([]));
+  assertThrows(() => lookup('ΣXY').fn(s), /Bad argument value/,
+    'session127: ΣXY on empty Matrix → Bad argument value');
+}
+
+/* ---- ΣX2 rejection: non-Vector/Matrix → Bad argument type ---- *
+ * `_statsVectorOrMatrixCol0` rejects non-Vector/non-Matrix inputs;
+ * the existing block pins ΣX's Real rejection but not ΣX2's, even
+ * though they share the same dispatch helper.  Pinning so a later
+ * refactor that special-cases ΣX2 doesn't silently bypass the type
+ * check. */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('ΣX2').fn(s), /Bad argument type/,
+    'session127: ΣX2 on Real → Bad argument type');
+}
+
+/* ---- MAXΣ rejection: non-Vector/non-Matrix → Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('MAXΣ').fn(s), /Bad argument type/,
+    'session127: MAXΣ on Real → Bad argument type (bottom-of-fn fallthrough)');
+}
+
+/* ---- MAXΣ rejection: empty Vector → Bad argument value ---- */
+{
+  const s = new Stack();
+  s.push(Vector([]));
+  assertThrows(() => lookup('MAXΣ').fn(s), /Bad argument value/,
+    'session127: MAXΣ on empty Vector → Bad argument value');
+}
+
+/* ---- MAXΣ rejection: empty Matrix → Bad argument value ---- */
+{
+  const s = new Stack();
+  s.push(Matrix([]));
+  assertThrows(() => lookup('MAXΣ').fn(s), /Bad argument value/,
+    'session127: MAXΣ on empty Matrix → Bad argument value');
+}
+
+/* ---- MINΣ on a 3-column Matrix returns 3-element per-column min ---- *
+ * Positive multi-col case for MINΣ — the existing block pins MINΣ on
+ * a 2-col matrix and on a Vector but never on >2 columns, leaving
+ * the column-iteration loop's general N coverage thin.  Pin a
+ * 3-column matrix where the per-column mins differ across all three
+ * columns so a regression that drops/duplicates a column would
+ * surface immediately. */
+{
+  const s = new Stack();
+  s.push(Matrix([
+    [Real(3), Real(8), Real(-1)],
+    [Real(1), Real(5), Real( 0)],
+    [Real(7), Real(2), Real( 4)],
+  ]));
+  lookup('MINΣ').fn(s);
+  const v = s.peek();
+  assert(isVector(v) && v.items.length === 3,
+    `session127: MINΣ on 3-col matrix returns 3-element Vector (got len=${v && v.items && v.items.length})`);
+  assert(v.items[0].value.eq(1) && v.items[1].value.eq(2) && v.items[2].value.eq(-1),
+    `session127: MINΣ 3-col per-column mins → [1, 2, -1] (got ${v.items.map(x => x.value).join(',')})`);
+}
+
+/* ---- SXY ASCII alias matches ΣXY ---- */
+{
+  const s = new Stack();
+  s.push(makeXYMatrix());
+  lookup('SXY').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(60),
+    'session127: SXY (ASCII) on XY matrix → 60 (alias of ΣXY)');
+}
+
 /* ---- MEAN / SDEV / VAR on XY matrix use column 0 (reinforce invariant) ---- */
 {
   // MEAN of [1 2 3 4] = 2.5.  Just exercise the code once more to
@@ -199,4 +329,224 @@ function makeXYMatrix() {
   const ok = (isReal(r) && r.value.eq(2.5))
           || (isVector(r) && r.items.length >= 1 && r.items[0].value.eq(2.5));
   assert(ok, 'session064: MEAN on XY matrix reports col-0 mean 2.5 (scalar or col-0 of Vector)');
+}
+
+/* ================================================================
+   session132: stats-op ASCII-alias positive-coverage closure +
+   MAXΣ multi-column positive case.
+
+   The file's top-of-file comment promises that SX, SX2, SY, SY2,
+   SXY, MAXS, MINS are ASCII aliases that route to the same
+   backend.  Today only **5 of 7** have an end-to-end positive pin
+   under their alias name (SX session-064; SY2 session-064; MAXS
+   session-064; SXY session-127).  **SX2, SY, and MINS have no
+   `lookup(<alias>)` exercise anywhere in the test tree** — verified
+   by `grep -rn "lookup\\('SX2\\|lookup\\('SY'\\|lookup\\('MINS\\)"
+   tests/` returning no matches at session-132 entry.  A future
+   refactor that accidentally drops one of those ASCII names from
+   the registration block would not be caught by any assertion;
+   pinning them here closes that gap.
+
+   The session-127 block also added a 3-column positive pin for
+   MINΣ but stopped short of the symmetric MAXΣ multi-column case;
+   the existing MAXΣ tests only exercise 2-col Matrix and a bare
+   Vector, leaving the column-iteration loop's general-N max
+   coverage thin.  Mirroring the session-127 MINΣ 3-col pin closes
+   that asymmetry.
+
+   Adds:
+     • SX2 on plain Vector → 30 (alias of ΣX2; the existing SX2
+       coverage in `lookup('ΣX2')` exercises both shapes, but the
+       alias dispatch from SX2 → ΣX2 was untested).
+     • SX2 on XY matrix uses col-0 → 30 (alias-routed shape).
+     • SY on XY matrix → 20 (alias of ΣY positive end-to-end).
+     • SY rejection: 1-col Matrix → Invalid dimension (the alias
+       inherits the same 2-col guard — pin it through the alias).
+     • MINS on XY matrix → Vector [1, 2] (alias of MINΣ end-to-end).
+     • MINS on bare Vector → 1-elem Vector of the min (the
+       symmetric counterpart to the session-064 MAXS Matrix pin
+       and the session-064 MAXΣ-on-Vector pin).
+     • MAXΣ on 3-col Matrix returns 3-element per-column Vector
+       (multi-column positive coverage; mirrors session-127 MINΣ).
+     • MAXΣ 3-col per-column maxes [3, 8, 4] (all-distinct columns
+       so a column-iteration drop or duplicate would surface).
+     • MAXΣ on a Vector of all-negative entries returns the
+       least-negative entry (Math.max corner: spread/reducer
+       behavior on uniformly negative inputs is easy to break).
+   ================================================================ */
+
+/* ---- SX2 ASCII alias — Vector + Matrix routing ---- */
+{
+  const s = new Stack();
+  s.push(Vector([Real(1), Real(2), Real(3), Real(4)]));
+  lookup('SX2').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(30),
+    'session132: SX2 (ASCII) on [1 2 3 4] → 30 (alias of ΣX2)');
+}
+{
+  const s = new Stack();
+  s.push(makeXYMatrix());
+  lookup('SX2').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(30),
+    'session132: SX2 (ASCII) on XY matrix col-0 → 30 (alias routes through col-0 reducer)');
+}
+
+/* ---- SY ASCII alias — positive + symmetric rejection ---- */
+{
+  const s = new Stack();
+  s.push(makeXYMatrix());
+  lookup('SY').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(20),
+    'session132: SY (ASCII) on XY matrix → 20 (alias of ΣY)');
+}
+{
+  // Single-column input — the alias must surface the same Invalid
+  // dimension as the canonical ΣY (the alias is a one-line
+  // re-dispatch, but pinning it guards against an accidental
+  // shape-bypass refactor that special-cases SY).
+  const s = new Stack();
+  s.push(Matrix([[Real(1)], [Real(2)]]));
+  assertThrows(() => lookup('SY').fn(s), /Invalid dimension/,
+    'session132: SY (ASCII) on single-column matrix → Invalid dimension (alias inherits ΣY 2-col guard)');
+}
+
+/* ---- MINS ASCII alias — Matrix + Vector routing ---- */
+{
+  const s = new Stack();
+  s.push(makeXYMatrix());
+  lookup('MINS').fn(s);
+  const v = s.peek();
+  assert(isVector(v) && v.items.length === 2
+         && v.items[0].value.eq(1) && v.items[1].value.eq(2),
+    'session132: MINS (ASCII) on XY matrix → Vector [1, 2] (alias of MINΣ)');
+}
+{
+  // MINS on bare Vector — symmetric to the session-064 MAXΣ-on-Vector
+  // 1-elem-Vector pin.  The single-element-Vector return shape is the
+  // same end-to-end contract.
+  const s = new Stack();
+  s.push(Vector([Real(7), Real(-2), Real(3)]));
+  lookup('MINS').fn(s);
+  const v = s.peek();
+  assert(isVector(v) && v.items.length === 1 && v.items[0].value.eq(-2),
+    'session132: MINS (ASCII) on plain Vector → 1-elem Vector of the min (-2)');
+}
+
+/* ---- MAXΣ multi-column positive case (session-127 symmetry close) ---- *
+ * Mirrors the session-127 MINΣ 3-col pin: a 3-column Matrix with
+ * per-column maxes that are all distinct, so a regression that
+ * drops/duplicates a column surfaces immediately. */
+{
+  const s = new Stack();
+  s.push(Matrix([
+    [Real(3), Real(8), Real(-1)],
+    [Real(1), Real(5), Real( 0)],
+    [Real(2), Real(7), Real( 4)],
+  ]));
+  lookup('MAXΣ').fn(s);
+  const v = s.peek();
+  assert(isVector(v) && v.items.length === 3,
+    `session132: MAXΣ on 3-col matrix returns 3-element Vector (got len=${v && v.items && v.items.length})`);
+  assert(v.items[0].value.eq(3) && v.items[1].value.eq(8) && v.items[2].value.eq(4),
+    `session132: MAXΣ 3-col per-column maxes → [3, 8, 4] (got ${v.items.map(x => x.value).join(',')})`);
+}
+
+/* ---- MAXΣ on all-negative Vector picks the least-negative entry ----
+ * Math.max(...negatives) is a common spread/reducer corner; an
+ * accidental Math.abs-then-max refactor would silently invert the
+ * answer.  Pinning the all-negative case so that path's correct
+ * behavior is locked in. */
+{
+  const s = new Stack();
+  s.push(Vector([Real(-9), Real(-3), Real(-5)]));
+  lookup('MAXΣ').fn(s);
+  const v = s.peek();
+  assert(isVector(v) && v.items.length === 1 && v.items[0].value.eq(-3),
+    'session132: MAXΣ on all-negative Vector → least-negative entry (-3)');
+}
+
+/* ================================================================
+   session137: stats-op ASCII-alias rejection-path coverage closure.
+
+   The session-127 block pinned ΣX2 / ΣXY / MAXΣ / MINΣ rejection
+   branches under their canonical Unicode names, and session 132
+   added the symmetric POSITIVE alias coverage for SX2 / SY / MINS
+   (mirrors of session-064's SX / SY2 / MAXS positive aliases).
+   But the alias branches' REJECTION paths are still untested for
+   SX / SY2 / SXY / MAXS / MINS — a refactor that special-cases
+   one of these aliases and accidentally bypasses the type-/dim-
+   guards in the canonical backend would silently slip through.
+
+   Pinning each alias's analogous reject branch (the same one the
+   canonical name has under session-064 / session-127):
+
+     • SX on Real → Bad argument type (mirror of session-064 ΣX).
+     • SY2 on 1-col Matrix → Invalid dimension (mirror of
+       session-127 ΣY2 + the existing session-064 ΣY pin).
+     • SXY on Real → Bad argument type (mirror of session-127
+       ΣXY-on-Real reject).
+     • MAXS on Real → Bad argument type (mirror of session-127
+       MAXΣ-on-Real reject).
+     • MAXS on empty Vector → Bad argument value (mirror of
+       session-127 MAXΣ-on-empty-Vector reject).
+     • MINS on Real → Bad argument type (mirror of session-127
+       MAXΣ-on-Real reject; MINS shares the same dispatcher).
+     • MINS on empty Matrix → Bad argument value (mirror of
+       session-127 MAXΣ-on-empty-Matrix reject).
+   ================================================================ */
+
+/* ---- SX (alias of ΣX) rejects Real ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('SX').fn(s), /Bad argument type/,
+    'session137: SX (ASCII) on Real → Bad argument type (alias inherits ΣX type guard)');
+}
+
+/* ---- SY2 (alias of ΣY2) rejects 1-col Matrix → Invalid dimension ---- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Real(1)], [Real(2)]]));
+  assertThrows(() => lookup('SY2').fn(s), /Invalid dimension/,
+    'session137: SY2 (ASCII) on single-column matrix → Invalid dimension (alias inherits ΣY2 2-col guard)');
+}
+
+/* ---- SXY (alias of ΣXY) rejects Real ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('SXY').fn(s), /Bad argument type/,
+    'session137: SXY (ASCII) on Real → Bad argument type (alias inherits ΣXY type guard)');
+}
+
+/* ---- MAXS (alias of MAXΣ) rejects Real ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('MAXS').fn(s), /Bad argument type/,
+    'session137: MAXS (ASCII) on Real → Bad argument type (alias inherits MAXΣ type guard)');
+}
+
+/* ---- MAXS on empty Vector → Bad argument value ---- */
+{
+  const s = new Stack();
+  s.push(Vector([]));
+  assertThrows(() => lookup('MAXS').fn(s), /Bad argument value/,
+    'session137: MAXS (ASCII) on empty Vector → Bad argument value (alias inherits MAXΣ empty guard)');
+}
+
+/* ---- MINS on Real → Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Real(5));
+  assertThrows(() => lookup('MINS').fn(s), /Bad argument type/,
+    'session137: MINS (ASCII) on Real → Bad argument type (alias inherits MINΣ type guard)');
+}
+
+/* ---- MINS on empty Matrix → Bad argument value ---- */
+{
+  const s = new Stack();
+  s.push(Matrix([]));
+  assertThrows(() => lookup('MINS').fn(s), /Bad argument value/,
+    'session137: MINS (ASCII) on empty Matrix → Bad argument value (alias inherits MINΣ empty guard)');
 }

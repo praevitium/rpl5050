@@ -339,3 +339,129 @@ function vals(s) {
   assert(s.depth === 2 && s.peek(1).value === 2n && s.peek(2).value === 1n,
     'session064: LASTSTACK is an alias for UNDO (restores pre-push snapshot)');
 }
+
+/* ================================================================
+   session137: stack-op edge-path coverage closure.
+
+   The session-064 block has thorough happy-path + first-arg
+   "Too few" coverage but stops short of three rejection branches
+   that share a `_toNonNegIntCount` / `_toPosIntIndex` /
+   `s.depth < n` guard, plus DUPDUP's positive case (the file
+   currently only pins DUPDUP's empty-stack rejection).  These
+   additions pin:
+
+     • DUPDUP positive — `7 → 7 7 7` (exercises the only
+       branch the existing block doesn't: that DUPDUP actually
+       pushes two copies of L1 rather than e.g. zero or one).
+     • ROLL N>depth → Too few arguments (after popping the
+       count, the `s.depth < n` guard fires).  Existing block
+       only pins the L1-too-few rejection where N is missing.
+     • ROLLD 0 → no-op after popping the count (mirror of the
+       existing 1 ROLL no-op pin; `ROLLD`'s `n <= 1 return`
+       branch was unverified).
+     • ROLLD N>depth → Too few arguments (symmetric to ROLL).
+     • UNPICK 0 → Bad argument value (the `_toPosIntIndex`
+       guard rejects zero — distinct from the
+       `_toNonNegIntCount` accept-zero contract used by ROLL/
+       ROLLD/DROPN/DUPN/NDUPN).
+     • UNPICK N>depth → Too few arguments (the `s.depth < n`
+       guard).  Existing block has no UNPICK rejection.
+     • DROPN N>depth → Too few arguments.  Existing block pins
+       0 DROPN no-op + -1 DROPN Bad argument value but not the
+       N>depth case.
+     • DUPN N>depth → Too few arguments.  Symmetric to DROPN's
+       missing branch.
+     • NDUPN -1 → Bad argument value.  Existing block pins
+       `x 0 NDUPN` no-op-with-count-restored but not the
+       negative-count rejection (the `_toNonNegIntCount`
+       guard).
+   ================================================================ */
+
+/* ---- DUPDUP positive: a → a a a ---- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  lookup('DUPDUP').fn(s);
+  const v = vals(s);
+  assert(v.length === 3 && v[0] === 7n && v[1] === 7n && v[2] === 7n,
+    'session137: DUPDUP on (7) → (7 7 7) — positive case (file previously only pinned DUPDUP empty rejection)');
+}
+
+/* ---- ROLL N>depth → Too few arguments ---- */
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Integer(5n));                      // N=5 > remaining depth=2
+  assertThrows(() => lookup('ROLL').fn(s), /Too few/,
+    'session137: 5 ROLL with only 2 items left → Too few arguments (s.depth<n guard)');
+}
+
+/* ---- ROLLD 0 — no-op after popping count ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(20n));
+  s.push(Integer(0n));                      // N = 0
+  lookup('ROLLD').fn(s);
+  const v = vals(s);
+  assert(v.length === 2 && v[0] === 10n && v[1] === 20n,
+    'session137: 0 ROLLD is a no-op after popping count (mirror of existing 1 ROLL pin)');
+}
+
+/* ---- ROLLD N>depth → Too few arguments ---- */
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Integer(5n));                      // N=5 > remaining depth=2
+  assertThrows(() => lookup('ROLLD').fn(s), /Too few/,
+    'session137: 5 ROLLD with only 2 items left → Too few arguments (symmetric to ROLL)');
+}
+
+/* ---- UNPICK 0 → Bad argument value (_toPosIntIndex rejects zero) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(99n));                     // value to write
+  s.push(Integer(0n));                      // N = 0 (illegal; UNPICK uses _toPosIntIndex)
+  assertThrows(() => lookup('UNPICK').fn(s), /Bad argument value/,
+    'session137: 0 UNPICK → Bad argument value (UNPICK uses _toPosIntIndex which requires N≥1)');
+}
+
+/* ---- UNPICK N>depth → Too few arguments ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(99n));                     // value
+  s.push(Integer(5n));                      // N = 5 > remaining depth=2
+  assertThrows(() => lookup('UNPICK').fn(s), /Too few/,
+    'session137: 5 UNPICK with only 2 items left → Too few arguments (s.depth<n guard)');
+}
+
+/* ---- DROPN N>depth → Too few arguments ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(5n));                      // N=5 > remaining depth=1
+  assertThrows(() => lookup('DROPN').fn(s), /Too few/,
+    'session137: 5 DROPN with only 1 item left → Too few arguments (s.depth<n guard)');
+}
+
+/* ---- DUPN N>depth → Too few arguments ---- */
+{
+  const s = new Stack();
+  s.push(Integer(10n));
+  s.push(Integer(5n));                      // N=5 > remaining depth=1
+  assertThrows(() => lookup('DUPN').fn(s), /Too few/,
+    'session137: 5 DUPN with only 1 item left → Too few arguments (s.depth<n guard)');
+}
+
+/* ---- NDUPN -1 → Bad argument value (_toNonNegIntCount rejects negative) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  s.push(Integer(-1n));                     // N=-1 (illegal)
+  assertThrows(() => lookup('NDUPN').fn(s), /Bad argument value/,
+    'session137: x -1 NDUPN → Bad argument value (_toNonNegIntCount rejects negative N)');
+}

@@ -4,10 +4,253 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 122 (2026-04-24).  Unit-tests lane run.
+**Last updated.** Session 142 (2026-04-25).  Unit-tests lane run.
 
-Sibling deltas absorbed since the session-117 snapshot (4089 → 4228,
-**+139**):
+Sibling deltas absorbed since the session-137 snapshot (4586 → 4711,
+**+125** over four sibling sessions):
+- Session 138 (code-review) — doc-only run; **0** assertion deltas
+  (REVIEW.md prelude / baseline-block / per-finding age bumps;
+  no source or test edits).
+- Session 139 (command-support) shipped **+13** assertions in
+  `test-algebra.mjs` (972 → 985): LIN (5) + LIMIT/lim alias (8)
+  via Giac.
+- Session 140 (data-type-support) shipped **+36** assertions in
+  `test-types.mjs` (703 → 739): three wrapper-VM Tagged-of-V/M
+  composition clusters (hyperbolic 9 + inverse-trig/EXPM 9 +
+  ARG bare V/M and ARG/CONJ/RE/IM Tagged-of-V/M with bespoke
+  V/M dispatch INSIDE the 2-deep wrapper, 18).
+- Session 141 (rpl-programming) shipped **+76** assertions in
+  `test-control-flow.mjs` (599 → 675); session log not yet
+  written but the lock body is gracefully released and the
+  control-flow file is fully green.
+
+Session 142 unit-tests deltas:
+- **+23 assertions in `test-types.mjs`** (739 → 762) across three
+  substantive clusters that surfaced as next-session candidates
+  in session 140's log:
+  - **Cluster 1 — Inverse-trig + inverse-hyp `_exactUnaryLift`
+    Integer-stay-exact path (12 assertions).**  ASIN/ACOS/ATAN
+    bare-scalar Integer-stay-exact: ASIN(Integer(0)) → Integer(0)
+    RAD; ACOS(Integer(1)) → Integer(0) RAD; ATAN(Integer(0)) →
+    Integer(0) RAD; ATAN(Integer(1)) RAD → Symbolic ATAN(1) (NOT
+    integer-clean — stay-symbolic via _exactUnaryLift); plus the
+    DEG-mode integer-clean folds (ASIN(Integer(1)) DEG → 90;
+    ACOS(Integer(0)) DEG → 90; ATAN(Integer(1)) DEG → 45) and
+    the Rational arm (ASIN(Rational(1,2)) DEG → 30 + the negative
+    ASIN(Rational(1,3)) DEG → Symbolic).  Inverse-hyp trio:
+    ASINH(Integer(0)) / ACOSH(Integer(1)) / ATANH(Integer(0)) all
+    → Integer(0).  Session 140 Cluster 1 only pinned the SINH
+    Tagged-V variant — bare-scalar Integer-stay-exact for the
+    inverse-trig + inverse-hyp families was unpinned.
+  - **Cluster 2 — CONJ / RE / IM / ARG on Tagged-of-Symbolic
+    (5 assertions).**  4-op surface × Tagged-of-Symbolic
+    composition: outer Tagged preserved, inner Symbolic gets
+    wrapped in AstFn('CONJ' | 'RE' | 'IM' | 'ARG', [Name(X)])
+    via the `_isSymOperand` branch in the bespoke handler.
+    The matrix listed `T ✓` and `Sy ✓` independently per op
+    since session 100 / 110 but the COMPOSITION was unpinned.
+    Distinct from session 140 Cluster 3's Tagged-of-V/M pins —
+    Tagged-of-Sy exercises the `_isSymOperand` lift branch
+    inside the bespoke handler rather than the V/M kind branches.
+  - **Cluster 3 — Inner-Tagged-inside-Vector / Matrix rejection
+    on bespoke V/M handlers ARG / CONJ / RE / IM (6 assertions).**
+    All four ops reject `Vector(:x:Complex(3,4))` with 'Bad
+    argument type' (the per-element `_argScalar` /
+    `_conjScalar` / `_reScalar` / `_imScalar` handlers are not
+    Tagged-aware), plus the M-axis variant on ARG and CONJ.
+    Mirror of session 140 Cluster 1's
+    `Vec[:x:Real(0), :y:Real(0)] SINH` rejection but on the
+    bespoke V/M-handler family (different wrapper shape:
+    2-deep with bespoke V/M dispatch inside vs. session 140's
+    3-deep `_withVMUnary` chain).
+
+Sibling deltas absorbed since the session-132 snapshot (4491 → 4558,
+**+67** over four sibling sessions):
+- Session 133 (code-review) — doc-only run; **0** assertion deltas
+  (re-aged X-003/O-007/O-009; promoted C-007/O-010 to fully
+  resolved; promoted T-002 to resolved by session 132 unit-tests).
+- Session 134 (command-support) — doc-only back-fill closing the
+  C-008 COMMANDS.md row updates (HALT/CONT/KILL Notes appended
+  with session-131 DOLIST/DOSUBS/STREAM addendum; Counts heading
+  bumped 458 → 463) plus three more phantom-row retires
+  (`GXROOT` / `LQD` / `POLYEVAL`); **0** assertion deltas.
+- Session 135 (data-type-support) shipped **+31** assertions in
+  `test-types.mjs` (672 → 703): 8 Q × V/M arithmetic broadcast
+  pins + 11 Tagged-of-V/M binary composition pins + 12 Tagged
+  tag-identity & BinInt cross-base equality pins.
+- Session 136 (rpl-programming) shipped **+36** assertions in
+  `test-control-flow.mjs` (563 → 599) for the
+  WHILE/REPEAT-DO/UNTIL-START-FOR auto-close-on-missing-END/NEXT
+  pattern (mirrors the earlier IF / IFERR / CASE auto-close work
+  — now every structural opener auto-closes at end-of-program).
+
+Session 137 unit-tests deltas:
+- **+9 stack-op edge-path assertions** in `test-stack-ops.mjs`
+  (32 → 41): DUPDUP positive `7 → 7 7 7` (existing block only
+  pinned the DUPDUP empty-stack rejection); ROLL N>depth → Too
+  few; ROLLD 0 no-op + ROLLD N>depth → Too few; UNPICK 0 → Bad
+  argument value (the `_toPosIntIndex` reject-zero contract,
+  distinct from the `_toNonNegIntCount` accept-zero used by
+  ROLL/ROLLD/DROPN/DUPN/NDUPN); UNPICK N>depth → Too few; DROPN
+  N>depth → Too few; DUPN N>depth → Too few; NDUPN -1 → Bad
+  argument value.  Every new pin closes a branch the session-064
+  block specifically left uncovered (the block has thorough L1-
+  too-few coverage but no `s.depth<n`-after-pop coverage and no
+  per-op negative-N coverage outside DROPN/PICK).
+- **+12 Unit-op symmetric / composite / mixed-dim assertions**
+  in `test-units.mjs` (39 → 51, multi-assert per site): `5_m -
+  2_m → 3_m` + `1_km - 500_m → 0.5_km` (subtraction was never
+  exercised — closes the `+ - * /` quartet); `3 * 2_m → 6_m`
+  (left-Real reorder symmetric to the existing `2_m * 3` pin);
+  `6_m / 2 → 3_m` (Unit/Real scalar divisor — existing pins
+  cover Unit*Real and same-dim Unit/Unit but not this branch);
+  `6_m / 2_s → 3_m/s` (mixed-dim composite uexpr — exercises
+  `multiplyUexpr(_, inverseUexpr(_))`; existing pin only covered
+  the dimensionless cancellation case); `INV 2_m/s → 0.5_s/m`
+  (composite uexpr inversion; existing INV pin is single-atom
+  only); `SQ 3_m/s → 9_m^2/s^2` (composite SQ — existing pin
+  single-atom only); `NEG 1_N → -1_N` (composite uexpr atom);
+  `6_m / 0 → Infinite result` (zero-divisor check fires on the
+  Unit/Real branch too — distinct error path from "Inconsistent
+  units").
+- **+7 stats-op ASCII-alias rejection-path assertions** in
+  `test-stats.mjs` (40 → 47): SX on Real → Bad arg type;
+  SY2 on 1-col Matrix → Invalid dimension; SXY on Real → Bad
+  arg type; MAXS on Real → Bad arg type + MAXS on empty Vector
+  → Bad arg value; MINS on Real → Bad arg type + MINS on empty
+  Matrix → Bad arg value.  Symmetric closure pass: session 132
+  closed the alias POSITIVE coverage (SX2 / SY / MINS); this
+  session closes the alias REJECTION coverage so a refactor
+  that special-cases an alias and bypasses the canonical
+  guard-set is caught.
+
+Sibling deltas absorbed since the session-127 snapshot (4374 → 4474,
+**+100** over four sibling sessions):
+- Session 128 (code-review) — doc-only run; **0** assertion deltas
+  (filed T-002 against this lane re: TESTS.md session-121 stale-prune
+  drift, closed below).
+- Session 129 (command-support) — doc-only back-fill closing the
+  C-007 PROMPT / IFT / IFTE row updates in `docs/COMMANDS.md`;
+  **0** assertion deltas.
+- Session 130 (data-type-support) shipped **+35** assertions in
+  `test-types.mjs` (637 → 672): 12 wrapper-VM Tagged-of-V/M
+  composition pins + 12 BinInt × Rational compare / equality /
+  SAME-strict pins + 11 Tagged-of-List binary composition pins.
+- Session 131 (rpl-programming) shipped **+65** assertions in
+  `test-control-flow.mjs` (498 → 563) for HALT/PROMPT lift through
+  DOLIST / DOSUBS / STREAM bodies.
+
+Session 132 unit-tests deltas:
+- **T-002 closed (REVIEW.md doc finding).**  The four `docs/TESTS.md`
+  sites that claimed "session 121 stale-pruned without writing
+  `logs/session-121.md`" have been re-phrased to record the actual
+  evidence.  `logs/session-121.md` does in fact exist (7818 bytes,
+  mtime 2026-04-25 01:04:30 — two seconds before the lock body's
+  `releasedAt` of 01:04:43, the natural "write log, then unlink
+  lock" ordering).  The misclaim originated from a session-122
+  `ls logs/` snapshot taken before the session-121 commit landed,
+  or against a stale view.  Pure-doc edit, no behavior risk.
+- **+9 stats-op ASCII-alias positive-coverage closure +
+  multi-column MAXΣ assertions** in `test-stats.mjs` (31 → 40):
+  - SX2 / SY / MINS positive end-to-end pins.  The file's top-of-
+    file comment promises that SX, SX2, SY, SY2, SXY, MAXS, MINS
+    are ASCII aliases that route to the same backend, but only 5
+    of 7 had a `lookup(<alias>)` exercise prior to this run —
+    `grep -rn "lookup\\('SX2\\|lookup\\('SY'\\|lookup\\('MINS\\)"
+    tests/` returned no matches at session-132 entry.  6 new pins
+    close the gap: SX2 on Vector + on XY-matrix col-0; SY on XY
+    matrix + 1-col-rejection (Invalid dimension via the alias);
+    MINS on XY matrix → 2-elem Vector + on bare Vector → 1-elem
+    Vector.
+  - MAXΣ multi-column positive coverage mirroring session 127's
+    MINΣ 3-col pin: a 3-col Matrix with per-column maxes [3, 8, 4]
+    (all distinct so a column-iteration drop or duplicate would
+    surface) + a corner-case all-negative Vector returning the
+    least-negative entry (-3).  Closes the symmetry the
+    session-127 MINΣ block left open.
+- **+8 Z × Q reverse-direction comparison assertions** in
+  `test-comparisons.mjs` (103 → 111), extending the session-107
+  Rational cluster.  The session-107 Q × Z block pinned
+  Q-on-level-2 / Z-on-level-1 for == and one ordering pin per
+  direction; reverse direction (Z-on-level-2) for == / <> / SAME,
+  the missing ≤ at the cross-type equal boundary, and the Z × Q
+  sign-crossing < direction were not pinned.  Adds: Z == Q
+  (equal + unequal), Z <> Q + Q <> Z, Z SAME Q (equal + unequal),
+  Integer(-1) < Rational(1/2) sign-crossing, Rational(2/1) ≤
+  Integer(2) at the equal-value cross-type boundary.
+
+Prior sibling deltas absorbed in the session-127 snapshot
+(4232 → 4302, **+70**):
+- Session 124 (command-support) shipped **+25** assertions in
+  `test-algebra.mjs` (938 → 963) for the LNAME + GBASIS ops
+  (15 LNAME + 8 GBASIS + 2 absorbed during the phantom-row retire).
+- Session 125 (data-type-support) shipped **+43** assertions in
+  `test-types.mjs` (594 → 637) for the arity-2 numeric-family List
+  distribution + Tagged-of-List composition + Q→R degradation on
+  MIN/MAX/MOD pins.
+- Session 126 (rpl-programming) **closed concurrently** during this
+  run — shipped **+46** to `tests/test-control-flow.mjs` (452 → 498)
+  for HALT/PROMPT lift-through-SEQ+MAP.  Mid-run baseline showed 491
+  passing + 4 failing on session-126's pre-pinned in-progress
+  assertions (CONT-clears-banner-after-SEQ-PROMPT,
+  SEQ-completes-after-CONT, sync-fallback SEQ HALT-reject,
+  sync-fallback MAP HALT-reject); session 126's implementation
+  closed the gap before session-127 exit and the file is now fully
+  green.  This lane explicitly did not touch the file at any point —
+  session 126 held the lock on `tests/test-control-flow.mjs`,
+  `www/src/rpl/ops.js`, `docs/RPL.md` throughout.
+
+Session 127 unit-tests deltas:
+- **+9 LNAME edge-case assertions** in `test-algebra.mjs`,
+  extending the session-124 cluster:
+  - 3 cross-type rejection guards (LNAME on String, Name, Complex
+    → `Bad argument type`) — confirms the `isSymbolic(v)` gate
+    rejects every non-Symbolic input uniformly.
+  - 1 return-shape pin: LNAME emits Names with `quoted=false`,
+    so STO/RCL/EVAL round-trip through them as the AUR §3-136
+    contract implies.
+  - 1 constant-via-built-ins-and-binop pin: `5 + SIN(2)` → empty
+    Vector — exercises the binary-op descent path under a built-in
+    fn, complementing session 124's two-fn-no-binop case.
+  - 3 mixed-built-in-wrapping-user-fn pins: `COS(MYFUNC(X))` →
+    `[MYFUNC, X]`, length-DESC ordering (MYFUNC,X), with
+    cross-check that COS itself is dropped — pins the contract
+    that visit() recurses into a built-in's args even though it
+    drops the built-in's name.
+- **+8 Q × C / Q × R cross-type comparison assertions** in
+  `test-comparisons.mjs`, extending the session-107 Rational
+  cluster:
+  - `Q < C` → `Bad argument type` (Complex partial-order rejection
+    holds for the Q corner of the lattice too).
+  - 4 Q × C ==/<>/SAME pins: non-zero im → 0/1/0; im=0 value-equal
+    → 1.  Pins the Q widening into ℂ for both equal and unequal
+    cases.
+  - `Q(1/3) == R(0.333)` → 0 — pins the *unequal* branch of Q
+    widening to its full Decimal precision (companion to session
+    107's Q(1/2) == R(0.5) equal-value pin; catches a future
+    exact-rational-comparator regression).
+  - 2 Q × R ordering pins: `Q(1/4) < R(0.3)` and `R(0.3) > Q(1/4)`
+    — direction not previously pinned.
+- **+11 stats-op rejection-path assertions** in `test-stats.mjs`,
+  catching up on the symmetric Y-family + MAXΣ/MINΣ rejection
+  branches the session-064 block omitted:
+  - `ΣY2` 1-col-Matrix → Invalid dimension (mirror of the existing
+    ΣY pin).
+  - `ΣXY` × 3 reject branches: Real → Bad argument type, 1-col →
+    Invalid dimension, empty → Bad argument value.
+  - `ΣX2` Real → Bad argument type (symmetric uncovered sibling
+    of ΣX's already-pinned reject).
+  - `MAXΣ` × 3 reject branches: Real, empty Vector, empty Matrix.
+  - `MINΣ` 3-col Matrix positive case: returns 3-element per-column
+    min Vector with all three columns distinct (catches a
+    column-iteration drop/duplicate regression that 2-col coverage
+    couldn't surface).
+  - `SXY` ASCII-alias end-to-end pin (the only Y-family alias that
+    wasn't already exercised positive end-to-end).
+
+Prior session-122 snapshot deltas (retained for context — the
+session-122 close was 4232 / 0 in `test-all.mjs`, 38 / 0 in
+`test-persist.mjs`, 22 / 0 in `sanity.mjs`):
 - Session 119 (command-support) shipped **+25** assertions in
   `test-algebra.mjs` (913 → 938) for the EGV / RSD / GREDUCE
   ops + `_astToRplValue` neg-num lift.
@@ -15,15 +258,22 @@ Sibling deltas absorbed since the session-117 snapshot (4089 → 4228,
   `test-types.mjs` (526 → 594) for hyperbolic Tagged transparency
   + percent Tagged tag-drop + Rational unary stay-exact pins.
 - Session 121 (rpl-programming) shipped **+46** PROMPT / KILL
-  assertions in `test-control-flow.mjs` (402 → 448) BUT the lock
-  was stale-pruned without writing `logs/session-121.md` — work
-  landed concurrently with this run's session-122 lock acquisition
-  (file mtime is well after the lock-overlap window).  This is the
-  O-008 process-failure pattern (lock-release-via-stale-prune as
-  missing-log signal); re-file under the code-review lane.  The
-  session-121 PROMPT cluster does not collide with the session-122
-  edits — different line ranges (s121 at `:3656-3929`, s122 at
-  `:432`/`:660`/`:825`/`:2098`).
+  assertions in `test-control-flow.mjs` (402 → 448).  The
+  lock body has the `heartbeatAt === startedAt` signature that
+  *looks* stale-prune-shaped at the lock layer, but the
+  corresponding `logs/session-121.md` was in fact written within
+  the lock window (7818 bytes, mtime 2026-04-25 01:04:30 — two
+  seconds before the lock body's `releasedAt` of 01:04:43, the
+  natural "write log, then unlink lock" ordering).  The earlier
+  session-122 narrative claiming "stale-pruned without writing
+  `logs/session-121.md`" was based on a `ls logs/` snapshot taken
+  before the session-121 commit landed (or against a stale view);
+  the missing-log signal does not apply.  Future improvement
+  noted in REVIEW.md T-002: add a `releaseReason` field to the
+  lock body so graceful-release vs. prune is unambiguous for
+  audits.  The session-121 PROMPT cluster does not collide with
+  the session-122 edits — different line ranges (s121 at
+  `:3656-3929`, s122 at `:432`/`:660`/`:825`/`:2098`).
 
 Session 122 unit-tests deltas:
 - **+4 new regression guards** in `test-control-flow.mjs`,
@@ -104,31 +354,51 @@ Session 117 unit-tests deltas:
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
 
-## Coverage snapshot (session 122)
+## Coverage snapshot (session 142)
 
-Baseline at session start: `node tests/test-all.mjs` = **4182 / 0**
-(session-120 close: +68 in `test-types.mjs` for hyperbolic Tagged +
-percent Tagged + Rational unary stay-exact).  `test-persist.mjs`
-38 / 0.  `sanity.mjs` 22 / 0.  No active locks at entry — sessions
-119, 120 cleanly released; session 121's lock had been stale-pruned
-with no log written.
+Baseline at session start: `node tests/test-all.mjs` = **4711
+passing / 0 failing** (session-141 close, fully green).  Sibling
+deltas since session-137 close (4586): 0 session-138 (code-review
+doc-only), +13 session-139 (test-algebra LIN + LIMIT/lim), +36
+session-140 (test-types hyperbolic Tagged-of-V/M + inverse-trig/
+EXPM Tagged-of-V/M + ARG bare V/M and ARG/CONJ/RE/IM Tagged-of-V/M),
++76 session-141 (test-control-flow rpl-programming run; session
+log not yet written but lock gracefully released and file fully
+green).  `test-persist.mjs` 38 / 0.  `sanity.mjs` 22 / 0.
 
-Final: **4232 passing / 0 failing**.  Composition: +4 session-122
-regression guards in `test-control-flow.mjs` (the queue-#2
-`assertThrows` migration); +46 session-121 PROMPT/KILL assertions
-landed concurrently in the same file (s121 stale-pruned its lock,
-work was already on disk under `session121:` labels at session-122
-verification).  Net delta to the file: 402 → 452.
+Final: **4734 passing / 0 failing** — fully green.  The +23
+session-142 deltas land in `test-types.mjs` (739 → 762) across
+three substantive clusters that surfaced as next-session
+candidates in session 140's log:
+- **Cluster 1 (12)** — Inverse-trig + inverse-hyp `_exactUnaryLift`
+  Integer-stay-exact: ASIN/ACOS/ATAN bare-scalar Integer-stay-exact
+  in RAD (3) + ATAN(Integer(1)) RAD stay-symbolic (1) + DEG-mode
+  integer-clean folds (3: ASIN(1)→90, ACOS(0)→90, ATAN(1)→45) +
+  Rational arm (2: ASIN(Q(1,2)) DEG → 30, ASIN(Q(1,3)) DEG →
+  Symbolic) + inverse-hyp ASINH/ACOSH/ATANH integer-clean trio (3).
+- **Cluster 2 (5)** — CONJ / RE / IM / ARG on Tagged-of-Symbolic
+  composition through the 2-deep `_withTaggedUnary(_withListUnary
+  (handler))` wrapper: outer Tagged preserved, inner Sy lifted via
+  `Symbolic(AstFn(<op>, [Name(X)]))`.  Closes the Sy axis on the
+  Tagged-of-X composition surface for the bespoke V/M-handler
+  family.
+- **Cluster 3 (6)** — Inner-Tagged-inside-Vector / Matrix rejection
+  on bespoke V/M handlers ARG/CONJ/RE/IM (4 V-axis + 2 M-axis =
+  6 pins).  Mirror of session 140 Cluster 1's
+  `Vec[:x:Real(0), :y:Real(0)] SINH` rejection but on the bespoke
+  V/M-handler family (different wrapper shape: 2-deep with bespoke
+  V/M dispatch inside vs. session 140's 3-deep `_withVMUnary` chain).
+
 `test-persist.mjs` 38 / 0 (unchanged).  `sanity.mjs` 22 / 0
 (unchanged).
 
 | File                        | OK   | FAIL | Notes                                    |
 |-----------------------------|------|------|------------------------------------------|
-| test-algebra.mjs            |  938 | 0    | +25 session-119 (command-support: EGV / RSD / GREDUCE + neg-num lift). |
+| test-algebra.mjs            |  985 | 0    | +25 session-119 (EGV / RSD / GREDUCE), +25 session-124 (LNAME / GBASIS), +9 session-127 (LNAME edge cluster), **+13 session-139** (LIN 5 + LIMIT/lim 8). |
 | test-arrow-aliases.mjs      |   19 | 0    |                                          |
 | test-binary-int.mjs         |  122 | 0    | session-112 migration snapshot retained. |
-| test-comparisons.mjs        |   95 | 0    | +15 session-107 Rational coverage (retained from prior snapshot). |
-| test-control-flow.mjs       |  **452** | 0    | +34 session-116; **+46 session-121** PROMPT/KILL cluster (lock stale-pruned, no log written — see top-of-file note); **session-122: +4 regression guards** on the queue-item-#2 `let threw` sites — `:432` START 1/0 message-shape pin (`/Infinite result/`), `:660` IFERR-without-THEN stack-rollback (`s.depth === 1 && isProgram(s.peek())`), `:825` FOR/STEP-of-0 exact-message pin (`=== 'STEP of 0'`), `:2098` no-END IFERR stack-rollback companion.  5th site `:919` (negated `assert(!threw, …)` DOERR-0 no-op) deliberately left — same precedent as test-matrix RDZ-0. |
+| test-comparisons.mjs        |  111 | 0    | +15 session-107 Rational, +8 session-127 Q × C / Q × R, +8 session-132 Z × Q reverse-direction cluster. |
+| test-control-flow.mjs       |  **675** | 0    | +34 s116, +46 s121 PROMPT/KILL, +4 s122, +37 s126 (HALT/PROMPT lift through SEQ+MAP), +65 s131 (DOLIST/DOSUBS/STREAM bodies), +36 session-136 (loop auto-close), **+76 session-141** (rpl-programming; session log not yet written but file fully green).  Session 142 did not touch this file. |
 | test-entry.mjs              |   90 | 0    | session-112 migration snapshot retained. |
 | test-eval.mjs               |   62 | 0    | session-112 migration snapshot retained. |
 | test-helpers.mjs            |   43 | 0    |                                          |
@@ -136,15 +406,46 @@ verification).  Net delta to the file: 402 → 452.
 | test-matrix.mjs             |  347 | 0    | Remaining 1 site is the negated `assert(!threw, …)` RDZ-0 acceptance check, deliberately untouched. |
 | test-numerics.mjs           |  687 | 0    | +27 session-109 + session-112 LOG-CMPLX-OFF split (retained). |
 | test-reflection.mjs         |  196 | 0    |                                          |
-| test-stack-ops.mjs          |   32 | 0    |                                          |
-| test-stats.mjs              |   20 | 0    | session-112 migration snapshot retained. |
-| test-types.mjs              |  594 | 0    | +50 session-115 + 2 session-117; **+68 session-120** (hyperbolic Tagged transparency + percent Tagged tag-drop + Rational unary stay-exact).  526 → 594. |
+| test-stack-ops.mjs          |   41 | 0    | +9 session-137 edge-path closure (retained). |
+| test-stats.mjs              |   47 | 0    | +11 s127 rejection-path catchup, +9 s132 ASCII-alias positive closure + MAXΣ multi-column positive, +7 session-137 ASCII-alias REJECTION closure (retained). |
+| test-types.mjs              |  **762** | 0    | +50 s115, +2 s117, +68 s120, +43 s125, +35 s130, +31 s135, +36 session-140 (hyperbolic Tagged-of-V/M 9 + inverse-trig/EXPM Tagged-of-V/M 9 + ARG bare V/M and ARG/CONJ/RE/IM Tagged-of-V/M 18), **+23 session-142** (inverse-trig/inverse-hyp Integer-stay-exact 12 + Tagged-of-Sy CONJ/RE/IM/ARG 5 + inner-Tagged-inside-V/M rejection on bespoke ARG/CONJ/RE/IM 6). |
 | test-ui.mjs                 |   77 | 0    | session-112 migration snapshot retained. |
-| test-units.mjs              |   39 | 0    |                                          |
-| test-variables.mjs          |  248 | 0    | session-112 migration snapshot retained. |
-| **test-all (aggregate)**    | **4232** | **0** | Session 122 close (includes session-121 PROMPT/KILL cluster landed concurrently).  |
+| test-units.mjs              |   51 | 0    | +12 session-137 symmetric / composite / mixed-dim closure (retained). |
+| test-variables.mjs          |  248 | 0    | One remaining `let threw` at :446 is the varPurge-doesn't-throw scaffold (followed by a hard PURGE assertThrows); negated form, deliberately left. |
+| **test-all (aggregate)**    | **4734** | **0** | Session 142 close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
 | test-persist.mjs (separate) |   38 | 0    | session-117 baseline retained — no persist-schema touches this run. |
 | sanity.mjs (standalone)     |   22 | 0    | <5 ms smoke suite.                       |
+
+### Prior snapshot — Session 137 (retained for context)
+
+Baseline at session-137 start: 4558 / 0 (session-136 close).
+Final: 4586 / 0; +28 session-137 deltas (+9 test-stack-ops
+edge-path closure, +12 test-units symmetric / composite / mixed-
+dim closure, +7 test-stats ASCII-alias REJECTION closure).
+`test-persist.mjs` 38 / 0.  `sanity.mjs` 22 / 0.
+
+### Prior snapshot — Session 132 (retained for context)
+
+Baseline at session-132 start: 4474 / 0 (session-131 close).
+Final: 4491 / 0; +17 session-132 deltas (+9 test-stats ASCII-alias
+positives SX2/SY/MINS + MAXΣ multi-col + all-negative Vector,
++8 test-comparisons Z × Q reverse-direction cluster).  T-002
+(REVIEW.md doc finding) closed: four `docs/TESTS.md` sites
+re-phrased to record the actual evidence that
+`logs/session-121.md` was written within the lock window.
+`test-persist.mjs` 38 / 0.  `sanity.mjs` 22 / 0.
+
+### Prior snapshot — Session 127 (retained for context)
+
+Baseline at session-127 start: 4302 / 1 (the single fail —
+`session126: SEQ body iter 1 stack snapshot survives the halt`
+— was session 126's in-progress test-control-flow.mjs work,
+held under their lock).  Final at session-127 close: 4374 / 0,
+fully green; +28 session-127 deltas (+9 test-algebra LNAME
+edge, +8 test-comparisons Q × C / Q × R, +11 test-stats Y-family
++ MAXΣ/MINΣ rejection-path catchup) plus the +44 from session
+126 closing concurrently inside the run.  test-persist 38 / 0.
+sanity 22 / 0.
 
 ### Prior snapshot — Session 102 (retained for context)
 
@@ -457,6 +758,20 @@ when the next flake appears.
 
 ## Next-session queue (priority order)
 
+0. **~~T-002 close — TESTS.md session-121 stale-prune misclaim
+   (4 sites).~~**  **Resolved session 132.**  Re-phrased the four
+   sites at `:87-103`, `:214` (no change — table line attribution
+   only), `:653-666`, and the inline `:653` paragraph to record
+   the actual evidence: `logs/session-121.md` exists (mtime
+   2026-04-25 01:04:30, two seconds before the lock body's
+   `releasedAt` of 01:04:43, the natural "write log, then unlink
+   lock" ordering).  The misclaim originated from a session-122
+   `ls logs/` snapshot taken before the session-121 commit landed.
+   Future improvement noted: a `releaseReason` field in the lock
+   body would make graceful-release vs. prune unambiguous for
+   audits — that's a `utils/@locks/lock.mjs` enhancement filed
+   for a future run.
+
 1. **~~Close the HALT/CONT rpl-programming filing.~~** — assumed
    closed by session 111 / 116 rpl-programming runs; no flake-scan
    reproduction in any session since s084.  Drop this item if it
@@ -501,19 +816,186 @@ when the next flake appears.
    enumerate ✓ cells → grep for op name in tests → flag any ✓ cell
    whose op has no adjacent positive assertion.
 
-8. **assertThrows migration — MOSTLY DONE.**  All remaining
-   `let threw =` sites in the `test-all.mjs` aggregate are either:
-   deliberately-skipped (label interpolation, negated form, orphan
-   dead code — ~5 sites in `test-control-flow.mjs` per queue item
-   #2), or the negated `assert(!threw, …)` RDZ-0 acceptance in
-   `test-matrix.mjs`.  Queue items #3, #4 from session 112 are
-   closed by session 117.
+8. **assertThrows migration — DONE.**  Confirmed at session-127
+   exit: `grep -n 'let threw' tests/*.mjs` returns only 4 sites, all
+   of which are negated-form acceptance scaffolds (the
+   `assert(!threw, …)` "this op should NOT throw" idiom):
+   - `test-stack-ops.mjs:322` — CLEAR-on-empty-stack no-op.
+   - `test-control-flow.mjs:919` — DOERR-0 no-op (per session 122).
+   - `test-persist.mjs:32` — local helper scaffold (the file's
+     extra-comment block at :136 documents the migration).
+   - `test-variables.mjs:446` — varPurge-doesn't-throw scaffold,
+     followed immediately by a hard PURGE assertThrows.
+   Migrating any of these to `assertThrows` would invert the
+   meaning.  No further action; close the queue item.
+
+9. **Sibling-coordination — session 126 in-flight at session-127
+   exit.**  Session 126 (rpl-programming) acquired its lock before
+   session 127 started and was still active at the close.  The 4
+   `session126:` failing assertions in `tests/test-control-flow.mjs`
+   are PROMPT/HALT lift-through-SEQ+MAP work — pinned ahead of the
+   implementation.  Session 127 deliberately did not touch that
+   file or `www/src/rpl/ops.js` (both in session 126's lock scope).
+   When session 126 closes the suite back to fully-green, the
+   "+37 passing assertions under `session126:` labels" delta should
+   be absorbed in the next unit-tests snapshot together with any
+   final fail→pass transitions.  No unit-tests-lane action required.
 
 ---
 
 ## Session-by-session log index
 
-- Session 122 (2026-04-24) — this run.  Unit-tests lane.  Closed
+- Session 142 (2026-04-25) — this run.  Unit-tests lane.  **+23
+  assertions across 3 substantive clusters** (above the 3-item
+  floor) — all in `test-types.mjs` (739 → 762):
+  - **Cluster 1 (12)** — Inverse-trig + inverse-hyp family
+    `_exactUnaryLift` Integer-stay-exact path on bare scalars.
+    ASIN/ACOS/ATAN bare-scalar Integer-stay-exact (RAD: 3 +
+    DEG-mode integer-clean folds: 3 + RAD ATAN(1) stay-symbolic:
+    1 + DEG ASIN(Q(1,2)) → 30 / DEG ASIN(Q(1,3)) → Symbolic Q-arm:
+    2) and inverse-hyp ASINH/ACOSH/ATANH integer-clean trio (3).
+    Surfaced as a session-140-end candidate; closes the
+    inverse-trig + inverse-hyp axis on `_exactUnaryLift` that
+    session 140 Cluster 1 only touched on the SINH Tagged-V
+    variant.
+  - **Cluster 2 (5)** — CONJ / RE / IM / ARG on Tagged-of-Symbolic
+    composition.  Pins the 4-op surface × Tagged-of-Sy through
+    the 2-deep `_withTaggedUnary(_withListUnary(handler))` wrapper
+    on the bespoke V/M-handler family (CONJ outer-Tagged + Sy
+    kind-preservation + inner expr shape pin = 2 asserts; RE/IM/
+    ARG = 1 each).  Closes the Sy axis on the Tagged-of-X
+    composition surface — distinct from session 140 Cluster 3's
+    Tagged-of-V/M pins because Tagged-of-Sy exercises the
+    `_isSymOperand` lift branch inside the bespoke handler rather
+    than the V/M kind branches.
+  - **Cluster 3 (6)** — Inner-Tagged-inside-Vector / Matrix
+    rejection on bespoke V/M handlers ARG/CONJ/RE/IM.
+    `Vector(:x:Complex(3,4)) <op>` rejects with 'Bad argument
+    type' on all four ops (4 V-axis pins) plus the M-axis on
+    ARG and CONJ (2 M-axis pins).  Mirror of session 140
+    Cluster 1's `Vec[:x:Real(0), :y:Real(0)] SINH` rejection but
+    on the bespoke V/M-handler family (different wrapper shape:
+    2-deep with bespoke V/M dispatch inside vs. session 140's
+    3-deep `_withVMUnary` chain).  The bespoke per-element
+    handlers (`_argScalar` / `_conjScalar` / `_reScalar` /
+    `_imScalar`) are not Tagged-aware — receiving a Tagged scalar
+    inside V/M.items the rejection fires.
+
+- Session 137 (2026-04-25) — earlier run.  Unit-tests lane.  **+28
+  assertions across 3 substantive clusters** (above the 3-item
+  floor):
+  - `test-stack-ops.mjs` 32 → 41 (**+9**) — edge-path closure for
+    rejection branches the session-064 happy-path block
+    deliberately stopped short of: DUPDUP positive (a → a a a),
+    plus the `s.depth<n`-after-pop reject branch on
+    ROLL/ROLLD/UNPICK/DROPN/DUPN, the ROLLD-0 no-op symmetric
+    to the existing 1-ROLL pin, the UNPICK-0 → Bad argument
+    value pin (different reject-zero contract from
+    ROLL/ROLLD/DROPN/DUPN/NDUPN — UNPICK uses
+    `_toPosIntIndex`, the others use `_toNonNegIntCount`),
+    and NDUPN -1 → Bad argument value.
+  - `test-units.mjs` 39 → 51 (**+12**) — symmetric / composite /
+    mixed-dim closure: Unit subtraction (5_m-2_m same-unit +
+    1_km-500_m cross-scale, mirrors the existing `+` quartet);
+    Real*Unit left-Real reorder (3 * 2_m → 6_m); Unit/Real
+    scalar divisor (6_m / 2 → 3_m); Unit/Unit mixed-dim
+    composite (6_m / 2_s → 3_m/s exercises
+    `multiplyUexpr(_, inverseUexpr(_))`); composite INV
+    (2_m/s → 0.5_s/m); composite SQ (3_m/s → 9_m^2/s^2);
+    NEG on Newton-shaped Unit; Unit/0 → Infinite result
+    (zero-divisor check on the Unit/Real branch).
+  - `test-stats.mjs` 40 → 47 (**+7**) — ASCII-alias REJECTION
+    coverage closure (symmetric to session-132's alias
+    POSITIVE coverage closure): SX on Real → Bad arg type,
+    SY2 on 1-col Matrix → Invalid dimension, SXY on Real
+    → Bad arg type, MAXS on Real → Bad arg type, MAXS on
+    empty Vector → Bad arg value, MINS on Real → Bad arg
+    type, MINS on empty Matrix → Bad arg value.  Each new
+    pin guards against an alias-special-case refactor that
+    accidentally bypasses the canonical guard set.
+  - **Did not touch `tests/test-control-flow.mjs`** — session 136
+    closed it fully green at 599 / 0 (entry baseline for this
+    run).  No coordination conflict at session-137 entry; all
+    sibling locks released cleanly (sessions 133 / 134 / 135 / 136).
+  - Final test-all **4586 passing / 0 failing** — fully green
+    (entry was 4558 / 0; +28 from this run).  test-persist 38 / 0
+    (unchanged).  sanity 22 / 0 (unchanged).  Log file:
+    `logs/session-137.md`.
+
+- Session 132 (2026-04-24) — Unit-tests lane.  **+17
+  assertions across 3 substantive clusters + 1 doc-finding close**
+  (above the 3-item floor):
+  - **T-002 close** (REVIEW.md doc-finding).  Re-phrased the four
+    `docs/TESTS.md` sites that misclaimed session 121 was
+    stale-pruned without writing a log file — `logs/session-121.md`
+    in fact exists (mtime 2026-04-25 01:04:30, written within the
+    lock window).  Pure-doc edit, no behavior risk.
+  - `test-stats.mjs` 31 → 40 (**+9**) — ASCII-alias positive-coverage
+    closure + MAXΣ multi-column positive case.  6 alias pins for
+    SX2 / SY / MINS (5 of 7 had alias-routed coverage prior to
+    this run; SX2 / SY / MINS each missing a `lookup(<alias>)`
+    exercise — verified by `grep -rn "lookup\\('SX2\\|lookup\\('SY'\\|lookup\\('MINS\\)"
+    tests/` returning zero matches at session-132 entry).  3 MAXΣ
+    multi-column pins mirroring session 127's MINΣ 3-col pin: 3-col
+    positive (per-column maxes [3, 8, 4] all-distinct) plus an
+    all-negative-Vector edge (least-negative entry returned, guards
+    against an accidental Math.abs-then-max refactor).
+  - `test-comparisons.mjs` 103 → 111 (**+8**) — Z × Q reverse-
+    direction cluster extending session 107's Rational block.  The
+    session-107 block pinned Q-on-level-2 / Z-on-level-1 for == and
+    one ordering pin per direction; reverse direction (Z-on-level-2)
+    for == / <> / SAME, the missing ≤ at the cross-type equal
+    boundary, and the Z × Q sign-crossing < direction were not
+    pinned.  Adds: Z == Q (equal + unequal), Z <> Q + Q <> Z, Z SAME
+    Q (equal + unequal), Integer(-1) < Rational(1/2) sign-crossing,
+    Rational(2/1) ≤ Integer(2) at the equal-value cross boundary.
+  - **Did not touch `tests/test-control-flow.mjs`** — session 131
+    closed the file fully green at 563 / 0 (entry baseline for this
+    run).  No coordination conflict at session-132 entry; all sibling
+    locks released cleanly (sessions 128 / 129 / 130 / 131).
+  - Final test-all **4491 passing / 0 failing** — fully green
+    (entry was 4474 / 0; +17 from this run).  test-persist 38 / 0
+    (unchanged).  sanity 22 / 0 (unchanged).  Log file:
+    `logs/session-132.md`.
+
+- Session 127 (2026-04-24).  Unit-tests lane.  **+28
+  assertions across 3 substantive clusters** (well above the 3-item
+  floor):
+  - `test-algebra.mjs` 963 → 972 (**+9**) — LNAME edge cluster
+    extending session 124's worked-example block: String / Name /
+    Complex rejection (3), unquoted-Name return-shape pin,
+    `5+SIN(2)` constant-via-binop empty-Vector pin, `COS(MYFUNC(X))`
+    length-DESC ordering with cross-check that COS itself is
+    dropped (3).
+  - `test-comparisons.mjs` 95 → 103 (**+8**) — Q × C / Q × R
+    cross-type cluster extending session 107's Rational block:
+    `Q < C` → Bad argument type (Complex partial-order rejection
+    holds for Q), Q ==/<>/SAME against Complex (4 pins covering
+    non-zero im 0/1/0 + im=0 value-equal 1), `Q(1/3) == R(0.333)`
+    → 0 unequal-branch pin (companion to session-107's equal-value
+    pin), `Q × R` ordering both directions (2).
+  - `test-stats.mjs` 20 → 31 (**+11**) — Y-family + MAXΣ/MINΣ
+    rejection-path catchup: ΣY2 1-col → Invalid dimension, ΣXY
+    × 3 reject branches (Real / 1-col / empty Matrix), ΣX2 Real
+    reject (symmetric to ΣX), MAXΣ × 3 reject branches (Real /
+    empty Vector / empty Matrix), MINΣ 3-col Matrix positive case
+    (all-distinct per-column mins), SXY ASCII-alias end-to-end pin.
+  - **Did not touch `tests/test-control-flow.mjs`** — session 126
+    (rpl-programming) is active at session-127 entry+exit and holds
+    the lock on that file + `www/src/rpl/ops.js` + `docs/RPL.md`.
+    Their in-progress HALT/PROMPT-lift-through-SEQ+MAP work has 4
+    pre-pinned assertions failing at this run's exit; flake-scan ×
+    3 confirms the failures are stable (consistent, not flaky) so
+    they're a session-126 work-state, not a regression.  This lane
+    deliberately skipped any work that would race against their
+    lock.
+  - Final test-all **4330 passing / 4 failing** (the 4 failing all
+    in session-126's locked file); excluding that file the rest of
+    the suite is **3839 passing / 0 failing**.  test-persist 38 / 0
+    (unchanged).  sanity 22 / 0 (5 ms, unchanged).  Log file:
+    `logs/session-127.md`.
+
+- Session 122 (2026-04-24).  Unit-tests lane.  Closed
   queue item #2 from session 117 — the `assertThrows` migration in
   `test-control-flow.mjs`.  **+4 regression guards** added at the
   5 `let threw` sites (4 migrated; the 5th is the negated DOERR-0
@@ -527,12 +1009,21 @@ when the next flake appears.
   `tests/test-control-flow.mjs` while this lock was held — see
   the top-of-file delta note).  test-persist 38 / 0 (unchanged).
   sanity 22 / 0 (unchanged).  Log file: `logs/session-122.md`.
-  Note: session 121 (rpl-programming) acquired its lock and was
-  stale-pruned without writing `logs/session-121.md` — re-file
-  under code-review per O-008 pattern.  Session 121 also wrote to
-  `tests/test-control-flow.mjs` after stale-prune / past my
-  acquire — flagged for the code-review lane as a lock-protocol
-  violation companion to the missing-log finding.
+  Note: session 121 (rpl-programming) acquired its lock with the
+  `heartbeatAt === startedAt` signature that resembles a stale-
+  prune at the lock layer; the original session-122 narrative
+  read this as "no log was written" because the directory listing
+  taken at session-122 entry did not yet show
+  `logs/session-121.md`.  Subsequent inspection (per REVIEW.md
+  T-002 close, session 132) confirms `logs/session-121.md` was
+  in fact written within the lock window (mtime 2026-04-25
+  01:04:30, two seconds before the lock body's `releasedAt` of
+  01:04:43 — the natural "write log, then unlink lock" ordering),
+  so the missing-log signal does not apply.  Session 121 did
+  write to `tests/test-control-flow.mjs` after my acquire — that
+  is a separate lock-protocol observation, retained for the
+  code-review ledger; the line ranges did not collide
+  (s121 `:3656-3929`, s122 `:432`/`:660`/`:825`/`:2098`).
 - Session 117 (2026-04-24) — Unit-tests lane.  Closed
   queue items #3 and #4 from session 112.  **+2 regression
   guards** in `test-types.mjs` at the `:2068`/`:2074` TRUNC

@@ -294,3 +294,143 @@ import { assert, assertThrows } from './helpers.mjs';
   const r = s.peek();
   assert(isReal(r) && r.value.eq(13), `TYPE of a Unit is 13 (got ${r.value})`);
 }
+
+/* ================================================================
+   session137: Unit op surface — symmetric / composite / mixed-dim
+   coverage closure.
+
+   The session-prior block has the canonical happy-path pins for
+   `+ * /` and `^ NEG ABS INV SQ`, plus error pins for `+` mixed
+   dims and `CONVERT` mixed dims.  This block fills the obvious
+   omissions a future regression could slip past:
+
+     • `-` (subtraction) was never exercised.  Same-unit
+       (`5_m - 2_m → 3_m`) and cross-scale (`1_km - 500_m →
+       0.5_km`, mirrors the existing `+` cross-scale pin).
+     • `Real * Unit` (left-Real reorder).  The existing pin
+       only covers `Unit * Real`; the symmetric `3 * 2_m → 6_m`
+       form catches a regression that special-cases the
+       Unit-on-L1 dispatch.
+     • `Unit / Real` — existing pins cover Unit*Real and
+       Unit/Unit dimensionless but not the scalar-divisor case
+       (`6_m / 2 → 3_m`).
+     • `Unit / Unit` mixed dims — existing pin only covers
+       same-dim cancellation (`6_m / 2_m → Real(3)`); the
+       composite-uexpr case (`6_m / 2_s → 3_m/s`) goes through
+       `multiplyUexpr(_, inverseUexpr(_))` and was unpinned.
+     • `INV` on a composite Unit (`INV 2_m/s → 0.5_s/m`) —
+       existing INV pin is single-atom only.
+     • `SQ` on a composite Unit (`SQ 3_m/s → 9_m^2/s^2`) —
+       existing SQ pin is single-atom only.
+     • `NEG` on a Newton (composite uexpr derived from a unit
+       alias) — the existing NEG pin is single-atom only;
+       `1_N` exercises the path where the `uexpr` array has
+       more than one factor.
+     • `Unit / 0` → Infinite result.  Distinct error path
+       from "Inconsistent units" — the divide-by-zero check
+       on the Real branch must surface for Unit/Real too.
+   ================================================================ */
+
+/* ---- Subtraction: same unit, no conversion needed ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('5_m')[0]);
+  s.push(parseEntry('2_m')[0]);
+  lookup('-').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - 3) < 1e-12 && r.uexpr[0][0] === 'm',
+    `session137: 5_m - 2_m → 3_m (got ${JSON.stringify(r)})`);
+}
+
+/* ---- Subtraction: cross-scale conversion (mirrors + cross-scale) ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('1_km')[0]);
+  s.push(parseEntry('500_m')[0]);
+  lookup('-').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && r.uexpr[0][0] === 'km' && Math.abs(r.value - 0.5) < 1e-12,
+    `session137: 1_km - 500_m → 0.5_km (subtraction mirror of existing + cross-scale pin; got ${JSON.stringify(r)})`);
+}
+
+/* ---- Real * Unit (left-Real reorder; symmetric to existing 2_m * 3 pin) ---- */
+{
+  const s = new Stack();
+  s.push(Real(3));
+  s.push(parseEntry('2_m')[0]);
+  lookup('*').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - 6) < 1e-12 && r.uexpr[0][0] === 'm',
+    `session137: 3 * 2_m → 6_m (Real*Unit; symmetric to Unit*Real)`);
+}
+
+/* ---- Unit / Real — scalar divisor case (uexpr unchanged, value scaled) ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('6_m')[0]);
+  s.push(Real(2));
+  lookup('/').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - 3) < 1e-12
+      && r.uexpr.length === 1 && r.uexpr[0][0] === 'm' && r.uexpr[0][1] === 1,
+    `session137: 6_m / 2 → 3_m (Unit/Real keeps uexpr, scales value)`);
+}
+
+/* ---- Unit / Unit — mixed dims compose into a 2-factor uexpr ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('6_m')[0]);
+  s.push(parseEntry('2_s')[0]);
+  lookup('/').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - 3) < 1e-12,
+    `session137: 6_m / 2_s value → 3 (got ${r.value})`);
+  const map = new Map(r.uexpr);
+  assert(map.get('m') === 1 && map.get('s') === -1,
+    `session137: 6_m / 2_s uexpr → m^1 * s^-1 (composite via multiplyUexpr+inverseUexpr)`);
+}
+
+/* ---- INV on composite Unit — full uexpr inversion ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('2_m/s')[0]);
+  lookup('INV').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - 0.5) < 1e-12,
+    `session137: INV 2_m/s value → 0.5 (got ${r.value})`);
+  const map = new Map(r.uexpr);
+  assert(map.get('m') === -1 && map.get('s') === 1,
+    `session137: INV 2_m/s uexpr → s/m (each exponent flipped — composite inversion, not just scalar)`);
+}
+
+/* ---- SQ on composite Unit — both exponents doubled ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('3_m/s')[0]);
+  lookup('SQ').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - 9) < 1e-12,
+    `session137: SQ 3_m/s value → 9 (got ${r.value})`);
+  const map = new Map(r.uexpr);
+  assert(map.get('m') === 2 && map.get('s') === -2,
+    `session137: SQ 3_m/s uexpr → m^2/s^2 (powerUexpr applied to all factors)`);
+}
+
+/* ---- NEG on a Newton-shaped Unit (composite uexpr) ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('1_N')[0]);
+  lookup('NEG').fn(s);
+  const r = s.peek();
+  assert(isUnit(r) && Math.abs(r.value - (-1)) < 1e-12 && r.uexpr[0][0] === 'N',
+    `session137: NEG 1_N → -1_N (NEG keeps uexpr atomic-N intact, only flips value)`);
+}
+
+/* ---- Unit / 0 → Infinite result (distinct error path from "Inconsistent units") ---- */
+{
+  const s = new Stack();
+  s.push(parseEntry('6_m')[0]);
+  s.push(Real(0));
+  assertThrows(() => lookup('/').fn(s), /Infinite result/,
+    `session137: 6_m / 0 → Infinite result (zero-divisor check applies on the Unit/Real branch too)`);
+}

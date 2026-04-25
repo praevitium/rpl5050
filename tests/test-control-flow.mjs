@@ -1,5 +1,5 @@
 import { Stack } from '../www/src/rpl/stack.js';
-import { lookup, localFramesDepth, singleStepMode, stepIntoMode } from '../www/src/rpl/ops.js';
+import { lookup, localFramesDepth, singleStepMode, stepIntoMode, dosubsStackDepth } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix,
@@ -3927,4 +3927,1610 @@ const { getPromptMessage, clearPromptMessage }
   resetHome();
   assert(getPromptMessage() === null,
     'session121: resetHome clears the active prompt banner');
+}
+
+/* ================================================================
+   Session 126 — HALT / PROMPT lift through SEQ + MAP bodies.
+
+   evalRange now intercepts the SEQ and MAP tokens and delegates to
+   `runSeq` / `runMap` generators, so a HALT or PROMPT inside the
+   per-iteration body suspends through the same yield channel HALT
+   itself uses.  CONT resumes inside the same iteration that was in
+   flight at suspension; the partial accumulator survives because it
+   lives in the generator's stack frame.
+
+   Sync fallbacks (Name dispatch — `'SEQ' EVAL`, `'MAP' EVAL`) keep
+   the session-111 reject-with-caller-label behavior — they still
+   throw `HALT: cannot suspend inside SEQ expression` /
+   `HALT: cannot suspend inside MAP program`.
+   ================================================================ */
+
+/* ---- SEQ: HALT inside the body (iter 1 only) suspends mid-iteration ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // « 'X' 1 3 1 SEQ »  with body « X 1 == « HALT » IFT X 10 * »
+  // The IFT only fires HALT in iter 1; iters 2+3 run straight through.
+  // iter 1: HALT (suspend); after CONT pushes 1*10=10.
+  // iter 2: 2*10=20.  iter 3: 3*10=30.
+  s.push(Program([
+    parseEntry('<< X 1 == << HALT >> IFT X 10 * >>')[0],
+    Name('X'),
+    Integer(1n),
+    Integer(3n),
+    Integer(1n),
+    Name('SEQ'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: HALT in SEQ body iter 1 suspends the program');
+  assert(haltedDepth() === 1,
+    'session126: HALT in SEQ body populates exactly one halted slot');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session126: CONT runs SEQ to completion and clears the halt slot');
+  // Final result: { 10 20 30 }.
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 3,
+    'session126: SEQ produces a 3-element list across HALT/CONT');
+  assert(v(top.items[0]) === 10 && v(top.items[1]) === 20 && v(top.items[2]) === 30,
+    'session126: SEQ across HALT/CONT yields { 10 20 30 }');
+}
+
+/* ---- SEQ: HALT in middle iteration preserves the partial accumulator ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // body: « I 3 == « HALT » IFT I »  — pushes I, conditionally HALTs.
+  // iter 1 → 1, iter 2 → 2, iter 3 → HALT then 3, iter 4 → 4, iter 5 → 5.
+  s.push(Program([
+    parseEntry('<< I 3 == << HALT >> IFT I >>')[0],
+    Name('I'),
+    Integer(1n),
+    Integer(5n),
+    Integer(1n),
+    Name('SEQ'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: SEQ HALT in iter 3 (via IFT body) suspends');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session126: SEQ CONT completes remaining iterations');
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 5,
+    'session126: SEQ across HALT-in-middle preserves all five iterations');
+  assert(v(top.items[0]) === 1 && v(top.items[1]) === 2 && v(top.items[2]) === 3
+      && v(top.items[3]) === 4 && v(top.items[4]) === 5,
+    'session126: SEQ partial accumulator + completion produces { 1 2 3 4 5 }');
+}
+
+/* ---- SEQ: KILL during a halted iteration restores the loop variable ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  varStore('I', Integer(99n));         // pre-existing binding for I
+  const s = new Stack();
+  s.push(Program([
+    parseEntry('<< I HALT >>')[0],
+    Name('I', { quoted: true }),       // quoted: don't evaluate I=99 here
+    Integer(1n),
+    Integer(3n),
+    Integer(1n),
+    Name('SEQ'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: SEQ HALT halts');
+  // At this moment the SEQ generator has set I = 1 (Real) for the
+  // first iteration.  KILL must close the generator and run the
+  // `finally` that restores I to Integer(99).
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session126: KILL clears the SEQ halt slot');
+  const restored = varRecall('I');
+  assert(restored && restored.type === 'integer' && restored.value === 99n,
+    'session126: KILL of halted SEQ restores the prior I binding via finally');
+  varPurge('I');
+}
+
+/* ---- SEQ: PROMPT inside the body suspends with the banner set ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // Conditional PROMPT: only iter 1 prompts (K==1), so a single CONT
+  // resumes through PROMPT and finishes iter 2 cleanly.
+  s.push(Program([
+    parseEntry('<< K K 1 == << "wait!" PROMPT >> IFT 7 * >>')[0],
+    Name('K', { quoted: true }),
+    Integer(1n),
+    Integer(2n),
+    Integer(1n),
+    Name('SEQ'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: PROMPT in SEQ body suspends');
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'string' && msg.value === 'wait!',
+    'session126: SEQ-body PROMPT sets the banner mid-iteration');
+  lookup('CONT').fn(s);
+  assert(getPromptMessage() === null,
+    'session126: CONT clears banner after SEQ-body PROMPT');
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 2,
+    'session126: SEQ completes both iterations after PROMPT/CONT');
+}
+
+/* ---- SEQ: sync fallback (direct register dispatch) still rejects HALT ----
+   Calls `lookup('SEQ').fn(s)` directly — that is the sync entry the
+   session-111 caller-label assertion guards.  The new generator-flavor
+   runSeq is still wrapped by `_driveGen(runSeq(s, 0), 'SEQ expression')`
+   in the register, so a HALT in the body must surface as the same
+   labelled error session 111 codified. */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(parseEntry('<< X HALT >>')[0]);
+  s.push(Name('X', { quoted: true }));
+  s.push(Integer(1n));
+  s.push(Integer(2n));
+  s.push(Integer(1n));
+  assertThrows(() => lookup('SEQ').fn(s),
+    /HALT: cannot suspend inside SEQ expression/,
+    'session126: sync-fallback SEQ still rejects HALT with session-111 caller label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session126: sync-fallback SEQ rejection cleans up halts and frames');
+}
+
+/* ---- SEQ: empty range produces empty list, no halt regardless of body ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // 5 1 1 SEQ with HALT body — empty range (5 > 1, step +1) so body
+  // never runs, no halt, empty result.
+  s.push(Program([
+    parseEntry('<< HALT >>')[0],
+    Name('I'),
+    Integer(5n),
+    Integer(1n),
+    Integer(1n),
+    Name('SEQ'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() === null,
+    'session126: SEQ with empty range never halts');
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 0,
+    'session126: SEQ empty-range produces empty list');
+}
+
+/* ---- MAP: HALT inside body (iter 1 only) suspends mid-element ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // body: « DUP 1 == « HALT » IFT 100 * »
+  // iter 1 (input=1): conditional HALT fires; CONT then 1*100=100.
+  // iter 2 (input=2): no HALT; 2*100=200.  iter 3: 3*100=300.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n)]),
+    parseEntry('<< DUP 1 == << HALT >> IFT 100 * >>')[0],
+    Name('MAP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: HALT inside MAP body suspends');
+  assert(haltedDepth() === 1,
+    'session126: MAP body HALT populates exactly one halted slot');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session126: CONT completes MAP and clears halt slot');
+  // Result: { 100 200 300 }
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 3,
+    'session126: MAP across HALT/CONT yields a 3-element list');
+  assert(v(top.items[0]) === 100 && v(top.items[1]) === 200 && v(top.items[2]) === 300,
+    'session126: MAP HALT-in-iter-1 preserves all three results after CONT');
+}
+
+/* ---- MAP: HALT in middle element keeps partial accumulator ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // body: « DUP 3 == « HALT » IFT 1 + »
+  // Iter 1: 1 → 2; iter 2: 2 → 3; iter 3: HALT, CONT, 3 → 4; iter 4: 4 → 5.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n), Integer(4n)]),
+    parseEntry('<< DUP 3 == << HALT >> IFT 1 + >>')[0],
+    Name('MAP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: MAP HALT-in-iter-3 (via IFT) suspends');
+  lookup('CONT').fn(s);
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 4,
+    'session126: MAP partial-accumulator preserved across HALT/CONT');
+  assert(v(top.items[0]) === 2 && v(top.items[1]) === 3 && v(top.items[2]) === 4 && v(top.items[3]) === 5,
+    'session126: MAP across HALT yields { 2 3 4 5 }');
+}
+
+/* ---- MAP on a Vector: HALT lift preserves type ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // Body HALTs only on element 1 so a single CONT finishes the MAP.
+  s.push(Program([
+    Vector([Real(1), Real(2), Real(3)]),
+    parseEntry('<< DUP 1 == << HALT >> IFT 2 * >>')[0],
+    Name('MAP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: HALT in MAP-over-Vector body suspends');
+  lookup('CONT').fn(s);
+  const top = s.peek();
+  assert(top && top.type === 'vector' && top.items.length === 3,
+    'session126: MAP over Vector returns a Vector after HALT/CONT');
+}
+
+/* ---- MAP on a Matrix: HALT lift preserves shape ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // Body HALTs only on the (1,1) entry so a single CONT finishes the matrix walk.
+  s.push(Program([
+    Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]),
+    parseEntry('<< DUP 1 == << HALT >> IFT 10 * >>')[0],
+    Name('MAP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: HALT in MAP-over-Matrix body suspends');
+  lookup('CONT').fn(s);
+  const top = s.peek();
+  assert(top && top.type === 'matrix' && top.rows.length === 2 && top.rows[0].length === 2,
+    'session126: MAP over Matrix preserves 2x2 shape after HALT/CONT');
+}
+
+/* ---- MAP: PROMPT inside body sets banner ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // Conditional PROMPT: only fires once.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n)]),
+    parseEntry('<< DUP 1 == << "msg" PROMPT >> IFT 5 + >>')[0],
+    Name('MAP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: PROMPT in MAP body suspends');
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'string' && msg.value === 'msg',
+    'session126: MAP-body PROMPT sets the banner');
+  lookup('CONT').fn(s);
+  assert(getPromptMessage() === null,
+    'session126: CONT clears banner after MAP-body PROMPT');
+}
+
+/* ---- MAP: sync fallback (direct register dispatch) still rejects HALT ----
+   `lookup('MAP').fn(s)` runs the new register, which wraps runMap in
+   `_driveGen(runMap(s, 0), 'MAP program')`.  The session-111 invariant —
+   "outside the lift path, HALT names the op that blocked it" — must
+   continue to hold. */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(RList([Integer(1n), Integer(2n)]));
+  s.push(parseEntry('<< HALT >>')[0]);
+  assertThrows(() => lookup('MAP').fn(s),
+    /HALT: cannot suspend inside MAP program/,
+    'session126: sync-fallback MAP still rejects HALT with session-111 caller label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session126: sync-fallback MAP rejection cleans up halts and frames');
+}
+
+/* ---- MAP empty list: no halt, returns empty list ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([]),
+    parseEntry('<< HALT >>')[0],
+    Name('MAP'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() === null,
+    'session126: MAP on empty list never halts');
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 0,
+    'session126: MAP on empty list returns empty list');
+}
+
+/* ---- HALT in MAP body inside a → frame: KILL tears down both ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // 7 → a « { 1 2 } « a HALT * » MAP »
+  s.push(Real(7));
+  s.push(parseEntry('<< → a << { 1 2 } << a HALT * >> MAP >> >>')[0]);
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: HALT in MAP-in-→ body suspends through both intercepts');
+  assert(localFramesDepth() === 1,
+    'session126: → frame survives across MAP-body HALT');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session126: KILL clears the halt slot');
+  assert(localFramesDepth() === 0,
+    'session126: KILL closes the generator and tears down → frame from MAP-in-→');
+}
+
+/* ---- resetHome during a halted SEQ closes the generator and restores the loop var ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  varStore('J', Integer(7n));
+  const s = new Stack();
+  s.push(Program([
+    parseEntry('<< HALT >>')[0],
+    Name('J', { quoted: true }),         // quoted so J=7 isn't substituted
+    Integer(1n),
+    Integer(2n),
+    Integer(1n),
+    Name('SEQ'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session126: SEQ halt set up before resetHome');
+  resetHome();
+  assert(getHalted() === null,
+    'session126: resetHome clears the SEQ halt slot');
+  // resetHome wipes varStore wholesale; J is gone (the finally still ran
+  // and tried to restore J=7, but resetHome already cleared the home dir
+  // afterward — net effect is J undefined).  The invariant we care about
+  // is that resetHome did NOT leak local frames or halt slots.
+  assert(localFramesDepth() === 0,
+    'session126: resetHome of halted SEQ leaves no local-frame leak');
+}
+
+/* ================================================================
+   SESSION 131 — HALT/PROMPT lift through DOLIST / DOSUBS / STREAM
+   bodies via `evalRange` body-intercept paths that delegate to new
+   `runDoList` / `runDoSubs` / `runStream` generator helpers.
+
+   Same shape as the session-126 SEQ/MAP work: each iteration EVAL's
+   the body program through `_evalValueGen` (yieldable), and a HALT
+   inside the body suspends through `yield*` up to the EVAL/CONT
+   driver.  The accumulator (`out` array, current `i`, in-progress
+   STREAM accumulator on the *RPL* stack, NSUB/ENDSUB frame) lives in
+   the helper's stack frame — except STREAM, whose accumulator is on
+   the user-visible RPL stack — so CONT resumes mid-iteration with
+   all state intact.
+
+   Sync fallbacks (Name dispatch — `'DOLIST' EVAL`, etc., and direct
+   `lookup('DOLIST').fn(s)` calls) keep the session-111 reject-with-
+   caller-label behavior — they still throw `HALT: cannot suspend
+   inside DOLIST program` / `... DOSUBS program` / `... STREAM
+   program`.
+   ================================================================ */
+
+/* ---- DOLIST: HALT inside body (iter 1) suspends mid-iteration ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // body: « DUP 1 == « HALT » IFT 10 * »
+  // iter 1 (input=1): conditional HALT fires; CONT then 1*10=10.
+  // iter 2 (input=2): 2*10=20.  iter 3: 3*10=30.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n)]),
+    parseEntry('<< DUP 1 == << HALT >> IFT 10 * >>')[0],
+    Name('DOLIST'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: HALT in DOLIST body iter 1 suspends the program');
+  assert(haltedDepth() === 1,
+    'session131: DOLIST body HALT populates exactly one halted slot');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session131: CONT runs DOLIST to completion and clears the halt slot');
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 3,
+    'session131: DOLIST produces a 3-element list across HALT/CONT');
+  assert(v(top.items[0]) === 10 && v(top.items[1]) === 20 && v(top.items[2]) === 30,
+    'session131: DOLIST across HALT/CONT yields { 10 20 30 }');
+}
+
+/* ---- DOLIST: HALT in middle iteration preserves the partial accumulator ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // 5-element list, HALT only on input=3 (the middle element).
+  // iter 1 → 1, iter 2 → 2, iter 3 → HALT then 3, iter 4 → 4, iter 5 → 5.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n), Integer(4n), Integer(5n)]),
+    parseEntry('<< DUP 3 == << HALT >> IFT >>')[0],
+    Name('DOLIST'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: DOLIST HALT in iter 3 (via IFT body) suspends');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session131: DOLIST CONT completes remaining iterations');
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 5,
+    'session131: DOLIST across HALT-in-middle preserves all five iterations');
+  assert(v(top.items[0]) === 1 && v(top.items[1]) === 2 && v(top.items[2]) === 3
+      && v(top.items[3]) === 4 && v(top.items[4]) === 5,
+    'session131: DOLIST partial accumulator + completion produces { 1 2 3 4 5 }');
+}
+
+/* ---- DOLIST: parallel multi-list form, HALT in iter 1 ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // { 1 2 3 } { 10 20 30 } 2 « + DUP 11 == « HALT » IFT »  DOLIST
+  // iter 1: 1+10=11 → HALT; CONT pushes 11.  iter 2: 2+20=22.  iter 3: 3+30=33.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n)]),
+    RList([Integer(10n), Integer(20n), Integer(30n)]),
+    Integer(2n),
+    parseEntry('<< + DUP 11 == << HALT >> IFT >>')[0],
+    Name('DOLIST'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: DOLIST 2-list form HALTs on iter 1');
+  lookup('CONT').fn(s);
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 3,
+    'session131: DOLIST 2-list form produces 3 elements across HALT/CONT');
+  assert(v(top.items[0]) === 11 && v(top.items[1]) === 22 && v(top.items[2]) === 33,
+    'session131: DOLIST 2-list form yields { 11 22 33 }');
+}
+
+/* ---- DOLIST: PROMPT inside body sets banner mid-iteration ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([Integer(1n), Integer(2n)]),
+    parseEntry('<< DUP 1 == << "wait!" PROMPT >> IFT 7 * >>')[0],
+    Name('DOLIST'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: PROMPT in DOLIST body suspends');
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'string' && msg.value === 'wait!',
+    'session131: DOLIST-body PROMPT sets the banner mid-iteration');
+  lookup('CONT').fn(s);
+  assert(getPromptMessage() === null,
+    'session131: CONT clears banner after DOLIST-body PROMPT');
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 2
+      && v(top.items[0]) === 7 && v(top.items[1]) === 14,
+    'session131: DOLIST completes both iterations after PROMPT/CONT (yields { 7 14 })');
+}
+
+/* ---- DOLIST: KILL during a halted iteration leaves no halt residue ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([Integer(1n), Integer(2n)]),
+    parseEntry('<< HALT >>')[0],
+    Name('DOLIST'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null, 'session131: DOLIST HALT halts');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session131: KILL clears the DOLIST halt slot');
+  assert(localFramesDepth() === 0,
+    'session131: KILL of halted DOLIST leaves no local-frame leak');
+}
+
+/* ---- DOLIST: sync fallback still rejects HALT with session-111 label ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(RList([ Integer(1n), Integer(2n) ]));
+  s.push(parseEntry('<< HALT >>')[0]);
+  assertThrows(() => lookup('DOLIST').fn(s),
+    /HALT: cannot suspend inside DOLIST program/,
+    'session131: sync-fallback DOLIST still rejects HALT with session-111 caller label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session131: sync-fallback DOLIST rejection cleans up halts and frames');
+}
+
+/* ---- DOLIST: empty list never halts and produces empty list ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([]),
+    parseEntry('<< HALT >>')[0],
+    Name('DOLIST'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() === null,
+    'session131: DOLIST on empty list never halts');
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 0,
+    'session131: DOLIST on empty list produces empty list');
+}
+
+/* ---- DOSUBS: HALT inside body (iter 1) suspends mid-window ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // { 1 2 3 4 } 2 « + DUP 3 == « HALT » IFT »  DOSUBS
+  // windows: (1,2)→3 (HALT then push), (2,3)→5, (3,4)→7
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n), Integer(4n)]),
+    Integer(2n),
+    parseEntry('<< + DUP 3 == << HALT >> IFT >>')[0],
+    Name('DOSUBS'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: HALT in DOSUBS body iter 1 suspends');
+  assert(haltedDepth() === 1,
+    'session131: DOSUBS body HALT populates exactly one halted slot');
+  // Frame should be alive while the program is suspended.
+  assert(dosubsStackDepth() === 1,
+    'session131: DOSUBS NSUB/ENDSUB frame survives across mid-window HALT');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session131: CONT runs DOSUBS to completion');
+  assert(dosubsStackDepth() === 0,
+    'session131: DOSUBS frame torn down after CONT completes');
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 3
+      && v(top.items[0]) === 3 && v(top.items[1]) === 5 && v(top.items[2]) === 7,
+    'session131: DOSUBS across HALT/CONT yields { 3 5 7 }');
+}
+
+/* ---- DOSUBS: NSUB/ENDSUB readable from the body during a halted-and-resumed window ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // { 10 20 30 } 1 « DROP NSUB ENDSUB + »  DOSUBS
+  // (drops the window value, then for each window i in [1..3] pushes i + 3 = 4 5 6)
+  // Add a HALT in window 2 to verify the *frame index* survives the suspension.
+  s.push(Program([
+    RList([Integer(10n), Integer(20n), Integer(30n)]),
+    Integer(1n),
+    parseEntry('<< DROP NSUB DUP 2 == << HALT >> IFT ENDSUB + >>')[0],
+    Name('DOSUBS'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: DOSUBS HALT in window 2 suspends');
+  // At suspension we should be inside window 2; after CONT, frame.index
+  // continues from 2 → 3.  The result captures both NSUB indices.
+  lookup('CONT').fn(s);
+  const top = s.peek();
+  const v = (item) => item.value && item.value.toNumber ? item.value.toNumber() : Number(item.value);
+  assert(top && top.type === 'list' && top.items.length === 3
+      && v(top.items[0]) === 4   // NSUB=1, ENDSUB=3, 1+3=4
+      && v(top.items[1]) === 5   // NSUB=2 (preserved across HALT), 2+3=5
+      && v(top.items[2]) === 6,  // NSUB=3, 3+3=6
+    'session131: DOSUBS NSUB index survives HALT/CONT and continues correctly');
+}
+
+/* ---- DOSUBS: KILL during halted window tears down the NSUB/ENDSUB frame ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n)]),
+    Integer(2n),
+    parseEntry('<< + HALT >>')[0],
+    Name('DOSUBS'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null, 'session131: DOSUBS halted on first window');
+  assert(dosubsStackDepth() === 1,
+    'session131: DOSUBS frame is alive during the halted window');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session131: KILL clears the DOSUBS halt slot');
+  assert(dosubsStackDepth() === 0,
+    'session131: KILL closes the generator and tears down the DOSUBS frame');
+  // Outside the now-killed DOSUBS, NSUB/ENDSUB should throw the
+  // canonical "Undefined local name" — the frame must really be gone.
+  const s2 = new Stack();
+  assertThrows(() => lookup('NSUB').fn(s2),
+    /Undefined local name/,
+    'session131: NSUB outside DOSUBS throws after KILL teardown');
+  assertThrows(() => lookup('ENDSUB').fn(s2),
+    /Undefined local name/,
+    'session131: ENDSUB outside DOSUBS throws after KILL teardown');
+}
+
+/* ---- DOSUBS: sync fallback still rejects HALT with session-111 label ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(RList([ Integer(1n), Integer(2n), Integer(3n) ]));
+  s.push(Integer(2n));
+  s.push(parseEntry('<< HALT >>')[0]);
+  assertThrows(() => lookup('DOSUBS').fn(s),
+    /HALT: cannot suspend inside DOSUBS program/,
+    'session131: sync-fallback DOSUBS still rejects HALT with session-111 caller label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0
+      && dosubsStackDepth() === 0,
+    'session131: sync-fallback DOSUBS rejection cleans up halts, frames, and DOSUBS frame');
+}
+
+/* ---- DOSUBS: empty-window-set short-circuit (n > list length) never halts ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([Integer(1n)]),                  // length 1
+    Integer(5n),                           // window size > length
+    parseEntry('<< HALT >>')[0],
+    Name('DOSUBS'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() === null,
+    'session131: DOSUBS with no windows never halts');
+  const top = s.peek();
+  assert(top && top.type === 'list' && top.items.length === 0,
+    'session131: DOSUBS no-windows short-circuit produces empty list');
+  assert(dosubsStackDepth() === 0,
+    'session131: DOSUBS no-windows short-circuit pushes no NSUB frame');
+}
+
+/* ---- STREAM: HALT inside fold body suspends with accumulator visible ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // { 1 2 3 4 } « + DUP 3 == « HALT » IFT » STREAM
+  // fold steps: 1+2=3 (HALT then 3 stays as accumulator), 3+3=6, 6+4=10.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n), Integer(4n)]),
+    parseEntry('<< + DUP 3 == << HALT >> IFT >>')[0],
+    Name('STREAM'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: HALT in STREAM body suspends');
+  // The accumulator at suspension is on the RPL stack (STREAM's
+  // accumulator lives on the user-visible stack between fold steps).
+  assert(s.depth === 1 && s.peek() && s.peek().value === 3n,
+    'session131: STREAM accumulator (3) visible on RPL stack at HALT');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session131: CONT completes STREAM fold');
+  assert(s.depth === 1 && Number(s.peek().value) === 10,
+    'session131: STREAM CONT yields final accumulator 10');
+}
+
+/* ---- STREAM: PROMPT mid-fold sets banner; CONT clears it ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // { 1 2 3 } « + DUP 3 == « "halfway" PROMPT » IFT » STREAM
+  // fold steps: 1+2=3 (PROMPT here), then 3+3=6.
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n)]),
+    parseEntry('<< + DUP 3 == << "halfway" PROMPT >> IFT >>')[0],
+    Name('STREAM'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: PROMPT in STREAM body suspends');
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'string' && msg.value === 'halfway',
+    'session131: STREAM-body PROMPT sets the banner mid-fold');
+  lookup('CONT').fn(s);
+  assert(getPromptMessage() === null,
+    'session131: CONT clears banner after STREAM-body PROMPT');
+  assert(s.depth === 1 && Number(s.peek().value) === 6,
+    'session131: STREAM completes after PROMPT/CONT (final accumulator = 6)');
+}
+
+/* ---- STREAM: sync fallback still rejects HALT with session-111 label ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(RList([ Integer(1n), Integer(2n), Integer(3n) ]));
+  s.push(parseEntry('<< HALT >>')[0]);
+  assertThrows(() => lookup('STREAM').fn(s),
+    /HALT: cannot suspend inside STREAM program/,
+    'session131: sync-fallback STREAM still rejects HALT with session-111 caller label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session131: sync-fallback STREAM rejection cleans up halts and frames');
+}
+
+/* ---- STREAM: single-element short-circuit never halts ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([Integer(42n)]),
+    parseEntry('<< HALT + >>')[0],         // would HALT if reached
+    Name('STREAM'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() === null,
+    'session131: STREAM single-element short-circuit never halts');
+  assert(s.depth === 1 && Number(s.peek().value) === 42,
+    'session131: STREAM single-element short-circuit pushes the bare element');
+}
+
+/* ---- HALT in DOLIST inside a → frame: KILL tears down both ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // 7 → a « { 1 2 } « a HALT * » DOLIST »
+  s.push(Real(7));
+  s.push(parseEntry('<< → a << { 1 2 } << a HALT * >> DOLIST >> >>')[0]);
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: HALT in DOLIST-in-→ body suspends through both intercepts');
+  assert(localFramesDepth() === 1,
+    'session131: → frame survives across DOLIST-body HALT');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session131: KILL clears the halt slot');
+  assert(localFramesDepth() === 0,
+    'session131: KILL closes the generator and tears down → frame from DOLIST-in-→');
+}
+
+/* ---- HALT in DOSUBS inside a → frame: KILL tears down → frame AND DOSUBS frame ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // 7 → a « { 1 2 3 } 2 « a HALT * + » DOSUBS »
+  s.push(Real(7));
+  s.push(parseEntry('<< → a << { 1 2 3 } 2 << a HALT * + >> DOSUBS >> >>')[0]);
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session131: HALT in DOSUBS-in-→ body suspends');
+  assert(localFramesDepth() === 1 && dosubsStackDepth() === 1,
+    'session131: both → and DOSUBS frames are alive across the halted window');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null && localFramesDepth() === 0 && dosubsStackDepth() === 0,
+    'session131: KILL of DOSUBS-in-→ tears down both frames via finally chain');
+}
+
+/* ---- resetHome during a halted DOSUBS closes generator and clears frame stack ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    RList([Integer(1n), Integer(2n), Integer(3n)]),
+    Integer(2n),
+    parseEntry('<< + HALT >>')[0],
+    Name('DOSUBS'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null && dosubsStackDepth() === 1,
+    'session131: DOSUBS halted with frame alive');
+  resetHome();
+  assert(getHalted() === null,
+    'session131: resetHome clears the DOSUBS halt slot');
+  assert(dosubsStackDepth() === 0,
+    'session131: resetHome closes the DOSUBS generator and clears the NSUB/ENDSUB frame');
+  assert(localFramesDepth() === 0,
+    'session131: resetHome of halted DOSUBS leaves no local-frame leak');
+}
+
+/* ================================================================
+   session 136 — auto-close on missing END / NEXT for the
+   counter and condition loops.
+
+   Symmetric with the existing IF / IFERR / CASE auto-close
+   policy and with the parser's auto-close on unterminated `«`,
+   `{`, `[`.  A forward scan inside `runWhile` / `runDo` /
+   `runStart` / `runFor` that falls off the end of the token
+   list is now treated as an implicit closer:
+
+     « WHILE test REPEAT body »   ≡  « WHILE test REPEAT body END »
+     « DO body UNTIL test »       ≡  « DO body UNTIL test END »
+     « 1 5 START body »           ≡  « 1 5 START body NEXT »
+     « 1 5 FOR i body »           ≡  « 1 5 FOR i body NEXT »
+
+   What does NOT auto-close:
+     - WHILE without REPEAT (still a hard error — no default
+       body separator).
+     - DO without UNTIL (same).
+     - FOR without a name token (no default counter name).
+     - A spurious END at depth 0 in the START / FOR closer slot
+       still raises START/FOR without NEXT/STEP.
+     - A spurious NEXT / STEP at depth 0 in the WHILE / DO
+       closer slot still raises WHILE/REPEAT (or DO/UNTIL)
+       without END.
+   ================================================================ */
+
+/* ---- WHILE / REPEAT auto-close on missing END ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « 0 WHILE DUP 3 < REPEAT 1 + »   — auto-closed; loops 0 → 3
+  s.push(Program([
+    Integer(0),
+    Name('WHILE'), Name('DUP'), Integer(3), Name('<'),
+    Name('REPEAT'),
+      Integer(1), Name('+'),
+    // no END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 3n,
+    'session136: WHILE/REPEAT auto-closes on missing END (loops to 3)');
+}
+
+/* ---- WHILE/REPEAT auto-close: false test from the start ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « 7 WHILE 0 REPEAT 1 + »   — auto-closed; body never runs
+  s.push(Program([
+    Integer(7),
+    Name('WHILE'), Integer(0), Name('REPEAT'),
+      Integer(1), Name('+'),
+    // no END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session136: WHILE/REPEAT auto-close with false test never enters body');
+}
+
+/* ---- WHILE/REPEAT auto-close via parsed source ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // Stack-based version (no quoted names — Program-body parser leaves
+  // tick-quoted names with the apostrophes baked into the id; we use
+  // pure stack-effect logic instead, which is closed-over by the
+  // auto-close path the same way):
+  // Stack starts empty; the program puts 0 on the stack and increments
+  // until DUP < 4 is false → final value 4.  The outer `>>` is
+  // intentionally missing — the program parser auto-closes; the inner
+  // WHILE is missing END — the runtime auto-closes.
+  const vs = parseEntry('<< 0 WHILE DUP 4 < REPEAT 1 + >> EVAL');
+  for (const v of vs) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  // Loop body increments DUP until DUP >= 4: 0 → 1 → 2 → 3 → 4
+  assert(s.depth === 1 && s.peek().value === 4n,
+    'session136: parsed WHILE auto-closes on missing END and runs to completion');
+}
+
+/* ---- WHILE without REPEAT is still a hard error (no auto-close) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « WHILE 1 1 + »   — no REPEAT separator
+  s.push(Program([
+    Name('WHILE'), Integer(1), Integer(1), Name('+'),
+  ]));
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           null,
+                           'session136: WHILE without REPEAT still throws');
+  assert(/WHILE without REPEAT/.test(err.message),
+    'session136: WHILE without REPEAT preserves error message');
+  assert(s.depth === 1, 'session136: stack restored to pre-EVAL depth after WHILE-without-REPEAT error');
+}
+
+/* ---- WHILE with a spurious NEXT in the END slot is still an error ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « WHILE 1 REPEAT 2 NEXT »   — NEXT in the END slot, no real END
+  // The depth-0 NEXT closer scan returns a NEXT, not an END.
+  s.push(Program([
+    Name('WHILE'), Integer(1), Name('REPEAT'), Integer(2), Name('NEXT'),
+  ]));
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           null,
+                           'session136: WHILE with spurious NEXT throws');
+  assert(/WHILE\/REPEAT without END/.test(err.message),
+    'session136: WHILE with spurious NEXT preserves "without END" error');
+}
+
+/* ---- DO / UNTIL auto-close on missing END ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « 0 DO 1 + UNTIL DUP 3 ≥ »   — auto-closed; runs 3 times → 3
+  s.push(Program([
+    Integer(0),
+    Name('DO'),
+      Integer(1), Name('+'),
+    Name('UNTIL'),
+      Name('DUP'), Integer(3), Name('≥'),
+    // no END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 3n,
+    'session136: DO/UNTIL auto-closes on missing END (3 iterations)');
+}
+
+/* ---- DO/UNTIL auto-close: body always runs at least once ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « 0 DO 99 UNTIL 1 »   — auto-closed; runs once, leaves [0, 99]
+  s.push(Program([
+    Integer(0),
+    Name('DO'),
+      Integer(99),
+    Name('UNTIL'),
+      Integer(1),
+    // no END
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 2 && s.peek().value === 99n && s.peek(2).value === 0n,
+    'session136: DO/UNTIL auto-close still runs body at least once');
+}
+
+/* ---- DO without UNTIL is still a hard error ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « DO 1 1 + »   — no UNTIL separator
+  s.push(Program([
+    Name('DO'), Integer(1), Integer(1), Name('+'),
+  ]));
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           null,
+                           'session136: DO without UNTIL still throws');
+  assert(/DO without UNTIL/.test(err.message),
+    'session136: DO without UNTIL preserves error message');
+}
+
+/* ---- DO/UNTIL with a spurious NEXT in the END slot is still an error ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « DO 1 UNTIL 1 NEXT »   — NEXT in the END slot
+  s.push(Program([
+    Name('DO'), Integer(1), Name('UNTIL'), Integer(1), Name('NEXT'),
+  ]));
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           null,
+                           'session136: DO with spurious NEXT throws');
+  assert(/DO\/UNTIL without END/.test(err.message),
+    'session136: DO with spurious NEXT preserves "without END" error');
+}
+
+/* ---- START auto-close on missing NEXT (implicit step=1) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // 0 on stack; then « 1 5 START 1 + »   — auto-closed as NEXT;
+  // body runs (5 - 1 + 1) = 5 times, accumulates 1 each iteration → 5
+  s.push(Integer(0));
+  s.push(Program([
+    Integer(1), Integer(5), Name('START'),
+      Integer(1), Name('+'),
+    // no NEXT
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 5n,
+    'session136: START auto-closes on missing NEXT (loops 5 times)');
+}
+
+/* ---- START auto-close: zero-iteration case (start > end) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // 7 on stack; « 5 1 START 1 + »   — start>end runs once on HP50
+  // (counter past end after first body), so 7 + 1 = 8.
+  s.push(Integer(7));
+  s.push(Program([
+    Integer(5), Integer(1), Name('START'),
+      Integer(1), Name('+'),
+    // no NEXT
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 8n,
+    'session136: START auto-close runs body once when start>end (HP50 semantics)');
+}
+
+/* ---- START with a spurious END in the closer slot is still an error ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « 1 5 START 1 + END »   — END in the closer slot (not NEXT/STEP)
+  s.push(Program([
+    Integer(1), Integer(5), Name('START'),
+      Integer(1), Name('+'),
+    Name('END'),
+  ]));
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           null,
+                           'session136: START with spurious END throws');
+  assert(/START without NEXT\/STEP/.test(err.message),
+    'session136: START with spurious END preserves "without NEXT/STEP" error');
+}
+
+/* ---- FOR auto-close on missing NEXT (implicit step=1, var preserved) ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « 0 1 4 FOR i i + »   — sum 1..4; auto-closed → 0+1+2+3+4 = 10
+  s.push(Program([
+    Integer(0),
+    Integer(1), Integer(4), Name('FOR'), Name('i'),
+      Name('i'), Name('+'),
+    // no NEXT
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session136: FOR auto-closes on missing NEXT (sums 1..4 to 10)');
+  // Loop var must be purged after the loop, even on the auto-close path
+  assert(varRecall('i') === undefined,
+    'session136: FOR auto-close still purges the loop var on exit');
+}
+
+/* ---- FOR auto-close: prior binding restored after the loop ---- */
+{
+  resetHome();
+  varStore('i', Real(99));    // pre-existing binding
+  const s = new Stack();
+  // « 1 3 FOR i i »   — body pushes the counter each iteration; no NEXT
+  s.push(Program([
+    Integer(1), Integer(3), Name('FOR'), Name('i'),
+      Name('i'),
+    // no NEXT
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 3,
+    'session136: FOR auto-close pushed three counter values');
+  const restored = varRecall('i');
+  assert(restored && isReal(restored) && restored.value.eq(99),
+    'session136: FOR auto-close restores pre-existing var binding via finally');
+}
+
+/* ---- FOR with a spurious END in the closer slot is still an error ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « 1 3 FOR i 1 END »   — END in the closer slot
+  s.push(Program([
+    Integer(1), Integer(3), Name('FOR'), Name('i'),
+      Integer(1),
+    Name('END'),
+  ]));
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           null,
+                           'session136: FOR with spurious END throws');
+  assert(/FOR without NEXT\/STEP/.test(err.message),
+    'session136: FOR with spurious END preserves "without NEXT/STEP" error');
+  // Auto-close is still purgeable: the FOR var should not have leaked.
+  // (FOR throws before runLoopBody — the saved/restore finally never fires
+  // because no try block was entered yet for the body.  But pre-existing
+  // bindings are unchanged.)
+  assert(varRecall('i') === undefined,
+    'session136: FOR-without-NEXT/STEP error leaves no leaked binding');
+}
+
+/* ---- Nested auto-close: WHILE inside an auto-closed IF ---- */
+{
+  resetHome();
+  const s = new Stack();
+  // « IF 1 THEN 0 WHILE DUP 3 < REPEAT 1 + »
+  // Both the outer IF and the inner WHILE are missing their END.
+  // Both auto-close at the end of the program body.  The IF runs the
+  // true-branch, which runs the WHILE to completion → 3.
+  s.push(Program([
+    Name('IF'), Integer(1), Name('THEN'),
+      Integer(0),
+      Name('WHILE'), Name('DUP'), Integer(3), Name('<'),
+      Name('REPEAT'),
+        Integer(1), Name('+'),
+    // no inner END (WHILE), no outer END (IF)
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 3n,
+    'session136: nested WHILE-in-IF both auto-close correctly');
+}
+
+/* ---- Nested auto-close: parsed-source FOR with no NEXT ---- */
+{
+  resetHome();
+  const s = new Stack();
+  const vs = parseEntry('<< 0 1 5 FOR k k + >> EVAL');
+  for (const v of vs) {
+    if (v?.type === 'name' && !v.quoted) {
+      const op = lookup(v.id);
+      if (op) { op.fn(s); continue; }
+    }
+    s.push(v);
+  }
+  // 0 + 1 + 2 + 3 + 4 + 5 = 15
+  assert(s.depth === 1 && s.peek().value === 15n,
+    'session136: parsed-source FOR auto-closes on missing NEXT (sum 1..5)');
+}
+
+/* ---- Auto-close composes with HALT lift inside the body ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 3 START HALT 7 »   — auto-closed as NEXT; HALT in iter 1 lifts
+  s.push(Program([
+    Integer(1), Integer(3), Name('START'),
+      Name('HALT'), Integer(7),
+    // no NEXT
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session136: HALT in auto-closed START body suspends');
+  // CONT three times to complete all iterations
+  lookup('CONT').fn(s);
+  // After first CONT: pushes 7, then re-enters loop iter 2, halts again
+  assert(getHalted() !== null,
+    'session136: auto-closed START re-suspends on iter 2 HALT');
+  lookup('CONT').fn(s);
+  assert(getHalted() !== null,
+    'session136: auto-closed START re-suspends on iter 3 HALT');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session136: auto-closed START completes after 3 CONT calls');
+  assert(s.depth === 3 && s.peek().value === 7n,
+    'session136: auto-closed START leaves three 7s on stack after full HALT/CONT cycle');
+}
+
+/* ---- Auto-close + KILL: clean teardown ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 5 FOR i HALT i »   — auto-closed FOR; HALT iter 1; KILL teardown
+  s.push(Program([
+    Integer(1), Integer(5), Name('FOR'), Name('i'),
+      Name('HALT'), Name('i'),
+    // no NEXT
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session136: HALT in auto-closed FOR body suspends');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session136: KILL clears the halt slot in auto-closed FOR');
+  // The FOR's finally restored the i binding.  Since no prior i existed,
+  // varPurge('i') ran in finally; varRecall must be undefined.
+  assert(varRecall('i') === undefined,
+    'session136: KILL of halted auto-closed FOR purges the loop var via finally');
+  assert(localFramesDepth() === 0,
+    'session136: KILL of halted auto-closed FOR leaves no local-frame leak');
+}
+
+/* ================================================================
+   Session 141 — HALT/PROMPT lift through IFERR clauses
+   ================================================================
+   The IFERR runner has been a generator since session 088 and uses
+   `yield* evalRange(...)` for its trap, THEN, and ELSE clauses, so a
+   HALT/PROMPT inside any of those clauses already lifts mechanically
+   through the yield* chain.  The session-088/121 narrative never
+   pinned this behaviour explicitly — these assertions close that gap.
+
+   The interesting interaction is the THEN clause: runIfErr saves the
+   outer last-error before calling setLastError(caught) and restores
+   it in a `finally` that wraps the THEN-clause yield*.  A HALT inside
+   THEN must:
+     - keep the caught error visible to ERRM/ERRN during the halt
+       window (the finally has not run yet — yield is not return);
+     - run the finally on completion (CONT) so the outer last-error
+       slot is restored once the THEN clause finishes; AND
+     - run the finally on KILL (gen.return() triggers the finally
+       chain), so killing a halted IFERR-THEN does not leak the
+       caught error into the outer scope.
+   ================================================================ */
+
+/* ---- HALT inside the IFERR trap clause (no error path) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 10 IFERR HALT 99 THEN 7 ELSE 8 END »
+  // Trap halts on its first token; CONT resumes; trap pushes 99; trap
+  // completes without error → ELSE runs (8 pushed).  Final stack
+  // ⟦10 99 8⟧.  The HALT must NOT be caught by the IFERR — yield is
+  // not an exception.
+  s.push(Program([
+    Integer(10),
+    Name('IFERR'), Name('HALT'), Integer(99),
+    Name('THEN'), Integer(7),
+    Name('ELSE'), Integer(8),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT in IFERR trap suspends');
+  assert(haltedDepth() === 1,
+    'session141: HALT in IFERR trap populates exactly one halted slot');
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session141: HALT in IFERR trap leaves pre-IFERR stack visible (10)');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT after HALT-in-IFERR-trap completes the program');
+  assert(s.depth === 3,
+    'session141: HALT-in-IFERR-trap CONT yields trap result + ELSE result');
+  assert(s.peek(3).value === 10n, 'session141: bottom unchanged');
+  assert(s.peek(2).value === 99n, 'session141: trap-residue 99 preserved');
+  assert(s.peek(1).value === 8n,
+    'session141: ELSE branch ran (no error) → 8 on top');
+  assert(localFramesDepth() === 0,
+    'session141: HALT-in-IFERR-trap leaves no local-frame leak');
+}
+
+/* ---- HALT inside the IFERR THEN clause (after caught error) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 10 IFERR 1 0 / THEN HALT 99 ELSE 8 END »
+  // 1/0 → Infinite result → catch → THEN runs.  HALT in THEN suspends.
+  // last-error visible during halt; CONT runs the rest of THEN (push
+  // 99), the finally restores last-error (null in outer scope).
+  s.push(Program([
+    Integer(10),
+    Name('IFERR'), Integer(1), Integer(0), Name('/'),
+    Name('THEN'), Name('HALT'), Integer(99),
+    Name('ELSE'), Integer(8),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT in IFERR THEN suspends');
+  // Stack rolled back to pre-IFERR state (10) before THEN started.
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session141: HALT-in-IFERR-THEN sees the rolled-back trap stack');
+  // last-error is the trapped error during the halt window — the
+  // restoreLastError in runIfErr's finally has NOT run yet (yield is
+  // not a return).  ERRM / ERRN / ERR0 inside the resumed THEN body
+  // would still see this.
+  const errDuringHalt = getLastError();
+  assert(errDuringHalt && /Infinite result/.test(errDuringHalt.message),
+    'session141: trapped last-error visible during HALT-in-THEN');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT after HALT-in-IFERR-THEN completes the program');
+  // After THEN finishes, the finally has run and restored the outer
+  // last-error (null on entry — there was no outer error).
+  assert(getLastError() === null,
+    'session141: IFERR finally restores outer last-error after CONT');
+  assert(s.depth === 2 && s.peek().value === 99n,
+    'session141: HALT-in-THEN CONT pushes the post-HALT 99');
+  assert(s.peek(2).value === 10n,
+    'session141: pre-IFERR stack preserved beneath THEN result');
+  assert(localFramesDepth() === 0,
+    'session141: HALT-in-IFERR-THEN leaves no local-frame leak');
+}
+
+/* ---- HALT inside the IFERR ELSE clause (success path) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « IFERR 1 2 + THEN 9 ELSE HALT 7 END »
+  // Trap pushes 3 (no error) → ELSE runs.  HALT in ELSE suspends with
+  // 3 already on the stack.  CONT runs the rest of ELSE (push 7).
+  s.push(Program([
+    Name('IFERR'), Integer(1), Integer(2), Name('+'),
+    Name('THEN'), Integer(9),
+    Name('ELSE'), Name('HALT'), Integer(7),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT in IFERR ELSE suspends');
+  // Trap residue (3) is preserved into the ELSE clause — HP50
+  // semantics keep the success path's stack residue.
+  assert(s.depth === 1 && s.peek().value === 3n,
+    'session141: HALT-in-IFERR-ELSE sees the trap-residue stack');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT after HALT-in-IFERR-ELSE completes the program');
+  assert(s.depth === 2 && s.peek().value === 7n,
+    'session141: HALT-in-ELSE CONT pushes the post-HALT 7');
+  assert(s.peek(2).value === 3n,
+    'session141: trap residue (3) survives the ELSE HALT/CONT cycle');
+  assert(localFramesDepth() === 0,
+    'session141: HALT-in-IFERR-ELSE leaves no local-frame leak');
+}
+
+/* ---- PROMPT inside the IFERR THEN clause ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // « IFERR 1 0 / THEN "wait" PROMPT 99 END »
+  // 1/0 → catch → THEN runs.  "wait" pushed, PROMPT pops it to the
+  // banner and halts.  CONT clears banner; THEN finishes (push 99).
+  s.push(Program([
+    Name('IFERR'), Integer(1), Integer(0), Name('/'),
+    Name('THEN'), Str('wait'), Name('PROMPT'), Integer(99),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: PROMPT in IFERR THEN suspends');
+  const banner = getPromptMessage();
+  assert(banner && banner.type === 'string' && banner.value === 'wait',
+    'session141: PROMPT-in-THEN banner is the popped message');
+  assert(s.depth === 0,
+    'session141: PROMPT-in-THEN consumed the message before yield');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT after PROMPT-in-THEN completes the program');
+  assert(getPromptMessage() === null,
+    'session141: CONT clears the PROMPT banner');
+  assert(s.depth === 1 && s.peek().value === 99n,
+    'session141: PROMPT-in-THEN CONT pushes the post-PROMPT 99');
+  assert(getLastError() === null,
+    'session141: IFERR finally restores outer last-error after PROMPT/CONT');
+}
+
+/* ---- KILL of HALT-inside-IFERR-THEN runs the finally chain ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « IFERR 1 0 / THEN HALT 99 END »  → trap errors, THEN halts.
+  // KILL must close the generator → run the IFERR `finally` →
+  // restore the outer last-error slot to whatever it was before the
+  // trap (null in this scope).
+  s.push(Program([
+    Name('IFERR'), Integer(1), Integer(0), Name('/'),
+    Name('THEN'), Name('HALT'), Integer(99),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT-in-IFERR-THEN suspends (KILL precondition)');
+  assert(getLastError() && /Infinite result/.test(getLastError().message),
+    'session141: trapped last-error visible during halt before KILL');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session141: KILL clears the halted IFERR-THEN slot');
+  // Finally chain ran via gen.return(): outer last-error is restored.
+  assert(getLastError() === null,
+    'session141: KILL of halted IFERR-THEN restores outer last-error via finally');
+  assert(localFramesDepth() === 0,
+    'session141: KILL of halted IFERR-THEN leaves no local-frame leak');
+}
+
+/* ---- HALT in trap, post-HALT DOERR triggers the catch path ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 5 IFERR HALT "boom" DOERR THEN 7 END »
+  // Trap halts → CONT resumes → DOERR throws → catch → stack rolls
+  // back to pre-IFERR (5) → THEN runs (push 7).
+  s.push(Program([
+    Integer(5),
+    Name('IFERR'), Name('HALT'), Str('boom'), Name('DOERR'),
+    Name('THEN'), Integer(7),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT in trap (pre-DOERR) suspends');
+  assert(s.depth === 1 && s.peek().value === 5n,
+    'session141: HALT-in-trap with pending DOERR sees pre-IFERR stack');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT runs DOERR → catch → THEN to completion');
+  assert(s.depth === 2 && s.peek().value === 7n,
+    'session141: post-HALT DOERR triggered THEN clause');
+  assert(s.peek(2).value === 5n,
+    'session141: catch rolled back trap residue → 5 preserved');
+  assert(getLastError() === null,
+    'session141: outer last-error restored after THEN finishes');
+}
+
+/* ---- HALT inside an auto-closed IFERR trap clause (no END) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 10 IFERR HALT 5 THEN 99 »   (no END — auto-closed)
+  // Trap halts; CONT resumes; trap pushes 5; no error → THEN does NOT
+  // run.  Final stack ⟦10 5⟧ — same as the explicit-END form.
+  s.push(Program([
+    Integer(10),
+    Name('IFERR'), Name('HALT'), Integer(5),
+    Name('THEN'), Integer(99),
+    // no END — auto-closed at end of program
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT in auto-closed IFERR trap suspends');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT completes auto-closed IFERR trap after HALT');
+  assert(s.depth === 2,
+    'session141: auto-closed IFERR + trap HALT/CONT yields 2-deep stack');
+  assert(s.peek(2).value === 10n && s.peek(1).value === 5n,
+    'session141: auto-closed IFERR + trap HALT yields ⟦10 5⟧ (no error → no THEN)');
+  assert(localFramesDepth() === 0,
+    'session141: auto-closed IFERR + HALT leaves no local-frame leak');
+}
+
+/* ---- HALT inside an auto-closed IFERR THEN clause (no END) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 10 IFERR 1 0 / THEN HALT 7 »   (no END — auto-closed)
+  // Trap errors → THEN runs.  HALT in auto-closed THEN suspends.  CONT
+  // resumes; THEN pushes 7; auto-close terminates the construct.
+  s.push(Program([
+    Integer(10),
+    Name('IFERR'), Integer(1), Integer(0), Name('/'),
+    Name('THEN'), Name('HALT'), Integer(7),
+    // no END — auto-closed at end of program
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT in auto-closed IFERR THEN suspends');
+  assert(getLastError() && /Infinite result/.test(getLastError().message),
+    'session141: trapped last-error visible during auto-closed THEN halt');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT completes auto-closed IFERR THEN after HALT');
+  assert(s.depth === 2 && s.peek().value === 7n,
+    'session141: auto-closed THEN CONT pushes the post-HALT 7');
+  assert(s.peek(2).value === 10n,
+    'session141: pre-IFERR stack preserved beneath auto-closed THEN result');
+  assert(getLastError() === null,
+    'session141: auto-closed IFERR finally restores outer last-error');
+  assert(localFramesDepth() === 0,
+    'session141: auto-closed IFERR THEN HALT leaves no local-frame leak');
+}
+
+/* ---- HALT inside an auto-closed IFERR ELSE clause (no END) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « IFERR 1 2 + THEN 9 ELSE HALT 7 »   (no END — auto-closed)
+  // Trap pushes 3 (no error) → ELSE runs.  HALT in auto-closed ELSE
+  // suspends.  CONT pushes 7; ELSE auto-closes.
+  s.push(Program([
+    Name('IFERR'), Integer(1), Integer(2), Name('+'),
+    Name('THEN'), Integer(9),
+    Name('ELSE'), Name('HALT'), Integer(7),
+    // no END — auto-closed at end of program
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: HALT in auto-closed IFERR ELSE suspends');
+  assert(s.depth === 1 && s.peek().value === 3n,
+    'session141: HALT-in-auto-closed-ELSE sees trap residue (3)');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: CONT completes auto-closed IFERR ELSE after HALT');
+  assert(s.depth === 2 && s.peek().value === 7n,
+    'session141: auto-closed ELSE CONT pushes the post-HALT 7');
+  assert(s.peek(2).value === 3n,
+    'session141: trap residue (3) survives auto-closed ELSE HALT/CONT');
+  assert(localFramesDepth() === 0,
+    'session141: auto-closed IFERR ELSE HALT leaves no local-frame leak');
+}
+
+/* ---- Nested IFERR: inner THEN halts; outer last-error preserved ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Outer IFERR catches first error, sets outer last-error.  Inner
+  // IFERR inside the outer THEN catches a second error; inner THEN
+  // halts.  The outer last-error save/restore is per-frame, so:
+  //   - During the inner halt: getLastError() == inner caught
+  //   - After CONT (inner finishes): getLastError() restored to OUTER caught
+  //   - After outer finishes: getLastError() restored to null (entry value)
+  //
+  // « IFERR 1 0 / THEN
+  //     IFERR "inner" DOERR THEN HALT END
+  //   END »
+  s.push(Program([
+    Name('IFERR'), Integer(1), Integer(0), Name('/'),
+    Name('THEN'),
+      Name('IFERR'), Str('inner'), Name('DOERR'),
+      Name('THEN'), Name('HALT'),
+      Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: nested IFERR — inner THEN HALT suspends');
+  // During the inner halt, last-error is the INNER caught error.
+  const innerErr = getLastError();
+  assert(innerErr && /inner/.test(innerErr.message),
+    'session141: inner caught error visible during inner-THEN halt');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null,
+    'session141: nested IFERR — CONT completes inner THEN');
+  // Inner finally restored outer last-error to the OUTER caught error;
+  // outer finally then restored to null (no error before outer IFERR).
+  assert(getLastError() === null,
+    'session141: nested IFERR — both finallys ran in order, last-error fully restored');
+  assert(localFramesDepth() === 0,
+    'session141: nested IFERR HALT leaves no local-frame leak');
+}
+
+/* ---- KILL of inner-IFERR-THEN halt restores OUTER caught error ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Outer IFERR catches a "outer" error; outer THEN runs an inner
+  // IFERR whose THEN halts.  KILL must close the generator → run the
+  // inner finally → restore last-error to the OUTER caught error.
+  // The outer's own finally does NOT run on KILL because the outer
+  // THEN body's yield* never returns control to runIfErr — KILL
+  // closes the whole generator chain at once via gen.return(), so
+  // ALL active finallys (inner first, then outer) fire in LIFO order
+  // — last-error ends up as `null` (the entry value before outer
+  // IFERR ran).
+  s.push(Program([
+    Name('IFERR'), Str('outer'), Name('DOERR'),
+    Name('THEN'),
+      Name('IFERR'), Str('inner'), Name('DOERR'),
+      Name('THEN'), Name('HALT'),
+      Name('END'),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session141: nested IFERR KILL — precondition halt');
+  // Inner caught error visible during halt.
+  const innerErr2 = getLastError();
+  assert(innerErr2 && /inner/.test(innerErr2.message),
+    'session141: nested IFERR KILL — inner error visible pre-KILL');
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session141: nested IFERR — KILL clears the halt slot');
+  // gen.return() ran both finallys in LIFO: inner restores to outer
+  // caught, then outer restores to entry-null.  Final state: null.
+  assert(getLastError() === null,
+    'session141: nested IFERR KILL — last-error fully restored to entry value');
+  assert(localFramesDepth() === 0,
+    'session141: nested IFERR KILL leaves no local-frame leak');
+}
+
+/* ---- HALT in IFERR trap ignored by IFERR's own catch (yield ≠ throw) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Sanity guard for a subtle invariant: yield is not an exception, so
+  // runIfErr's `try { yield* … } catch (e) { caught = e; }` MUST NOT
+  // capture the HALT yield as a "caught" error.  If it did, we'd see
+  // the THEN clause run on suspension/CONT — wrong semantics.  Test:
+  // « IFERR HALT 1 THEN 999 ELSE 2 END »
+  //   - Trap halts → CONT → trap pushes 1 → no caught error → ELSE
+  //     runs → 2 pushed.  THEN's 999 must NEVER appear on the stack.
+  s.push(Program([
+    Name('IFERR'), Name('HALT'), Integer(1),
+    Name('THEN'), Integer(999),
+    Name('ELSE'), Integer(2),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null, 'session141: trap-HALT precondition');
+  lookup('CONT').fn(s);
+  assert(getHalted() === null, 'session141: trap-HALT CONT runs to end');
+  assert(s.depth === 2, 'session141: trap-HALT yields trap residue + ELSE');
+  assert(s.peek(1).value === 2n,
+    'session141: ELSE clause ran (HALT was not mistaken for an error)');
+  assert(s.peek(2).value === 1n,
+    'session141: trap residue 1 preserved beneath ELSE result');
+  // Belt-and-suspenders: 999 (THEN-clause sentinel) must NOT be on the stack.
+  for (let lvl = 1; lvl <= s.depth; lvl++) {
+    assert(s.peek(lvl).value !== 999n,
+      `session141: THEN-clause sentinel 999 absent at level ${lvl}`);
+  }
 }
