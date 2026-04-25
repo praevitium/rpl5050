@@ -170,18 +170,16 @@ function makeXYMatrix() {
     'session064: ΣX on empty Vector → 0 or Bad argument (documented)');
 
   // NΣ on non-Vector/Matrix: Bad argument type.
-  let threw2 = false;
   const u = new Stack();
   u.push(Real(5));
-  try { lookup('NΣ').fn(u); } catch (e) { threw2 = /Bad argument type/.test(e.message); }
-  assert(threw2, 'session064: NΣ on Real → Bad argument type');
+  assertThrows(() => lookup('NΣ').fn(u), /Bad argument type/,
+    'session064: NΣ on Real → Bad argument type');
 
   // ΣX on a Matrix with a String entry → Bad argument type.
-  let threw3 = false;
   const w = new Stack();
   w.push(Matrix([[Str('oops')]]));
-  try { lookup('ΣX').fn(w); } catch (e) { threw3 = /Bad argument type/.test(e.message); }
-  assert(threw3, 'session064: ΣX on Matrix with String entry → Bad argument type');
+  assertThrows(() => lookup('ΣX').fn(w), /Bad argument type/,
+    'session064: ΣX on Matrix with String entry → Bad argument type');
 }
 
 /* ---- MEAN / SDEV / VAR on XY matrix use column 0 (reinforce invariant) ---- */

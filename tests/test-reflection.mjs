@@ -1303,3 +1303,160 @@ function _roundTripProgram(prog) {
   assert(caught && /Bad argument type/.test(caught.message),
     'session088: SIZE on Real still throws Bad argument type');
 }
+
+/* ---- TVARS — type-filtered VARS (session 099) ---- */
+{
+  resetHome();
+
+  // Seed a variety of types in the current dir.
+  varStore('AR',  Real(3.14));                      // type 0
+  varStore('AC',  Complex(1, 2));                   // type 1
+  varStore('AS',  Str('hi'));                       // type 2
+  varStore('AL',  RList([Real(1)]));                // type 5
+  varStore('AP',  Program([ Integer(1n) ]));        // type 8
+  varStore('AZ',  Integer(42n));                    // type 28
+  varStore('AR2', Real(2.71));                      // type 0 (second Real)
+
+  // --- Integer arg: single type filter ---
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    assert(r.type === 'list' && r.items.length === 2,
+      'session099: TVARS 0 returns both Reals');
+    const ids = r.items.map(n => n.id).sort();
+    assert(ids[0] === 'AR' && ids[1] === 'AR2',
+      'session099: TVARS 0 picks AR and AR2');
+  }
+
+  // --- Real-but-integer arg: should coerce ---
+  {
+    const s = new Stack();
+    s.push(Real(28));
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    assert(r.type === 'list' && r.items.length === 1 && r.items[0].id === 'AZ',
+      'session099: TVARS 28. (Real) picks Integer var AZ');
+  }
+
+  // --- Integer arg: type that nobody matches ---
+  {
+    const s = new Stack();
+    s.push(Integer(9n));  // Algebraic / Symbolic — none stored
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    assert(r.type === 'list' && r.items.length === 0,
+      'session099: TVARS 9 with no Symbolics returns {}');
+  }
+
+  // --- Negative Integer: complement (all except type |n|) ---
+  {
+    const s = new Stack();
+    s.push(Integer(-0n));  // -0n === 0n in BigInt semantics — use Integer(-1) route instead
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    // -0 behaves as 0 — just a single-type positive filter.  Sanity, not the real negative test.
+    assert(r.type === 'list' && r.items.length === 2,
+      'session099: TVARS -0 equivalent to TVARS 0');
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(-2n));
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    // All stored types EXCEPT 2 (String): AR, AC, AL, AP, AZ, AR2 — 6 names.
+    assert(r.type === 'list' && r.items.length === 6,
+      'session099: TVARS -2 excludes Strings (6 remaining)');
+    const ids = new Set(r.items.map(n => n.id));
+    assert(!ids.has('AS'), 'session099: TVARS -2 does not include AS');
+    assert(ids.has('AR') && ids.has('AC') && ids.has('AL') && ids.has('AP') && ids.has('AZ') && ids.has('AR2'),
+      'session099: TVARS -2 returns every non-String var');
+  }
+
+  // --- List arg: union of positive types ---
+  {
+    const s = new Stack();
+    s.push(RList([ Integer(0n), Integer(2n) ]));
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    // Reals (2) + String (1) = 3 names.
+    assert(r.type === 'list' && r.items.length === 3,
+      'session099: TVARS {0 2} unions Reals + String');
+    const ids = new Set(r.items.map(n => n.id));
+    assert(ids.has('AR') && ids.has('AR2') && ids.has('AS'),
+      'session099: TVARS {0 2} includes AR, AR2, AS');
+  }
+
+  // --- List arg with a negative: include-list minus exclude-list ---
+  {
+    const s = new Stack();
+    s.push(RList([ Integer(0n), Integer(2n), Integer(-2n) ]));
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    // include = {0,2}; exclude = {2}; net = {0} → 2 Reals.
+    assert(r.type === 'list' && r.items.length === 2,
+      'session099: TVARS {0 2 -2} nets to just Reals after exclusion');
+    const ids = new Set(r.items.map(n => n.id));
+    assert(ids.has('AR') && ids.has('AR2'),
+      'session099: TVARS {0 2 -2} returns only Reals');
+  }
+
+  // --- Empty list: no positive filter → everything (minus no exclusions) ---
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('TVARS').fn(s);
+    const r = s.peek();
+    assert(r.type === 'list' && r.items.length === 7,
+      'session099: TVARS {} returns every var (empty include == no filter)');
+  }
+
+  // --- Reject non-integer Real ---
+  {
+    const s = new Stack();
+    s.push(Real(3.14));
+    let caught = null;
+    try { lookup('TVARS').fn(s); } catch (e) { caught = e; }
+    assert(caught && /Bad argument type/.test(caught.message),
+      'session099: TVARS 3.14 rejects non-integer Real');
+  }
+
+  // --- Reject Name / String / Program as type arg ---
+  {
+    const s = new Stack();
+    s.push(Name('foo'));
+    let caught = null;
+    try { lookup('TVARS').fn(s); } catch (e) { caught = e; }
+    assert(caught && /Bad argument type/.test(caught.message),
+      'session099: TVARS with Name arg rejects');
+  }
+  {
+    const s = new Stack();
+    s.push(Str('bar'));
+    let caught = null;
+    try { lookup('TVARS').fn(s); } catch (e) { caught = e; }
+    assert(caught && /Bad argument type/.test(caught.message),
+      'session099: TVARS with String arg rejects');
+  }
+
+  // --- List containing a non-integer element: reject ---
+  {
+    const s = new Stack();
+    s.push(RList([ Integer(0n), Str('x') ]));
+    let caught = null;
+    try { lookup('TVARS').fn(s); } catch (e) { caught = e; }
+    assert(caught && /Bad argument type/.test(caught.message),
+      'session099: TVARS { 0 "x" } rejects non-integer list element');
+  }
+
+  // --- Empty HOME: TVARS returns {} for any filter ---
+  {
+    resetHome();
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('TVARS').fn(s);
+    assert(s.peek().type === 'list' && s.peek().items.length === 0,
+      'session099: TVARS on empty dir returns {}');
+  }
+}

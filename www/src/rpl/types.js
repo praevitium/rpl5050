@@ -14,6 +14,11 @@
                  `.toNumber()` explicitly.  See `toRealOrThrow` which
                  is the canonical coercion helper.
      Integer   — arbitrary precision via BigInt
+     Rational  — exact ratio of integers via Fraction.js; participates in
+                 the Integer ⊂ Rational ⊂ Real ⊂ Complex promotion lattice.
+                 Stored as { n: BigInt, d: BigInt } in lowest terms with
+                 d ≥ 1n; introduced in session 092.  Fraction.js is
+                 vendored at `www/src/vendor/fraction.js/`.
      Complex   — { re, im } real pair
      String    — quoted string literal
      Name      — global or local identifier
@@ -125,7 +130,7 @@ export function Integer(n) {
  *     Integer(2), not Rational(2/1)).
  *
  * Arithmetic is performed internally via Fraction.js (vendored at
- * `src/vendor/fraction.js/`), which is BigInt-backed so a Rational of
+ * `www/src/vendor/fraction.js/`), which is BigInt-backed so a Rational of
  * arbitrarily large numerator and denominator (e.g. a factorial ratio)
  * works out of the box.
  */

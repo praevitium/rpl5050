@@ -308,6 +308,75 @@ export const KNOWN_FUNCTIONS = Object.freeze({
   ERFC: { arity: 1 },
   UTPF: { arity: 3 },
   UTPT: { arity: 2 },
+  // Complex-decomposition trio — CONJ / RE / IM.  Stack ops in ops.js
+  // lift Name / Symbolic operands to `AstFn('CONJ'|'RE'|'IM', [x])`; the
+  // entry-line shape `'CONJ(X)'` / `'RE(X)'` / `'IM(X)'` must round-trip
+  // through parseAlgebra for the Symbolic to survive re-entry.  On a
+  // Real / Integer argument CONJ / RE are identity and IM is zero, so
+  // fold at simplify time to keep constant subtrees clean.
+  //   CONJ(Real(5))  →  5       (identity on ℝ)
+  //   RE(Real(5))    →  5       (real part of a real is itself)
+  //   IM(Real(5))    →  0       (imaginary part of a real is zero)
+  // Complex numeric folding is deferred — the algebra AST has no
+  // Complex leaf today, so a Num(x) in these slots is real by
+  // construction.
+  CONJ: { arity: 1, eval: x => Number.isFinite(x) ? x : null },
+  RE:   { arity: 1, eval: x => Number.isFinite(x) ? x : null },
+  IM:   { arity: 1, eval: x => Number.isFinite(x) ? 0 : null },
+  // Stable-near-zero log / exp.  Same numeric contracts as LN / EXP for
+  // the non-degenerate cases; safe to fold at simplify time because
+  // Math.log1p / Math.expm1 are mode-independent.  LNP1(x) has a domain
+  // cutoff at x ≤ -1 (log of zero or negative) — mirror LN's behaviour
+  // of leaving symbolic at the domain edge rather than injecting ±∞.
+  LNP1: { arity: 1, eval: x => Number.isFinite(x) && x > -1 ? Math.log1p(x) : null },
+  EXPM: { arity: 1, eval: x => Number.isFinite(x) ? Math.expm1(x) : null },
+  // HP50 real-decomposition — XPON / MANT.  For `x = m·10^e` with
+  // 1 ≤ |m| < 10, XPON returns `e` and MANT returns `m`.  x = 0 is the
+  // convention special-case: XPON(0) = 0, MANT(0) = 0.  Both folds
+  // mirror the stack ops exactly (see `_xponOf` in ops.js).
+  XPON: { arity: 1, eval: x => {
+    if (!Number.isFinite(x)) return null;
+    if (x === 0) return 0;
+    return Math.floor(Math.log10(Math.abs(x)));
+  } },
+  MANT: { arity: 1, eval: x => {
+    if (!Number.isFinite(x)) return null;
+    if (x === 0) return 0;
+    const e = Math.floor(Math.log10(Math.abs(x)));
+    return x / Math.pow(10, e);
+  } },
+  // TRUNC — CAS-form truncate-to-n-places.  Symbolic lift happens when
+  // either operand is a Name / Symbolic, so the entry-line round-trip is
+  // `'TRUNC(X, 3)'`.  No numeric evaluator at simplify time: the stack
+  // op rejects n outside [-11, 11] and only produces numeric output for
+  // n ≥ 0 in decimal-places mode (n < 0 is significant-figures, which
+  // depends on MANT / XPON internally — leave that path to the stack
+  // op rather than duplicating it here).  Arity 2, parser-round-trip only.
+  TRUNC: { arity: 2 },
+  // Special functions — ZETA (Riemann ζ), LAMBERT (principal-branch W₀),
+  // PSI (digamma / polygamma).  All have numeric evaluators on the
+  // stack side (Euler–Maclaurin, Halley iteration, Bernoulli series),
+  // but none is a clean constant-fold at simplify time: the reflection
+  // branches / iterative guards only make sense at EVAL time with a
+  // concrete arg.  Listed here for entry-line round-trip only.
+  //
+  // PSI accepts 1 OR 2 args (digamma `PSI(x)`, polygamma `PSI(x, n)`)
+  // so `arity` is omitted — the parser's `spec.arity !== undefined`
+  // guard then skips the arg-count check.  HP50 AUR §CAS-SPECIAL lists
+  // both shapes.
+  ZETA:    { arity: 1 },
+  LAMBERT: { arity: 1 },
+  PSI:     { /* variadic 1 or 2 */ },
+  // Ei / Si / Ci — exponential / sine / cosine integrals.  Native numeric
+  // evaluators live on the stack side (power series + Lentz CF for Si/Ci;
+  // power series + asymptotic + CF for Ei).  Listed here for parser
+  // round-trip of the Symbolic lift, e.g. `'Ei(X)'`.  No simplify-time
+  // fold: the numeric branches are too involved for a clean closed form,
+  // and the fold would race the stack-op's domain errors (Ei(0)
+  // `Infinite result`, Ci(x<0) `Bad argument value`).
+  EI:      { arity: 1 },
+  SI:      { arity: 1 },
+  CI:      { arity: 1 },
 });
 
 export function isKnownFunction(name) {

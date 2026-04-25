@@ -1,9 +1,9 @@
 import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import {
-  Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
+  Real, Integer, Rational, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix, Symbolic,
-  isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
+  isReal, isInteger, isRational, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
@@ -384,6 +384,62 @@ import { assert, assertThrows } from './helpers.mjs';
     /Bad argument type/,
     'session087: String < Real throws Bad argument type (no cross-type lift for <)'
   );
+
+  // -------- session102: String lex — edge cases --------
+  // Prefix ordering (HP50 App. J: "shorter prefix is less").
+  {
+    const s = new Stack();
+    s.push(Str('ab')); s.push(Str('abc'));
+    lookup('<').fn(s);
+    assert(s.peek().value.eq(1),
+      'session102: "ab" < "abc" = 1 (shorter prefix is less; HP50 App. J)');
+  }
+  {
+    const s = new Stack();
+    s.push(Str('abc')); s.push(Str('ab'));
+    lookup('<').fn(s);
+    assert(s.peek().value.eq(0),
+      'session102: "abc" < "ab" = 0 (longer-prefix regression guard)');
+  }
+  // Empty-string ordering — "" is less than any non-empty string.
+  {
+    const s = new Stack();
+    s.push(Str('')); s.push(Str('a'));
+    lookup('<').fn(s);
+    assert(s.peek().value.eq(1),
+      'session102: "" < "a" = 1 (empty string is less than any non-empty)');
+  }
+  {
+    const s = new Stack();
+    s.push(Str('a')); s.push(Str(''));
+    lookup('>').fn(s);
+    assert(s.peek().value.eq(1),
+      'session102: "a" > "" = 1 (empty-string symmetric guard)');
+  }
+  // "" ≤ "" — degenerate equal-string boundary.
+  {
+    const s = new Stack();
+    s.push(Str('')); s.push(Str(''));
+    lookup('≤').fn(s);
+    assert(s.peek().value.eq(1),
+      'session102: "" ≤ "" = 1 (equal empty strings)');
+  }
+  // Case sensitivity — ASCII order has uppercase (65..90) before lowercase (97..122).
+  {
+    const s = new Stack();
+    s.push(Str('A')); s.push(Str('a'));
+    lookup('<').fn(s);
+    assert(s.peek().value.eq(1),
+      'session102: "A" < "a" = 1 (ASCII uppercase precedes lowercase; case-sensitive)');
+  }
+  // Non-ASCII char — use '~' (126) vs 'A' (65) — '~' > 'A' by code.
+  {
+    const s = new Stack();
+    s.push(Str('~')); s.push(Str('A'));
+    lookup('>').fn(s);
+    assert(s.peek().value.eq(1),
+      'session102: "~" > "A" = 1 (char-code lex on printable range)');
+  }
 }
 
 /* ---- SAME on structurally identical Symbolics ----
@@ -647,4 +703,157 @@ import { assert, assertThrows } from './helpers.mjs';
   lookup('==').fn(s);
   assert(s.peek().value.eq(0),
     "session072: `X` == 5 = 0 (== is strictly structural, no symbolic lift)");
+}
+
+/* ================================================================
+   session107: Rational (Q) comparisons — promotion-lattice peer
+
+   Q participates in Z ⊂ Q ⊂ R ⊂ C, so ==, <, ≤, >, ≥, <>, SAME all
+   flow through promoteNumericPair.  Coverage for this type was
+   absent from test-comparisons.mjs prior to session 107 (grep for
+   `Rational` in this file returned zero matches at entry).  See
+   docs/DATA_TYPES.md session-092 notes for the Rational rollout.
+   ================================================================ */
+
+/* ---- Q × Q canonicalisation — same ratio compares equal ---- */
+{
+  // Q is canonicalised at construction (sign on numerator, reduced by
+  // gcd) so Rational(2,4) and Rational(1,2) are the SAME frozen shape
+  // — eqValues' rational branch compares { n, d } by BigInt equality.
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Rational(2, 4));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(1),
+    'session107: 1/2 == 2/4 (canonicalised) → 1');
+}
+{
+  // -6/9 canonicalises to -2/3 — so Rational(-6,9) == Rational(-2,3) is 1.
+  const s = new Stack();
+  s.push(Rational(-6, 9));
+  s.push(Rational(-2, 3));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(1),
+    'session107: -6/9 == -2/3 (canonical shape matches after gcd reduction)');
+}
+{
+  // Different rationals compare unequal.
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Rational(1, 3));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(0),
+    'session107: 1/2 == 1/3 → 0');
+}
+
+/* ---- Cross-type Q × Z ---- */
+{
+  // Z ⊂ Q: Integer(3) promotes to 3/1 for the compare.
+  const s = new Stack();
+  s.push(Rational(3, 1));
+  s.push(Integer(3));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(1),
+    'session107: Rational(3/1) == Integer(3) → 1 (Z promoted to Q)');
+}
+{
+  // Non-integer Rational vs Integer: unequal regardless of direction.
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Integer(0));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(0),
+    'session107: Rational(1/2) == Integer(0) → 0');
+}
+
+/* ---- Cross-type Q × R ---- */
+{
+  // Q ⊂ R: 1/2 promoted to 0.5 (Decimal) — value-equal to Real(0.5).
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Real(0.5));
+  lookup('==').fn(s);
+  assert(s.peek().value.eq(1),
+    'session107: Rational(1/2) == Real(0.5) → 1 (Q widened to R)');
+}
+
+/* ---- Ordering < / > / ≤ / ≥ on Q ---- */
+{
+  const s = new Stack();
+  s.push(Rational(1, 3));
+  s.push(Rational(1, 2));
+  lookup('<').fn(s);
+  assert(s.peek().value.eq(1), 'session107: 1/3 < 1/2 → 1');
+}
+{
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Rational(1, 3));
+  lookup('>').fn(s);
+  assert(s.peek().value.eq(1), 'session107: 1/2 > 1/3 → 1');
+}
+{
+  // ≤ accepts equality.
+  const s = new Stack();
+  s.push(Rational(2, 3));
+  s.push(Rational(2, 3));
+  lookup('≤').fn(s);
+  assert(s.peek().value.eq(1), 'session107: 2/3 ≤ 2/3 → 1 (equal accepted)');
+}
+{
+  // Sign crossing: negative rational strictly less than positive.
+  const s = new Stack();
+  s.push(Rational(-1, 2));
+  s.push(Rational(1, 2));
+  lookup('<').fn(s);
+  assert(s.peek().value.eq(1), 'session107: -1/2 < 1/2 → 1');
+}
+{
+  // ≥ with cross-type Q × Z.
+  const s = new Stack();
+  s.push(Rational(3, 2));
+  s.push(Integer(1));
+  lookup('≥').fn(s);
+  assert(s.peek().value.eq(1), 'session107: 3/2 ≥ 1 → 1 (cross-type Q × Z)');
+}
+{
+  // Integer strictly less than positive rational.
+  const s = new Stack();
+  s.push(Integer(0));
+  s.push(Rational(1, 2));
+  lookup('<').fn(s);
+  assert(s.peek().value.eq(1), 'session107: 0 < 1/2 → 1 (Z × Q direction)');
+}
+
+/* ---- ≠ / <> on Q ---- */
+{
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Rational(1, 3));
+  lookup('<>').fn(s);
+  assert(s.peek().value.eq(1), 'session107: 1/2 <> 1/3 → 1');
+}
+
+/* ---- SAME on Q — not strict on type within the numeric lattice ---- */
+{
+  // Unlike BinaryInteger (where SAME is strict on type), Rational goes
+  // through `eqValues`'s `isNumber && isNumber` branch, which promotes
+  // Z / Q / R / C pairwise.  So Rational(3/1) SAME Integer(3) = 1.
+  // Pinning this so any future "Rational-strict SAME" refactor has a
+  // regression guard.
+  const s = new Stack();
+  s.push(Rational(3, 1));
+  s.push(Integer(3));
+  lookup('SAME').fn(s);
+  assert(s.peek().value.eq(1),
+    'session107: Rational(3/1) SAME Integer(3) → 1 (numeric promotion, not type-strict)');
+}
+{
+  // Q × Q SAME on same canonical shape.
+  const s = new Stack();
+  s.push(Rational(1, 2));
+  s.push(Rational(1, 2));
+  lookup('SAME').fn(s);
+  assert(s.peek().value.eq(1),
+    'session107: Rational(1/2) SAME Rational(1/2) → 1');
 }

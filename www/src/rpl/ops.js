@@ -41,7 +41,11 @@ import {
   multiplyUexpr, divideUexpr, inverseUexpr, powerUexpr,
   sameDims, scaleOf, toBaseUexpr, uexprEqual,
 } from './units.js';
-import { RPLError, RPLAbort, RPLHalt, setPushCoerce } from './stack.js';
+// REVIEW.md X-010 closed session 114 — RPLHalt was imported but never
+// referenced; HALT raises via the generator-protocol sentinel now, not
+// via a thrown RPLHalt class.  Only RPLError + RPLAbort + setPushCoerce
+// survive here.
+import { RPLError, RPLAbort, setPushCoerce } from './stack.js';
 import {
   Var as AstVar, Num as AstNum,
   Bin as AstBin, Fn as AstFn, Neg as AstNeg,
@@ -49,6 +53,7 @@ import {
   isNum as astIsNum, KNOWN_FUNCTIONS,
   formatAlgebra,
   freeVars as algebraFreeVars,
+  isKnownFunction,
 } from './algebra.js';
 import { giac } from './cas/giac-engine.mjs';
 import { astToGiac, giacToAst, buildGiacCmd, splitGiacList } from './cas/giac-convert.mjs';
@@ -59,23 +64,27 @@ import {
 import {
   state as _calcState,
   setAngle, toRadians, fromRadians,
-  varStore, varRecall, varPurge, varList, varOrder, reorderCurrentEntries,
+  varStore, varRecall, varPurge, varOrder, reorderCurrentEntries,
   setLastError, clearLastError, getLastError, restoreLastError,
-  goHome, goUp, goInto, enterDirectory, makeSubdir, currentPath,
+  goHome, goUp, enterDirectory, makeSubdir, currentPath,
   setWordsize, getWordsize, getWordsizeMask,
   setBinaryBase, getBinaryBase,
   setCoordMode,
   setDisplay,
-  setTextbookMode, getTextbookMode,
+  setTextbookMode,
   setApproxMode, getApproxMode,
-  setComplexMode, getComplexMode, toggleComplexMode,
+  getComplexMode, toggleComplexMode,
   setUserFlag, clearUserFlag, testUserFlag, clearAllUserFlags,
-  seedPrng, nextPrngUnit, nextPrngInt9, getPrngSeed,
+  seedPrng, nextPrngUnit, nextPrngInt9,
   setLastFitModel, getLastFitModel,
   setHalted, getHalted, clearHalted, takeHalted,
-  // clearAllHalted and haltedDepth are exported from state.js and used
-  // directly by tests/test-control-flow.mjs; no op handler calls them.
+  // clearAllHalted, haltedDepth, varList, goInto, getTextbookMode,
+  // setComplexMode, getPrngSeed are all exported from state.js and
+  // used directly by tests or other modules; no op handler calls them.
   setCasVx, getCasVx,
+  // Session 121: PROMPT op uses these to publish/clear the prompt banner.
+  // getPromptMessage is exported from state.js for tests / UI subscribers.
+  setPromptMessage, clearPromptMessage,
 } from './state.js';
 // Used by OBJ→ on String: re-parse the string as RPL source.  parser.js
 // deliberately does not import ops.js, so this top-level import is safe.
@@ -230,6 +239,17 @@ function _astToRplValue(ast) {
   if (!ast) return Name('', { quoted: true });
   if (ast.kind === 'num') return Real(ast.value);
   if (ast.kind === 'var') return Name(ast.name, { quoted: true });
+  // `Neg(Num(v))` is the AST shape parseAlgebra emits for any negative
+  // numeric literal — Giac's `caseval` returns negative integers and
+  // negative decimals as `"-1"`, `"-3.14"`, etc., which round-trip
+  // through `giacToAst` as a Neg-wrapped Num.  Unwrap so EGVL / EGV /
+  // GREDUCE / FACTOR present a negative numeric eigenvalue or
+  // remainder as a plain Real(-v) instead of a Symbolic with a
+  // single-leaf negation node.  (Session 119 — surfaced when
+  // GREDUCE's AUR worked example returned `-1`.)
+  if (ast.kind === 'neg' && ast.arg && ast.arg.kind === 'num') {
+    return Real(-ast.arg.value);
+  }
   return Symbolic(ast);
 }
 
@@ -722,7 +742,6 @@ function binaryMath(op) {
 
 /** Mask a BigInt to the current wordsize's low bits. */
 function _mask() { return getWordsizeMask(); }
-function _maskVal(v) { return v & _mask(); }
 
 function binIntBinary(op, a, b) {
   const m = _mask();
@@ -878,24 +897,15 @@ function _stringCoerce(v) {
   if (isSymbolic(v)) return formatAlgebra(v.expr);
   return null;
 }
-const _addNumeric = binaryMath('+');
-register('+', (s) => {
-  const b = s.peek(1);
-  const a = s.peek(2);
-  if (isString(a) || isString(b)) {
-    s.popN(2);
-    const l = _stringCoerce(a);
-    const r = _stringCoerce(b);
-    if (l == null || r == null) throw new RPLError('Bad argument type');
-    s.push(Str(l + r));
-    return;
-  }
-  _addNumeric(s);
-});
-register('-', binaryMath('-'));
-register('*', binaryMath('*'));
-register('/', binaryMath('/'));
-register('^', binaryMath('^'));
+// Arithmetic +, -, *, /, ^ are registered later in this file via
+// `_withTaggedBinary(_binaryMathMixed(op))` — that pass is the single
+// source of truth for scalar arithmetic dispatch (Tagged, BinInt×Real
+// mixing, String-concat on `+`).  Session 099 removed the first-pass
+// `register('+', ...)` / `binaryMath(op)` shadows that existed here;
+// they were unreachable (Map semantics — second `register()` wins) and
+// still pulled weight in greps.  The second-pass still calls
+// `binaryMath('+')(s)` as the generic numeric fallback inside the `+`
+// handler, so `binaryMath` itself is live.
 
 /* -------------------- unary ops --------------------
    Each numeric unary op checks for a symbolic operand (Symbolic or
@@ -1165,44 +1175,13 @@ function unaryReal(name, fn) {
    matches the HP50 behavior under flag -105 CLEAR: `30 SIN` leaves
    `SIN(30)` on the stack; pressing →NUM then folds to 0.5 (in DEG).
    ----------------------------------------------------------------- */
-const trigFwd = (name, fn) => _withListUnary((s) => {
-  const v = s.pop();
-  if (_isSymOperand(v)) {
-    s.push(Symbolic(AstFn(name, [_toAst(v)])));
-    return;
-  }
-  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
-    const x = isRational(v) ? Number(v.n) / Number(v.d) : Number(v.value);
-    s.push(_exactUnaryLift(name, fn(toRadians(x)), v));
-    return;
-  }
-  s.push(Real(fn(toRadians(toRealOrThrow(v)))));
-});
-const trigInv = (name, fn) => _withListUnary((s) => {
-  const v = s.pop();
-  if (_isSymOperand(v)) {
-    s.push(Symbolic(AstFn(name, [_toAst(v)])));
-    return;
-  }
-  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
-    const x = isRational(v) ? Number(v.n) / Number(v.d) : Number(v.value);
-    s.push(_exactUnaryLift(name, fromRadians(fn(x)), v));
-    return;
-  }
-  s.push(Real(fromRadians(fn(toRealOrThrow(v)))));
-});
-
-register('SIN',   trigFwd('SIN',  Math.sin));
-register('COS',   trigFwd('COS',  Math.cos));
-register('TAN',   trigFwd('TAN',  Math.tan));
-register('ASIN',  trigInv('ASIN', Math.asin));
-register('ACOS',  trigInv('ACOS', Math.acos));
-register('ATAN',  trigInv('ATAN', Math.atan));
-
-register('LN',    unaryReal('LN',   Math.log));
-register('LOG',   unaryReal('LOG',  Math.log10));
-register('EXP',   unaryReal('EXP',  Math.exp));
-register('ALOG',  unaryReal('ALOG', x => Math.pow(10, x)));
+// Real-only SIN/COS/TAN/ASIN/ACOS/ATAN/LN/LOG/EXP/ALOG were registered
+// here in the first pass via `trigFwd` / `trigInv` / `unaryReal`.
+// Session 099 removed the shadows; the second-pass Complex-aware
+// registrations near `_trigFwdCx` / `_unaryCx` (late in this file) are
+// the authoritative entry points.  `trigFwd` and `trigInv` had no
+// other callers — deleted with the registers.  `unaryReal` remains —
+// R→D / D→R still use it.
 
 /* --------------------- hyperbolic ---------------------
    SINH/COSH/TANH/ASINH/ACOSH/ATANH live in KNOWN_FUNCTIONS for
@@ -1213,32 +1192,12 @@ register('ALOG',  unaryReal('ALOG', x => Math.pow(10, x)));
    NaN for out-of-domain inputs, and throw RPLError to match how other
    domain-violation ops report.
    -------------------------------------------------------------------- */
-register('SINH',  unaryReal('SINH',  Math.sinh));
-register('COSH',  unaryReal('COSH',  Math.cosh));
-register('TANH',  unaryReal('TANH',  Math.tanh));
-register('ASINH', unaryReal('ASINH', Math.asinh));
-register('ACOSH', (s) => {
-  const v = s.pop();
-  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ACOSH', [_toAst(v)]))); return; }
-  const x = toRealOrThrow(v);
-  if (!(x >= 1)) throw new RPLError('Bad argument value');
-  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
-    s.push(_exactUnaryLift('ACOSH', Math.acosh(x), v));
-    return;
-  }
-  s.push(Real(Math.acosh(x)));
-});
-register('ATANH', (s) => {
-  const v = s.pop();
-  if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ATANH', [_toAst(v)]))); return; }
-  const x = toRealOrThrow(v);
-  if (!(x > -1 && x < 1)) throw new RPLError('Bad argument value');
-  if (!getApproxMode() && (isInteger(v) || isRational(v))) {
-    s.push(_exactUnaryLift('ATANH', Math.atanh(x), v));
-    return;
-  }
-  s.push(Real(Math.atanh(x)));
-});
+// Hyperbolic SINH/COSH/TANH/ASINH/ACOSH/ATANH — first-pass Real-only
+// registrations lived here (unaryReal-based plus domain-checked ACOSH/
+// ATANH bodies).  Session 099 removed them; see the `_unaryCx`
+// registrations late in this file for the complex-aware authoritative
+// versions, and the `_withTaggedUnary(_withListUnary(_withVMUnary(...)))`
+// wrapping for Tagged / List / V/M widening.
 
 /* -------- XROOT — n-th root, `y x XROOT` = y^(1/x) ----
    HP50 behavior: xth root of y (two-arg op).  Delegates to the binary
@@ -2643,6 +2602,68 @@ register('VARS', (s) => {
 });
 
 /* ------------------------------------------------------------------
+   TVARS — type-filtered VARS (AUR §3 p.2-261).
+
+     n      TVARS  → { names }   names whose TYPE code == n
+                                 (or != |n| when n < 0)
+     {...}  TVARS  → { names }   union of positive type codes, minus
+                                 any type codes listed as negatives
+
+   Type codes match HP50 User Guide §2 (same table as the `TYPE` op);
+   our `_hp50TypeCode` helper supplies them.  Non-integer Reals and
+   non-integer Rationals are rejected as "Bad argument value".  Empty
+   lists are accepted and select everything (HP50 parity — an empty
+   include-set means "no positive filter applied").  Ordering of the
+   returned list matches `VARS` (reverse-insertion), so CONT/KILL /
+   repeated TVARS calls stay stable under ORDER.
+
+   Follows HP50 semantics: only the current directory is searched
+   (TVARS never walks up the dir chain — use PATH + VARS for that).
+   ------------------------------------------------------------------ */
+function _tvarsCoerceCode(v) {
+  if (isInteger(v)) return Number(v.value);
+  if (isReal(v) && v.value.isFinite() && v.value.isInteger()) {
+    return v.value.toNumber();
+  }
+  throw new RPLError('Bad argument type');
+}
+
+function _tvarsFilter(codes) {
+  const include = new Set();
+  const exclude = new Set();
+  for (const n of codes) {
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      throw new RPLError('Bad argument value');
+    }
+    if (n >= 0) include.add(n);
+    else        exclude.add(-n);
+  }
+  const names = [];
+  // Use the same reverse-insertion order as VARS so the returned list
+  // is a drop-in filtered view.
+  for (const id of varOrder().slice().reverse()) {
+    const val = varRecall(id);
+    if (val === undefined) continue;  // purged mid-walk — skip
+    const code = _hp50TypeCode(val);
+    if (include.size > 0 && !include.has(code)) continue;
+    if (exclude.has(code)) continue;
+    names.push(Name(id));
+  }
+  return names;
+}
+
+register('TVARS', (s) => {
+  const v = s.pop();
+  if (isList(v)) {
+    const codes = v.items.map(_tvarsCoerceCode);
+    s.push(RList(_tvarsFilter(codes)));
+    return;
+  }
+  const code = _tvarsCoerceCode(v);
+  s.push(RList(_tvarsFilter([code])));
+});
+
+/* ------------------------------------------------------------------
    Directory navigation — CRDIR / UPDIR / HOME / PATH.
 
    CRDIR  ( name  --  )    create an empty subdirectory of the current
@@ -2914,6 +2935,68 @@ function _pushLocalFrame(names, values) {
 
 function _popLocalFrame() { _localFrames.pop(); }
 
+/** Single-step debugger flag.  When `true`, `evalRange` yields after
+ *  every token (in addition to the HALT-yield).  The SST / SST↓ /
+ *  DBUG handlers manage this flag together with the haltedStack:
+ *    - DBUG <prog>  : sets the flag, then EVALs the program — which
+ *                     immediately yields before the first token,
+ *                     suspending the program on the haltedStack so the
+ *                     user can inspect the stack and step through it.
+ *    - SST          : while a halted generator exists, drives gen.next()
+ *                     exactly once.  Sets the flag, calls next() (which
+ *                     causes evalRange to yield after one token), then
+ *                     re-pushes the still-live generator onto the stack
+ *                     so the next SST can resume from the next token.
+ *                     Clears the flag if the generator finishes.
+ *    - SST↓         : step-into (session 106).  Same drive mechanism as
+ *                     SST but also sets `_stepInto = true` across the
+ *                     gen.next() call.  `_evalValueGen` reads the flag
+ *                     in its Program branch: with step-into active, it
+ *                     leaves `_singleStepMode` set while running the
+ *                     sub-program body, so the post-token yield inside
+ *                     evalRange fires on each of the sub-program's
+ *                     tokens.  Step-over (SST) temporarily clears the
+ *                     flag around the body so the call completes in
+ *                     one logical step.
+ *  Module-private; tests reach it via the SST op or the public
+ *  haltedDepth() / state.halted observers. */
+let _singleStepMode = false;
+
+/** Session 106: `_stepInto` modulates whether single-stepping descends
+ *  into sub-program calls reached via `evalToken` Name lookup.  SST
+ *  leaves this `false` (step-over — the sub-program runs at full speed
+ *  and we yield once after the call); SST↓ sets it `true` (step-into —
+ *  the sub-program's own post-token yield fires on every inner token).
+ *  The distinction only matters when a Name token resolves to a stored
+ *  Program; for structural control-flow and ops that take a Program
+ *  argument (IFT / IFTE / MAP / …) step-in is a no-op because those
+ *  paths don't go through `_evalValueGen`. */
+let _stepInto = false;
+
+/** Session 106: true while `evalRange` is running on a Program body
+ *  reached via `evalToken` Name lookup (i.e. inside `_evalValueGen`'s
+ *  Program branch).  Post-token yields check `(!_insideSubProgram ||
+ *  _stepInto)` — in step-over mode this suppresses yielding inside the
+ *  sub-program so one SST advances past the whole call; in step-into
+ *  mode the check passes and the user stops on each inner token.  A
+ *  module-private depth counter would also work; boolean is enough
+ *  because yield conditions only care "are we inside a named sub-call
+ *  right now", not how deeply nested the call chain is (step-into
+ *  applies uniformly to every level once the user chose SST↓). */
+let _insideSubProgram = false;
+
+/** For tests: snapshot the current single-step flag without exposing
+ *  the mutable binding.  Tests use this to pin the SST cleanup
+ *  invariant (flag must be back to false once a stepped program
+ *  finishes).  Also referenced from SST itself for the recursive
+ *  drive — the local snapshot is what tells the post-yield code
+ *  whether to re-push the generator. */
+export function singleStepMode() { return _singleStepMode; }
+
+/** For tests: snapshot the current step-into flag (SST vs SST↓).
+ *  See the `_stepInto` docstring above for the distinction. */
+export function stepIntoMode() { return _stepInto; }
+
 /** Restore `_localFrames` to a previously-captured length.  Pops any
  *  extra entries that accumulated on top.  Used by `register('EVAL')`
  *  / `register('CONT')` in a top-level `finally` so that an abnormal
@@ -2974,7 +3057,15 @@ function* runArrow(s, toks, arrowIdx, to, depth) {
       // Symbolic body — EVAL leaves the (possibly partially reduced)
       // value on the stack, matching HP50 behaviour.  Symbolic eval is
       // synchronous (no HALT path), so no yield* needed.
-      _evalValueSync(s, body, depth + 1);
+      // Session 116: pass an explicit caller label.  A pure-algebraic
+      // body cannot reach a Program node (the AST has no embedding for
+      // it), so this label is defensive — the only way to surface it
+      // would be a future extension that lets a Symbolic carry a Program
+      // sub-expression.  Keeping the label aligned with sibling sync-
+      // path call sites (IFT / IFTE / MAP / SEQ / DOLIST / DOSUBS /
+      // STREAM) means a hypothetical future HALT rejection here would
+      // already say `→ algebraic body` instead of the bare default.
+      _evalValueSync(s, body, depth + 1, '→ algebraic body');
     }
   } finally {
     _popLocalFrame();
@@ -2998,6 +3089,7 @@ function* evalRange(s, toks, from, to, depth) {
     const id = bareNameId(tok);
     if (id && CF_OPENERS.has(id)) {
       i = yield* runControl(s, toks, i, to, depth);
+      if (_shouldStepYield()) yield;
       continue;
     }
     // Compiled local environment: `→ n1 n2 … body`.  `runArrow` collects
@@ -3006,6 +3098,7 @@ function* evalRange(s, toks, from, to, depth) {
     // frame.
     if (id === '→') {
       i = yield* runArrow(s, toks, i, to, depth);
+      if (_shouldStepYield()) yield;
       continue;
     }
     // HALT — generator-based suspension.  `yield` here propagates up
@@ -3021,6 +3114,49 @@ function* evalRange(s, toks, from, to, depth) {
       i++;          // resume: advance past HALT
       continue;
     }
+    // PROMPT — session 121.  HP50 AUR p.2-160: pop level 1, stash it
+    // as the active prompt banner (state.promptMessage), then halt the
+    // program.  Mechanically PROMPT is HALT-with-message: we use the
+    // same `yield` channel so CONT/SST/KILL all just work.  Outside a
+    // running program (the Name reaches `_dispatchOp` via the
+    // registered handler below) PROMPT throws — matches our HALT-
+    // outside-program behavior.
+    //
+    // The pop happens BEFORE the yield so the message is observable as
+    // soon as the program suspends.  If the stack is empty, we throw
+    // before yielding — the caller's `_truncateLocalFrames` safety net
+    // still runs in EVAL/CONT's `finally`.
+    if (id === 'PROMPT') {
+      if (s.depth < 1) throw new RPLError('PROMPT: Too few arguments');
+      const msg = s.pop();
+      setPromptMessage(msg);
+      yield;
+      i++;          // resume: advance past PROMPT
+      continue;
+    }
+    // IFT — session 121.  Stack-based conditional.  The action is
+    // EVAL'd via `_evalValueGen` (yieldable) so a HALT/PROMPT inside
+    // it suspends cleanly through this same evalRange chain.  The
+    // `register('IFT', ...)` handler below stays as a sync fallback
+    // for the rare path where IFT is reached via `evalToken` Name
+    // dispatch (`'IFT' EVAL`, Tagged-wrapped Name(IFT) on stack);
+    // those still reject HALT through `_driveGen` with the existing
+    // `IFT action` caller label.
+    if (id === 'IFT') {
+      yield* runIft(s, depth);
+      i++;
+      if (_shouldStepYield()) yield;
+      continue;
+    }
+    // IFTE — session 121.  Same pattern as IFT, with three pops
+    // (test, t-action, f-action) and the chosen action EVAL'd via
+    // `_evalValueGen`.  Sync fallback in `register('IFTE', ...)` below.
+    if (id === 'IFTE') {
+      yield* runIfte(s, depth);
+      i++;
+      if (_shouldStepYield()) yield;
+      continue;
+    }
     if (id && (CF_CLOSERS.has(id) || CF_INNERS.has(id))) {
       // Orphan control keyword at depth 0 — skip silently (matches HP50
       // behavior where a stray END in a program body is a no-op; it
@@ -3028,27 +3164,54 @@ function* evalRange(s, toks, from, to, depth) {
       i++;
       continue;
     }
-    evalToken(s, tok, depth);
+    yield* evalToken(s, tok, depth);
     i++;
+    // SST / SST↓ single-step debugger — when stepping is active, yield
+    // after every token so the calling EVAL/CONT/SST handler suspends
+    // the generator on the haltedStack.  `_shouldStepYield()` combines
+    // `_singleStepMode` with `_stepInto` / `_insideSubProgram` so that
+    // step-over (SST) doesn't yield on tokens inside a Name-reached
+    // sub-program body, while step-into (SST↓) does.  Generator
+    // semantics mean every structural-context frame (FOR counter, IF
+    // branch, → local frame) is preserved across single-step
+    // suspensions for free.
+    if (_shouldStepYield()) yield;
   }
 }
 
+/** Post-token yield predicate for the single-step debugger.  Session
+ *  106: modulated by `_insideSubProgram` and `_stepInto` — see those
+ *  docstrings.  Breaking this out as a helper keeps the three callers
+ *  (evalRange's three post-token yield sites) from duplicating the
+ *  boolean expression. */
+function _shouldStepYield() {
+  return _singleStepMode && (!_insideSubProgram || _stepInto);
+}
+
 /** Evaluate a single non-control token.  Semantics mirror the pre-
- *  control-flow Program loop. */
-function evalToken(s, tok, depth) {
+ *  control-flow Program loop.
+ *
+ *  Session 106: generator function.  Any Name whose binding resolves
+ *  to a Program is evaluated through `_evalValueGen`, which delegates
+ *  to `evalRange` via `yield*` — so HALT inside a named sub-program
+ *  (reached by variable lookup) now yields cleanly up to the top-level
+ *  EVAL/CONT handler instead of rejecting through `_driveGen`.  Other
+ *  value types (number, string, tagged-value, symbolic) are purely
+ *  synchronous and never yield, so the generator just returns. */
+function* evalToken(s, tok, depth) {
   if (isName(tok)) {
     if (tok.quoted) { s.push(tok); return; }
     // Compiled-local bindings shadow both ops and globals.
     const localVal = _localLookup(tok.id);
     if (localVal !== undefined) {
-      _evalValueSync(s, localVal, depth + 1);
+      yield* _evalValueGen(s, localVal, depth + 1);
       return;
     }
     const op = lookup(tok.id);
     if (op) { _dispatchOp(op, s, tok.id); return; }
     const bound = varRecall(tok.id);
     if (bound !== undefined) {
-      _evalValueSync(s, bound, depth + 1);
+      yield* _evalValueGen(s, bound, depth + 1);
     } else {
       s.push(tok);
     }
@@ -3382,6 +3545,54 @@ function* runIfErr(s, toks, openIdx, depth) {
   return autoClosed ? bound : endIdx + 1;
 }
 
+/* Stack-based conditionals — generator flavor (session 121).
+ *
+ * IFT and IFTE evaluate a Program off the stack as their action.  Until
+ * session 121 those actions ran through `_evalValueSync`, which rejects
+ * HALT/PROMPT inside the body via `_driveGen`.  Now `evalRange` itself
+ * intercepts the IFT/IFTE Name tokens and delegates here; the action is
+ * EVAL'd through `_evalValueGen` (yieldable), so a HALT/PROMPT inside
+ * the action lifts cleanly through `yield*` up to the top-level EVAL/
+ * CONT driver — same path that already works for `→` bodies and named
+ * sub-program calls (sessions 088 / 106 / 116).
+ *
+ * The snap-and-restore wrapper preserves the existing "if the action
+ * errors, restore the test+action operands" semantic from the old
+ * `register('IFT')` / `register('IFTE')` bodies.  catch fires on RPLError
+ * thrown from inside the action; HALT yields don't trigger catch (no
+ * exception), so a successful HALT-and-CONT cycle leaves the stack in
+ * whatever state the action produced — matching HP50 behavior where the
+ * suspended-stack contents are exactly what the program built before
+ * suspending.
+ *
+ * The original `register('IFT', ...)` / `register('IFTE', ...)` handlers
+ * stay as a sync fallback for the rare path where IFT/IFTE is reached
+ * via `evalToken` Name dispatch (`'IFT' EVAL`, Tagged-wrapped Name(IFT),
+ * etc.).  Those drive these same generators through `_driveGen`, which
+ * still rejects HALT with the session-111 caller labels.
+ */
+function* runIft(s, depth) {
+  const snap = s.save();
+  try {
+    const [test, action] = s.popN(2);
+    if (isTruthy(test)) yield* _evalValueGen(s, action, depth + 1);
+  } catch (e) {
+    s.restore(snap);
+    throw e;
+  }
+}
+
+function* runIfte(s, depth) {
+  const snap = s.save();
+  try {
+    const [test, tAction, fAction] = s.popN(3);
+    yield* _evalValueGen(s, isTruthy(test) ? tAction : fAction, depth + 1);
+  } catch (e) {
+    s.restore(snap);
+    throw e;
+  }
+}
+
 function* runWhile(s, toks, openIdx, depth) {
   // WHILE <test> REPEAT <body> END
   const repeatScan = scanAtDepth0(toks, openIdx + 1, new Set(['REPEAT']));
@@ -3619,17 +3830,129 @@ function _symConstantValue(name) {
 
 /** Drive an evalRange generator to completion synchronously.
  *  If the generator yields — meaning a HALT was encountered inside a
- *  sub-program that was reached via _evalValueSync (i.e. a variable
- *  lookup, IFT action, SEQ body, etc.) rather than a direct EVAL —
- *  throw.  Program-in-variable calls cannot suspend; HALT is only
- *  supported on the direct-EVAL path (which stores the live generator
- *  and suspends at any structural depth). */
-function _driveGen(gen) {
+ *  sub-program reached through a sync-path caller (IFT / IFTE / MAP /
+ *  SEQ body / DOLIST / DOSUBS / STREAM / → algebraic body / the
+ *  `_evalValueSync` Name-and-Tagged recursion that those ops trigger)
+ *  rather than through the lift-enabled `_evalValueGen` path — close
+ *  the generator (so its `finally` blocks run, including any
+ *  `_popLocalFrame()` from an enclosing `runArrow`) and then throw.
+ *  Program-in-variable calls reached via `evalToken`'s Name-binding
+ *  branch do NOT come through this path — session 106 rewired that
+ *  path through `_evalValueGen`, which `yield*`s the nested evalRange
+ *  up to the top-level EVAL/CONT driver so HALT suspends cleanly.
+ *  Everything reached via `_evalValueSync` still rejects here.
+ *
+ *  `caller`, when supplied, is baked into the error message so the
+ *  user learns which op blocked the HALT (e.g. "IFT action", "MAP
+ *  program") rather than just "a sub-program call".  Session 111:
+ *  added.  Callers with no useful label (the recursive Name/Tagged
+ *  path inside `_evalValueSync`) pass `caller` through unchanged so
+ *  the outermost originator's label sticks.
+ *
+ *  Session 101: belt-and-suspenders close (R-002).  In practice the
+ *  outer EVAL handler's `finally { _truncateLocalFrames(framesAtEntry) }`
+ *  already restores the compiled-local frame depth before the abandoned
+ *  generator reaches GC, so omitting `gen.return()` was not a
+ *  correctness defect.  Closing the generator here makes the cleanup
+ *  self-contained (no cross-function reasoning needed) and lets the
+ *  generator object be reclaimed promptly instead of waiting on GC. */
+function _driveGen(gen, caller) {
   const result = gen.next();
   if (!result.done) {
-    throw new RPLError(
-      'HALT: cannot suspend inside a sub-program call (use EVAL directly)');
+    try { gen.return(); } catch (_) { /* ignore */ }
+    const where = caller ? caller : 'a sub-program call';
+    throw new RPLError(`HALT: cannot suspend inside ${where}`);
   }
+}
+
+/** Generator-flavored evaluator for Name-lookup-reached values.
+ *  Session 106: narrow lift of the HALT-inside-named-sub-program pilot
+ *  limit.  Reachable via `evalToken`'s Name-binding path (and its own
+ *  recursion on nested Names / Tagged wrappers).  Session 116: also
+ *  driven directly by the top-level EVAL handler so HALT lifts through
+ *  Tagged-wrapped Programs and through Name values EVAL'd off the stack.
+ *  Other ops that take a Program argument (IFT / IFTE / MAP / SEQ / …)
+ *  still use `_evalValueSync`, which rejects HALT via `_driveGen`.
+ *
+ *  For Program values this delegates to `evalRange` with `yield*`,
+ *  propagating any HALT up through `evalToken` → `evalRange` (the outer
+ *  one) → the EVAL/CONT driver that stores the live generator on
+ *  `haltedStack`.  Non-program cases fall back to `_evalValueSync`
+ *  (they cannot yield, so the sync call is exactly equivalent).
+ *
+ *  `isSubProgram` (default true) controls whether the Program branch
+ *  flips `_insideSubProgram` for the duration of the body.  Sub-program
+ *  callers (evalToken Name lookup, recursive Tagged/Name unwraps reached
+ *  from within a token stream) keep the default — SST-step-over should
+ *  run the body in one step.  The top-level EVAL handler passes false:
+ *  the body is the *outer* program from the SST/DBUG point of view, so
+ *  it must yield per token regardless of `_stepInto`.  Tagged unwraps
+ *  and Name recursions preserve the parameter so a Name on the stack
+ *  pointing at a Tagged-wrapped Program still respects the entry-point
+ *  classification. */
+function* _evalValueGen(s, v, depth, isSubProgram = true) {
+  if (depth > MAX_EVAL_DEPTH) {
+    throw new RPLError('EVAL recursion too deep');
+  }
+
+  if (isProgram(v)) {
+    if (isSubProgram) {
+      // Track that we're now inside a sub-program call so the body's own
+      // post-token yields can consult `_stepInto` (see `_shouldStepYield`
+      // in evalRange / runControl / runArrow tails).  We don't mutate
+      // `_singleStepMode` itself — a stale `gen.return()` (e.g. KILL during
+      // step-into) would otherwise run the finally and clobber the outer
+      // flag.  Flipping `_insideSubProgram` instead keeps the sub-program
+      // boundary a pure read-only predicate from the outer caller's side.
+      const priorInside = _insideSubProgram;
+      _insideSubProgram = true;
+      try {
+        yield* evalRange(s, v.tokens, 0, v.tokens.length, depth);
+      } finally {
+        _insideSubProgram = priorInside;
+      }
+    } else {
+      // Top-level entry — `_insideSubProgram` stays whatever the caller
+      // set it to (typically false).  evalRange's per-token yield is
+      // controlled solely by `_singleStepMode` here, matching the
+      // behavior of the pre-session-116 Program-direct path in the EVAL
+      // handler.
+      yield* evalRange(s, v.tokens, 0, v.tokens.length, depth);
+    }
+    return;
+  }
+
+  if (isName(v)) {
+    if (getApproxMode()) {
+      const crpl = _symConstantRpl(v.id);
+      if (crpl !== undefined) { s.push(crpl); return; }
+    }
+    if (v.quoted) { s.push(v); return; }
+    const localVal = _localLookup(v.id);
+    if (localVal !== undefined) {
+      yield* _evalValueGen(s, localVal, depth + 1, isSubProgram);
+      return;
+    }
+    const bound = varRecall(v.id);
+    if (bound !== undefined) {
+      yield* _evalValueGen(s, bound, depth + 1, isSubProgram);
+    } else {
+      s.push(v);
+    }
+    return;
+  }
+
+  if (isTagged(v)) {
+    yield* _evalValueGen(s, v.value, depth + 1, isSubProgram);
+    return;
+  }
+
+  // Symbolic / numeric / string / container / …: synchronous, cannot
+  // HALT.  Delegate to `_evalValueSync` for value-type-specific
+  // semantics (AST reduction, unit pass-through, etc.) — it won't
+  // reach the Program branch (we've already handled that above) so
+  // `_driveGen` is not invoked.
+  _evalValueSync(s, v, depth);
 }
 
 /** Evaluate an arbitrary value synchronously.  Used by all callers
@@ -3637,14 +3960,20 @@ function _driveGen(gen) {
  *  path directly so that HALT can yield through structural control flow.
  *  Delegates Program evaluation to evalRange via _driveGen (which
  *  rejects a HALT with a clear error rather than leaving the caller
- *  in an undefined state). */
-function _evalValueSync(s, v, depth) {
+ *  in an undefined state).
+ *
+ *  `caller` is an optional label passed through to `_driveGen` so a
+ *  rejected HALT names the op at the boundary (e.g. "IFT action",
+ *  "MAP program").  Internal recursion on Name/Tagged wrappers
+ *  forwards the original label unchanged so the outermost originator's
+ *  name reaches the error message. */
+function _evalValueSync(s, v, depth, caller) {
   if (depth > MAX_EVAL_DEPTH) {
     throw new RPLError('EVAL recursion too deep');
   }
 
   if (isProgram(v)) {
-    _driveGen(evalRange(s, v.tokens, 0, v.tokens.length, depth));
+    _driveGen(evalRange(s, v.tokens, 0, v.tokens.length, depth), caller);
     return;
   }
 
@@ -3663,12 +3992,12 @@ function _evalValueSync(s, v, depth) {
     // Compiled-local bindings shadow globals.
     const localVal = _localLookup(v.id);
     if (localVal !== undefined) {
-      _evalValueSync(s, localVal, depth + 1);
+      _evalValueSync(s, localVal, depth + 1, caller);
       return;
     }
     const bound = varRecall(v.id);
     if (bound !== undefined) {
-      _evalValueSync(s, bound, depth + 1);
+      _evalValueSync(s, bound, depth + 1, caller);
     } else {
       s.push(v);
     }
@@ -3676,7 +4005,7 @@ function _evalValueSync(s, v, depth) {
   }
 
   if (isTagged(v)) {
-    _evalValueSync(s, v.value, depth + 1);
+    _evalValueSync(s, v.value, depth + 1, caller);
     return;
   }
 
@@ -3809,19 +4138,36 @@ register('EVAL', (s) => {
   //
   // HALT inside a Program is handled via the generator mechanism:
   //   1. evalRange is a generator; it yields when a HALT token is hit.
-  //   2. EVAL drives the generator with gen.next().
-  //   3. If the generator yields (not done), the live generator is stored
+  //   2. _evalValueGen wraps Program/Name/Tagged dispatch in a generator
+  //      that `yield*`s evalRange so the yield reaches the driver loop
+  //      below intact.
+  //   3. EVAL drives _evalValueGen with gen.next().  Session 116:
+  //      previously the Program case was inlined here and Tagged-wrapped
+  //      Programs / Name-on-stack values fell through to _evalValueSync,
+  //      which rejected HALT.  Going through _evalValueGen lifts HALT
+  //      through both Tagged wrappers and Name-on-stack EVALs so all
+  //      semantically-transparent program references suspend cleanly.
+  //   4. If the generator yields (not done), the live generator is stored
   //      in state.haltedStack via setHalted.  We do NOT truncate
   //      _localFrames — the generator is still live and any → frames
   //      it pushed are still needed.
-  //   4. CONT calls gen.next() to resume from exactly where HALT left off.
+  //   5. CONT calls gen.next() to resume from exactly where HALT left off.
   //   The generator mechanism captures all structural context (FOR
   //   counter, IF branch, → locals) automatically, so HALT works at
   //   any structural depth.
   //
-  // Non-Program values (Name, Symbolic, Number, etc.) go through the
-  // synchronous _evalValueSync path — they cannot HALT, so no special
-  // handling is needed for them.
+  // `isSubProgram=false` is passed to _evalValueGen because the body
+  // here is the *outer* program from the SST/DBUG perspective — the
+  // entry point, not a nested call.  This keeps `_insideSubProgram`
+  // unflipped at the entry so SST yields per-token at the outer level
+  // (matching the pre-session-116 Program-direct semantics) and
+  // preserves SST↓ step-into semantics for any sub-programs the body
+  // reaches via Name lookup.  See `_evalValueGen`'s docstring for the
+  // full rationale.
+  //
+  // Symbolic / Numeric / String / List / Vector values fall through
+  // _evalValueGen's tail to _evalValueSync — they cannot HALT, so the
+  // generator returns done=true on the first .next() call.
   //
   // _localFrames safety net: truncate to framesAtEntry only when the
   // generator finishes (done=true) or throws.  While halted, leave the
@@ -3831,17 +4177,13 @@ register('EVAL', (s) => {
   let halted = false;
   try {
     const v = s.pop();
-    if (isProgram(v)) {
-      const gen = evalRange(s, v.tokens, 0, v.tokens.length, 0);
-      const result = gen.next();
-      if (!result.done) {
-        // Program suspended at HALT — store live generator, leave frames.
-        halted = true;
-        setHalted({ generator: gen });
-        return;
-      }
-    } else {
-      _evalValueSync(s, v, 0);
+    const gen = _evalValueGen(s, v, 0, /* isSubProgram = */ false);
+    const result = gen.next();
+    if (!result.done) {
+      // Suspended at HALT — store live generator, leave frames.
+      halted = true;
+      setHalted({ generator: gen });
+      return;
     }
   } catch (e) {
     if (!(e instanceof RPLAbort)) s.restore(snap);
@@ -3897,11 +4239,19 @@ register('->NUM', (s, entry) => { OPS.get('→NUM').fn(s, entry); });
    expect — IFTE on a pair of Reals is effectively a value-select.
    ------------------------------------------------------------------ */
 
+// Session 121: drive the generator flavor (`runIft` / `runIfte`) so the
+// program-body intercept in `evalRange` and this Name-dispatch fallback
+// share the same evaluation path.  `_driveGen` rejects any yield with
+// the session-111 caller label — HALT/PROMPT inside an IFT/IFTE action
+// reached via `'IFT' EVAL` (sync, not body-intercept) still throws
+// `HALT: cannot suspend inside IFT action`.  The outer snap/restore
+// preserves the operand-rollback behavior of the prior body for the
+// HALT-rejection path: `gen.return()` runs only finally blocks, not
+// catch, so the helper's own snap/catch can't restore here.
 register('IFT', (s) => {
   const snap = s.save();
   try {
-    const [test, action] = s.popN(2);
-    if (isTruthy(test)) _evalValueSync(s, action, 0);
+    _driveGen(runIft(s, 0), 'IFT action');
   } catch (e) {
     s.restore(snap);
     throw e;
@@ -3911,8 +4261,7 @@ register('IFT', (s) => {
 register('IFTE', (s) => {
   const snap = s.save();
   try {
-    const [test, tAction, fAction] = s.popN(3);
-    _evalValueSync(s, isTruthy(test) ? tAction : fAction, 0);
+    _driveGen(runIfte(s, 0), 'IFTE action');
   } catch (e) {
     s.restore(snap);
     throw e;
@@ -5062,8 +5411,10 @@ register('SUM', (s) => {
    SIZE and TRN are 1-arg ops that don't commit to a promotion rule
    for mixed scalar/matrix inputs.  Element-wise +/- on two Vectors
    of equal length is wired into the main `+` handler and
-   `binaryMath('-')` dispatch at the head of this file — see the
-   handling just above the `_addNumeric` wrapper for the entry point.
+   `binaryMath('-')` dispatch — see the `_withTaggedBinary`-wrapped
+   second-pass registrations near the end of this file (the authoritative
+   sites; earlier arithmetic register() calls are left as historical
+   no-ops, overridden by these later ones per Map semantics).
 
    HP50 SIZE/TRN semantics:
      SIZE  Vector([a b c])      → { 3 }            list of one integer
@@ -5624,8 +5975,14 @@ register('POS', (s) => {
    is rare; we throw "Bad argument type" rather than guess.
    ---------------------------------------------------------------- */
 function _stoArith(opSymbol) {
-  const binop = lookup(opSymbol);
+  // Deferred lookup — the arithmetic op registrations live later in this
+  // file (session 099 removed the first-pass shadows, so `lookup(opSymbol)`
+  // at module-load time would find nothing).  Resolving at call time also
+  // means `_stoArith` always picks up the authoritative dispatch, even if
+  // the registry is re-wired in a later session.
   return (s) => {
+    const binop = lookup(opSymbol);
+    if (!binop) throw new RPLError(`Bad argument value`);
     const [a, b] = s.popN(2);
     let nameVal, value;
     if (isName(a) || isString(a))      { nameVal = a; value = b; }
@@ -5900,8 +6257,10 @@ function _parseStringForObjTo(src) {
    too.
    ---------------------------------------------------------------- */
 function _incrDecrOp(opSymbol) {
-  const binop = lookup(opSymbol);
+  // Deferred lookup — see _stoArith for rationale (session 099).
   return (s) => {
+    const binop = lookup(opSymbol);
+    if (!binop) throw new RPLError('Bad argument value');
     const [nameVal] = s.popN(1);
     if (!isName(nameVal) && !isString(nameVal)) {
       throw new RPLError('Bad argument type');
@@ -6314,9 +6673,13 @@ register('STR->', _fromStrOp);
 // Fold a list's items through a binary op registered in OPS.  Empty
 // list yields the supplied identity value.  The fold leaves the
 // accumulated value on the stack (via the underlying op's dispatch).
+//
+// Lookup is deferred to call time (session 099 — arithmetic `+ *`
+// registrations now live past this factory site; resolving at module
+// load would find undefined).
 function _foldListOp(opSymbol, identity) {
-  const binop = lookup(opSymbol);
   return (s) => {
+    const binop = lookup(opSymbol);
     const [l] = s.popN(1);
     if (!isList(l)) throw new RPLError('Bad argument type');
     if (l.items.length === 0) { s.push(identity); return; }
@@ -7120,7 +7483,7 @@ register('RRB', (s) => { const v = s.pop(); s.push(_rotateRight(v, 8)); });
 function _mapOneValue(s, prog, e) {
   const before = s.depth;
   s.push(e);
-  _evalValueSync(s, prog, 0);
+  _evalValueSync(s, prog, 0, 'MAP program');
   const delta = s.depth - before;
   if (delta !== 1) {
     // Undo any partial effect so the error message is actionable.
@@ -7560,8 +7923,11 @@ function _combinatorProgCheck(prog) {
 }
 
 // Pop one return value after evaluating prog; guard against non-1 delta.
+// `errLabel` ("DOLIST" / "DOSUBS" / …) does double-duty: stitched into
+// the bad-program error AND into the caller-label passed to `_driveGen`
+// so a rejected HALT names the right op.
 function _popOneReturn(s, prog, baseDepth, errLabel) {
-  _evalValueSync(s, prog, 0);
+  _evalValueSync(s, prog, 0, errLabel + ' program');
   const delta = s.depth - baseDepth;
   if (delta !== 1) throw new RPLError(errLabel + ': bad program');
   return s.pop();
@@ -7600,7 +7966,7 @@ register('SEQ', (s) => {
       if (++iterations > MAX_LOOP_ITERATIONS) throw new RPLError('Loop iteration limit');
       varStore(varName, Real(i));
       const baseDepth = s.depth;
-      _evalValueSync(s, expr, 0);
+      _evalValueSync(s, expr, 0, 'SEQ expression');
       const delta = s.depth - baseDepth;
       if (delta !== 1) throw new RPLError('SEQ: bad program');
       out.push(s.pop());
@@ -7716,7 +8082,7 @@ register('STREAM', (s) => {
   for (let i = 1; i < items.length; i++) {
     const baseDepth = s.depth - 1;       // the accumulator is already on top
     s.push(items[i]);
-    _evalValueSync(s, prog, 0);
+    _evalValueSync(s, prog, 0, 'STREAM program');
     const delta = s.depth - baseDepth;
     if (delta !== 1) throw new RPLError('STREAM: bad program');
   }
@@ -9785,18 +10151,6 @@ const _ZERO = 0n;
 const _ONE  = 1n;
 const _TWO  = 2n;
 
-/** Integer square root for non-negative BigInt.  Used by trial
- *  division (walk p up to √n) and by the quadratic residue check
- *  inside Miller-Rabin witnesses (not used here, reserved for later). */
-function _isqrtBig(n) {
-  if (n < _ZERO) throw new RPLError('Bad argument value');
-  if (n < _TWO) return n;
-  // Newton's method on BigInt.
-  let x = n, y = (x + _ONE) >> _ONE;
-  while (y < x) { x = y; y = (x + n / x) >> _ONE; }
-  return x;
-}
-
 /** Modular exponentiation a^e mod m on BigInt. */
 function _powModBig(a, e, m) {
   if (m === _ONE) return _ZERO;
@@ -9993,6 +10347,92 @@ register('PREVPRIME', (s) => {
   s.push(Integer(p));
 });
 
+/* --------------- PA2B2 — prime as sum of two squares -----------------
+   HP50 AUR §3-162.  Takes a prime p with p = 2 or p ≡ 1 (mod 4) and
+   returns a Gaussian integer a + ib such that p = a² + b².  For p = 2
+   the unique (up to units) decomposition is 1 + i.  For p ≡ 1 (mod 4)
+   the decomposition exists and is unique up to order/sign — Fermat's
+   theorem on sums of two squares.
+
+     PA2B2  ( Z → C )    Integer or integer-valued Real input;
+                         output is a native Complex (Gaussian integer).
+
+   Rejects with Bad argument value when p is not prime, p = 3 (prime
+   but ≡ 3 mod 4 cannot be written as a² + b² — Fermat), or p is any
+   prime with p mod 4 = 3.  Rejects with Bad argument type for non-
+   integer inputs.
+
+   Algorithm — Cornacchia (classical).  For p ≡ 1 (mod 4), −1 is a
+   quadratic residue, so we can find r with r² ≡ −1 (mod p):
+     1. Find a quadratic non-residue z: z^((p−1)/2) ≡ −1 (mod p).
+        For random z this succeeds in ~2 tries on average; we scan
+        z = 2, 3, 4, ... which always terminates (there are (p−1)/2
+        QNRs).
+     2. Set r = z^((p−1)/4) (mod p); then r² = z^((p−1)/2) ≡ −1.
+     3. Euclidean reduction: start (a, b) = (p, r) and iterate
+        (a, b) ← (b, a mod b) until b ≤ ⌊√p⌋.  The resulting b
+        satisfies b² + c² = p where c = ⌊√(p − b²)⌋.
+
+   Output convention: we emit Complex(min(b, c), max(b, c)) so the
+   result is deterministic (small real part, larger imaginary part).
+   BigInt values are coerced to Number at the boundary — Complex
+   stores doubles; for primes up to ~2^106 both components fit in a
+   53-bit mantissa.  ----------------------------------------------- */
+
+/** floor(√n) for non-negative BigInt n.  Pairs with `_bigIntIsqrt`
+ *  (which returns null when n is not a perfect square) for callers
+ *  that need the floor regardless.  Newton iteration — terminates
+ *  when the sequence stops decreasing. */
+function _bigIntSqrtFloor(n) {
+  if (n < 0n) throw new RPLError('Bad argument value');
+  if (n < 2n) return n;
+  let x = 1n;
+  const bits = n.toString(2).length;
+  x <<= BigInt((bits + 1) >> 1);
+  let prev;
+  do {
+    prev = x;
+    x = (x + n / x) >> 1n;
+  } while (x < prev);
+  return prev;
+}
+
+register('PA2B2', (s) => {
+  const [v] = s.popN(1);
+  const p = _toBigIntStrict(v);
+  if (p < 2n) throw new RPLError('Bad argument value');
+  if (!_isPrimeBig(p)) throw new RPLError('Bad argument value');
+  if (p === 2n) {
+    s.push(Complex(1, 1));
+    return;
+  }
+  if (p % 4n !== 1n) throw new RPLError('Bad argument value');
+  // Find quadratic non-residue z via Euler's criterion.
+  const pm1 = p - 1n;
+  const half = pm1 >> 1n;
+  let z = 2n;
+  while (_powModBig(z, half, p) !== pm1) z += 1n;
+  // r² ≡ −1 (mod p)
+  const r = _powModBig(z, pm1 >> 2n, p);
+  const sp = _bigIntSqrtFloor(p);
+  // Euclidean reduction of (p, r) until the second component ≤ √p.
+  let a = p, b = r;
+  while (b > sp) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  const rem = p - b * b;
+  const c = _bigIntSqrtFloor(rem);
+  if (c * c !== rem) {
+    // Should not happen for a valid prime ≡ 1 (mod 4); defensive.
+    throw new RPLError('Bad argument value');
+  }
+  const re = c < b ? c : b;
+  const im = c < b ? b : c;
+  s.push(Complex(Number(re), Number(im)));
+});
+
 /* --------------- EULER — Euler's totient φ(n) ------------------------
    HP50 AUR §12.6.  Count of integers k in [1, n] with gcd(k, n) = 1.
    Built on top of prime factorization — trivial once _factorIntBig is
@@ -10077,9 +10517,6 @@ function _ratNormalize(n, d) {
   if (d < _ZERO) { n = -n; d = -d; }
   const g = _gcdBig(n < _ZERO ? -n : n, d);
   return g === _ZERO ? [n, d] : [n / g, d / g];
-}
-function _ratAdd(a, b) {
-  return _ratNormalize(a[0] * b[1] + b[0] * a[1], a[1] * b[1]);
 }
 function _ratSub(a, b) {
   return _ratNormalize(a[0] * b[1] - b[0] * a[1], a[1] * b[1]);
@@ -10521,8 +10958,29 @@ register('HALT', () => {
   throw new RPLError('HALT: not inside a running program');
 });
 
+// PROMPT — session 121.  HP50 AUR p.2-160 form: pop level 1 (the prompt
+// message) and halt the program with that message displayed as a
+// banner.  evalRange's intercept handles the inside-a-program case (pop
+// + setPromptMessage + yield).  Reaching this registered handler means
+// PROMPT was reached via Name dispatch outside a running program (e.g.
+// `'PROMPT' EVAL` from the keypad) — the HP50 has no useful behavior
+// there, and we surface the same "not inside a running program" error
+// HALT raises so the user gets a consistent message.
+register('PROMPT', () => {
+  throw new RPLError('PROMPT: not inside a running program');
+});
+
 register('CONT', (s) => {
   if (!getHalted()) throw new RPLError('No halted program');
+  // Session 121: CONT consumes the active prompt banner.  PROMPT is
+  // a one-shot: the user has provided whatever input the program
+  // asked for and is resuming.  If the resumed program HALTs again
+  // with a fresh PROMPT, that call sets the message anew; if it HALTs
+  // without one, the banner stays cleared.  We clear up-front (before
+  // takeHalted / next()) so the cleared state is visible during
+  // resumption — including to any UI subscribers that re-render on
+  // every emit.
+  clearPromptMessage();
   // takeHalted pops the top record WITHOUT closing its generator —
   // clearHalted (used by KILL) closes it; takeHalted leaves it live
   // so gen.next() below can resume it.  The slot is removed before
@@ -10560,6 +11018,12 @@ register('KILL', () => {
   // currently-halted program, or does nothing").  KILL pops one
   // record off the halted stack; older halts are preserved.
   clearHalted();
+  // Session 121: any active PROMPT banner belongs to the killed
+  // program.  Clearing it here keeps the banner from outliving the
+  // program that posted it.  In the multi-slot case where older halts
+  // remain, we still nuke the global banner — we don't track per-slot
+  // prompts, and the next CONT/SST will either re-set or start fresh.
+  clearPromptMessage();
 });
 
 /* RUN — AUR p.2-177.  With no DBUG session active, RUN is a synonym
@@ -10572,6 +11036,146 @@ register('KILL', () => {
 register('RUN', (s) => {
   const contOp = OPS.get('CONT');
   contOp.fn(s);
+});
+
+/* ---------------- SST / SST↓ — single-step debugger ----------------
+ * Session 101: single-step substrate built on the session-088
+ * generator-based evalRange.  The implementation is a thin wrapper
+ * around CONT plus a module-level `_singleStepMode` flag that
+ * `evalRange` consults after every token (see the post-token `if
+ * (_singleStepMode) yield;` line in evalRange and runControl /
+ * runArrow tails).
+ *
+ * SST drives the top of the haltedStack forward by exactly one
+ * token.  Implementation is symmetrical with CONT:
+ *   1. takeHalted() to peel the live generator off the stack
+ *      (without closing it — clearHalted closes; takeHalted leaves
+ *      the generator live so we can call gen.next() on it).
+ *   2. Set `_singleStepMode = true` so the next post-token yield
+ *      in evalRange causes the generator to suspend after exactly
+ *      one token.
+ *   3. gen.next() — runs one token, then either (a) yields again
+ *      (single-step suspension), (b) finishes (program done), or
+ *      (c) throws (program errored).  In case (a) we re-push the
+ *      generator on the haltedStack via setHalted so the next SST
+ *      can drive it forward another step; in cases (b) and (c) the
+ *      flag is cleared in `finally` and the generator is gone.
+ *   4. Clear the flag in `finally` so subsequent CONT/RUN/EVAL
+ *      calls don't single-step.  (If the user wants more steps,
+ *      they call SST again — which sets the flag, runs one token,
+ *      and clears it.)
+ *
+ * Session 106: SST↓ — real step-into semantics.  `_evalValueGen`
+ * (the generator flavor of `_evalValueSync`, reached only via
+ * `evalToken` Name lookup) consults `_stepInto` around a sub-program
+ * body: SST (`_stepInto === false`) clears `_singleStepMode` while
+ * the body runs so it completes in one step; SST↓ (`_stepInto ===
+ * true`) leaves the flag set so the body's own evalRange also yields
+ * after each token, letting the user descend.  The same mechanism
+ * also lifted the "HALT inside named sub-program" pilot limit — a
+ * HALT anywhere inside a Name-reached Program now yields up through
+ * `evalToken` and suspends the top-level EVAL/CONT driver cleanly.
+ * Op-argument paths (IFT / IFTE / MAP / …) still go through
+ * `_evalValueSync` and retain the reject-on-HALT behavior.
+ *
+ * Errors:
+ *   - SST with no halted program → `No halted program` (same as
+ *     CONT).  This is intentional — SST is a step within an
+ *     already-suspended program, not a "step the next op on the
+ *     current input" op.  To start single-stepping a fresh
+ *     program, use DBUG.
+ * --------------------------------------------------------------- */
+
+function _stepOnce(s, into = false) {
+  if (!getHalted()) throw new RPLError('No halted program');
+  // Session 121: SST/SST↓ resume the program by one token, which is
+  // enough to advance past a PROMPT.  The prompt banner is consumed by
+  // any form of resumption — same rationale as CONT above.  If the
+  // single step lands on a fresh PROMPT, that intercept will set the
+  // banner anew before the post-step re-suspend.
+  clearPromptMessage();
+  const h = takeHalted();
+  const framesAtEntry = _localFrames.length;
+  let halted = false;
+  const wasStepping = _singleStepMode;
+  const wasInto = _stepInto;
+  _singleStepMode = true;
+  _stepInto = into;
+  try {
+    const result = h.generator.next();
+    if (!result.done) {
+      // Generator yielded again (the post-token single-step yield, OR
+      // a fresh HALT inside the program).  Re-push it so the next
+      // SST/CONT/RUN can resume.
+      halted = true;
+      setHalted({ generator: h.generator });
+    }
+  } finally {
+    _singleStepMode = wasStepping;     // typically false
+    _stepInto = wasInto;               // typically false
+    if (!halted) _truncateLocalFrames(framesAtEntry);
+  }
+}
+
+// Session 106: SST and SST↓ now differ.  SST (step-over) runs a named
+// sub-program call at full speed, yielding once after the call returns.
+// SST↓ (step-into) keeps single-stepping active while descending into
+// the sub-program, stopping on each of its tokens.  The distinction is
+// modulated by the `_stepInto` flag consulted in `_evalValueGen`'s
+// Program branch.
+register('SST',  (s) => { _stepOnce(s, /* into = */ false); });
+register('SST↓', (s) => { _stepOnce(s, /* into = */ true);  });
+
+/* ---------------- DBUG — start a program in single-step mode --------
+ * Session 101.  HP50 AUR p.2-95: DBUG pops a Program off level 1 and
+ * begins executing it under the single-step debugger.  The program
+ * is not pre-evaluated — it's halted before its first token, so the
+ * user can SST through it from the very start.
+ *
+ * Implementation: pop the Program, set `_singleStepMode = true`,
+ * delegate to EVAL.  evalRange yields after the first token (which
+ * may be a no-op — the body of `« 1 2 + »` yields after pushing 1,
+ * leaving the stack with [..., 1] and the generator suspended); EVAL
+ * captures that yield exactly the same way it captures a HALT.  The
+ * flag is cleared in `finally` so a downstream CONT/RUN won't
+ * single-step.  The user drives subsequent steps with SST.
+ *
+ * Session 116: peek through any Tagged wrappers when validating the
+ * argument type.  Tagged values are transparent to EVAL (sessions
+ * 088 / 116), and DBUG is just EVAL-with-stepping — a user who can
+ * `EVAL` a Tagged-wrapped Program should likewise be able to DBUG
+ * one.  We don't pop the Tagged layer; EVAL itself drives
+ * _evalValueGen, which recursively peels Tagged on the way in.
+ *
+ * Errors:
+ *   - DBUG on a non-Program (after peeling Tagged) → `Bad argument type`.
+ * --------------------------------------------------------------- */
+register('DBUG', (s) => {
+  // Peel Tagged wrappers for the type check.  Tagged values are
+  // transparent for EVAL purposes (session 116 lifted HALT through
+  // them); DBUG must accept the same set of arguments.  This is a
+  // pure read-through — the actual peel happens inside EVAL via
+  // _evalValueGen's Tagged recursion.
+  let probe = s.peek();
+  while (probe && isTagged(probe)) probe = probe.value;
+  if (!isProgram(probe)) throw new RPLError('Bad argument type');
+  // EVAL handler does its own pop; we just toggle the flag around it.
+  // wasStepping is virtually always false here, but guard against the
+  // pathological "DBUG inside a halted single-step program" case.
+  //
+  // Session 106: also reset _stepInto to false — a fresh DBUG session
+  // starts in step-over mode.  Users choose step-into per-step by
+  // driving with SST↓ instead of SST.
+  const wasStepping = _singleStepMode;
+  const wasInto = _stepInto;
+  _singleStepMode = true;
+  _stepInto = false;
+  try {
+    OPS.get('EVAL').fn(s);
+  } finally {
+    _singleStepMode = wasStepping;
+    _stepInto = wasInto;
+  }
 });
 
 /* --------------- APPEND — add element to end of a list ---------------
@@ -12645,6 +13249,246 @@ register('LAMBERT', _withTaggedUnary(_withListUnary((s) => {
   else                  s.push(_lambertScalar(v));
 })));
 
+/* ---- Ei / Si / Ci — exponential, sine, cosine integrals ---------------
+   HP50 AUR §2 (CAS-SPECIAL).  Three classical special-function integrals,
+   defined by:
+     Ei(x) = -∫_{-x}^{∞} e^{-t}/t dt         (Cauchy PV for x > 0)
+     Si(x) = ∫_0^x sin(t)/t dt               (entire, odd)
+     Ci(x) = γ + ln(x) + ∫_0^x (cos(t)-1)/t dt   (x > 0 in HP50 real mode)
+
+   Native implementations — Giac has these but the RPL calling convention
+   expects Real outputs on Real inputs (Giac would return numeric-string
+   Symbolics).  Three algorithmic branches per function:
+
+     Ei(x)
+       x  = 0          → Infinite result
+       x  > 0 && x < 40 → power series γ + ln(x) + Σ x^k/(k·k!)
+       x  ≥ 40         → asymptotic (e^x/x)·Σ k!/x^k truncated at smallest
+       x  < 0, |x|<1   → series for E1(-x), then Ei = -E1
+       x  < 0, |x|≥1   → modified-Lentz continued fraction for E1
+
+     Si(x)
+       x = 0           → 0
+       |x| ≤ 4         → odd power series
+       |x| > 4         → complex Lentz CF for E1(i·|x|): Si = π/2 + Im(E1(i·|x|))·sgn
+
+     Ci(x)
+       x  = 0          → Infinite result
+       x  < 0          → Bad argument value (HP50 real-mode convention)
+       x  ≤ 4          → γ + ln(x) + Σ (-1)^k x^{2k}/((2k)·(2k)!)
+       x  > 4          → Re(-E1(i·x)) via the same Lentz CF as Si
+
+   Relative error verified against Abramowitz & Stegun Tables 5.1/5.3 at
+   machine precision — see utils/@ei_si_ci_probe.mjs.
+
+   Symbolic / Name input lifts to `Ei(x)` / `Si(x)` / `Ci(x)`.  Tagged
+   transparent; List / Vector / Matrix distribute element-wise.
+*/
+const _EI_EULER = 0.5772156649015329;
+
+function _eiE1ContinuedFraction(t) {
+  // Modified Lentz for E1(t), t > 0:   E1(t) = e^{-t} · CF
+  //   CF = 1/(t+1-) 1·1/(t+3-) 2·2/(t+5-) …
+  const TINY = 1e-300, EPS = 1e-15, MAX = 2000;
+  let b = t + 1;
+  let c = 1 / TINY;
+  let d = 1 / b;
+  let h = d;
+  for (let i = 1; i < MAX; i++) {
+    const a = -i * i;
+    b += 2;
+    d = a * d + b; if (Math.abs(d) < TINY) d = TINY;
+    c = b + a / c; if (Math.abs(c) < TINY) c = TINY;
+    d = 1 / d;
+    const delta = c * d;
+    h *= delta;
+    if (Math.abs(delta - 1) < EPS) break;
+  }
+  return h * Math.exp(-t);
+}
+
+function _eiSeriesPositive(x) {
+  // Ei(x) = γ + ln(x) + Σ_{k=1}^∞ x^k / (k · k!), x > 0
+  const EPS = 1e-16, MAX = 1000;
+  let term = 1;
+  let sum = 0;
+  for (let k = 1; k < MAX; k++) {
+    term *= x / k;
+    const inc = term / k;
+    sum += inc;
+    if (Math.abs(inc) < Math.abs(sum) * EPS) break;
+  }
+  return _EI_EULER + Math.log(x) + sum;
+}
+
+function _eiAsymptotic(x) {
+  // Ei(x) ≈ (e^x/x) · Σ k!/x^k — divergent series, truncate at smallest term.
+  const MAX = 200;
+  let term = 1;
+  let sum = 1;
+  for (let k = 1; k < MAX; k++) {
+    const next = term * k / x;
+    if (!Number.isFinite(next)) break;
+    if (Math.abs(next) >= Math.abs(term)) break;
+    term = next;
+    sum += term;
+  }
+  return Math.exp(x) / x * sum;
+}
+
+function _ei(x) {
+  if (x === 0) throw new RPLError('Infinite result');
+  if (x > 0) return x < 40 ? _eiSeriesPositive(x) : _eiAsymptotic(x);
+  // x < 0: Ei(x) = -E1(-x).  Use series for small |x|, CF otherwise.
+  const t = -x;
+  if (t < 1) {
+    const EPS = 1e-16, MAX = 1000;
+    let term = 1, sum = 0;
+    for (let k = 1; k < MAX; k++) {
+      term *= -t / k;
+      const inc = term / k;
+      sum += inc;
+      if (Math.abs(inc) < Math.abs(sum) * EPS) break;
+    }
+    const e1 = -_EI_EULER - Math.log(t) - sum;
+    return -e1;
+  }
+  return -_eiE1ContinuedFraction(t);
+}
+
+function _siSeries(x) {
+  // Si(x) = Σ_{k=0}^∞ (-1)^k x^{2k+1} / ((2k+1)(2k+1)!)
+  const EPS = 1e-17, MAX = 1000;
+  const x2 = x * x;
+  let t = x;
+  let s = x;
+  for (let k = 1; k < MAX; k++) {
+    t *= -x2 / ((2 * k) * (2 * k + 1));
+    const entry = t / (2 * k + 1);
+    s += entry;
+    if (Math.abs(entry) < Math.abs(s) * EPS) break;
+  }
+  return s;
+}
+
+function _ciSeries(x) {
+  // Ci(x) = γ + ln(x) + Σ_{k=1}^∞ (-1)^k x^{2k} / ((2k)(2k)!)
+  const EPS = 1e-17, MAX = 1000;
+  const x2 = x * x;
+  let t = 1;
+  let s = 0;
+  for (let k = 1; k < MAX; k++) {
+    t *= -x2 / ((2 * k - 1) * (2 * k));
+    const entry = t / (2 * k);
+    s += entry;
+    if (Math.abs(entry) < Math.abs(s) * EPS) break;
+  }
+  return _EI_EULER + Math.log(x) + s;
+}
+
+function _siCiLentz(x) {
+  // Complex modified-Lentz CF for E1(i·x) on real x > 0:
+  //   E1(i·x) = e^{-i·x} · h,  h converges via the same recursion as real CF
+  //   but with complex b₀ = 1 + i·x.  Returned real parts satisfy
+  //     Si(x) - π/2 = Im(E1(i·x))
+  //     -Ci(x)     = Re(E1(i·x))
+  const TINY = 1e-300, EPS = 1e-16, MAX = 2000;
+  let bRe = 1, bIm = x;
+  let cRe = 1 / TINY, cIm = 0;
+  const dDenom = bRe * bRe + bIm * bIm;
+  let dRe = bRe / dDenom, dIm = -bIm / dDenom;
+  let hRe = dRe, hIm = dIm;
+  for (let i = 1; i < MAX; i++) {
+    const a = -i * i;
+    bRe += 2;
+    let ndRe = a * dRe + bRe;
+    let ndIm = a * dIm + bIm;
+    if (Math.hypot(ndRe, ndIm) < TINY) { ndRe = TINY; ndIm = 0; }
+    const cMag2 = cRe * cRe + cIm * cIm;
+    let ncRe = bRe + (a * cRe) / cMag2;
+    let ncIm = bIm + (a * -cIm) / cMag2;
+    if (Math.hypot(ncRe, ncIm) < TINY) { ncRe = TINY; ncIm = 0; }
+    const ndDenom = ndRe * ndRe + ndIm * ndIm;
+    const dNewRe = ndRe / ndDenom;
+    const dNewIm = -ndIm / ndDenom;
+    const delRe = ncRe * dNewRe - ncIm * dNewIm;
+    const delIm = ncRe * dNewIm + ncIm * dNewRe;
+    const hNewRe = hRe * delRe - hIm * delIm;
+    const hNewIm = hRe * delIm + hIm * delRe;
+    cRe = ncRe; cIm = ncIm;
+    dRe = dNewRe; dIm = dNewIm;
+    hRe = hNewRe; hIm = hNewIm;
+    if (Math.hypot(delRe - 1, delIm) < EPS) break;
+  }
+  // E1(i·x) = (cos x - i·sin x) · h
+  const cx = Math.cos(x), sx = Math.sin(x);
+  const eRe = cx * hRe + sx * hIm;
+  const eIm = cx * hIm - sx * hRe;
+  return { siMinusHalfPi: eIm, minusCi: eRe };
+}
+
+function _si(x) {
+  if (x === 0) return 0;
+  const sign = x < 0 ? -1 : 1;
+  const ax = Math.abs(x);
+  if (ax <= 4) return sign * _siSeries(ax);
+  const { siMinusHalfPi } = _siCiLentz(ax);
+  return sign * (Math.PI / 2 + siMinusHalfPi);
+}
+
+function _ci(x) {
+  if (x === 0) throw new RPLError('Infinite result');
+  if (x < 0) throw new RPLError('Bad argument value');
+  if (x <= 4) return _ciSeries(x);
+  const { minusCi } = _siCiLentz(x);
+  return -minusCi;
+}
+
+function _eiScalar(v) {
+  if (_isSymOperand(v)) return Symbolic(AstFn('Ei', [_toAst(v)]));
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
+  if (x === null) throw new RPLError('Bad argument type');
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  return Real(_ei(x));
+}
+
+function _siScalar(v) {
+  if (_isSymOperand(v)) return Symbolic(AstFn('Si', [_toAst(v)]));
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
+  if (x === null) throw new RPLError('Bad argument type');
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  return Real(_si(x));
+}
+
+function _ciScalar(v) {
+  if (_isSymOperand(v)) return Symbolic(AstFn('Ci', [_toAst(v)]));
+  const x = isInteger(v) ? Number(v.value) : isReal(v) ? v.value.toNumber() : null;
+  if (x === null) throw new RPLError('Bad argument type');
+  if (!Number.isFinite(x)) throw new RPLError('Bad argument value');
+  return Real(_ci(x));
+}
+
+register('Ei', _withTaggedUnary(_withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_eiScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_eiScalar))));
+  else                  s.push(_eiScalar(v));
+})));
+
+register('Si', _withTaggedUnary(_withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_siScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_siScalar))));
+  else                  s.push(_siScalar(v));
+})));
+
+register('Ci', _withTaggedUnary(_withListUnary((s) => {
+  const v = s.pop();
+  if (isVector(v))      s.push(Vector(v.items.map(_ciScalar)));
+  else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_ciScalar))));
+  else                  s.push(_ciScalar(v));
+})));
+
 /* ---- XNUM / XQ — ASCII aliases ---------------------------------------
    HP50 AUR p.2-211.  `XNUM` and `XQ` are the mode-agnostic names HP50
    firmware uses for `→NUM` and `→Q` in contexts where the arrow glyph
@@ -14534,6 +15378,373 @@ register('LNCOLLECT', (s) => {
   const [v] = s.popN(1);
   if (!isSymbolic(v)) throw new RPLError('Bad argument type');
   s.push(Symbolic(_lncollectWalk(v.expr)));
+});
+
+/* ---- PROPFRAC / PARTFRAC / COSSIN — session 104 --------------------
+   Three HP50 ALG / REWRITE menu ops, all thin wrappers over Giac.
+
+     PROPFRAC  (HP50 AUR §3-197)
+       Proper-fraction form: rewrite a rational expression as
+       `quotient + remainder/divisor` with degree(remainder) < degree(divisor).
+       Works on purely numeric rationals too:  43/12  →  3 + 7/12.
+       Routed through Giac `propfrac(expr)`.
+
+     PARTFRAC  (HP50 AUR §3-180)
+       Partial-fraction decomposition.  Splits a rational expression
+       whose denominator factors into distinct linear / quadratic
+       pieces into a sum of simpler fractions.
+       Routed through Giac `partfrac(expr)`.
+
+     COSSIN    (HP50 AUR §3-64)
+       Rewrite trigonometric surface in terms of SIN and COS by
+       expanding every TAN(x) as SIN(x)/COS(x).  Giac's
+       `tan2sincos(expr)` is the direct analogue.
+
+   Common shape — mirrors EXPAND / SIMPLIFY:
+     • Symbolic input routes through Giac.  No-fallback policy: if
+       Giac isn't ready or caseval throws, the op throws.
+     • Rational input (PROPFRAC only — the other two are pure trig /
+       algebra ops that are a no-op on a bare ratio) lifts to
+       Symbolic via `_toAst` first, then Giac.
+     • Real / Integer / Name are pass-through, matching EXPAND /
+       COLLECT / FACTOR leniency so these ops compose against any
+       numeric operand without blowing up.
+     • Any other type throws `Bad argument type`.
+   ------------------------------------------------------------------ */
+
+register('PROPFRAC', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(v.expr, (e) => `propfrac(${e})`);
+    s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+    return;
+  }
+  if (isRational(v)) {
+    // Lift the BigInt ratio into a Symbolic Bin('/', Num(n), Num(d))
+    // (via `_toAst`) so Giac receives, e.g., `propfrac(43/12)`.  The
+    // Giac result `3+7/12` parses back through `giacToAst` into a
+    // plain Symbolic sum.
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(_toAst(v), (e) => `propfrac(${e})`);
+    s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isName(v)) {
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('PARTFRAC', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(v.expr, (e) => `partfrac(${e})`);
+    s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isRational(v) || isName(v)) {
+    // A pure number / ratio / bare name has no non-trivial partial-
+    // fraction decomposition — pass through untouched.
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+register('COSSIN', (s) => {
+  const v = s.pop();
+  if (isSymbolic(v)) {
+    if (!giac.isReady()) throw new RPLError('CAS not ready');
+    const cmd = buildGiacCmd(v.expr, (e) => `tan2sincos(${e})`);
+    s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+    return;
+  }
+  if (isReal(v) || isInteger(v) || isRational(v) || isName(v)) {
+    s.push(v);
+    return;
+  }
+  throw new RPLError('Bad argument type');
+});
+
+/* ------------------------------------------------------------------
+   Matrix-symbolic ops — PCAR / CHARPOL / EGVL       (session 114)
+
+   Three CAS-backed matrix ops that take an n×n Matrix and route
+   through Giac.  Matrix is serialized to Giac's `[[a,b],[c,d]]`
+   bracket literal via `_matrixToGiacStr`; scalar entries use
+   `_scalarToGiacStr` (Integer / Real / Rational / Complex /
+   Symbolic / Name → Giac-valid string).
+
+   PCAR     (HP50 AUR §3-196)
+     Characteristic polynomial det(X·I − A) of a square matrix A.
+     HP50 name is PCAR.  Giac equivalent: `charpoly(M, X)`.  Returns
+     a Symbolic in the current CAS variable (VX — default `X`).
+     The listed `CHARPOL` alias is registered as a thin wrapper so
+     code imported from other HP-family calculators still resolves.
+
+   EGVL     (HP50 AUR §3-90)
+     Eigenvalues of a square matrix, returned as a Vector.  Giac
+     equivalent: `eigenvals(M)` (the list form — note `egvl(M)` in
+     Xcas prints the Jordan-form diagonal matrix instead, which isn't
+     what HP50 EGVL wants; eigenvals is the bracket-list companion).
+     Each element is lifted back through `giacToAst` and unwrapped to
+     a Real / Integer / Symbolic / Complex value via `_astToRplValue`.
+
+   Shared shape:
+     • Input must be a square (n×n) Matrix.  Empty matrix ⇒
+       `Invalid dimension`; rectangular ⇒ `Invalid dimension`.
+     • Non-Matrix input ⇒ `Bad argument type`.
+     • `!giac.isReady()` ⇒ `CAS not ready` (no-fallback policy).
+   ------------------------------------------------------------------ */
+
+/** Serialize one scalar Matrix/Vector entry as a Giac-parseable token.
+ *  Handles the numeric family (Integer / Real / Rational / Complex),
+ *  plus Symbolic (recurse via astToGiac) and bare Name.  Anything else
+ *  throws — callers propagate as `Bad argument type`. */
+function _scalarToGiacStr(v) {
+  if (isInteger(v))  return v.value.toString();                 // BigInt → "n"
+  if (isReal(v))     return v.value.toString();                 // Decimal → "3.14"
+  if (isRational(v)) return `(${v.n.toString()}/${v.d.toString()})`;
+  if (isComplex(v))  return `(${v.re}+(${v.im})*i)`;
+  if (isSymbolic(v)) return `(${astToGiac(v.expr)})`;
+  if (isName(v))     return v.id;
+  throw new RPLError('Bad argument type');
+}
+
+/** Serialize a Matrix as a Giac `[[r1c1,r1c2,…],[r2c1,…]]` literal. */
+function _matrixToGiacStr(m) {
+  const rows = m.rows.map((row) => {
+    const elts = row.map(_scalarToGiacStr);
+    return `[${elts.join(',')}]`;
+  });
+  return `[${rows.join(',')}]`;
+}
+
+/** Shared validator for PCAR / EGVL-style matrix ops.  Returns the
+ *  square n; throws `Invalid dimension` for non-square / empty,
+ *  `Bad argument type` for non-Matrix. */
+function _popSquareMatrix(s) {
+  const m = s.pop();
+  if (!isMatrix(m)) throw new RPLError('Bad argument type');
+  const n = m.rows.length;
+  const cols = n > 0 ? m.rows[0].length : 0;
+  if (n === 0 || n !== cols) throw new RPLError('Invalid dimension');
+  return { matrix: m, n };
+}
+
+register('PCAR', (s) => {
+  const { matrix } = _popSquareMatrix(s);
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const vx = getCasVx();
+  const matStr = _matrixToGiacStr(matrix);
+  const cmd = `charpoly(${matStr},${vx})`;
+  s.push(Symbolic(giacToAst(giac.caseval(cmd))));
+});
+
+/** `CHARPOL` — alias for PCAR.  Some HP-family codebases use the
+ *  descriptive name; register as a thin wrapper so it picks up any
+ *  future refinement of PCAR automatically (mirrors the XNUM / XQ
+ *  alias pattern from session 086). */
+register('CHARPOL', (s) => { OPS.get('PCAR').fn(s); });
+
+register('EGVL', (s) => {
+  const { matrix } = _popSquareMatrix(s);
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const matStr = _matrixToGiacStr(matrix);
+  const raw = giac.caseval(`eigenvals(${matStr})`);
+  // `eigenvals` prints a flat `[λ1, λ2, …]` list per Xcas convention.
+  // If Giac (or a future mock) returns something else, splitGiacList
+  // yields null; surface that as `Bad argument value` so the user gets
+  // a clean error instead of a garbled result.
+  const parts = splitGiacList(raw);
+  if (parts === null) throw new RPLError('Bad argument value');
+  const items = parts.map((elt) => {
+    const ast = giacToAst(elt);
+    return _astToRplValue(ast);
+  });
+  s.push(Vector(items));
+});
+
+/* ------------------------------------------------------------------
+   EGV   (HP50 AUR §3-73)        session 119
+   Eigenvalues + right eigenvectors of a square matrix.
+
+     Input :  level 1 = [[ M ]]   (n × n)
+     Output:  level 2 = [[ EVec ]]  (n × n; columns = right eigenvectors)
+              level 1 = [ EVal  ]   (n-vector of eigenvalues)
+
+   HP50 fidelity:
+     • EVec column i corresponds to EVal entry i.
+     • For real input with a complex eigenpair, both EVec and EVal
+       widen to complex — same as EGVL.
+
+   Implementation:
+     • Eigenvalue vector via Giac `eigenvals(M)` — same call EGVL
+       uses, so the eigenvalue order matches EGVL exactly.
+     • Eigenvector matrix via Giac `egv(M)`.  Xcas `egv(M)` returns
+       the matrix P whose columns are right eigenvectors such that
+       M·P = P·diag(eigenvals(M)) — the orientation HP50 asks for.
+       (`egvl(M)`, by contrast, returns the diagonal eigenvalue
+       matrix; the n_a_m_e similarity is treacherous.)
+     • Both calls go through the same `_matrixToGiacStr` /
+       `_astToRplValue` pipeline as EGVL/PCAR; if either Giac call
+       returns a non-list shape, surface `Bad argument value` to keep
+       the error wording identical to the EGVL no-list case.
+     • No-fallback policy: `!giac.isReady()` ⇒ `CAS not ready`.
+   ------------------------------------------------------------------ */
+register('EGV', (s) => {
+  const { matrix } = _popSquareMatrix(s);
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+  const matStr = _matrixToGiacStr(matrix);
+
+  // --- eigenvector matrix ---
+  const evecRaw = giac.caseval(`egv(${matStr})`);
+  const evecRows = splitGiacList(evecRaw);
+  if (evecRows === null) throw new RPLError('Bad argument value');
+  const matrixRows = evecRows.map((rowStr) => {
+    const cols = splitGiacList(rowStr);
+    if (cols === null) throw new RPLError('Bad argument value');
+    return cols.map((c) => _astToRplValue(giacToAst(c)));
+  });
+
+  // --- eigenvalue vector --- (same call EGVL uses → same ordering)
+  const evalRaw = giac.caseval(`eigenvals(${matStr})`);
+  const evalParts = splitGiacList(evalRaw);
+  if (evalParts === null) throw new RPLError('Bad argument value');
+  const evalItems = evalParts.map((elt) => _astToRplValue(giacToAst(elt)));
+
+  // Push matrix first (it ends up at level 2), then the vector.
+  s.push(Matrix(matrixRows));
+  s.push(Vector(evalItems));
+});
+
+/* ------------------------------------------------------------------
+   RSD   (HP50 AUR §3-213)        session 119
+   Residual command — returns B − A·Z.
+
+     Input :  level 3 = B  (vector or matrix)
+              level 2 = A  (m × k matrix)
+              level 1 = Z  (vector of length k, OR k × n matrix)
+     Output:  level 1 = R = B − A·Z (same shape as B)
+
+   Shape constraints (per AUR p.3-213):
+     • A must be a matrix.
+     • cols(A) must equal len(Z) (Z vector) or rows(Z) (Z matrix).
+     • rows(A) must equal len(B) (B vector) or rows(B) (B matrix).
+     • B and Z must both be vectors or both be matrices.
+     • If both matrices, cols(B) must equal cols(Z).
+
+   Numeric path only — entries must be Real or Integer.  Mirrors the
+   LSQ rejection policy (`_asNumArray*`).  The result is a Real-typed
+   Vector or Matrix (matching how LSQ / RREF return Real entries on
+   the numeric branch).
+   ------------------------------------------------------------------ */
+register('RSD', (s) => {
+  const [B, A, Z] = s.popN(3);
+  if (!isMatrix(A)) throw new RPLError('Bad argument type');
+
+  const m = A.rows.length;
+  const k = m > 0 ? A.rows[0].length : 0;
+  if (m === 0 || k === 0) throw new RPLError('Invalid dimension');
+
+  // Promote A to plain numbers up-front; this also surfaces the
+  // Real/Integer-only contract on A's entries before we look at B/Z.
+  const aNum = _asNumArray2D(A.rows);
+
+  // Vector branch — B and Z both vectors.
+  if (isVector(B) && isVector(Z)) {
+    if (Z.items.length !== k) throw new RPLError('Invalid dimension');
+    if (B.items.length !== m) throw new RPLError('Invalid dimension');
+    const bNum = _asNumArray1D(B.items);
+    const zNum = _asNumArray1D(Z.items);
+    const az = _matVecNum(aNum, zNum);
+    const out = new Array(m);
+    for (let i = 0; i < m; i++) out[i] = Real(bNum[i] - az[i]);
+    s.push(Vector(out));
+    return;
+  }
+
+  // Matrix branch — B and Z both matrices.
+  if (isMatrix(B) && isMatrix(Z)) {
+    const zRows = Z.rows.length;
+    const zCols = zRows > 0 ? Z.rows[0].length : 0;
+    if (zRows !== k) throw new RPLError('Invalid dimension');
+    if (zCols === 0) throw new RPLError('Invalid dimension');
+    const bRows = B.rows.length;
+    const bCols = bRows > 0 ? B.rows[0].length : 0;
+    if (bRows !== m) throw new RPLError('Invalid dimension');
+    if (bCols !== zCols) throw new RPLError('Invalid dimension');
+    const bNum = _asNumArray2D(B.rows);
+    const zNum = _asNumArray2D(Z.rows);
+    const az = _matMulNum(aNum, zNum);
+    const rows = new Array(m);
+    for (let i = 0; i < m; i++) {
+      const row = new Array(zCols);
+      for (let j = 0; j < zCols; j++) row[j] = Real(bNum[i][j] - az[i][j]);
+      rows[i] = row;
+    }
+    s.push(Matrix(rows));
+    return;
+  }
+
+  // Mixed shapes (vector + matrix) and any other combination → reject.
+  throw new RPLError('Bad argument type');
+});
+
+/* ------------------------------------------------------------------
+   GREDUCE   (HP50 AUR §3-99)        session 119
+   Reduce a polynomial with respect to a Grœbner basis.
+
+     Input :  level 3 = poly      (Symbolic / Name / numeric)
+              level 2 = basis     (Vector of polynomials)
+              level 1 = vars      (Vector of bare Names — variable list)
+     Output:  level 1 = the input polynomial reduced modulo the basis
+
+   Bridges to Giac `greduce(p, [b1,…,bN], [v1,…,vM])`.  The result is a
+   single polynomial — push it back through the same `giacToAst →
+   _astToRplValue` chain PCAR/EGVL use, so a numeric remainder lands
+   as a Real / Integer and a polynomial remainder as a Symbolic.
+
+   Argument shape rejections:
+     • level 1 must be a Vector of bare Names (with isName predicate);
+       a Vector of strings or Symbolics rejects with `Bad argument type`.
+     • level 2 must be a Vector of polynomials — Symbolic / Name /
+       Integer / Real / Rational entries OK (lifted via _scalarToGiacStr).
+     • level 3 likewise.
+     • Empty basis or empty var-list → `Invalid dimension`.
+
+   No-fallback: `!giac.isReady()` ⇒ `CAS not ready`.
+
+   Example (AUR p.3-99):
+     GREDUCE( X^2*Y - X*Y - 1, [X, 2*Y^3 - 1], [X, Y] )  →  -1
+   ------------------------------------------------------------------ */
+register('GREDUCE', (s) => {
+  const [poly, basisV, varsV] = s.popN(3);
+  if (!isVector(varsV))  throw new RPLError('Bad argument type');
+  if (!isVector(basisV)) throw new RPLError('Bad argument type');
+  if (varsV.items.length === 0)  throw new RPLError('Invalid dimension');
+  if (basisV.items.length === 0) throw new RPLError('Invalid dimension');
+
+  // Variable list must be bare Names — anything else (Symbolic, String)
+  // would produce nonsense Giac calls.
+  for (const v of varsV.items) {
+    if (!isName(v)) throw new RPLError('Bad argument type');
+  }
+
+  if (!giac.isReady()) throw new RPLError('CAS not ready');
+
+  const polyStr = _scalarToGiacStr(poly);
+  const basisParts = basisV.items.map(_scalarToGiacStr);
+  const varsParts  = varsV.items.map((n) => n.id);
+  const cmd = `greduce(${polyStr},[${basisParts.join(',')}],[${varsParts.join(',')}])`;
+  const raw = giac.caseval(cmd);
+  // greduce returns a single polynomial (or constant), not a list.
+  // Hand it through the same lift PCAR uses — numerics unwrap, the
+  // rest stay Symbolic.
+  s.push(_astToRplValue(giacToAst(raw)));
 });
 
 /* ---- FROOTS biquadratic residual pass -------------------------------

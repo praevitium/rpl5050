@@ -4,7 +4,7 @@ import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
-  isString,
+  isString, isVector, isMatrix,
   Symbolic, isSymbolic,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
@@ -27,7 +27,7 @@ import {
   evalAst, freeVars, defaultFnEval,
 } from '../www/src/rpl/algebra.js';
 import { giac } from '../www/src/rpl/cas/giac-engine.mjs';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Symbolic algebra — parser, simplify, DERIV, EXPAND, COLLECT, FACTOR,
    SUBST, SOLVE, textbook-mode pretty-print, EXACT/APPROX numeric-eval,
@@ -154,9 +154,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(1)]));
   s.push(Name('X'));
-  let threw = false;
-  try { lookup('DERIV').fn(s); } catch (_) { threw = true; }
-  assert(threw, 'DERIV on List throws "Bad argument type"');
+  assertThrows(() => { lookup('DERIV').fn(s); }, null, 'DERIV on List throws "Bad argument type"');
 }
 
 // --- Symbolic formatter dispatch -----------------------------------
@@ -252,9 +250,7 @@ import { assert } from './helpers.mjs';
   // Non-whitelisted identifier followed by '(' is an error — the outer
   // parser falls back to quoted Name.  Here we check the inner parser
   // throws so parser.js's try/catch fires.
-  let threw = false;
-  try { parseAlgebra('FOO(X)'); } catch (_) { threw = true; }
-  assert(threw, 'parseAlgebra(FOO(X)) throws (FOO not whitelisted)');
+  assertThrows(() => { parseAlgebra('FOO(X)'); }, null, 'parseAlgebra(FOO(X)) throws (FOO not whitelisted)');
 }
 
 // --- auto-close: missing ')' at EOF ---------------------------------
@@ -285,12 +281,11 @@ import { assert } from './helpers.mjs';
   // Missing ')' mid-stream — NOT at EOF — still errors.  Auto-close is
   // strictly an EOF recovery, same as the list/vector/program soft-close
   // only applies when the token stream runs out.
-  let threw = false;
   try { parseAlgebra('SIN(X+Y'); } catch (_) { /* EOF auto-close — must NOT throw */ }
   // The unterminated EOF case succeeds via auto-close; mid-stream garbage
   // still throws.
-  try { parseAlgebra('SIN(X + ) +'); } catch (_) { threw = true; }
-  assert(threw, "parseAlgebra('SIN(X + ) +') mid-stream garbage still throws");
+  assertThrows(() => parseAlgebra('SIN(X + ) +'), null,
+    "parseAlgebra('SIN(X + ) +') mid-stream garbage still throws");
 }
 
 // --- fn node: formatter --------------------------------------------
@@ -323,6 +318,98 @@ import { assert } from './helpers.mjs';
   const body = formatAlgebra(vals[0].expr);
   assert(body === 'SIN(X)',
          `'SIN(X)' Symbolic.expr round-trip → '${body}'`);
+}
+
+// --- session100: KNOWN_FUNCTIONS round-trip for CONJ/RE/IM/LNP1/EXPM/
+//     XPON/MANT/TRUNC/ZETA/LAMBERT/PSI.  Before session 100 these ops
+//     lifted to `AstFn(NAME, …)` on the stack side (via `_isSymOperand`
+//     in ops.js) but the textual form `'NAME(X)'` failed parseAlgebra
+//     because NAME was not whitelisted.  Round-trip gap: push Symbolic,
+//     format → `NAME(X)`, re-parse as `` `NAME(X)` `` → must land as
+//     Symbolic again, not fall through to a quoted-Name of the literal
+//     text.  One assertion per new KNOWN_FUNCTIONS key plus a control
+//     check that the SIN entry stays ✓.
+{
+  const names = ['CONJ', 'RE', 'IM', 'LNP1', 'EXPM', 'XPON', 'MANT',
+                 'ZETA', 'LAMBERT'];
+  for (const name of names) {
+    assert(isKnownFunction(name),
+           `session100: ${name} is in KNOWN_FUNCTIONS`);
+    const a = parseAlgebra(`${name}(X)`);
+    assert(a.kind === 'fn' && a.name === name &&
+           a.args.length === 1 && a.args[0].kind === 'var' &&
+           a.args[0].name === 'X',
+           `session100: parseAlgebra('${name}(X)') = fn ${name} [X]`);
+    // Full entry-line round-trip through parser.js's quotedName → algebra.
+    const vals = parseEntry('`' + name + '(X)`');
+    assert(vals.length === 1 && isSymbolic(vals[0]) &&
+           vals[0].expr.kind === 'fn' && vals[0].expr.name === name,
+           `session100: parseEntry \`${name}(X)\` lands as Symbolic(${name})`);
+    // formatAlgebra must re-emit the canonical text so `fmt ∘ parse` is
+    // the identity (modulo whitespace).
+    assert(formatAlgebra(a) === `${name}(X)`,
+           `session100: formatAlgebra(${name}(X)) round-trip`);
+  }
+}
+{
+  // TRUNC is 2-arg — separate block because parseEntry needs two args.
+  assert(isKnownFunction('TRUNC'), 'session100: TRUNC is in KNOWN_FUNCTIONS');
+  const a = parseAlgebra('TRUNC(X,3)');
+  assert(a.kind === 'fn' && a.name === 'TRUNC' && a.args.length === 2 &&
+         a.args[0].kind === 'var' && a.args[0].name === 'X' &&
+         a.args[1].kind === 'num' && a.args[1].value === 3,
+         'session100: parseAlgebra(TRUNC(X,3)) = fn TRUNC [X, 3]');
+  // Wrong arity — TRUNC requires exactly 2 per spec.arity.
+  assertThrows(() => { parseAlgebra('TRUNC(X)'); }, null, 'session100: parseAlgebra(TRUNC(X)) throws (arity=2 enforced)');
+}
+{
+  // PSI is variadic (1 OR 2 args) — arity omitted from spec, so the
+  // parser's `spec.arity !== undefined` guard skips the arg-count check.
+  assert(isKnownFunction('PSI'), 'session100: PSI is in KNOWN_FUNCTIONS');
+  const a1 = parseAlgebra('PSI(X)');
+  assert(a1.kind === 'fn' && a1.name === 'PSI' && a1.args.length === 1,
+         'session100: parseAlgebra(PSI(X)) = digamma form');
+  const a2 = parseAlgebra('PSI(X,2)');
+  assert(a2.kind === 'fn' && a2.name === 'PSI' && a2.args.length === 2 &&
+         a2.args[1].kind === 'num' && a2.args[1].value === 2,
+         'session100: parseAlgebra(PSI(X,2)) = polygamma form');
+}
+{
+  // Constant-fold at simplify / defaultFnEval time for the mode-
+  // independent evaluators.  CONJ / RE are identity on ℝ, IM is zero,
+  // LNP1 / EXPM delegate to Math.log1p / Math.expm1, XPON / MANT split
+  // a Real into exponent-10 and mantissa.  The folds mirror the stack-
+  // op semantics so simplify() produces numeric subtrees consistent with
+  // EVAL.
+  assert(defaultFnEval('CONJ', [5]) === 5, 'session100: CONJ(5) folds to 5');
+  assert(defaultFnEval('RE',   [5]) === 5, 'session100: RE(5) folds to 5');
+  assert(defaultFnEval('IM',   [5]) === 0, 'session100: IM(5) folds to 0');
+  // Stable-near-zero cases — verify against Math.log1p / Math.expm1.
+  const lnp1 = defaultFnEval('LNP1', [0.5]);
+  assert(Math.abs(lnp1 - Math.log1p(0.5)) < 1e-15,
+         `session100: LNP1(0.5) folds to log1p(0.5) — got ${lnp1}`);
+  const expm = defaultFnEval('EXPM', [1]);
+  assert(Math.abs(expm - Math.expm1(1)) < 1e-15,
+         `session100: EXPM(1) folds to expm1(1) — got ${expm}`);
+  // XPON / MANT on a nonzero Real.
+  assert(defaultFnEval('XPON', [2500])  === 3,   'session100: XPON(2500) = 3');
+  assert(defaultFnEval('MANT', [2500])  === 2.5, 'session100: MANT(2500) = 2.5');
+  // Zero-case convention: XPON(0) = 0, MANT(0) = 0.
+  assert(defaultFnEval('XPON', [0]) === 0, 'session100: XPON(0) = 0');
+  assert(defaultFnEval('MANT', [0]) === 0, 'session100: MANT(0) = 0');
+  // Domain edge — LNP1(-1) is log(0); leave symbolic (null) instead of
+  // folding to -Infinity.  Matches LN's domain-guarded behaviour.
+  assert(defaultFnEval('LNP1', [-1]) === null,
+         'session100: LNP1(-1) domain edge returns null (left symbolic)');
+  // ZETA / LAMBERT / PSI carry no simplify-time evaluator — they return
+  // null so the Fn node stays symbolic and EVAL hands it to the stack
+  // op with its iterative numeric path.
+  assert(defaultFnEval('ZETA', [2])    === null,
+         'session100: ZETA(2) left symbolic at simplify time');
+  assert(defaultFnEval('LAMBERT', [1]) === null,
+         'session100: LAMBERT(1) left symbolic at simplify time');
+  assert(defaultFnEval('PSI', [1])     === null,
+         'session100: PSI(1) left symbolic at simplify time');
 }
 {
   // DERIV op end-to-end: `'SIN(X)' 'X' DERIV` → `'COS(X)'`
@@ -860,9 +947,7 @@ import { assert } from './helpers.mjs';
   // Synthesise a Var with a bad name directly (bypass parseAlgebra,
   // since the algebra parser itself would reject this earlier).
   const badVar = { kind: 'var', name: '#FFh' };
-  let threw = false;
-  try { astToGiac(badVar); } catch (e) { threw = /Invalid name: #FFh/.test(e.message); }
-  assert(threw, 'astToGiac(Var("#FFh")) throws "Invalid name: #FFh"');
+  assertThrows(() => { astToGiac(badVar); }, /Invalid name: #FFh/, 'astToGiac(Var("#FFh")) throws "Invalid name: #FFh"');
 
   // The bad name can live deep inside the AST — the walker catches it.
   // AST nodes are frozen so synthesise the shape directly rather than
@@ -870,16 +955,11 @@ import { assert } from './helpers.mjs';
   const nested = { kind: 'bin', op: '+',
                    l: { kind: 'var', name: 'X' },
                    r: { kind: 'var', name: '#bad' } };
-  threw = false;
-  try { astToGiac(nested); } catch (e) { threw = /Invalid name: #bad/.test(e.message); }
-  assert(threw, 'astToGiac rejects a nested Var with invalid name');
+  assertThrows(() => { astToGiac(nested); }, /Invalid name: #bad/, 'astToGiac rejects a nested Var with invalid name');
 
   // buildGiacCmd surfaces the same error shape for extraVars
   // (user-supplied variable argument for DERIV/INTEG/SOLVE/COLLECT).
-  threw = false;
-  try { buildGiacCmd(parseAlgebra('X+1'), (e) => `diff(${e},Y)`, ['#FFh']); }
-  catch (e) { threw = /Invalid name: #FFh/.test(e.message); }
-  assert(threw, 'buildGiacCmd validates extraVars — rejects "#FFh"');
+  assertThrows(() => { buildGiacCmd(parseAlgebra('X+1'), (e) => `diff(${e},Y)`, ['#FFh']); }, /Invalid name: #FFh/, 'buildGiacCmd validates extraVars — rejects "#FFh"');
 
   // Valid identifiers still go through — regression guard.
   const goodCmd = buildGiacCmd(parseAlgebra('X+Y'), (e) => `diff(${e},Y)`, ['Y']);
@@ -1054,17 +1134,15 @@ import { assert } from './helpers.mjs';
                    'No such variable X');
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('(X-1)^2/(X-1)')));
-  let threw = null;
-  try { lookup('FACTOR').fn(s); } catch (e) { threw = e; }
-  assert(threw !== null,
+  const factorErr = assertThrows(() => lookup('FACTOR').fn(s), null,
          'FACTOR on error-shaped Giac output raises');
   // _dispatchOp wraps with "FACTOR: " prefix; runtime-error path uses the
   // GiacResultError message which quotes the raw string.
-  assert(threw && /runtime-error|No such variable/.test(threw.message),
-         `FACTOR error message mentions runtime-error / raw shape (got "${threw && threw.message}")`);
+  assert(factorErr && /runtime-error|No such variable/.test(factorErr.message),
+         `FACTOR error message mentions runtime-error / raw shape (got "${factorErr && factorErr.message}")`);
   // Must NOT be the old "Unexpected character" parseAlgebra leak.
-  assert(threw && !/Unexpected character '"'/.test(threw.message),
-         `FACTOR error is not the old parse-failure leak (got "${threw && threw.message}")`);
+  assert(factorErr && !/Unexpected character '"'/.test(factorErr.message),
+         `FACTOR error is not the old parse-failure leak (got "${factorErr && factorErr.message}")`);
   giac._clear();
 }
 
@@ -1111,9 +1189,7 @@ import { assert } from './helpers.mjs';
   giac._clear();
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2 - 1')));
-  let threw = false;
-  try { lookup('FACTOR').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'FACTOR with no Giac fixture must throw (no fallback)');
+  assertThrows(() => { lookup('FACTOR').fn(s); }, null, 'FACTOR with no Giac fixture must throw (no fallback)');
   giac._clear();
 }
 {
@@ -2166,10 +2242,7 @@ giac._setFixtures({
     // just leaves it symbolic.  Force a real throw by feeding a bare
     // name that can't resolve.  Pushing an empty stack and calling →NUM
     // will throw "Too few arguments"; catch to assert flag is restored.
-    let threw = false;
-    try { lookup('→NUM').fn(s, null); }
-    catch (e) { threw = true; }
-    assert(threw, '→NUM with empty stack throws');
+    assertThrows(() => lookup('→NUM').fn(s, null), null, '→NUM with empty stack throws');
     assert(getApproxMode() === false,
       '→NUM restores the EXACT flag even on error');
   }
@@ -2378,9 +2451,7 @@ giac._setFixtures({
   const s = new Stack();
   s.push(RList([]));
   s.push(Integer(1n));
-  let threw = false;
-  try { lookup('HORNER').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: HORNER empty coef list throws');
+  assertThrows(() => { lookup('HORNER').fn(s); }, /Bad argument/, 'session053: HORNER empty coef list throws');
 }
 
 /* ---- HORNER: non-numeric coef throws ---- */
@@ -2388,9 +2459,7 @@ giac._setFixtures({
   const s = new Stack();
   s.push(RList([Integer(1n), Name('A')]));
   s.push(Integer(1n));
-  let threw = false;
-  try { lookup('HORNER').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: HORNER Name coef throws');
+  assertThrows(() => { lookup('HORNER').fn(s); }, /Bad argument/, 'session053: HORNER Name coef throws');
 }
 
 /* ---- PCOEF: {1 2 3} → coefs of (x-1)(x-2)(x-3) = x³-6x²+11x-6 ---- */
@@ -2465,18 +2534,14 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(2n), Integer(3n)]));
-  let threw = false;
-  try { lookup('FCOEF').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: FCOEF odd-length list throws');
+  assertThrows(() => { lookup('FCOEF').fn(s); }, /Bad argument/, 'session053: FCOEF odd-length list throws');
 }
 
 /* ---- FCOEF: negative multiplicity throws ---- */
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(-1n)]));
-  let threw = false;
-  try { lookup('FCOEF').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: FCOEF negative multiplicity throws');
+  assertThrows(() => { lookup('FCOEF').fn(s); }, /Bad argument/, 'session053: FCOEF negative multiplicity throws');
 }
 
 /* ---- FCOEF: zero-multiplicity skipped; empty result = Num(1) ---- */
@@ -2551,18 +2616,14 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(RList([]));
-  let threw = false;
-  try { lookup('PROOT').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session054: PROOT {} throws');
+  assertThrows(() => { lookup('PROOT').fn(s); }, /Bad argument value/, 'session054: PROOT {} throws');
 }
 
 /* ---- PROOT: Name coef rejected ---- */
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Name('a'), Integer(1n)]));
-  let threw = false;
-  try { lookup('PROOT').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session054: PROOT Name coef throws');
+  assertThrows(() => { lookup('PROOT').fn(s); }, /Bad argument/, 'session054: PROOT Name coef throws');
 }
 
 /* ---- QUOT: (x³ - 2x² + x - 2) / (x - 2) = x² + 1 ---- */
@@ -2620,9 +2681,7 @@ giac._setFixtures({
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(1n)]));
   s.push(RList([Integer(0n)]));
-  let threw = false;
-  try { lookup('QUOT').fn(s); } catch (e) { threw = /Infinite/.test(e.message); }
-  assert(threw, 'session054: QUOT by zero throws');
+  assertThrows(() => { lookup('QUOT').fn(s); }, /Infinite/, 'session054: QUOT by zero throws');
 }
 
 /* =================================================================
@@ -2670,9 +2729,7 @@ giac._setFixtures({
   const s = new Stack();
   s.push(RList([]));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('PEVAL').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session055: PEVAL {} throws');
+  assertThrows(() => { lookup('PEVAL').fn(s); }, /Bad argument value/, 'session055: PEVAL {} throws');
 }
 
 /* ---- PEVAL: Symbolic coef rejected ---- */
@@ -2680,9 +2737,7 @@ giac._setFixtures({
   const s = new Stack();
   s.push(RList([Integer(1n), Symbolic(AstVar('a'))]));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('PEVAL').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session055: PEVAL Symbolic coef throws');
+  assertThrows(() => { lookup('PEVAL').fn(s); }, /Bad argument/, 'session055: PEVAL Symbolic coef throws');
 }
 
 /* ---- PTAYL: x²  shifted by a=0  →  x² unchanged ---- */
@@ -2743,9 +2798,7 @@ giac._setFixtures({
   const s = new Stack();
   s.push(RList([]));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('PTAYL').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session055: PTAYL {} throws');
+  assertThrows(() => { lookup('PTAYL').fn(s); }, /Bad argument value/, 'session055: PTAYL {} throws');
 }
 
 /* ---- EPSX0: tiny numeric drops to 0 ---- */
@@ -2912,9 +2965,7 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('DISTRIB').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session055: DISTRIB non-Symbolic throws');
+  assertThrows(() => { lookup('DISTRIB').fn(s); }, /Bad argument/, 'session055: DISTRIB non-Symbolic throws');
 }
 
 /* ================================================================
@@ -3068,30 +3119,21 @@ for (const n of [0, 1, 3, 6]) {
 for (const name of ['HERMITE', 'LEGENDRE']) {
   const s = new Stack();
   s.push(Integer(-1n));
-  let threw = false;
-  try { lookup(name).fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, `session056: ${name}(-1) throws Bad argument value`);
+  assertThrows(() => { lookup(name).fn(s); }, /Bad argument value/, `session056: ${name}(-1) throws Bad argument value`);
 }
 
 /* ---- Non-integer Real rejected (Bad argument value) ---- */
 {
   const s = new Stack();
   s.push(Real(2.5));
-  let threw = false;
-  try { lookup('HERMITE').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session056: HERMITE(2.5) non-integer throws');
+  assertThrows(() => { lookup('HERMITE').fn(s); }, /Bad argument value/, 'session056: HERMITE(2.5) non-integer throws');
 }
 
 /* ---- Non-numeric argument rejected (Bad argument type) ---- */
 {
   const s = new Stack();
   s.push(RList([Real(3)]));
-  let threw = false;
-  try { lookup('LEGENDRE').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session056: LEGENDRE on list throws Bad argument type');
+  assertThrows(() => { lookup('LEGENDRE').fn(s); }, /Bad argument type/, 'session056: LEGENDRE on list throws Bad argument type');
 }
 
 /* ---- Integer-valued Real accepted (n = 3.0 works like n = 3) ---- */
@@ -3177,10 +3219,7 @@ for (const nNeg of [-3, -4, -5, -7]) {
 {
   const s = new Stack();
   s.push(Real(-2.5));
-  let threw = false;
-  try { lookup('TCHEBYCHEFF').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session057: TCHEBYCHEFF(-2.5) rejected');
+  assertThrows(() => { lookup('TCHEBYCHEFF').fn(s); }, /Bad argument value/, 'session057: TCHEBYCHEFF(-2.5) rejected');
 }
 
 /* ================================================================
@@ -3305,40 +3344,28 @@ function _assertRootsMatch(got, expected, name) {
 {
   const s = new Stack();
   s.push(Symbolic(AstNum(0)));
-  let threw = false;
-  try { lookup('FROOTS').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session057: FROOTS on zero constant throws');
+  assertThrows(() => { lookup('FROOTS').fn(s); }, /Bad argument value/, 'session057: FROOTS on zero constant throws');
 }
 
 /* ---- FROOTS rejects multi-variable ---- */
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X^2+Y+1')));
-  let threw = false;
-  try { lookup('FROOTS').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session057: FROOTS rejects multi-variable expression');
+  assertThrows(() => { lookup('FROOTS').fn(s); }, /Bad argument value/, 'session057: FROOTS rejects multi-variable expression');
 }
 
 /* ---- FROOTS rejects rational (1/X) ---- */
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('1/X')));
-  let threw = false;
-  try { lookup('FROOTS').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session057: FROOTS rejects rational expression');
+  assertThrows(() => { lookup('FROOTS').fn(s); }, /Bad argument value/, 'session057: FROOTS rejects rational expression');
 }
 
 /* ---- FROOTS on non-Symbolic rejects with Bad argument type ---- */
 {
   const s = new Stack();
   s.push(Real(5));
-  let threw = false;
-  try { lookup('FROOTS').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session057: FROOTS on Real throws Bad argument type');
+  assertThrows(() => { lookup('FROOTS').fn(s); }, /Bad argument type/, 'session057: FROOTS on Real throws Bad argument type');
 }
 
 /* ---- FROOTS on a non-X variable picks it automatically ---- */
@@ -3569,10 +3596,7 @@ giac._setFixtures({
   s.push(Real(5));
   s.push(Real(0));
   s.push(Real(1));
-  let threw = false;
-  try { lookup('PREVAL').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session058: PREVAL non-Symbolic F rejects');
+  assertThrows(() => { lookup('PREVAL').fn(s); }, /Bad argument type/, 'session058: PREVAL non-Symbolic F rejects');
 }
 
 /* ================================================================
@@ -3644,10 +3668,7 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('TAN2SC').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session058: TAN2SC on Real rejects');
+  assertThrows(() => { lookup('TAN2SC').fn(s); }, /Bad argument type/, 'session058: TAN2SC on Real rejects');
 }
 
 /* ================================================================
@@ -3861,20 +3882,14 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('LAPLACE').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session058: LAPLACE on Real rejects');
+  assertThrows(() => { lookup('LAPLACE').fn(s); }, /Bad argument type/, 'session058: LAPLACE on Real rejects');
 }
 
 /* ---- ILAP non-Symbolic rejects ---- */
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('ILAP').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session058: ILAP on Real rejects');
+  assertThrows(() => { lookup('ILAP').fn(s); }, /Bad argument type/, 'session058: ILAP on Real rejects');
 }
 
 /* ================================================================
@@ -3954,10 +3969,7 @@ function _s059HasFn(node, name) {
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('HALFTAN').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session059: HALFTAN on Real rejects');
+  assertThrows(() => { lookup('HALFTAN').fn(s); }, /Bad argument type/, 'session059: HALFTAN on Real rejects');
 }
 
 /* ---- TAN2SC2 returns Symbolic ---- */
@@ -3997,10 +4009,7 @@ function _s059HasFn(node, name) {
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('TAN2SC2').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session059: TAN2SC2 on Real rejects');
+  assertThrows(() => { lookup('TAN2SC2').fn(s); }, /Bad argument type/, 'session059: TAN2SC2 on Real rejects');
 }
 
 /* ---- TAN2CS2 TAN(X) → (1 - COS(2X)) / SIN(2X) ---- */
@@ -4032,10 +4041,7 @@ function _s059HasFn(node, name) {
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('TAN2CS2').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session059: TAN2CS2 on Real rejects');
+  assertThrows(() => { lookup('TAN2CS2').fn(s); }, /Bad argument type/, 'session059: TAN2CS2 on Real rejects');
 }
 
 /* ---- ACOS2S : ACOS(X) → π/2 - ASIN(X) ---- */
@@ -4057,10 +4063,7 @@ function _s059HasFn(node, name) {
 {
   const s = new Stack();
   s.push(Real(0.5));
-  let threw = false;
-  try { lookup('ACOS2S').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session059: ACOS2S on Real rejects');
+  assertThrows(() => { lookup('ACOS2S').fn(s); }, /Bad argument type/, 'session059: ACOS2S on Real rejects');
 }
 
 /* ---- ASIN2C : ASIN(X) → π/2 - ACOS(X) ---- */
@@ -4080,10 +4083,7 @@ function _s059HasFn(node, name) {
 {
   const s = new Stack();
   s.push(Real(0.5));
-  let threw = false;
-  try { lookup('ASIN2C').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session059: ASIN2C on Real rejects');
+  assertThrows(() => { lookup('ASIN2C').fn(s); }, /Bad argument type/, 'session059: ASIN2C on Real rejects');
 }
 
 /* ---- ASIN2T : ASIN(X) → ATAN(X / √(1 - X²)) ---- */
@@ -4105,10 +4105,7 @@ function _s059HasFn(node, name) {
 {
   const s = new Stack();
   s.push(Real(0.5));
-  let threw = false;
-  try { lookup('ASIN2T').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session059: ASIN2T on Real rejects');
+  assertThrows(() => { lookup('ASIN2T').fn(s); }, /Bad argument type/, 'session059: ASIN2T on Real rejects');
 }
 
 /* ---- ATAN2S : ATAN(X) → ASIN(X / √(X² + 1)) ---- */
@@ -4130,10 +4127,7 @@ function _s059HasFn(node, name) {
 {
   const s = new Stack();
   s.push(Real(0.5));
-  let threw = false;
-  try { lookup('ATAN2S').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session059: ATAN2S on Real rejects');
+  assertThrows(() => { lookup('ATAN2S').fn(s); }, /Bad argument type/, 'session059: ATAN2S on Real rejects');
 }
 
 /* ---- ACOS2S ∘ ASIN2C round-trips through ASIN/ACOS ---- */
@@ -4460,10 +4454,7 @@ function _s060HasVar(node, name) {
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('TEXPAND').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session060: TEXPAND on Real rejects');
+  assertThrows(() => { lookup('TEXPAND').fn(s); }, /Bad argument type/, 'session060: TEXPAND on Real rejects');
 }
 
 /* ---- TLIN returns Symbolic ---- */
@@ -4565,10 +4556,7 @@ function _s060HasVar(node, name) {
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('TLIN').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session060: TLIN on Real rejects');
+  assertThrows(() => { lookup('TLIN').fn(s); }, /Bad argument type/, 'session060: TLIN on Real rejects');
 }
 
 /* ---- TCOLLECT returns Symbolic ---- */
@@ -4673,10 +4661,7 @@ function _s060HasVar(node, name) {
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('TCOLLECT').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session060: TCOLLECT on Real rejects');
+  assertThrows(() => { lookup('TCOLLECT').fn(s); }, /Bad argument type/, 'session060: TCOLLECT on Real rejects');
 }
 
 /* ---- EXPLN returns Symbolic ---- */
@@ -4806,10 +4791,7 @@ function _s060HasVar(node, name) {
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('EXPLN').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session060: EXPLN on Real rejects');
+  assertThrows(() => { lookup('EXPLN').fn(s); }, /Bad argument type/, 'session060: EXPLN on Real rejects');
 }
 
 /* ================================================================
@@ -4936,10 +4918,7 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('TSIMP').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session061: TSIMP on Real rejects');
+  assertThrows(() => { lookup('TSIMP').fn(s); }, /Bad argument type/, 'session061: TSIMP on Real rejects');
 }
 
 /* ---- EXPLN ASIN(X) introduces LN and i ---- */
@@ -5098,10 +5077,7 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(RList([]));
-  let threw = false;
-  try { lookup('HEAVISIDE').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session061: HEAVISIDE on List rejects');
+  assertThrows(() => { lookup('HEAVISIDE').fn(s); }, /Bad argument type/, 'session061: HEAVISIDE on List rejects');
 }
 
 /* ---- DIRAC on non-zero Real = 0 ---- */
@@ -5150,10 +5126,7 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(RList([]));
-  let threw = false;
-  try { lookup('DIRAC').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session061: DIRAC on List rejects');
+  assertThrows(() => { lookup('DIRAC').fn(s); }, /Bad argument type/, 'session061: DIRAC on List rejects');
 }
 
 // LAPLACE/ILAP HEAVISIDE+DIRAC fixtures — the Giac commands emitted for
@@ -5374,10 +5347,7 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('LNCOLLECT').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session061: LNCOLLECT on Real rejects');
+  assertThrows(() => { lookup('LNCOLLECT').fn(s); }, /Bad argument type/, 'session061: LNCOLLECT on Real rejects');
 }
 
 /* ---- FROOTS biquadratic X^4 - 10X^2 + 1 → four nested radicals ---- */
@@ -5460,10 +5430,7 @@ giac._setFixtures({
   resetCasVx();
   const s = new Stack();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('SVX').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session076: SVX on Real rejects with Bad argument type');
+  assertThrows(() => { lookup('SVX').fn(s); }, /Bad argument type/, 'session076: SVX on Real rejects with Bad argument type');
 }
 
 /* ---- SVX rejects empty String with Invalid name ---- */
@@ -5476,10 +5443,7 @@ giac._setFixtures({
   resetCasVx();
   const s = new Stack();
   s.push(Str(''));
-  let threw = false;
-  try { lookup('SVX').fn(s); }
-  catch (e) { threw = /Invalid name/.test(e.message); }
-  assert(threw, 'session076: SVX on empty string rejects with Invalid name');
+  assertThrows(() => { lookup('SVX').fn(s); }, /Invalid name/, 'session076: SVX on empty string rejects with Invalid name');
 }
 
 /* ---- PREVAL follows the active VX (not the single-free-var heuristic) ---- */
@@ -5606,29 +5570,810 @@ giac._setFixtures({
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('X')));
-  let threw = false;
-  try { lookup('EXLR').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: EXLR on bare Sy(X) rejects with Bad argument value');
+  assertThrows(() => { lookup('EXLR').fn(s); }, /Bad argument value/, 'session076: EXLR on bare Sy(X) rejects with Bad argument value');
 }
 
 /* ---- EXLR rejects a unary (SIN(X)) ---- */
 {
   const s = new Stack();
   s.push(Symbolic(parseAlgebra('SIN(X)')));
-  let threw = false;
-  try { lookup('EXLR').fn(s); }
-  catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session076: EXLR on SIN(X) rejects with Bad argument value');
+  assertThrows(() => { lookup('EXLR').fn(s); }, /Bad argument value/, 'session076: EXLR on SIN(X) rejects with Bad argument value');
 }
 
 /* ---- EXLR rejects a Real (non-Symbolic type) ---- */
 {
   const s = new Stack();
   s.push(Real(42));
-  let threw = false;
-  try { lookup('EXLR').fn(s); }
-  catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session076: EXLR on Real rejects with Bad argument type');
+  assertThrows(() => { lookup('EXLR').fn(s); }, /Bad argument type/, 'session076: EXLR on Real rejects with Bad argument type');
 }
 
+/* ==================================================================
+   session 104 — PROPFRAC / PARTFRAC / COSSIN
+   Three CAS ops routed through Giac.  Tests register the caseval
+   fixture the op emits, then verify the Symbolic output.  Rejection
+   paths check Name/Real pass-through and non-CAS types throw
+   `Bad argument type`.
+   ================================================================== */
+
+// ---- PROPFRAC ----------------------------------------------------
+
+/* ---- PROPFRAC on a Symbolic routes through Giac propfrac(...) ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('(X^2+1)/(X+1)')));
+  giac._clear();
+  giac._setFixture('propfrac((X^2+1)/(X+1))', 'X-1+2/(X+1)');
+  lookup('PROPFRAC').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'X - 1 + 2/(X + 1)',
+         `session104: PROPFRAC '(X^2+1)/(X+1)' → '${formatAlgebra(s.peek().expr)}' (want 'X - 1 + 2/(X + 1)')`);
+  giac._clear();
+}
+
+/* ---- PROPFRAC on a more complex rational ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('(X^3 - 2*X + 1)/(X - 1)')));
+  giac._clear();
+  giac._setFixture('propfrac((X^3-2*X+1)/(X-1))', 'X^2+X-1');
+  lookup('PROPFRAC').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'X^2 + X - 1',
+         `session104: PROPFRAC exact polynomial quotient → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
+}
+
+/* ---- PROPFRAC on a Rational lifts to Symbolic and routes to Giac ---- */
+{
+  // 1 3 /  → Rational(1/3).  PROPFRAC on a bare ratio is a little silly
+  // (the ratio is already proper) but Giac's propfrac(1/3) just returns
+  // 1/3 — exercise the Rational lift path cleanly.
+  const s = new Stack();
+  s.push(Integer(43n));
+  s.push(Integer(12n));
+  lookup('/').fn(s);  // produces Rational(43/12) in EXACT mode
+  giac._clear();
+  giac._setFixture('propfrac(43/12)', '3+7/12');
+  lookup('PROPFRAC').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === '3 + 7/12',
+         `session104: PROPFRAC on Rational 43/12 → '${formatAlgebra(s.peek().expr)}' (want '3 + 7/12')`);
+  giac._clear();
+}
+
+/* ---- PROPFRAC on a Real is a pass-through ---- */
+{
+  const s = new Stack();
+  s.push(Real(3.14));
+  lookup('PROPFRAC').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(3.14),
+         'session104: PROPFRAC on Real is a pass-through');
+}
+
+/* ---- PROPFRAC on an Integer is a pass-through ---- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  lookup('PROPFRAC').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === 7n,
+         'session104: PROPFRAC on Integer is a pass-through');
+}
+
+/* ---- PROPFRAC on a bare Name is a pass-through ---- */
+{
+  const s = new Stack();
+  s.push(Name('FOO'));
+  lookup('PROPFRAC').fn(s);
+  assert(isName(s.peek()) && s.peek().id === 'FOO',
+         'session104: PROPFRAC on Name is a pass-through');
+}
+
+/* ---- PROPFRAC on a String rejects with Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Str('hello'));
+  assertThrows(() => { lookup('PROPFRAC').fn(s); }, /Bad argument type/, 'session104: PROPFRAC on String rejects with Bad argument type');
+}
+
+// ---- PARTFRAC ----------------------------------------------------
+
+/* ---- PARTFRAC on a Symbolic routes through Giac partfrac(...) ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('(2*X-1)/((X-1)*(X+1))')));
+  giac._clear();
+  // (2X-1)/((X-1)(X+1)) = (1/2)/(X-1) + (3/2)/(X+1).  Giac prints with
+  // rational coefficients.
+  giac._setFixture('partfrac((2*X-1)/((X-1)*(X+1)))', '1/(2*(X-1))+3/(2*(X+1))');
+  lookup('PARTFRAC').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === '1/(2*(X - 1)) + 3/(2*(X + 1))',
+         `session104: PARTFRAC '(2X-1)/((X-1)(X+1))' → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
+}
+
+/* ---- PARTFRAC on a three-pole rational ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('1/(X*(X-1)*(X+1))')));
+  giac._clear();
+  // 1/(X(X-1)(X+1)) = 1/(2(X-1)) - 1/X + 1/(2(X+1))
+  giac._setFixture('partfrac(1/(X*(X-1)*(X+1)))', '1/(2*(X-1))-1/X+1/(2*(X+1))');
+  lookup('PARTFRAC').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === '1/(2*(X - 1)) - 1/X + 1/(2*(X + 1))',
+         `session104: PARTFRAC 1/(X(X-1)(X+1)) → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
+}
+
+/* ---- PARTFRAC on a Real / Integer / Name is a pass-through ---- */
+{
+  const s = new Stack();
+  s.push(Real(2.5));
+  lookup('PARTFRAC').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(2.5),
+         'session104: PARTFRAC on Real is a pass-through');
+}
+{
+  const s = new Stack();
+  s.push(Integer(-8n));
+  lookup('PARTFRAC').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === -8n,
+         'session104: PARTFRAC on Integer is a pass-through');
+}
+{
+  const s = new Stack();
+  s.push(Name('BAR'));
+  lookup('PARTFRAC').fn(s);
+  assert(isName(s.peek()) && s.peek().id === 'BAR',
+         'session104: PARTFRAC on Name is a pass-through');
+}
+
+/* ---- PARTFRAC on a Rational is a pass-through (degenerate decomp) ---- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  s.push(Integer(2n));
+  lookup('/').fn(s);  // produces Rational(7/2)
+  const before = s.peek();
+  lookup('PARTFRAC').fn(s);
+  assert(s.peek() === before || (s.peek().n === 7n && s.peek().d === 2n),
+         'session104: PARTFRAC on Rational is a pass-through');
+}
+
+/* ---- PARTFRAC on a String rejects with Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Str('nope'));
+  assertThrows(() => { lookup('PARTFRAC').fn(s); }, /Bad argument type/, 'session104: PARTFRAC on String rejects with Bad argument type');
+}
+
+// ---- COSSIN ------------------------------------------------------
+
+/* ---- COSSIN on a Symbolic routes through Giac tan2sincos(...) ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('TAN(X)')));
+  giac._clear();
+  giac._setFixture('tan2sincos(tan(X))', 'sin(X)/cos(X)');
+  lookup('COSSIN').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'SIN(X)/COS(X)',
+         `session104: COSSIN TAN(X) → '${formatAlgebra(s.peek().expr)}' (want 'SIN(X)/COS(X)')`);
+  giac._clear();
+}
+
+/* ---- COSSIN on a product TAN(X)·COS(X) — the TAN is rewritten but
+ *      the COS is untouched (Giac's tan2sincos leaves non-TAN alone). */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('TAN(X)*COS(X)')));
+  giac._clear();
+  giac._setFixture('tan2sincos(tan(X)*cos(X))', 'sin(X)/cos(X)*cos(X)');
+  lookup('COSSIN').fn(s);
+  assert(isSymbolic(s.peek()),
+         `session104: COSSIN TAN(X)*COS(X) yields a Symbolic`);
+  giac._clear();
+}
+
+/* ---- COSSIN idempotent on a pure SIN / COS expression ---- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('SIN(X) + COS(X)')));
+  giac._clear();
+  giac._setFixture('tan2sincos(sin(X)+cos(X))', 'sin(X)+cos(X)');
+  lookup('COSSIN').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'SIN(X) + COS(X)',
+         `session104: COSSIN on SIN(X)+COS(X) is idempotent (got '${formatAlgebra(s.peek().expr)}')`);
+  giac._clear();
+}
+
+/* ---- COSSIN on a Real / Integer / Name is a pass-through ---- */
+{
+  const s = new Stack();
+  s.push(Real(0.5));
+  lookup('COSSIN').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(0.5),
+         'session104: COSSIN on Real is a pass-through');
+}
+{
+  const s = new Stack();
+  s.push(Integer(42n));
+  lookup('COSSIN').fn(s);
+  assert(isInteger(s.peek()) && s.peek().value === 42n,
+         'session104: COSSIN on Integer is a pass-through');
+}
+{
+  const s = new Stack();
+  s.push(Name('BAZ'));
+  lookup('COSSIN').fn(s);
+  assert(isName(s.peek()) && s.peek().id === 'BAZ',
+         'session104: COSSIN on Name is a pass-through');
+}
+
+/* ---- COSSIN on a String rejects with Bad argument type ---- */
+{
+  const s = new Stack();
+  s.push(Str('trig'));
+  assertThrows(() => { lookup('COSSIN').fn(s); }, /Bad argument type/, 'session104: COSSIN on String rejects with Bad argument type');
+}
+
+/* ==================================================================
+   session 114 — PCAR / CHARPOL / EGVL / PA2B2
+   PCAR + CHARPOL + EGVL are Giac-backed matrix ops (use fixtures on
+   the mock engine); PA2B2 is native-BigInt (no CAS dependency).
+   ================================================================== */
+
+// ---- PCAR — characteristic polynomial ------------------------------
+
+/* ---- PCAR on a 2×2 integer matrix routes through Giac charpoly(...) */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n)], [Integer(3n), Integer(4n)]]));
+  giac._clear();
+  giac._setFixture('charpoly([[1,2],[3,4]],X)', 'X^2-5*X-2');
+  lookup('PCAR').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'X^2 - 5*X - 2',
+         `session114: PCAR 2x2 int → '${formatAlgebra(s.peek().expr)}' (want 'X^2 - 5*X - 2')`);
+  giac._clear();
+}
+
+/* ---- PCAR on a diagonal 3×3 returns a factored-ish cubic --------- */
+{
+  const s = new Stack();
+  s.push(Matrix([
+    [Integer(2n), Integer(0n), Integer(0n)],
+    [Integer(0n), Integer(3n), Integer(0n)],
+    [Integer(0n), Integer(0n), Integer(5n)],
+  ]));
+  giac._clear();
+  giac._setFixture('charpoly([[2,0,0],[0,3,0],[0,0,5]],X)',
+                   'X^3-10*X^2+31*X-30');
+  lookup('PCAR').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'X^3 - 10*X^2 + 31*X - 30',
+         `session114: PCAR diag-3x3 → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
+}
+
+/* ---- CHARPOL alias dispatches through PCAR's registered fn ------- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n)], [Integer(3n), Integer(4n)]]));
+  giac._clear();
+  giac._setFixture('charpoly([[1,2],[3,4]],X)', 'X^2-5*X-2');
+  lookup('CHARPOL').fn(s);
+  assert(isSymbolic(s.peek()) &&
+         formatAlgebra(s.peek().expr) === 'X^2 - 5*X - 2',
+         `session114: CHARPOL alias → '${formatAlgebra(s.peek().expr)}'`);
+  giac._clear();
+}
+
+/* ---- PCAR on a Vector rejects with Bad argument type ------------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n), Integer(2n), Integer(3n)]));
+  assertThrows(() => { lookup('PCAR').fn(s); },
+               /Bad argument type/,
+               'session114: PCAR on Vector → Bad argument type');
+}
+
+/* ---- PCAR on a non-square matrix rejects with Invalid dimension -- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n), Integer(3n)],
+                 [Integer(4n), Integer(5n), Integer(6n)]]));
+  assertThrows(() => { lookup('PCAR').fn(s); },
+               /Invalid dimension/,
+               'session114: PCAR on 2x3 → Invalid dimension');
+}
+
+// ---- EGVL — eigenvalues as a Vector ------------------------------
+
+/* ---- EGVL on a diagonal matrix returns the diagonal entries ----- */
+{
+  const s = new Stack();
+  s.push(Matrix([
+    [Integer(2n), Integer(0n)],
+    [Integer(0n), Integer(5n)],
+  ]));
+  giac._clear();
+  giac._setFixture('eigenvals([[2,0],[0,5]])', '[2,5]');
+  lookup('EGVL').fn(s);
+  const v = s.peek();
+  assert(v && isVector(v) && v.items.length === 2,
+         `session114: EGVL diag → Vector length ${v && v.items && v.items.length}`);
+  const [e0, e1] = v.items;
+  assert(isReal(e0) && e0.value.eq(2) && isReal(e1) && e1.value.eq(5),
+         `session114: EGVL diag values (${e0 && e0.value}, ${e1 && e1.value})`);
+  giac._clear();
+}
+
+/* ---- EGVL on a 2×2 with irrational eigenvalues preserves symbolic */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n)], [Integer(3n), Integer(4n)]]));
+  giac._clear();
+  // Real eigenvalues of [[1,2],[3,4]] are (5 ± √33)/2.
+  giac._setFixture('eigenvals([[1,2],[3,4]])',
+                   '[(5-sqrt(33))/2,(5+sqrt(33))/2]');
+  lookup('EGVL').fn(s);
+  const v = s.peek();
+  assert(v && isVector(v) && v.items.length === 2,
+         'session114: EGVL irrational → Vector length 2');
+  assert(isSymbolic(v.items[0]) && isSymbolic(v.items[1]),
+         'session114: EGVL irrational → both items Symbolic');
+  giac._clear();
+}
+
+/* ---- EGVL on a Matrix rejects when splitGiacList returns null --- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n)], [Integer(3n), Integer(4n)]]));
+  giac._clear();
+  // Return something that doesn't look like a list (no surrounding brackets).
+  giac._setFixture('eigenvals([[1,2],[3,4]])', 'garbage');
+  assertThrows(() => { lookup('EGVL').fn(s); },
+               /Bad argument value/,
+               'session114: EGVL on non-list Giac output → Bad argument value');
+  giac._clear();
+}
+
+/* ---- EGVL on an Integer rejects with Bad argument type ---------- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  assertThrows(() => { lookup('EGVL').fn(s); },
+               /Bad argument type/,
+               'session114: EGVL on Integer → Bad argument type');
+}
+
+// ---- PA2B2 — Fermat sum of two squares ---------------------------
+
+/* ---- PA2B2 on p = 2 returns 1 + i (the unique decomp) ----------- */
+{
+  const s = new Stack();
+  s.push(Integer(2n));
+  lookup('PA2B2').fn(s);
+  const z = s.peek();
+  assert(isComplex(z) && z.re === 1 && z.im === 1,
+         `session114: PA2B2 2 → (${z && z.re}, ${z && z.im}) want (1, 1)`);
+}
+
+/* ---- PA2B2 on p = 5 returns 1 + 2i (1² + 2² = 5) --------------- */
+{
+  const s = new Stack();
+  s.push(Integer(5n));
+  lookup('PA2B2').fn(s);
+  const z = s.peek();
+  assert(isComplex(z) && z.re === 1 && z.im === 2,
+         `session114: PA2B2 5 → (${z && z.re}, ${z && z.im}) want (1, 2)`);
+}
+
+/* ---- PA2B2 on p = 13 returns 2 + 3i ----------------------------- */
+{
+  const s = new Stack();
+  s.push(Integer(13n));
+  lookup('PA2B2').fn(s);
+  const z = s.peek();
+  assert(isComplex(z) && z.re === 2 && z.im === 3,
+         `session114: PA2B2 13 → (${z && z.re}, ${z && z.im}) want (2, 3)`);
+}
+
+/* ---- PA2B2 on p = 65537 (largest Fermat prime) ----------------- */
+{
+  // 65537 = 1² + 256²; a good stress-test that the BigInt powMod path
+  // and Newton sqrt handle p near 2^16 cleanly.
+  const s = new Stack();
+  s.push(Integer(65537n));
+  lookup('PA2B2').fn(s);
+  const z = s.peek();
+  assert(isComplex(z) && z.re === 1 && z.im === 256,
+         `session114: PA2B2 65537 → (${z && z.re}, ${z && z.im}) want (1, 256)`);
+}
+
+/* ---- PA2B2 accepts integer-valued Real input -------------------- */
+{
+  const s = new Stack();
+  s.push(Real(29));
+  lookup('PA2B2').fn(s);
+  const z = s.peek();
+  assert(isComplex(z) && z.re === 2 && z.im === 5,
+         `session114: PA2B2 Real(29) → (${z && z.re}, ${z && z.im}) want (2, 5)`);
+}
+
+/* ---- PA2B2 on p = 3 rejects (prime but ≡ 3 mod 4) --------------- */
+{
+  const s = new Stack();
+  s.push(Integer(3n));
+  assertThrows(() => { lookup('PA2B2').fn(s); },
+               /Bad argument value/,
+               'session114: PA2B2 3 → Bad argument value (3 ≡ 3 mod 4)');
+}
+
+/* ---- PA2B2 on p = 7 rejects (prime but ≡ 3 mod 4) --------------- */
+{
+  const s = new Stack();
+  s.push(Integer(7n));
+  assertThrows(() => { lookup('PA2B2').fn(s); },
+               /Bad argument value/,
+               'session114: PA2B2 7 → Bad argument value (7 ≡ 3 mod 4)');
+}
+
+/* ---- PA2B2 on a composite rejects ------------------------------- */
+{
+  const s = new Stack();
+  s.push(Integer(21n));          // 3 · 7, not prime
+  assertThrows(() => { lookup('PA2B2').fn(s); },
+               /Bad argument value/,
+               'session114: PA2B2 21 → Bad argument value (composite)');
+}
+
+/* ---- PA2B2 on p = 1 rejects ------------------------------------- */
+{
+  const s = new Stack();
+  s.push(Integer(1n));
+  assertThrows(() => { lookup('PA2B2').fn(s); },
+               /Bad argument value/,
+               'session114: PA2B2 1 → Bad argument value (1 is not prime)');
+}
+
+/* ---- PA2B2 on a non-integer Real rejects with Bad argument value  */
+{
+  const s = new Stack();
+  s.push(Real(5.5));
+  assertThrows(() => { lookup('PA2B2').fn(s); },
+               /Bad argument value/,
+               'session114: PA2B2 Real(5.5) → Bad argument value');
+}
+
+/* ---- PA2B2 on a String rejects with Bad argument type ----------- */
+{
+  const s = new Stack();
+  s.push(Str('nope'));
+  assertThrows(() => { lookup('PA2B2').fn(s); },
+               /Bad argument type/,
+               'session114: PA2B2 on String → Bad argument type');
+}
+
+
+/* ==================================================================
+   session 119 — EGV / RSD / GREDUCE
+   EGV + GREDUCE are Giac-backed (use mock fixtures); RSD is pure
+   native linear algebra (no CAS dependency).
+   ================================================================== */
+
+// ---- EGV — eigenvector matrix + eigenvalue vector -----------------
+
+/* ---- EGV on a diagonal 2×2 yields the I matrix + diag entries ---- */
+{
+  const s = new Stack();
+  s.push(Matrix([
+    [Integer(2n), Integer(0n)],
+    [Integer(0n), Integer(5n)],
+  ]));
+  giac._clear();
+  // Standard basis: P = I; eigenvals = [2, 5].
+  giac._setFixture('egv([[2,0],[0,5]])', '[[1,0],[0,1]]');
+  giac._setFixture('eigenvals([[2,0],[0,5]])', '[2,5]');
+  lookup('EGV').fn(s);
+  // After EGV: level 1 = vector of eigenvalues, level 2 = matrix.
+  const vals = s.pop();
+  const evec = s.pop();
+  assert(isVector(vals) && vals.items.length === 2,
+         `session119: EGV diag eigenvalue vector length ${vals && vals.items && vals.items.length}`);
+  assert(isReal(vals.items[0]) && vals.items[0].value.eq(2) &&
+         isReal(vals.items[1]) && vals.items[1].value.eq(5),
+         'session119: EGV diag eigenvalues = (2, 5)');
+  assert(isMatrix(evec) && evec.rows.length === 2 && evec.rows[0].length === 2,
+         'session119: EGV diag eigenvector matrix is 2×2');
+  // P = identity → P[0][0]=1, P[0][1]=0, P[1][0]=0, P[1][1]=1.
+  assert(isReal(evec.rows[0][0]) && evec.rows[0][0].value.eq(1) &&
+         isReal(evec.rows[0][1]) && evec.rows[0][1].value.eq(0) &&
+         isReal(evec.rows[1][0]) && evec.rows[1][0].value.eq(0) &&
+         isReal(evec.rows[1][1]) && evec.rows[1][1].value.eq(1),
+         'session119: EGV diag eigenvector matrix entries (P = I)');
+  giac._clear();
+}
+
+/* ---- EGV preserves the EGVL eigenvalue ordering ------------------ */
+{
+  // Both EGVL and EGV use eigenvals(...) for the value list, so the
+  // i-th eigenvalue must correspond to the i-th column of the EGV
+  // matrix.  Here Giac is stubbed to put 5 first, then 2 — and the
+  // returned matrix columns are swapped to match.
+  const s = new Stack();
+  s.push(Matrix([
+    [Integer(5n), Integer(0n)],
+    [Integer(0n), Integer(2n)],
+  ]));
+  giac._clear();
+  giac._setFixture('egv([[5,0],[0,2]])', '[[1,0],[0,1]]');
+  giac._setFixture('eigenvals([[5,0],[0,2]])', '[5,2]');
+  lookup('EGV').fn(s);
+  const vals = s.pop(); s.pop(); // discard matrix, we only check ordering here
+  assert(isReal(vals.items[0]) && vals.items[0].value.eq(5) &&
+         isReal(vals.items[1]) && vals.items[1].value.eq(2),
+         'session119: EGV eigenvalue ordering matches eigenvals() output');
+  giac._clear();
+}
+
+/* ---- EGV on irrational eigenvalues lifts to Symbolic ------------- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n)], [Integer(3n), Integer(4n)]]));
+  giac._clear();
+  // Real eigenvalues (5±√33)/2; eigenvector entries also irrational.
+  giac._setFixture('egv([[1,2],[3,4]])',
+                   '[[(-3+sqrt(33))/6,(-3-sqrt(33))/6],[1,1]]');
+  giac._setFixture('eigenvals([[1,2],[3,4]])',
+                   '[(5-sqrt(33))/2,(5+sqrt(33))/2]');
+  lookup('EGV').fn(s);
+  const vals = s.pop();
+  const evec = s.pop();
+  assert(isVector(vals) && vals.items.length === 2 &&
+         isSymbolic(vals.items[0]) && isSymbolic(vals.items[1]),
+         'session119: EGV irrational eigenvalues are Symbolic');
+  assert(isMatrix(evec) && isSymbolic(evec.rows[0][0]) && isSymbolic(evec.rows[0][1]),
+         'session119: EGV irrational eigenvectors keep Symbolic entries');
+  giac._clear();
+}
+
+/* ---- EGV on a non-Matrix rejects Bad argument type --------------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n), Integer(2n)]));
+  assertThrows(() => { lookup('EGV').fn(s); },
+               /Bad argument type/,
+               'session119: EGV on Vector → Bad argument type');
+}
+
+/* ---- EGV on a non-square matrix rejects Invalid dimension -------- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n), Integer(3n)],
+                 [Integer(4n), Integer(5n), Integer(6n)]]));
+  assertThrows(() => { lookup('EGV').fn(s); },
+               /Invalid dimension/,
+               'session119: EGV on 2×3 matrix → Invalid dimension');
+}
+
+/* ---- EGV with garbage Giac matrix output rejects ---------------- */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n), Integer(2n)], [Integer(3n), Integer(4n)]]));
+  giac._clear();
+  giac._setFixture('egv([[1,2],[3,4]])', 'garbage');
+  giac._setFixture('eigenvals([[1,2],[3,4]])', '[1,2]');
+  assertThrows(() => { lookup('EGV').fn(s); },
+               /Bad argument value/,
+               'session119: EGV on non-list egv() output → Bad argument value');
+  giac._clear();
+}
+
+// ---- RSD — residual B − A·Z ---------------------------------------
+
+/* ---- RSD vector branch: zero residual is the exact-solution case  */
+{
+  // A = [[2,0],[0,3]], Z = [1,2], A·Z = [2,6].  B = [2,6] → residual 0.
+  const s = new Stack();
+  s.push(Vector([Integer(2n), Integer(6n)]));                 // B
+  s.push(Matrix([[Integer(2n), Integer(0n)],                  // A
+                 [Integer(0n), Integer(3n)]]));
+  s.push(Vector([Integer(1n), Integer(2n)]));                 // Z
+  lookup('RSD').fn(s);
+  const r = s.peek();
+  assert(isVector(r) && r.items.length === 2 &&
+         isReal(r.items[0]) && r.items[0].value.eq(0) &&
+         isReal(r.items[1]) && r.items[1].value.eq(0),
+         `session119: RSD vector zero-residual → [0,0]`);
+}
+
+/* ---- RSD vector branch: non-zero residual ----------------------- */
+{
+  // A = [[1,1],[1,-1]], Z = [3,1].  A·Z = [4, 2].
+  // B = [10, 0].  Residual = B - A·Z = [6, -2].
+  const s = new Stack();
+  s.push(Vector([Integer(10n), Integer(0n)]));
+  s.push(Matrix([[Integer(1n), Integer(1n)],
+                 [Integer(1n), Integer(-1n)]]));
+  s.push(Vector([Integer(3n), Integer(1n)]));
+  lookup('RSD').fn(s);
+  const r = s.peek();
+  assert(isVector(r) && r.items.length === 2 &&
+         r.items[0].value.eq(6) && r.items[1].value.eq(-2),
+         `session119: RSD vector branch B-A·Z = [6, -2]`);
+}
+
+/* ---- RSD matrix branch: identity A, Z is 2×2 -------------------- */
+{
+  // A = I, Z = [[1,2],[3,4]].  A·Z = Z.  B = [[5,6],[7,8]].
+  // Residual = B - Z = [[4,4],[4,4]].
+  const s = new Stack();
+  s.push(Matrix([[Integer(5n), Integer(6n)], [Integer(7n), Integer(8n)]]));
+  s.push(Matrix([[Integer(1n), Integer(0n)], [Integer(0n), Integer(1n)]]));
+  s.push(Matrix([[Integer(1n), Integer(2n)], [Integer(3n), Integer(4n)]]));
+  lookup('RSD').fn(s);
+  const r = s.peek();
+  assert(isMatrix(r) && r.rows.length === 2 && r.rows[0].length === 2 &&
+         r.rows[0][0].value.eq(4) && r.rows[0][1].value.eq(4) &&
+         r.rows[1][0].value.eq(4) && r.rows[1][1].value.eq(4),
+         'session119: RSD matrix branch B-A·Z (A=I)');
+}
+
+/* ---- RSD with Real entries ------------------------------------- */
+{
+  // A = [[2.5]], Z = [4], A·Z = [10].  B = [12.5] → residual [2.5].
+  const s = new Stack();
+  s.push(Vector([Real(12.5)]));
+  s.push(Matrix([[Real(2.5)]]));
+  s.push(Vector([Integer(4n)]));
+  lookup('RSD').fn(s);
+  const r = s.peek();
+  assert(isVector(r) && r.items.length === 1 &&
+         isReal(r.items[0]) && r.items[0].value.eq(2.5),
+         `session119: RSD Real entries → [2.5]`);
+}
+
+/* ---- RSD rejects non-Matrix A ---------------------------------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n)]));
+  s.push(Vector([Integer(1n)]));    // A is a vector — wrong
+  s.push(Vector([Integer(1n)]));
+  assertThrows(() => { lookup('RSD').fn(s); },
+               /Bad argument type/,
+               'session119: RSD on non-Matrix A → Bad argument type');
+}
+
+/* ---- RSD rejects mixed B (matrix) + Z (vector) ------------------ */
+{
+  const s = new Stack();
+  s.push(Matrix([[Integer(1n)], [Integer(2n)]]));   // B is matrix
+  s.push(Matrix([[Integer(1n)]]));                  // A is 1×1
+  s.push(Vector([Integer(1n)]));                    // Z is vector — mismatch
+  assertThrows(() => { lookup('RSD').fn(s); },
+               /Bad argument type|Invalid dimension/,
+               'session119: RSD with mixed matrix B / vector Z → reject');
+}
+
+/* ---- RSD rejects shape mismatch (vector Z length ≠ cols(A)) ----- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n), Integer(2n)]));
+  s.push(Matrix([[Integer(1n), Integer(2n)],
+                 [Integer(3n), Integer(4n)]]));    // A is 2×2 → expects len-2 Z
+  s.push(Vector([Integer(1n), Integer(2n), Integer(3n)]));   // Z len 3
+  assertThrows(() => { lookup('RSD').fn(s); },
+               /Invalid dimension/,
+               'session119: RSD shape mismatch → Invalid dimension');
+}
+
+/* ---- RSD rejects Symbolic entries (numeric-only path) ----------- */
+{
+  const s = new Stack();
+  s.push(Vector([Integer(1n)]));
+  s.push(Matrix([[Symbolic({ kind: 'var', name: 'X' })]]));
+  s.push(Vector([Integer(1n)]));
+  assertThrows(() => { lookup('RSD').fn(s); },
+               /Bad argument type/,
+               'session119: RSD on Symbolic A → Bad argument type');
+}
+
+// ---- GREDUCE — Grœbner reduction --------------------------------
+
+/* ---- GREDUCE on the AUR p.3-99 worked example -------------------- */
+{
+  // GREDUCE(X^2*Y - X*Y - 1, [X, 2*Y^3 - 1], [X, Y]) → -1.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X^2*Y - X*Y - 1')));
+  s.push(Vector([Symbolic(parseAlgebra('X')),
+                 Symbolic(parseAlgebra('2*Y^3 - 1'))]));
+  s.push(Vector([Name('X'), Name('Y')]));
+  giac._clear();
+  giac._setFixture(
+    'greduce((X^2*Y-X*Y-1),[(X),(2*Y^3-1)],[X,Y])',
+    '-1');
+  lookup('GREDUCE').fn(s);
+  const r = s.peek();
+  assert(isReal(r) && r.value.eq(-1),
+         `session119: GREDUCE worked-example → ${r && r.value} (want -1)`);
+  giac._clear();
+}
+
+/* ---- GREDUCE returns a Symbolic when the remainder is non-trivial */
+{
+  // Reduce X^2 - 1 by [X - 1, X + 1] in [X] → Giac (here mocked) would
+  // return 0; we instead seed a symbolic Y to confirm Symbolic
+  // round-trip works.
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X*Y + 1')));
+  s.push(Vector([Symbolic(parseAlgebra('X^2 - 1'))]));
+  s.push(Vector([Name('X'), Name('Y')]));
+  giac._clear();
+  giac._setFixture(
+    'greduce((X*Y+1),[(X^2-1)],[X,Y])',
+    'X*Y+1');
+  lookup('GREDUCE').fn(s);
+  const r = s.peek();
+  assert(isSymbolic(r) && formatAlgebra(r.expr) === 'X*Y + 1',
+         `session119: GREDUCE Symbolic round-trip → '${r && isSymbolic(r) ? formatAlgebra(r.expr) : r}'`);
+  giac._clear();
+}
+
+/* ---- GREDUCE rejects non-Vector basis ---------------------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  s.push(Symbolic(parseAlgebra('X')));    // not a Vector
+  s.push(Vector([Name('X')]));
+  assertThrows(() => { lookup('GREDUCE').fn(s); },
+               /Bad argument type/,
+               'session119: GREDUCE on non-Vector basis → Bad argument type');
+}
+
+/* ---- GREDUCE rejects non-Vector vars ----------------------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  s.push(Vector([Symbolic(parseAlgebra('X'))]));
+  s.push(Name('X'));                      // not a Vector
+  assertThrows(() => { lookup('GREDUCE').fn(s); },
+               /Bad argument type/,
+               'session119: GREDUCE on non-Vector vars → Bad argument type');
+}
+
+/* ---- GREDUCE rejects non-Name elements in vars vector ----------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  s.push(Vector([Symbolic(parseAlgebra('X'))]));
+  s.push(Vector([Symbolic(parseAlgebra('X+1'))]));   // Symbolic, not Name
+  assertThrows(() => { lookup('GREDUCE').fn(s); },
+               /Bad argument type/,
+               'session119: GREDUCE on Symbolic-in-vars → Bad argument type');
+}
+
+/* ---- GREDUCE rejects empty basis -------------------------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  s.push(Vector([]));
+  s.push(Vector([Name('X')]));
+  assertThrows(() => { lookup('GREDUCE').fn(s); },
+               /Invalid dimension/,
+               'session119: GREDUCE empty basis → Invalid dimension');
+}
+
+/* ---- GREDUCE rejects empty vars list ---------------------------- */
+{
+  const s = new Stack();
+  s.push(Symbolic(parseAlgebra('X')));
+  s.push(Vector([Symbolic(parseAlgebra('X'))]));
+  s.push(Vector([]));
+  assertThrows(() => { lookup('GREDUCE').fn(s); },
+               /Invalid dimension/,
+               'session119: GREDUCE empty vars → Invalid dimension');
+}

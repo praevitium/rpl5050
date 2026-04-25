@@ -158,6 +158,17 @@ export const state = {
   // describes this stack-of-halted-programs behaviour.
   halted: null,
   haltedStack: [],
+  // PROMPT message slot.  Session 121: PROMPT (HP50 AUR p.2-160) is
+  // HALT-with-display-message — the program pops level 1, stashes the
+  // value here so a UI subscriber can render it in the status area, and
+  // suspends via the same generator-yield mechanism HALT uses.  CONT
+  // and KILL clear the slot when resuming or terminating; resetHome
+  // also drops it so a refresh starts on a blank prompt.
+  //
+  // Stored as the raw RPL value the user pushed (typically a String,
+  // but PROMPT accepts any object — the formatter is the renderer's
+  // problem).  `null` means "no prompt active".
+  promptMessage: null,
 };
 
 function _emit() {
@@ -499,6 +510,32 @@ export function clearAllHalted() {
 
 export function haltedDepth() { return state.haltedStack.length; }
 
+/* ----------------------- PROMPT message slot -----------------------
+   Session 121.  HP50 AUR p.2-160: PROMPT pops level 1, displays it in
+   the status area, and halts the program (resumable via CONT — same
+   substrate HALT uses).  Without UI integration, the "display in the
+   status area" half lands here as an observable state slot — `state
+   .promptMessage` carries the popped value; UI subscribers that want
+   to render a prompt banner read from this slot.
+
+   Setter is called from `evalRange`'s PROMPT branch (see ops.js).
+   Clearer is called from CONT / KILL / resetHome so a fresh prompt
+   replaces the old one rather than queuing on top of it. */
+
+export function setPromptMessage(v) {
+  if (state.promptMessage === v) return;
+  state.promptMessage = v;
+  _emit();
+}
+
+export function getPromptMessage() { return state.promptMessage; }
+
+export function clearPromptMessage() {
+  if (state.promptMessage === null) return;
+  state.promptMessage = null;
+  _emit();
+}
+
 /* ----------------------- CAS main variable (VX) ---------------------
    Single string slot holding the Name.id of the current CAS main
    variable.  The VX / SVX ops are thin wrappers around these getters
@@ -799,6 +836,7 @@ export function resetHome() {
   state.current = _home;
   state.halted = null;                   // no-emit direct reset
   state.haltedStack.length = 0;          // drain the LIFO too
+  state.promptMessage = null;            // session 121: clear PROMPT banner
   _emit();
 }
 

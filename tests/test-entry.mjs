@@ -785,10 +785,7 @@ import { assert, assertThrows } from './helpers.mjs';
 {
   // Validator guard: a body that's neither a valid algebraic nor a
   // valid identifier throws instead of minting Name("#FFh + 1").
-  let threw = false;
-  try { parseEntry('`#FFh + 1`'); }
-  catch (e) { threw = /Invalid algebraic/.test(e.message); }
-  assert(threw,
+  assertThrows(() => parseEntry('`#FFh + 1`'), /Invalid algebraic/,
     'parseEntry(`#FFh + 1`) throws "Invalid algebraic:" instead of becoming a ghost Name');
 }
 {

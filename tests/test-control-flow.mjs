@@ -1,5 +1,5 @@
 import { Stack } from '../www/src/rpl/stack.js';
-import { lookup, localFramesDepth } from '../www/src/rpl/ops.js';
+import { lookup, localFramesDepth, singleStepMode, stepIntoMode } from '../www/src/rpl/ops.js';
 import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix,
@@ -19,7 +19,7 @@ import {
   setHalted, getHalted, clearHalted, clearAllHalted, haltedDepth,
 } from '../www/src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Control flow — IFT / IFTE, IF/THEN/ELSE/END, WHILE, DO/UNTIL, START,
    FOR/NEXT/STEP (incl. Integer-aware variant), IFERR. */
@@ -429,9 +429,13 @@ import { assert } from './helpers.mjs';
       Integer(1), Integer(0), Name('/'),
     Name('NEXT'),
   ]));
-  let threw = false;
-  try { lookup('EVAL').fn(s); } catch (e) { threw = true; }
-  assert(threw, 'START loop with 1/0 in body throws');
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           null,
+                           'START loop with 1/0 in body throws');
+  // session122: pin HP50 error-message shape on the START div-by-zero
+  // surface — was previously asserted only as "threw === true".
+  assert(/Infinite result/.test(err.message),
+    'session122: START div-by-zero raises "Infinite result"');
   assert(s.depth === 2, 'stack restored to pre-EVAL depth after START error');
   assert(isReal(s.peek(2)) && s.peek(2).value.eq(100),
          'pre-existing Real(100) preserved after rollback');
@@ -655,10 +659,15 @@ import { assert } from './helpers.mjs';
   s.push(Program([
     Name('IFERR'), Integer(1), Integer(2), Name('+'), Name('END'),
   ]));
-  let threw = false, msg = '';
-  try { lookup('EVAL').fn(s); } catch (e) { threw = true; msg = e.message; }
-  assert(threw && /IFERR without THEN/.test(msg),
-         'IFERR without THEN is a structural error');
+  assertThrows(() => lookup('EVAL').fn(s),
+               /IFERR without THEN/,
+               'IFERR without THEN is a structural error');
+  // session122: stack-rollback regression guard — on a structural-
+  // error throw EVAL must restore the pre-EVAL stack depth (the
+  // Program is back on the stack at level 1).  Was previously
+  // unverified.
+  assert(s.depth === 1 && isProgram(s.peek()),
+    'session122: malformed-IFERR throw restores Program to pre-EVAL stack');
 }
 
 // Parse IFERR from source and execute end-to-end
@@ -822,9 +831,13 @@ import { assert } from './helpers.mjs';
       Integer(0),
     Name('STEP'),
   ]));
-  let threw = false;
-  try { lookup('EVAL').fn(s); } catch (_) { threw = true; }
-  assert(threw, 'FOR/STEP with Integer step of 0 throws');
+  const err = assertThrows(() => lookup('EVAL').fn(s),
+                           /STEP of 0/,
+                           'FOR/STEP with Integer step of 0 throws');
+  // session122: pin the exact "STEP of 0" message shape — was
+  // previously only "threw === true".  Caught error: "STEP of 0".
+  assert(err.message === 'STEP of 0',
+    'session122: FOR/STEP zero-step error message is exactly "STEP of 0"');
 }
 
 // Arithmetic on Integer loop var stays Integer:
@@ -2081,10 +2094,16 @@ import { assert } from './helpers.mjs';
     Name('IFERR'),
     Integer(1n), Integer(2n), Name('+'),
   ]));
-  let threw = false, msg = '';
-  try { lookup('EVAL').fn(s); } catch (e) { threw = true; msg = e.message; }
-  assert(threw && /IFERR without THEN/.test(msg),
-    'session077: IFERR with neither THEN nor END still raises "IFERR without THEN"');
+  assertThrows(() => lookup('EVAL').fn(s),
+               /IFERR without THEN/,
+               'session077: IFERR with neither THEN nor END still raises "IFERR without THEN"');
+  // session122: companion to the line-660 site — verify the
+  // no-END/no-THEN variant ALSO restores the pre-EVAL stack
+  // (Program back at level 1).  Distinct from the with-END path
+  // above because here the structural-scan failure happens before
+  // the auto-close machinery has a chance to substitute an END.
+  assert(s.depth === 1 && isProgram(s.peek()),
+    'session122: malformed-IFERR (no END) throw restores Program to pre-EVAL stack');
 }
 
 /* ---- Auto-closed IFERR inside a longer program body:
@@ -2715,4 +2734,1197 @@ import { assert } from './helpers.mjs';
   lookup('CONT').fn(s);
   assert(haltedDepth() === 0 && s.depth === 3,
     'session088: nested FOR-in-IF: finished cleanly');
+}
+
+/* ================================================================
+   Session 101 — SST / SST↓ / DBUG single-step debugger
+   ================================================================ */
+
+/* ---- SST drives a halted program one token at a time ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 HALT 2 3 + »  — EVAL halts at HALT with [1] on stack;
+  // each SST then advances by exactly one token.
+  s.push(Program([
+    Integer(1n), Name('HALT'), Integer(2n), Integer(3n), Name('+'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 1n && haltedDepth() === 1,
+    'session101: HALT suspends with [1] on stack, halted slot live');
+  assert(singleStepMode() === false,
+    'session101: single-step flag stays false after HALT yield (HALT is not SST)');
+  lookup('SST').fn(s);
+  assert(s.depth === 2 && s.peek().value === 2n && haltedDepth() === 1,
+    'session101: SST runs one token (push 2), suspends after');
+  assert(singleStepMode() === false,
+    'session101: SST clears single-step flag after stepping');
+  lookup('SST').fn(s);
+  assert(s.depth === 3 && s.peek().value === 3n && haltedDepth() === 1,
+    'session101: second SST runs one token (push 3), still halted');
+  lookup('SST').fn(s);
+  assert(s.depth === 2 && s.peek().value === 5n && haltedDepth() === 1,
+    'session101: third SST runs the + op (2,3 → 5), still halted (final yield)');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 2 && s.peek().value === 5n,
+    'session101: fourth SST drains the generator (loop exits), no halts left');
+  assert(singleStepMode() === false,
+    'session101: single-step flag false after generator finishes');
+}
+
+/* ---- SST with no halted program raises "No halted program" ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  let caught = null;
+  try { lookup('SST').fn(s); } catch (e) { caught = e; }
+  assert(caught && /No halted program/.test(caught.message),
+    'session101: SST with empty halted slot raises No halted program');
+  assert(singleStepMode() === false,
+    'session101: failed SST does not leave single-step flag set');
+}
+
+/* ---- SST↓ aliases SST (same one-token-per-call semantics) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([Integer(10n), Name('HALT'), Integer(20n), Integer(30n)]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && haltedDepth() === 1,
+    'session101: SST↓ setup — halted with [10]');
+  lookup('SST↓').fn(s);
+  assert(s.depth === 2 && s.peek().value === 20n && haltedDepth() === 1,
+    'session101: SST↓ steps one token (push 20)');
+  lookup('SST↓').fn(s);
+  assert(s.depth === 3 && s.peek().value === 30n && haltedDepth() === 1,
+    'session101: SST↓ steps one more token (push 30)');
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 3,
+    'session101: SST↓ drains generator, no halts left');
+}
+
+/* ---- DBUG starts a program in single-step mode ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 7 8 + »  — DBUG executes the first token then suspends.
+  s.push(Program([Integer(7n), Integer(8n), Name('+')]));
+  lookup('DBUG').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n && haltedDepth() === 1,
+    'session101: DBUG runs first token (push 7) then halts');
+  assert(singleStepMode() === false,
+    'session101: DBUG resets single-step flag after the suspending step');
+  lookup('SST').fn(s);
+  assert(s.depth === 2 && s.peek().value === 8n && haltedDepth() === 1,
+    'session101: SST after DBUG advances to second token (push 8)');
+  lookup('SST').fn(s);
+  assert(s.depth === 1 && s.peek().value === 15n && haltedDepth() === 1,
+    'session101: SST runs +  (7+8=15), final yield before exit');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 1 && s.peek().value === 15n,
+    'session101: SST drains DBUG-started program');
+}
+
+/* ---- DBUG → CONT runs the rest at full speed (no further single-stepping) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([Integer(2n), Integer(3n), Integer(4n), Name('+'), Name('+')]));
+  lookup('DBUG').fn(s);
+  assert(s.depth === 1 && s.peek().value === 2n && haltedDepth() === 1,
+    'session101: DBUG halts after first token (push 2)');
+  lookup('CONT').fn(s);
+  // CONT does NOT single-step — it runs the rest to completion.
+  assert(haltedDepth() === 0 && s.depth === 1 && s.peek().value === 9n,
+    'session101: CONT after DBUG resumes at full speed (2+3+4=9)');
+  assert(singleStepMode() === false,
+    'session101: single-step flag clear after CONT-after-DBUG');
+}
+
+/* ---- DBUG on a non-Program raises Bad argument type ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Integer(42n));
+  let caught = null;
+  try { lookup('DBUG').fn(s); } catch (e) { caught = e; }
+  assert(caught && /Bad argument type/.test(caught.message),
+    'session101: DBUG on a non-Program raises Bad argument type');
+  assert(s.depth === 1 && s.peek().value === 42n,
+    'session101: failed DBUG does not consume the argument');
+  assert(haltedDepth() === 0 && singleStepMode() === false,
+    'session101: failed DBUG leaves no halted slot and clears single-step');
+}
+
+/* ---- DBUG on an empty program completes immediately, no halt ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([]));
+  lookup('DBUG').fn(s);
+  assert(s.depth === 0 && haltedDepth() === 0 && singleStepMode() === false,
+    'session101: DBUG on « » runs to completion immediately, no halt');
+}
+
+/* ---- KILL closes a single-stepped program cleanly (frames cleaned) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // 9 → a « a SST-via-DBUG » — DBUG halts inside the → frame; KILL
+  // closes the generator and runArrow's finally pops the local frame.
+  s.push(Integer(9n));
+  s.push(Program([Name('→'), Name('a'),
+    Program([Integer(1n), Name('a'), Name('+'), Integer(2n), Name('+')]),
+  ]));
+  lookup('DBUG').fn(s);
+  // First token of the body is `→ a « ... »` which is the entire arrow
+  // form — it executes as one atomic step (runArrow consumes a, names,
+  // and body, runs the body to completion or first yield).  The body's
+  // first token is `1` — push 1.  After DBUG: stack top is 1, frame is live.
+  assert(haltedDepth() === 1 && s.depth === 1 && s.peek().value === 1n,
+    'session101: DBUG halts inside → frame body after first inner token');
+  assert(localFramesDepth() === 1,
+    'session101: → frame for `a` is live during single-step suspension');
+  lookup('KILL').fn(s);
+  assert(haltedDepth() === 0,
+    'session101: KILL drops the single-stepped program');
+  assert(localFramesDepth() === 0,
+    'session101: KILL closes the generator → runArrow finally pops the frame');
+  assert(singleStepMode() === false,
+    'session101: KILL leaves single-step flag clear');
+}
+
+/* ---- Session 106 supersedes the session-101 R-002 regression guard.
+       Pre-session-106, a HALT inside a Name-reached sub-program threw
+       `HALT: cannot suspend inside a sub-program call`; R-002 pinned
+       `_driveGen`'s belt-and-suspenders `gen.return()` cleanup for that
+       throw path.  Session 106 made `evalToken`'s Name-binding branch
+       a generator that yields up through `_evalValueGen`, so a HALT
+       reached via variable lookup now suspends cleanly — CONT resumes,
+       locals round-trip.  The non-lifted paths (ops that take a Program
+       argument and call `_evalValueSync` directly — IFT / IFTE / MAP /
+       …) still exercise `_driveGen`'s throw-and-close; see the
+       session106 block below for that regression guard. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Define a program in variable P containing HALT inside an `→` body
+  // (so a live `runArrow` frame exists at HALT time).  Then EVAL a
+  // wrapper that calls P via variable lookup.  Before session 106 this
+  // threw; now it suspends cleanly.
+  varStore('P', Program([
+    Integer(1n),
+    Name('→'), Name('x'), Program([
+      Name('HALT'),  // session 106: suspends through `_evalValueGen`
+    ]),
+  ]));
+  s.push(Program([Name('P')]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session106 R-002 supersede: HALT inside variable-called sub-program suspends');
+  assert(localFramesDepth() === 1,
+    'session106 R-002 supersede: → frame for `x` is live across the halt');
+  assert(singleStepMode() === false,
+    'session106 R-002 supersede: single-step flag is unset (plain HALT, not DBUG)');
+  // Resume: HALT's post-resume advances past the HALT token, the inner
+  // Program ends, runArrow pops the `x` frame, P's body ends, and the
+  // wrapper's EVAL returns with [1] on the stack.
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session106 R-002 supersede: CONT drains the lifted halt');
+  assert(localFramesDepth() === 0,
+    'session106 R-002 supersede: `x` frame popped by runArrow finally');
+  // Stack ends empty: the `1` was popped into local `x` before the HALT
+  // and nothing else is pushed by the inner `« HALT »` body.
+  assert(s.depth === 0,
+    'session106 R-002 supersede: stack is empty after resume (1 bound to x, frame popped)');
+  varPurge('P');
+}
+
+/* ================================================================
+   Session 102 — additional SST / DBUG regression guards
+   ================================================================ */
+
+/* ---- DBUG on a single-token program runs that token then yields,
+        and the follow-up SST drains cleanly. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([ Integer(42n) ]));
+  lookup('DBUG').fn(s);
+  // After DBUG: the single push ran, then the post-token SST yield fired.
+  assert(s.depth === 1 && s.peek().value === 42n && haltedDepth() === 1,
+    'session102: DBUG « 42 » runs the single token and halts on the post-token yield');
+  lookup('SST').fn(s);
+  // Next SST drives the generator past the last token; the for-loop exits
+  // and the generator reports done, so the halted slot is released.
+  assert(haltedDepth() === 0 && s.depth === 1 && s.peek().value === 42n,
+    'session102: SST after DBUG « 42 » drains the generator cleanly');
+  assert(singleStepMode() === false,
+    'session102: single-step flag clear after DBUG/SST sequence completes');
+}
+
+/* ---- After SST completes (no halt left), a fresh EVAL runs at full
+        speed — the single-step flag from the prior SST does not leak. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // First program: DBUG + SST until generator drains.
+  s.push(Program([ Integer(1n), Integer(2n), Name('+') ]));
+  lookup('DBUG').fn(s);        // runs `1`, halts
+  lookup('SST').fn(s);          // runs `2`, halts
+  lookup('SST').fn(s);          // runs `+`, final yield (5 on stack)
+  lookup('SST').fn(s);          // drains
+  assert(haltedDepth() === 0 && s.peek().value === 3n && singleStepMode() === false,
+    'session102: DBUG/SST sequence finished cleanly with 3 on stack');
+
+  // Second program: a plain EVAL — must run to completion without
+  // halting (regression guard: single-step flag from prior session
+  // must not leak into this EVAL).
+  s.push(Program([ Integer(4n), Integer(5n), Name('*') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 0 && s.peek().value === 20n,
+    'session102: fresh EVAL after DBUG/SST drain runs to completion (no leaked single-step)');
+  assert(singleStepMode() === false,
+    'session102: single-step flag still clear after the follow-up full-speed EVAL');
+}
+
+/* ---- SST with a non-Program halted-slot payload is impossible by
+        construction: HALT always stores a generator, and DBUG always
+        starts from a Program.  But SST's "No halted program" rejection
+        is the regression-guard invariant — pin it from a CONT-completed
+        state as well as from the fresh-stack state. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // Run a short halted program through to completion via CONT.
+  s.push(Program([ Integer(7n), Name('HALT'), Integer(8n) ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1 && s.peek().value === 7n,
+    'session102: EVAL halts on HALT as precondition');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0 && s.peek().value === 8n,
+    'session102: CONT drains halted program to completion');
+  // Now SST must reject — there is no halted program anymore.
+  assertThrows(() => lookup('SST').fn(s), /No halted program/,
+    'session102: SST after CONT-drained program throws No halted program');
+  assert(singleStepMode() === false,
+    'session102: single-step flag still false after the failed SST');
+}
+
+/* ================================================================
+   Session 106 — HALT-inside-named-sub-program lift + SST↓ step-into
+   ================================================================ */
+
+/* ---- HALT inside a Name-reached sub-program now suspends cleanly.
+        The wrapper EVALs `« P »`; P evaluates to a stored Program whose
+        body contains HALT.  Pre-session-106 this threw via `_driveGen`;
+        session 106 routes the Name lookup through `_evalValueGen`
+        (generator flavor) so the HALT yields up the whole chain. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('P', Program([
+    Integer(10n),
+    Name('HALT'),
+    Integer(20n),
+  ]));
+  s.push(Program([ Name('P'), Integer(99n) ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session106: HALT inside Name-reached sub-program suspends (not throws)');
+  assert(s.depth === 1 && s.peek().value === 10n,
+    'session106: sub-program ran up to the HALT (pushed 10) before suspending');
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session106: both step flags remain clear (plain HALT, no SST/DBUG)');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session106: CONT resumes — halt record drained');
+  assert(s.depth === 3,
+    'session106: after CONT, sub-program finished (pushed 20), wrapper pushed 99');
+  assert(s.peek().value === 99n,
+    'session106: top of stack is wrapper-pushed 99');
+  varPurge('P');
+}
+
+/* ---- HALT deep inside a Name-reached sub-program: HALT lives inside
+        `→` in the stored Program.  Frame must be live at halt; CONT
+        must pop it cleanly. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('DEEP', Program([
+    Integer(5n), Integer(6n),
+    Name('→'), Name('a'), Name('b'), Program([
+      Name('a'), Name('b'),          // push a, push b
+      Name('HALT'),                  // halt inside → frame
+      Name('+'),                     // resume: a + b
+    ]),
+  ]));
+  s.push(Program([ Name('DEEP') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session106: HALT inside → body under a Name-reached sub-program suspends');
+  assert(localFramesDepth() === 1,
+    'session106: → frame is live while the sub-program is halted');
+  assert(s.depth === 2 && s.peek().value === 6n,
+    'session106: locals `a`/`b` pushed before the halt (6 on top)');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session106: CONT resumed, → frame popped by runArrow finally');
+  assert(s.depth === 1 && s.peek().value === 11n,
+    'session106: post-CONT stack = [5+6] = [11]');
+  varPurge('DEEP');
+}
+
+/* ---- Two-level Name chain: outer Program A calls Name B which is a
+        stored Program containing HALT.  The yield must propagate through
+        both evalRange generators + both evalToken generators. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('B', Program([ Integer(2n), Name('HALT'), Integer(3n) ]));
+  varStore('A', Program([ Integer(1n), Name('B'), Integer(4n) ]));
+  s.push(Program([ Name('A') ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 2n,
+    'session106: two-level Name chain halts with [1, 2] on stack');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session106: CONT drains the two-level chain');
+  assert(s.depth === 4,
+    'session106: after CONT, B finishes (push 3) and A finishes (push 4)');
+  assert(s.peek().value === 4n,
+    'session106: top of stack is A-pushed 4');
+  varPurge('A'); varPurge('B');
+}
+
+/* ---- IFT / IFTE retain the pre-session-106 reject-on-HALT: they use
+        `_evalValueSync` directly, not `_evalValueGen`, so _driveGen's
+        throw-and-close still fires.  This pins the scope of the lift —
+        only `evalToken`-reached Programs gained HALT support. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Real(1));                                   // test
+  s.push(Program([ Name('HALT') ]));                 // action with HALT
+  assertThrows(() => lookup('IFT').fn(s),
+    /HALT: cannot suspend/,
+    'session106: IFT on a HALT-containing action still throws (pilot limit retained)');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session106: failed IFT leaves no halt and no leaked frames');
+}
+
+/* ---- SST step-over on a Name token that resolves to a Program: one
+        step runs the entire sub-program, leaving the outer program on
+        the next token.  This is the HP50 SST semantics. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('MYP', Program([ Integer(100n), Integer(200n), Name('+') ]));
+  s.push(Program([ Integer(1n), Name('MYP'), Integer(2n) ]));
+  lookup('DBUG').fn(s);
+  // DBUG runs first token (1) and halts.
+  assert(haltedDepth() === 1 && s.peek().value === 1n,
+    'session106: DBUG halted after the first outer token (push 1)');
+  // Now SST the MYPcall — it should run the whole sub-program in one step.
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 1,
+    'session106: SST over MYP— still halted (next stop is after the Name)');
+  assert(s.depth === 2 && s.peek().value === 300n,
+    'session106: SST over MYPran 100+200 → 300 in one step');
+  // Next SST pushes 2 and halts on the post-token yield.
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 1 && s.peek().value === 2n,
+    'session106: next SST pushes 2 and halts on post-token yield');
+  // Final SST drains.
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 0,
+    'session106: final SST drains the outer program');
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session106: step flags clear after SST drains');
+  varPurge('MYP');
+}
+
+/* ---- SST↓ step-into on a Name token that resolves to a Program: one
+        step runs only the first token of the sub-program, leaving the
+        rest of the body halted for subsequent SST/SST↓.  Note: DBUG
+        runs its first token in step-over mode (its finally sees
+        _stepInto = false), so to demonstrate step-into we set up with
+        a pre-token (`1` here) and use SST↓ at the Name boundary. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('MYP', Program([ Integer(100n), Integer(200n), Name('+') ]));
+  s.push(Program([ Integer(1n), Name('MYP'), Integer(2n) ]));
+  lookup('DBUG').fn(s);
+  assert(haltedDepth() === 1 && s.peek().value === 1n,
+    'session106: DBUG halted after outer token 1');
+  // SST↓ into MYP — should push 100 and halt inside MYP's body.
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 100n,
+    'session106: SST↓ descends into MYP — push 100 and halt inside its body');
+  // Next SST↓ pushes 200.
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 3 && s.peek().value === 200n,
+    'session106: SST↓ continues inside MYP — push 200, still halted');
+  // Next SST↓ runs +.
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 300n,
+    'session106: SST↓ runs + inside MYP (100+200=300)');
+  // Next SST↓ — MYP body is exhausted; we yield on the outer loop's
+  // post-token step-yield (still inside step-into mode).
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1,
+    'session106: after MYP drains, outer loop yields on the Name token boundary');
+  assert(s.depth === 2 && s.peek().value === 300n,
+    'session106: stack unchanged at the outer-boundary step');
+  // Remaining SST drains.
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 1 && s.peek().value === 2n,
+    'session106: next step runs outer token 2');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 0,
+    'session106: final step drains outer program');
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session106: step flags clear after SST↓ / SST mix drains');
+  varPurge('MYP');
+}
+
+/* ---- stepIntoMode reset invariants: a failed SST↓ (no halted slot)
+        must not leak _stepInto into a subsequent SST. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  assertThrows(() => lookup('SST↓').fn(s), /No halted program/,
+    'session106: SST↓ with no halted slot throws No halted program');
+  assert(stepIntoMode() === false,
+    'session106: stepIntoMode clean after failed SST↓');
+  assert(singleStepMode() === false,
+    'session106: singleStepMode clean after failed SST↓');
+}
+
+/* ---- KILL from inside a step-into session closes the generator and
+        clears both flags.  Setup uses a pre-token (`7`) so DBUG halts
+        before the MYP call, letting SST↓ descend into MYP. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('MYP', Program([ Integer(50n), Integer(60n) ]));
+  s.push(Program([ Integer(7n), Name('MYP') ]));
+  lookup('DBUG').fn(s);
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 50n,
+    'session106: SST↓ into MYP pushed 50 and halted inside');
+  lookup('KILL').fn(s);
+  assert(haltedDepth() === 0,
+    'session106: KILL drops the step-into session');
+  assert(stepIntoMode() === false && singleStepMode() === false,
+    'session106: KILL leaves both step flags clear');
+  varPurge('MYP');
+}
+
+/* ================================================================
+   Session 111 — caller-aware HALT-rejection messages.
+
+   Session 106 lifted HALT for sub-programs reached via `evalToken`'s
+   Name-binding branch (the `_evalValueGen` path).  The sync-path
+   callers — IFT / IFTE / MAP / SEQ / DOLIST / DOSUBS / STREAM — still
+   reject a HALT via `_driveGen`, because they call `_evalValueSync`
+   which cannot yield.  Session 111 added a `caller` parameter to
+   `_driveGen` (and `_evalValueSync`) so the rejection names which op
+   was at the boundary.  The pre-session-111 message was
+   `HALT: cannot suspend inside a sub-program call (use EVAL directly)`;
+   it is now `HALT: cannot suspend inside <caller>` with the caller
+   label threaded through from each op's `_evalValueSync` call site.
+
+   Each block also pins that `_localFrames` is empty after the
+   rejection — the R-002 belt-and-suspenders `gen.return()` close —
+   so a regression in the cleanup path would surface alongside a
+   regression in the message.
+   ================================================================ */
+
+/* ---- IFT action with HALT now reports "IFT action" ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Real(1));                                   // test = true
+  s.push(Program([ Name('HALT') ]));                 // action
+  assertThrows(() => lookup('IFT').fn(s),
+    /HALT: cannot suspend inside IFT action/,
+    'session111: IFT-action HALT error names IFT');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed IFT leaves no halt and no leaked frames');
+}
+
+/* ---- IFTE: both branches get the IFTE label, true branch ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Real(1));                                   // test = true
+  s.push(Program([ Name('HALT') ]));                 // t-action
+  s.push(Program([ Integer(0n) ]));                  // f-action
+  assertThrows(() => lookup('IFTE').fn(s),
+    /HALT: cannot suspend inside IFTE action/,
+    'session111: IFTE-t-branch HALT error names IFTE');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed IFTE (true branch) leaves no halt / frames');
+}
+
+/* ---- IFTE false branch — same label ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Real(0));                                   // test = false
+  s.push(Program([ Integer(0n) ]));                  // t-action
+  s.push(Program([ Name('HALT') ]));                 // f-action
+  assertThrows(() => lookup('IFTE').fn(s),
+    /HALT: cannot suspend inside IFTE action/,
+    'session111: IFTE-f-branch HALT error names IFTE');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed IFTE (false branch) leaves no halt / frames');
+}
+
+/* ---- MAP on a HALT-containing program reports "MAP program" ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(RList([ Integer(1n), Integer(2n) ]));       // list input
+  s.push(Program([ Name('HALT') ]));                 // mapper
+  assertThrows(() => lookup('MAP').fn(s),
+    /HALT: cannot suspend inside MAP program/,
+    'session111: MAP HALT error names MAP');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed MAP leaves no halt and no leaked frames');
+}
+
+/* ---- SEQ with HALT in the expression names "SEQ expression" ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([ Name('HALT') ]));                 // expression
+  s.push(Name('I'));                                 // bound name
+  s.push(Real(1));                                   // start
+  s.push(Real(3));                                   // end
+  s.push(Real(1));                                   // step
+  assertThrows(() => lookup('SEQ').fn(s),
+    /HALT: cannot suspend inside SEQ expression/,
+    'session111: SEQ HALT error names SEQ');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed SEQ leaves no halt and no leaked frames');
+}
+
+/* ---- DOLIST single-list form: HALT reports "DOLIST program" ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(RList([ Integer(1n), Integer(2n) ]));       // single list
+  s.push(Program([ Name('HALT') ]));                 // program
+  assertThrows(() => lookup('DOLIST').fn(s),
+    /HALT: cannot suspend inside DOLIST program/,
+    'session111: DOLIST HALT error names DOLIST');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed DOLIST leaves no halt and no leaked frames');
+}
+
+/* ---- DOSUBS with HALT names "DOSUBS program" ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(RList([ Integer(1n), Integer(2n), Integer(3n) ]));
+  s.push(Integer(2n));                               // window size
+  s.push(Program([ Name('HALT') ]));                 // program
+  assertThrows(() => lookup('DOSUBS').fn(s),
+    /HALT: cannot suspend inside DOSUBS program/,
+    'session111: DOSUBS HALT error names DOSUBS');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed DOSUBS leaves no halt and no leaked frames');
+}
+
+/* ---- STREAM with HALT in the combinator names "STREAM program" ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(RList([ Integer(1n), Integer(2n), Integer(3n) ]));
+  s.push(Program([ Name('HALT') ]));
+  assertThrows(() => lookup('STREAM').fn(s),
+    /HALT: cannot suspend inside STREAM program/,
+    'session111: STREAM HALT error names STREAM');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: failed STREAM leaves no halt and no leaked frames');
+}
+
+/* ---- SESSION 116 — Tagged-wrapped Program EVAL now LIFTS HALT.
+        Session 111 pinned the rejection ("retains default message")
+        for this case; session 116 routed the EVAL handler through
+        `_evalValueGen` so a Tagged wrapper at the entry no longer
+        forces a sync-path call.  The new pin is: HALT inside the
+        Tagged-wrapped Program suspends cleanly, just as it would for
+        the bare Program.  Two assertions cover the lift; a follow-on
+        block exercises CONT to confirm resume works. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Tagged('t', Program([ Integer(7n), Name('HALT'), Integer(8n) ])));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session116: Tagged-wrapped Program EVAL lifts HALT (was rejected pre-116)');
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session116: Tagged-EVAL halted after pushing 7, before HALT');
+  // Resume: CONT runs the trailing 8 push.
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session116: CONT drained the haltedStack');
+  assert(s.depth === 2 && s.peek().value === 8n,
+    'session116: CONT resumed Tagged-wrapped Program through completion');
+  assert(localFramesDepth() === 0,
+    'session116: Tagged-EVAL lift leaves no leaked local frames after resume');
+}
+
+/* ---- Cross-check: the lifted path (evalToken Name-lookup) still
+        suspends cleanly and does NOT produce an error.  Session 106
+        already pins this, but a session-111 assertion re-verifies the
+        scope of the sync-path labeling — we only changed what happens
+        on the rejection path; the success path must be unaffected. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('PHALT', Program([ Integer(42n), Name('HALT'), Integer(99n) ]));
+  s.push(Program([ Integer(1n), Name('PHALT'), Integer(2n) ]));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session111: Name-reached HALT still suspends (not errored by session-111 work)');
+  assert(s.depth === 2 && s.peek().value === 42n,
+    'session111: Name-reached HALT pushed 42 before yielding, outer push of 1 is below');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 4 && s.peek().value === 2n,
+    'session111: CONT resumed cleanly, outer 2 landed on top');
+  varPurge('PHALT');
+  clearAllHalted();
+}
+
+/* ---- Labeling is preserved through a Name-wrapped action: IFT on a
+        `'NAMEREF'` (not quoted) action recalls the Program via the
+        sync-path Name recursion in `_evalValueSync`.  The caller label
+        must survive that recursion. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('HLT', Program([ Name('HALT') ]));
+  s.push(Real(1));                                   // test = true
+  s.push(Name('HLT'));                               // unquoted Name — will recurse
+  assertThrows(() => lookup('IFT').fn(s),
+    /HALT: cannot suspend inside IFT action/,
+    'session111: Name-recursion preserves the IFT caller label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session111: Name-recursion HALT rejection still cleans up');
+  varPurge('HLT');
+}
+
+/* ================================================================
+   Session 116 — EVAL handler drives _evalValueGen so HALT lifts
+   through Tagged-wrapped Programs and through Name-on-stack EVALs.
+
+   Pre-116 the EVAL handler had a Program-direct fast path and
+   anything else (Tagged, Name, …) fell through to _evalValueSync,
+   which rejected HALT via _driveGen with the
+   "cannot suspend inside a sub-program call" message.  Session 106
+   had already lifted HALT for sub-programs reached via evalToken's
+   Name-binding branch (mid-program Name resolution).  Session 116
+   completes that work for the *entry* of EVAL: anything semantically
+   transparent — Tagged, Name on the stack, Name pointing at a Tagged
+   Program — now suspends cleanly when its body HALTs.
+
+   These regressions also pin SST/SST↓ semantics through the new
+   path: a top-level Tagged-wrapped Program is still the *outer*
+   program from the debugger's perspective, so DBUG yields per token
+   in its body even though we routed through _evalValueGen.
+   ================================================================ */
+
+/* ---- Multi-layer Tagged unwrap: HALT inside a Program wrapped in
+        two Tagged layers still lifts (recursion preserves
+        isSubProgram=false at the entry, so the body remains the
+        outer program from SST's perspective if the user were
+        DBUG'ing).  Pin: lift + clean resume. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Tagged('outer',
+    Tagged('inner',
+      Program([ Integer(11n), Name('HALT'), Integer(22n) ]))));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session116: double-Tagged Program EVAL lifts HALT through both wrappers');
+  assert(s.depth === 1 && s.peek().value === 11n,
+    'session116: double-Tagged-EVAL halted after pushing 11, before HALT');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session116: CONT drained the haltedStack (double-Tagged)');
+  assert(s.depth === 2 && s.peek().value === 22n,
+    'session116: CONT resumed double-Tagged-wrapped Program through completion');
+  assert(localFramesDepth() === 0,
+    'session116: double-Tagged lift leaves no leaked local frames');
+}
+
+/* ---- Name-on-stack EVAL of a Program with HALT lifts.
+        Pre-116 the EVAL handler dispatched non-Programs to
+        _evalValueSync, so an *unquoted* Name on the stack — even
+        though Name-binding to a Program is semantically just a
+        program reference — got rejected.  Now it lifts. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('PNAME', Program([ Integer(33n), Name('HALT'), Integer(44n) ]));
+  s.push(Name('PNAME'));                            // Name on the stack — not quoted
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session116: Name-on-stack EVAL of a Program with HALT lifts');
+  assert(s.depth === 1 && s.peek().value === 33n,
+    'session116: Name-EVAL halted after pushing 33, before HALT');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0,
+    'session116: CONT drained the Name-EVAL halt');
+  assert(s.depth === 2 && s.peek().value === 44n,
+    'session116: CONT resumed Name-EVAL through completion');
+  assert(localFramesDepth() === 0,
+    'session116: Name-EVAL lift leaves no leaked local frames');
+  varPurge('PNAME');
+}
+
+/* ---- Name-on-stack EVAL of a Tagged-wrapped Program lifts.
+        Composes the previous two cases: the EVAL entry is a Name,
+        the Name's binding is a Tagged-wrapped Program. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('PTAG',
+    Tagged('mark', Program([ Integer(55n), Name('HALT'), Integer(66n) ])));
+  s.push(Name('PTAG'));
+  lookup('EVAL').fn(s);
+  assert(haltedDepth() === 1,
+    'session116: Name→Tagged→Program EVAL lifts HALT');
+  assert(s.depth === 1 && s.peek().value === 55n,
+    'session116: Name→Tagged-EVAL halted after pushing 55, before HALT');
+  lookup('CONT').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 2 && s.peek().value === 66n,
+    'session116: CONT resumed Name→Tagged-EVAL through completion');
+  assert(localFramesDepth() === 0,
+    'session116: Name→Tagged-EVAL lift leaves no leaked local frames');
+  varPurge('PTAG');
+}
+
+/* ---- DBUG on a Tagged-wrapped Program: SST steps per outer token.
+        This is the load-bearing single-step regression — the new
+        _evalValueGen path passes isSubProgram=false at the EVAL
+        entry, so the Program body stays the *outer* program for
+        _shouldStepYield's purposes.  If we ever flipped this to true
+        by mistake, DBUG would run the entire Tagged-wrapped body in
+        one step (treating it as a sub-program) instead of yielding
+        per token. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 7 8 + »  — three tokens; under DBUG we expect a yield after
+  // each token, just like for a bare Program.
+  s.push(Tagged('lbl', Program([ Integer(7n), Integer(8n), Name('+') ])));
+  lookup('DBUG').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 1 && s.peek().value === 7n,
+    'session116: DBUG on Tagged-wrapped Program runs first token (push 7) then halts');
+  assert(singleStepMode() === false,
+    'session116: DBUG resets single-step flag after the suspending step (Tagged path)');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 8n,
+    'session116: SST advances Tagged-DBUG to second token (push 8)');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 1 && s.peek().value === 15n,
+    'session116: next SST runs + on Tagged-wrapped body (7+8=15)');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 0,
+    'session116: final SST drains Tagged-wrapped DBUG session');
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session116: step flags clear after Tagged-DBUG/SST drains');
+}
+
+/* ---- SST↓ regression: a Name token inside a Tagged-wrapped Program
+        that resolves to a sub-program still descends correctly.
+        This pins that the entry-point classification (isSubProgram=
+        false) does NOT propagate into Name-resolved sub-programs at
+        evalToken time — those reach _evalValueGen with the default
+        isSubProgram=true, so SST↓ on them descends and SST steps
+        over them, just as for bare Programs. ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  varStore('SUBP', Program([ Integer(101n), Integer(202n), Name('+') ]));
+  s.push(Tagged('outer',
+    Program([ Integer(1n), Name('SUBP'), Integer(2n) ])));
+  lookup('DBUG').fn(s);
+  assert(haltedDepth() === 1 && s.peek().value === 1n,
+    'session116: DBUG on Tagged-wrapped Program runs outer 1 then halts');
+  // SST↓ into SUBP — pushes 101 and halts inside SUBP's body.
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 101n,
+    'session116: SST↓ from Tagged outer descends into SUBP — push 101 and halt');
+  // SST↓ keeps stepping inside SUBP.
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 3 && s.peek().value === 202n,
+    'session116: SST↓ continues inside SUBP — push 202');
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 303n,
+    'session116: SST↓ runs + inside SUBP (101+202=303)');
+  // SUBP body drains; outer post-token yield fires.
+  lookup('SST↓').fn(s);
+  assert(haltedDepth() === 1 && s.depth === 2 && s.peek().value === 303n,
+    'session116: outer post-Name yield fires after SUBP drains');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 1 && s.peek().value === 2n,
+    'session116: outer SST continues with token 2');
+  lookup('SST').fn(s);
+  assert(haltedDepth() === 0,
+    'session116: final SST drains Tagged-wrapped outer program');
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session116: step flags clear after Tagged-SST↓/SST mix drains');
+  varPurge('SUBP');
+}
+
+/* ---- runArrow Symbolic body caller-label wiring: a → frame whose
+        body is a Symbolic value can never reach a Program subnode
+        (the algebraic AST doesn't carry Programs), but the 4th-arg
+        caller-label addition to `_evalValueSync` had to plumb
+        through runArrow's Symbolic-body call site.  This pin is a
+        smoke-test: the well-formed Symbolic body path still
+        produces the correct value via `_evalValueSync(s, body,
+        depth+1, '→ algebraic body')`, so a regression in the label
+        wiring (e.g. dropping the body argument when threading the
+        label) would surface here as either an error or a wrong
+        result. ---- */
+{
+  resetHome(); clearAllHalted();
+  const prevApprox = calcState.approxMode;
+  setApproxMode(true);
+  try {
+    const s = new Stack();
+    s.push(Integer(3n));
+    s.push(Integer(4n));
+    // Build « → a b `a^2 + b^2` » using parseEntry.  Backticks delimit
+    // algebraic literals in the test parser entry-point (see
+    // session068 examples above).
+    s.push(parseEntry("<< → a b `a^2 + b^2` >>")[0]);
+    lookup('EVAL').fn(s);
+    assert(s.depth === 1,
+      'session116: → with Symbolic body leaves a single result');
+    const top = s.peek();
+    const val = top.type === 'real' ? top.value.toNumber()
+              : top.type === 'integer' ? Number(top.value)
+              : null;
+    assert(val === 25,
+      `session116: → a b \`a^2+b^2\` with 3,4 folds to 25 (got ${val})`);
+    assert(localFramesDepth() === 0,
+      'session116: → frame torn down after Symbolic body completes');
+  } finally {
+    setApproxMode(prevApprox);
+  }
+}
+
+/* ================================================================
+   Session 121 — PROMPT op + HALT lift through IFT/IFTE body.
+
+   Three pieces:
+     1. PROMPT (HP50 AUR p.2-160): pop level 1 as the prompt banner,
+        then halt the program.  CONT/SST/KILL all consume the banner.
+     2. HALT/PROMPT inside an IFT action that is *evaluated through a
+        Program body* (i.e. the IFT keyword is reached by evalRange's
+        intercept) now lifts cleanly.  Reaching IFT via Name dispatch
+        ('IFT' EVAL, Tagged-wrapped Name) still rejects with the
+        session-111 "cannot suspend inside IFT action" label.
+     3. Same story for IFTE — both branches.
+   ================================================================ */
+
+// Side-load the prompt accessors without rewriting the top-of-file
+// state.js import block (which has every export the rest of the file
+// uses).  Async import keeps node's ESM linker happy at top level.
+const { getPromptMessage, clearPromptMessage }
+  = await import('../www/src/rpl/state.js');
+
+/* ---- PROMPT pops level 1, halts, and exposes the banner ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([ Str('Enter X:'), Name('PROMPT'), Integer(99n) ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session121: PROMPT halts the running program');
+  assert(haltedDepth() === 1,
+    'session121: PROMPT populates exactly one halted slot');
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'string' && msg.value === 'Enter X:',
+    'session121: PROMPT stores the popped string as the active banner');
+  assert(s.depth === 0,
+    'session121: PROMPT pop happens before halt — operand consumed');
+  // CONT consumes the banner and resumes past PROMPT, pushing 99.
+  lookup('CONT').fn(s);
+  assert(getPromptMessage() === null,
+    'session121: CONT clears the prompt banner on resume');
+  assert(s.depth === 1 && s.peek().value === 99n,
+    'session121: CONT after PROMPT runs the post-PROMPT token (99)');
+  assert(getHalted() === null,
+    'session121: CONT clears the halted slot once the program completes');
+}
+
+/* ---- PROMPT message can be any type, not just String ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([ Integer(42n), Name('PROMPT') ]));
+  lookup('EVAL').fn(s);
+  const msg = getPromptMessage();
+  assert(msg && msg.type === 'integer' && msg.value === 42n,
+    'session121: PROMPT stores any type as the banner — Integer here');
+  lookup('KILL').fn(s);
+  assert(getPromptMessage() === null,
+    'session121: KILL clears the prompt banner alongside the halt slot');
+}
+
+/* ---- PROMPT with empty stack throws Too few arguments ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([ Name('PROMPT') ]));
+  assertThrows(() => lookup('EVAL').fn(s),
+    /PROMPT: Too few arguments/,
+    'session121: PROMPT on empty stack rejects with Too few arguments');
+  assert(getHalted() === null && getPromptMessage() === null,
+    'session121: failed PROMPT leaves no halt and no banner');
+  assert(localFramesDepth() === 0,
+    'session121: failed PROMPT leaves no leaked local frames');
+}
+
+/* ---- PROMPT outside a program (Name dispatch) throws ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Str('hi'));
+  // Direct Name dispatch — reaches the registered fallback handler,
+  // not the body intercept.  Same shape as session 073's bare-HALT test.
+  assertThrows(() => lookup('PROMPT').fn(s),
+    /PROMPT: not inside a running program/,
+    'session121: bare PROMPT (Name dispatch) reports outside-program error');
+  assert(s.depth === 1,
+    'session121: bare PROMPT does not consume the operand on the throw');
+}
+
+/* ---- PROMPT inside a → frame: banner shows, frame survives across
+        suspension, and CONT cleans it up on completion ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Real(7));
+  s.push(parseEntry('<< → a << "msg" PROMPT a >> >>')[0]);
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session121: PROMPT inside → body halts the program');
+  assert(localFramesDepth() === 1,
+    'session121: → frame survives the PROMPT-induced suspension');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().type === 'real' && s.peek().value.eq(7),
+    'session121: CONT after PROMPT-in-→ resumes and pushes a (=7)');
+  assert(localFramesDepth() === 0,
+    'session121: → frame torn down after PROMPT-in-→ resumes to completion');
+  assert(getPromptMessage() === null,
+    'session121: prompt banner cleared after CONT completes the program');
+}
+
+/* ---- PROMPT inside an IF true branch ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([
+    Name('IF'), Real(1), Name('THEN'),
+      Str('p'), Name('PROMPT'), Integer(11n),
+    Name('END'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null && getPromptMessage().value === 'p',
+    'session121: PROMPT inside IF/THEN halts with the banner set');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().value === 11n,
+    'session121: CONT after PROMPT-in-IF resumes the THEN clause to completion');
+}
+
+/* ================================================================
+   HALT lift through IFT body (evalRange intercept path).
+   ================================================================ */
+
+/* ---- HALT inside IFT action lifts and CONT resumes ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 « HALT » IFT 99 »
+  s.push(Program([
+    Real(1),
+    Program([ Name('HALT') ]),
+    Name('IFT'),
+    Integer(99n),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session121: HALT inside IFT body suspends program (lift path)');
+  assert(haltedDepth() === 1,
+    'session121: HALT-in-IFT-body populates exactly one halted slot');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().value === 99n,
+    'session121: CONT after HALT-in-IFT resumes and pushes 99');
+  assert(getHalted() === null && localFramesDepth() === 0,
+    'session121: HALT-in-IFT cleanup — no leftover halt or local frames');
+}
+
+/* ---- PROMPT inside IFT action lifts and CONT resumes ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  // « 1 « "ift!" PROMPT 7 » IFT »  — PROMPT inside IFT action
+  s.push(Program([
+    Real(1),
+    Program([ Str('ift!'), Name('PROMPT'), Integer(7n) ]),
+    Name('IFT'),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session121: PROMPT inside IFT body suspends');
+  assert(getPromptMessage().value === 'ift!',
+    'session121: PROMPT-in-IFT-body sets the banner');
+  lookup('CONT').fn(s);
+  assert(s.depth === 1 && s.peek().value === 7n,
+    'session121: CONT after PROMPT-in-IFT-body finishes the action (7)');
+}
+
+/* ---- IFT body false branch: HALT lift logic must not trigger when
+        test is false (no action runs at all) ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([
+    Real(0),                              // test = false
+    Program([ Name('HALT') ]),            // action — must not run
+    Name('IFT'),
+    Integer(13n),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(s.depth === 1 && s.peek().value === 13n,
+    'session121: IFT-body with false test skips action entirely');
+  assert(getHalted() === null,
+    'session121: false-branch IFT body does not suspend');
+}
+
+/* ---- Sync fallback (Name dispatch) still rejects HALT in IFT ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Real(1));
+  s.push(Program([ Name('HALT') ]));
+  // 'IFT' reached via direct Name lookup → registered fallback handler
+  assertThrows(() => lookup('IFT').fn(s),
+    /HALT: cannot suspend inside IFT action/,
+    'session121: sync-fallback IFT still rejects HALT with session-111 label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session121: sync-fallback IFT rejection cleans up halts and frames');
+}
+
+/* ================================================================
+   HALT lift through IFTE body — both branches.
+   ================================================================ */
+
+/* ---- HALT inside IFTE true-branch action lifts and CONT resumes ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 1 « HALT 1 » « 2 » IFTE 99 »
+  s.push(Program([
+    Real(1),
+    Program([ Name('HALT'), Integer(1n) ]),
+    Program([ Integer(2n) ]),
+    Name('IFTE'),
+    Integer(99n),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session121: HALT inside IFTE true-branch suspends');
+  lookup('CONT').fn(s);
+  // After CONT: integer 1 (post-HALT in true branch) then 99 (post-IFTE)
+  assert(s.depth === 2 && s.peek().value === 99n,
+    'session121: CONT after HALT-in-IFTE-true resumes branch + post-IFTE token');
+  assert(s.peek(2).value === 1n,
+    'session121: HALT-in-IFTE-true: branch body completes after CONT (1)');
+}
+
+/* ---- HALT inside IFTE false-branch action lifts and CONT resumes ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // « 0 « 1 » « HALT 2 » IFTE 99 »
+  s.push(Program([
+    Real(0),
+    Program([ Integer(1n) ]),
+    Program([ Name('HALT'), Integer(2n) ]),
+    Name('IFTE'),
+    Integer(99n),
+  ]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session121: HALT inside IFTE false-branch suspends');
+  lookup('CONT').fn(s);
+  assert(s.depth === 2 && s.peek().value === 99n,
+    'session121: CONT after HALT-in-IFTE-false resumes and pushes 99');
+  assert(s.peek(2).value === 2n,
+    'session121: HALT-in-IFTE-false: branch body finishes after CONT (2)');
+}
+
+/* ---- Sync fallback IFTE still rejects HALT in either branch ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Real(1));
+  s.push(Program([ Name('HALT') ]));   // t-action
+  s.push(Program([ Integer(0n) ]));    // f-action
+  assertThrows(() => lookup('IFTE').fn(s),
+    /HALT: cannot suspend inside IFTE action/,
+    'session121: sync-fallback IFTE still rejects HALT with session-111 label');
+  assert(haltedDepth() === 0 && localFramesDepth() === 0,
+    'session121: sync-fallback IFTE rejection cleans up halts and frames');
+}
+
+/* ---- KILL of a HALT-inside-IFT body cleans up local frames ---- */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  // 5 → a « 1 « a HALT a » IFT »  — HALT inside IFT action inside →
+  s.push(Real(5));
+  s.push(parseEntry(
+    '<< → a << 1 << a HALT a >> IFT >> >>')[0]);
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session121: HALT-in-IFT-in-→ body suspends through both intercepts');
+  assert(localFramesDepth() === 1,
+    'session121: → frame survives across HALT-in-IFT suspension');
+  // KILL terminates the suspension AND closes the generator, which
+  // must run any finally blocks in evalRange / runArrow — including
+  // the _popLocalFrame() that owns the → frame.
+  lookup('KILL').fn(s);
+  assert(getHalted() === null,
+    'session121: KILL clears the halt slot');
+  assert(localFramesDepth() === 0,
+    'session121: KILL also closes the generator and tears down → frame');
+}
+
+/* ---- resetHome clears the prompt banner ---- */
+{
+  resetHome(); clearAllHalted(); clearPromptMessage();
+  const s = new Stack();
+  s.push(Program([ Str('persist?'), Name('PROMPT') ]));
+  lookup('EVAL').fn(s);
+  assert(getPromptMessage() !== null,
+    'session121: prompt banner set before resetHome');
+  resetHome();
+  assert(getPromptMessage() === null,
+    'session121: resetHome clears the active prompt banner');
 }

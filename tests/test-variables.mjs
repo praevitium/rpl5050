@@ -18,7 +18,7 @@ import {
   setApproxMode,
 } from '../www/src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Variables — STO / RCL / PURGE / VARS + directory nav (CRDIR / UPDIR / HOME /
    PATH) + subdir protection + variable/directory state UNDO. */
@@ -81,9 +81,7 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(1));
   s.push(Real(2));                    // level 1 is a number, not a name
-  let threw = false;
-  try { lookup('STO').fn(s); } catch (e) { threw = true; }
-  assert(threw, 'STO rejects non-name on level 1');
+  assertThrows(() => lookup('STO').fn(s), null, 'STO rejects non-name on level 1');
 }
 
 // RCL pushes the stored value
@@ -102,9 +100,7 @@ import { assert } from './helpers.mjs';
   resetHome();
   const s = new Stack();
   s.push(Name('NOPE'));
-  let threw = false;
-  try { lookup('RCL').fn(s); } catch (e) { threw = true; }
-  assert(threw, 'RCL on undefined name throws');
+  assertThrows(() => lookup('RCL').fn(s), null, 'RCL on undefined name throws');
 }
 
 // STO with a list of names stores the same value in each (HP50 AUR).
@@ -142,9 +138,7 @@ import { assert } from './helpers.mjs';
   varStore('P', Real(10));
   const s = new Stack();
   s.push(RList([Name('P'), Name('MISSING')]));
-  let threw = false;
-  try { lookup('RCL').fn(s); } catch (e) { threw = true; }
-  assert(threw, 'RCL with missing name in list throws');
+  assertThrows(() => lookup('RCL').fn(s), null, 'RCL with missing name in list throws');
   assert(s.depth === 1 && s.peek().value.eq(10),
     'earlier RCL push survived the throw');
 }
@@ -160,9 +154,7 @@ import { assert } from './helpers.mjs';
   assert(varRecall('TMP') === undefined, 'PURGE removed TMP');
   // PURGE of a missing name errors
   s.push(Name('ALSO_MISSING'));
-  let threw = false;
-  try { lookup('PURGE').fn(s); } catch (e) { threw = true; }
-  assert(threw, 'PURGE of missing name throws');
+  assertThrows(() => lookup('PURGE').fn(s), null, 'PURGE of missing name throws');
 }
 
 // PURGE of a list purges each name in order (HP50 AUR §2.8), matching
@@ -191,9 +183,7 @@ import { assert } from './helpers.mjs';
   // list is { P MISSING Q } — P purges, MISSING throws, Q stays bound
   const s = new Stack();
   s.push(RList([Name('P'), Name('MISSING'), Name('Q')]));
-  let threw = false;
-  try { lookup('PURGE').fn(s); } catch (e) { threw = true; }
-  assert(threw, 'PURGE with missing name in list throws');
+  assertThrows(() => lookup('PURGE').fn(s), null, 'PURGE with missing name in list throws');
   assert(varRecall('P') === undefined, 'earlier P was purged before the throw');
   assert(varRecall('Q') !== undefined, 'later Q remains bound after the throw');
 }
@@ -304,13 +294,9 @@ import { assert } from './helpers.mjs';
 {
   resetHome();
   varStore('DUP', Real(1));
-  let threw = false;
-  try { makeSubdir('DUP'); } catch { threw = true; }
-  assert(threw, 'makeSubdir throws on name collision with existing var');
+  assertThrows(() => makeSubdir('DUP'), null, 'makeSubdir throws on name collision with existing var');
   makeSubdir('NEW');
-  let threw2 = false;
-  try { makeSubdir('NEW'); } catch { threw2 = true; }
-  assert(threw2, 'makeSubdir throws on name collision with existing subdir');
+  assertThrows(() => makeSubdir('NEW'), null, 'makeSubdir throws on name collision with existing subdir');
   resetHome();
 }
 
@@ -361,9 +347,7 @@ import { assert } from './helpers.mjs';
   varStore('CONF', Real(1));
   const s = new Stack();
   s.push(Name('CONF', { quoted: true }));
-  let threw = false, msg = '';
-  try { lookup('CRDIR').fn(s); } catch (e) { threw = true; msg = e.message; }
-  assert(threw && msg.includes('Name conflict'),
+  assertThrows(() => lookup('CRDIR').fn(s), /Name conflict/,
          'CRDIR collision throws with informative message');
   resetHome();
 }
@@ -466,9 +450,8 @@ import { assert } from './helpers.mjs';
   // current dir — PURGE should refuse to reach up.
   const s = new Stack();
   s.push(Name('OUTER', { quoted: true }));
-  let opThrew = false;
-  try { lookup('PURGE').fn(s); } catch (e) { opThrew = true; }
-  assert(opThrew, 'PURGE in AFOO does not remove HOME.OUTER — errors');
+  assertThrows(() => lookup('PURGE').fn(s), null,
+               'PURGE in AFOO does not remove HOME.OUTER — errors');
   assert(varRecall('OUTER')?.value.eq(1),
          'HOME.OUTER survived the failed PURGE from AFOO');
   resetHome();
@@ -653,10 +636,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(42));
   s.push(Name('AFOO', { quoted: true }));
-  let threw = null;
-  try { lookup('STO').fn(s); } catch (e) { threw = e; }
-  assert(threw !== null, 'STO over subdir: throws');
-  assert(threw && /Directory not allowed/.test(threw.message),
+  const stoErr = assertThrows(() => lookup('STO').fn(s), null, 'STO over subdir: throws');
+  assert(stoErr && /Directory not allowed/.test(stoErr.message),
          'STO over subdir: message is "Directory not allowed"');
   // And the Directory is preserved.
   const still = varRecall('AFOO');
@@ -688,10 +669,8 @@ import { assert } from './helpers.mjs';
   goHome();
   const s = new Stack();
   s.push(Name('AFOO', { quoted: true }));
-  let threw = null;
-  try { lookup('PURGE').fn(s); } catch (e) { threw = e; }
-  assert(threw !== null, 'PURGE non-empty subdir: throws');
-  assert(threw && /Directory not empty/.test(threw.message),
+  const purgeErr = assertThrows(() => lookup('PURGE').fn(s), null, 'PURGE non-empty subdir: throws');
+  assert(purgeErr && /Directory not empty/.test(purgeErr.message),
          'PURGE non-empty subdir: message is "Directory not empty"');
   assert(isDirectory(varRecall('AFOO')),
          'PURGE non-empty subdir: subdir not removed');
@@ -840,9 +819,8 @@ import { assert } from './helpers.mjs';
     assert(hasVarUndo(), 'slot present after save');
     clearVarUndo();
     assert(!hasVarUndo(), 'slot cleared by clearVarUndo');
-    let threw = false;
-    try { undoVarState(); } catch (e) { threw = /no undo/i.test(e.message); }
-    assert(threw, 'undoVarState with no slot throws No undo available');
+    assertThrows(() => undoVarState(), /no undo/i,
+                 'undoVarState with no slot throws No undo available');
   }
 
   // ---- PURGE is undoable ----
@@ -966,9 +944,8 @@ import { assert } from './helpers.mjs';
     resetHome();
     const s = new Stack();
     const e = new Entry(s);
-    let threw = false;
-    try { e.performUndo(); } catch (err) { threw = /no undo/i.test(err.message); }
-    assert(threw, 'performUndo with no shadow throws No undo available');
+    assertThrows(() => e.performUndo(), /no undo/i,
+                 'performUndo with no shadow throws No undo available');
   }
 
   // ---- End-to-end: Entry.enter is the snap point for STO+UNDO ----
@@ -1681,9 +1658,8 @@ const {
   varStore('Q', Real(1));
   const s = new Stack();
   s.push(Real(42));
-  let threw = false;
-  try { lookup('ORDER').fn(s); } catch (_e) { threw = true; }
-  assert(threw, 'session047: ORDER on non-List throws Bad argument type');
+  assertThrows(() => lookup('ORDER').fn(s), null,
+               'session047: ORDER on non-List throws Bad argument type');
 }
 
 /* ---- ORDER on an empty list is a no-op ---- */
@@ -1822,18 +1798,16 @@ const {
   resetHome();
   const s = new Stack();
   s.push(Name('MISSING'));
-  let threw = false;
-  try { lookup('VTYPE').fn(s); } catch (e) { threw = /Undefined name/.test(e.message); }
-  assert(threw, 'session053: VTYPE undefined name throws');
+  assertThrows(() => lookup('VTYPE').fn(s), /Undefined name/,
+               'session053: VTYPE undefined name throws');
 }
 
 /* ---- VTYPE on non-Name throws ---- */
 {
   const s = new Stack();
   s.push(Integer(1n));
-  let threw = false;
-  try { lookup('VTYPE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: VTYPE on non-Name throws');
+  assertThrows(() => lookup('VTYPE').fn(s), /Bad argument/,
+               'session053: VTYPE on non-Name throws');
 }
 
 /* =================================================================
@@ -1892,9 +1866,8 @@ const {
   resetHome();
   const s = new Stack();
   s.push(RList([Name('A'), Integer(1n), Name('B')]));
-  let threw = false;
-  try { lookup('MERGE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session054: MERGE odd-length throws');
+  assertThrows(() => lookup('MERGE').fn(s), /Bad argument/,
+               'session054: MERGE odd-length throws');
 }
 
 /* ---- MERGE non-Name key throws ---- */
@@ -1902,9 +1875,8 @@ const {
   resetHome();
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(2n)]));
-  let threw = false;
-  try { lookup('MERGE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session054: MERGE numeric key throws');
+  assertThrows(() => lookup('MERGE').fn(s), /Bad argument/,
+               'session054: MERGE numeric key throws');
 }
 
 /* ---- MERGE Directory value copies entries ---- */
@@ -1925,7 +1897,6 @@ const {
   resetHome();
   const s = new Stack();
   s.push(Integer(5n));
-  let threw = false;
-  try { lookup('MERGE').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session054: MERGE Integer arg throws');
+  assertThrows(() => lookup('MERGE').fn(s), /Bad argument/,
+               'session054: MERGE Integer arg throws');
 }

@@ -18,7 +18,7 @@ import {
   setApproxMode,
 } from '../www/src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* EVAL, program execution, quoted-name fidelity, formatStackTop. */
 
@@ -146,9 +146,7 @@ import { assert } from './helpers.mjs';
   // Program: << 1 + 1 0 / >>
   //   pushes 1, runs +, pushes 1, pushes 0, runs /  → division by zero
   s.push(Program([Integer(1), Name('+'), Integer(1), Integer(0), Name('/')]));
-  let threw = false;
-  try { lookup('EVAL').fn(s); } catch (e) { threw = true; }
-  assert(threw, 'program with 1/0 throws');
+  assertThrows(() => lookup('EVAL').fn(s), null, 'program with 1/0 throws');
   // After error, stack should be exactly as it was before EVAL pop:
   //   level 2: Real(100), level 1: the Program  — wait, no. We snapshotted
   //   BEFORE the pop, so the Program is still there along with Real(100)
@@ -179,10 +177,7 @@ import { assert } from './helpers.mjs';
   varStore('LOOP', Program([Name('LOOP')]));
   const s = new Stack();
   s.push(Name('LOOP'));
-  let threw = false;
-  let msg = '';
-  try { lookup('EVAL').fn(s); } catch (e) { threw = true; msg = e.message; }
-  assert(threw && /recursion/i.test(msg),
+  assertThrows(() => lookup('EVAL').fn(s), /recursion/i,
          'self-recursive program throws "recursion too deep"');
   // Atomicity also covers this case — LOOP Name should still be on the stack
   assert(s.depth === 1 && isName(s.peek()) && s.peek().id === 'LOOP',

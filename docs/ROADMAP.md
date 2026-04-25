@@ -43,7 +43,7 @@ The substrate the roadmap builds on:
 ### 1. Close the last command-support gap cluster
 
 Roughly two-dozen HP50 AUR ops are still unregistered in
-`src/rpl/ops.js`.  The gap is small and lopsided: the easy scalar
+`www/src/rpl/ops.js`.  The gap is small and lopsided: the easy scalar
 clusters are in, what's left is heavier or touches state (MODULO,
 plotting).  Priority order:
 

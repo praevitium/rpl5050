@@ -15,16 +15,16 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 088)
+## Current implementation status (as of session 121)
 
 
 ### Program value — parser & round-trip
 - Parser: `<<` / `>>` (ASCII) and `«` / `»` (Unicode) both tokenize to
   the same `delim:<<`/`>>` pair; body is a flat token list. See
-  `src/rpl/parser.js` `parseProgram`.
+  `www/src/rpl/parser.js` `parseProgram`.
 - Persistence: Program round-trips through `persist.js` — verified green
   by `tests/test-persist.mjs`.
-- Formatter: programs render `« tok tok … »` via `src/rpl/formatter.js`.
+- Formatter: programs render `« tok tok … »` via `www/src/rpl/formatter.js`.
 - DECOMP / →STR on a Program: **session 069: new**. `DECOMP` op pops a
   Program and pushes the formatter's source-form string. Tests in
   `tests/test-reflection.mjs`.
@@ -39,6 +39,13 @@ open, and the next-session queue.
 - Recursion depth capped at `MAX_EVAL_DEPTH = 256`.
 - Loop-iteration ceiling: `MAX_LOOP_ITERATIONS = 1_000_000`.
 - `IFT` / `IFTE` — stack-based conditionals, implemented, tested.
+  **Session 121:** HALT/PROMPT inside the action(s) now lifts cleanly when
+  the IFT/IFTE keyword is reached through `evalRange`'s body intercept
+  (`runIft` / `runIfte` are generator helpers; the action is EVAL'd via
+  `_evalValueGen`).  Reaching IFT/IFTE through Name dispatch
+  (`'IFT' EVAL`, Tagged-wrapped Name) still rejects through
+  `_driveGen` with the session-111 `cannot suspend inside <IFT|IFTE> action`
+  label.
 - Symbolic lift on most arithmetic ops via the `_isSymOperand` /
   `_toAst` pair — programs carrying bare `Name` tokens will auto-lift
   when the operand reaches a numeric op.
@@ -72,13 +79,26 @@ open, and the next-session queue.
   tool — prefer `→` for anything that looks lexical.
 
 ### Suspended-execution substrate
-- Status: **session 088: generator-based evalRange — structural HALT
-  fully lifted.** `HALT` / `CONT` / `KILL` / `RUN` now work at any
-  structural depth: inside `IF`, `FOR`, `WHILE`, `DO`, `IFERR`, `→`
-  and arbitrary nesting. The pilot restriction (depth-0 only) is gone.
-  Remaining limitation: HALT inside a *named sub-program called via a
-  variable* (i.e. via `_evalValueSync`) still rejects — that path is
-  synchronous and cannot yield. Direct EVAL of the program works.
+- Status: **session 106: HALT fully lifted, including sub-program
+  calls via Name lookup; SST↓ is now a real step-into op.**  HALT /
+  CONT / KILL / RUN / SST / SST↓ / DBUG now compose freely at any
+  structural depth AND across named-sub-program boundaries reached
+  via `evalToken` Name lookup.  Previous session-088 substrate already
+  covered structural control flow (`IF` / `FOR` / `WHILE` / `DO` /
+  `IFERR` / `→`); session 106 adds the evalToken path by splitting
+  `_evalValue` into two flavours: `_evalValueSync` (used by sync
+  callers that cannot yield — `IFT`, `IFTE`, `MAP`, etc., which still
+  reject HALT with the pilot-limit message via `_driveGen`) and
+  `_evalValueGen` (generator, used *only* from `evalToken`'s Name
+  branch).  The generator flavour does `yield* evalRange(...)` for
+  Program values so a nested HALT propagates cleanly through every
+  variable-lookup frame.  SST↓ now passes `into=true` into a new
+  `_stepOnce(s, into)` helper, which sets a `_stepInto` module flag;
+  `_evalValueGen`'s Program branch flips a separate `_insideSubProgram`
+  flag.  The per-token yield site uses `_shouldStepYield()` which
+  combines `_singleStepMode && (!_insideSubProgram || _stepInto)` — so
+  SST steps *over* a sub-program call (runs the whole body in one
+  step) while SST↓ descends *into* it (yields on every inner token).
 - Implementation: `evalRange` and all `run*` helpers are now JS
   generator functions (`function*`). `yield` at each HALT propagates
   through the `yield*` delegation chain to the EVAL/CONT handler, which
@@ -94,6 +114,14 @@ open, and the next-session queue.
     program`. `RPLHalt` class retained for back-compat but is no longer
     thrown during structural HALT — the generator yield mechanism
     replaces it.
+  - `PROMPT` — ✓ **session 121 new** (HP50 AUR p.2-160).  Pops level 1,
+    sets `state.promptMessage` to the popped value, then `yield`s — same
+    suspension channel as HALT, so CONT/SST/KILL all work without further
+    plumbing.  CONT and `_stepOnce` clear the banner up-front (resumption
+    consumes the prompt); KILL clears the banner alongside `clearHalted`;
+    `resetHome` clears it.  Bare PROMPT outside a running program raises
+    `PROMPT: not inside a running program`, matching HALT's
+    outside-program behavior.
   - `CONT` — ✓ **session 083 LIFO-aware, session 088 generator-based**.
     Uses `takeHalted()` (pops the top record without closing it) then
     drives `h.generator.next()`. If it yields again (another HALT),
@@ -105,15 +133,59 @@ open, and the next-session queue.
   - `RUN` — ✓ **session 083 new**. AUR p.2-177 resume op. Without DBUG
     active, behaves identically to `CONT`.
   - `ABORT` — ✓ green (session 067). Unwinds via `RPLAbort`.
-  - `SST` / `SST↓` — **not started.** The generator substrate is now
-    in place; SST just needs `yield` after every token (mode flag).
-  - `DBUG` — **not started.**
-- Remaining pilot limitation:
-  - HALT inside a named sub-program reached via variable lookup
-    (`evalToken` → `_evalValueSync`) still rejects. This is the
-    "sub-program call" case, not the structural control-flow case.
-    Lifting it requires `_evalValueSync` to become a generator or
-    the generator-return value to thread back through evalToken.
+  - `SST` / `SST↓` — ✓ **session 101: shipped; session 106: SST↓
+    differentiated as real step-into.**  Module-private
+    `_singleStepMode` flag flipped on/off by the SST handler; when
+    set, `evalRange`'s `_shouldStepYield()` check yields after every
+    token (in addition to the HALT-yield) so the generator suspends
+    between instructions.  Session 106 added `_stepInto` and
+    `_insideSubProgram` flags so SST runs a Name-reached sub-program
+    body in one step (the `_shouldStepYield()` check returns false
+    while inside a sub-program unless step-into is active) and SST↓
+    descends token-by-token into the sub-program.  Ops:
+    `SST` = `_stepOnce(s, false)`; `SST↓` = `_stepOnce(s, true)`.
+    `_stepOnce` saves/restores both `_singleStepMode` and `_stepInto`
+    in `finally` so KILL mid-step cannot leak either flag.  Generator
+    semantics preserve every structural-context frame (FOR counter,
+    IF branch, `→` local frame) for free across single-step
+    suspensions.  Errors: SST with no halted program →
+    `No halted program`.
+  - `DBUG` — ✓ **session 101: shipped.** Pops a Program from level
+    1, sets `_singleStepMode = true`, delegates to EVAL.  EVAL's
+    generator runs the first token then yields, suspending the
+    program on `haltedStack`; user drives subsequent steps with
+    SST.  Errors: DBUG on a non-Program → `Bad argument type`.
+    Empty program (`« »`) completes immediately with no halt.
+- Session 116 — EVAL handler drives `_evalValueGen` so HALT lifts
+  through Tagged wrappers and Name-on-stack EVALs.  The pre-116
+  Program-direct fast path is gone; EVAL routes *every* operand
+  through `_evalValueGen`, which recursively peels Tagged/Name
+  preserving an `isSubProgram` parameter (default `true`; the EVAL
+  entry passes `false` so the body remains the *outer* program from
+  SST/DBUG's point of view).  DBUG's argument-type guard was
+  widened to peel Tagged before the Program check so the same
+  set of EVAL-able values is now DBUG-able.  `runArrow`'s Symbolic
+  body call to `_evalValueSync` was wired with a caller label
+  (`'→ algebraic body'`) — defensive consistency with the sibling
+  sync-path call sites.
+- Remaining limitations (session 121):
+  - HALT inside a sync-path call (MAP / SEQ / DOLIST / DOSUBS / STREAM
+    bodies, plus `runArrow`'s Symbolic body) still rejects.  Session 111
+    refined the error text: the message is now
+    `HALT: cannot suspend inside <caller>` — where `<caller>` is
+    `MAP program`, `SEQ expression`, `DOLIST program`, `DOSUBS program`,
+    `STREAM program`, or the default `a sub-program call`.
+    **Session 121 lifted IFT and IFTE off this list** — both now have a
+    program-body intercept in `evalRange` that lifts HALT/PROMPT through
+    `runIft` / `runIfte` (generator helpers driving `_evalValueGen`).
+    The Name-dispatch fallback (`'IFT' EVAL`, Tagged-wrapped Name(IFT))
+    still goes through `_driveGen` with the session-111 caller labels, so
+    the rejection message is unchanged on that narrow path.
+    Low urgency for the rest — the workaround is `IF … THEN … END`
+    (structural, yields).  Session 111 threads the caller label through
+    `_evalValueSync` into `_driveGen`; internal recursion on
+    Name / Tagged wrappers forwards the original label so the
+    outermost originator's name survives the recursion.
   - No serialisation across `persist.js`; page refresh drops the halted
     stack (`clearAllHalted` fires on `resetHome`).
 
@@ -148,7 +220,379 @@ open, and the next-session queue.
 
 ---
 
-## Session 088 (this run) — what shipped
+## Session 121 (this run) — what shipped
+
+1. **`PROMPT` op shipped (HP50 AUR p.2-160).**  Three pieces:
+   `state.promptMessage` (a new state slot with setter / getter /
+   clearer in `www/src/rpl/state.js`); an intercept in `evalRange` that
+   pops level 1, calls `setPromptMessage`, and `yield`s on the same
+   suspension channel HALT uses; a registered `register('PROMPT', …)`
+   fallback that throws `PROMPT: not inside a running program` for the
+   bare-Name dispatch path (matches HALT's outside-program shape).
+   CONT and `_stepOnce` (the SST/SST↓ engine) clear the banner up-front
+   on resumption — a fresh PROMPT inside the resumed program will
+   `setPromptMessage` again, so the banner reflects the *current*
+   suspension's prompt.  KILL clears the banner alongside `clearHalted`.
+   `resetHome` clears it.  Pop-before-yield means the operand is
+   consumed atomically with the suspension; an empty stack throws
+   `PROMPT: Too few arguments` before any state mutation.
+
+2. **HALT/PROMPT lift through `IFT` body.**  New `runIft(s, depth)`
+   generator helper in `ops.js`: snap the stack, pop test+action, EVAL
+   the action through `_evalValueGen` (yieldable).  `evalRange`'s body
+   intercept calls `yield* runIft(...)` after the existing HALT branch,
+   so an `IFT` keyword *encountered while running a Program body*
+   suspends cleanly instead of rejecting through `_driveGen`.  The
+   `register('IFT', …)` body-handler stays as a sync fallback — it now
+   drives `runIft` through `_driveGen` with the session-111
+   `'IFT action'` caller label, so the rare Name-dispatch path
+   (`'IFT' EVAL`, Tagged-wrapped `Name('IFT')`) keeps the existing
+   reject-on-HALT behavior.  The outer snap/restore in the fallback
+   preserves operand-rollback on rejection — `_driveGen.return()` runs
+   only finally blocks, not catch, so the helper's own snap can't
+   restore here.
+
+3. **HALT/PROMPT lift through `IFTE` body.**  Same shape: new
+   `runIfte(s, depth)` helper (popN(3), branch on `isTruthy(test)`,
+   yield* the chosen action via `_evalValueGen`); intercept added in
+   `evalRange` immediately after IFT; sync fallback rewritten to drive
+   `runIfte` with the `'IFTE action'` caller label.  Both branches
+   covered with regression tests.
+
+4. **50 new session121-labelled regression assertions** in
+   `tests/test-control-flow.mjs`.  Coverage:
+
+   - 7 — `PROMPT` end-to-end: pop+halt cycle, banner type-flexible
+     (any RPL value, not just String), empty-stack rejection,
+     bare-Name `not inside a running program` rejection.
+   - 6 — `PROMPT` interactions with structural control flow:
+     inside `→` body (frame survives suspension; CONT tears down on
+     completion), inside IF/THEN.
+   - 4 — `HALT` inside IFT body — lifts, CONT resumes, no frame leak,
+     no halt residue.
+   - 3 — `PROMPT` inside IFT body — banner set, branch finishes after
+     CONT.
+   - 2 — IFT body false-test path: action skipped, no suspension.
+   - 2 — sync-fallback IFT still rejects with session-111 label.
+   - 4 — HALT inside IFTE true-branch and false-branch — both lift
+     and resume correctly.
+   - 2 — sync-fallback IFTE still rejects.
+   - 3 — KILL of HALT-inside-IFT-inside-`→` cleans up halt + frames
+     (closure of `runIft` propagates `gen.return()` through `runArrow`'s
+     finally so the `→` frame tears down).
+   - 1 — `resetHome` clears the prompt banner.
+
+Totals: **50 new session121-labelled assertions** (all in
+`tests/test-control-flow.mjs`).
+Test-control-flow at **452 passing** (prior baseline 402 — Δ+50,
+all from this lane).
+`test-all.mjs` at **4232 passing / 0 failing** (prior baseline 4182 —
+Δ+50; entirely this lane).
+`test-persist.mjs` at **34 passing / 0 failing** (unchanged).
+`sanity.mjs` at **22 passing / 5 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`www/src/rpl/ops.js`, `www/src/rpl/state.js`,
+`tests/test-control-flow.mjs`).
+
+User-reachable demo (PROMPT):
+
+```
+"Enter X" PROMPT
+   → display halts; banner reads "Enter X"; stack empty.
+   Press CONT (or "CONT" ENTER) → banner clears, program completes.
+```
+
+User-reachable demo (HALT lift through IFT body):
+
+```
+1 « HALT 99 » IFT 100
+   → display halts after the inner HALT; stack empty.
+   Press CONT → 99 then 100 push; final stack ⟦100, 99⟧.
+```
+
+User-reachable demo (HALT lift through IFTE body):
+
+```
+0 « 1 » « HALT 2 » IFTE 100
+   → false branch chosen; halts after HALT; stack empty.
+   Press CONT → 2 then 100 push; final stack ⟦100, 2⟧.
+```
+
+---
+
+## Session 116 — what shipped
+
+1. **EVAL handler now drives `_evalValueGen` (queue item: Tagged /
+   Name-on-stack lift, was uncredited site at session 111).**
+   Pre-116 the EVAL handler had a Program-direct fast path and any
+   non-Program operand fell through to `_evalValueSync`, which
+   rejected HALT via `_driveGen` with the
+   `HALT: cannot suspend inside a sub-program call` message.  That
+   meant a Tagged-wrapped Program (`Tagged('label', Program(…))`)
+   or a Name-on-stack pointing at a Program rejected HALT, even
+   though both are semantically transparent program references.
+   Session 116 routes the entry value through `_evalValueGen`
+   unconditionally; the generator recursively peels Tagged / Name
+   layers and `yield*`s the Program body, so HALT propagates up
+   through whatever wrapper chain the user wrote.
+
+   The change is gated by a new `isSubProgram` parameter on
+   `_evalValueGen` (default `true`; the EVAL entry passes `false`).
+   The flag controls whether the Program branch flips
+   `_insideSubProgram` for the duration of the body — sub-program
+   callers (evalToken Name lookup, recursive unwraps within token
+   streams) keep the default so SST step-over works correctly; the
+   top-level EVAL passes `false` so the body yields per token at
+   the outer level (matches pre-116 Program-direct semantics) and
+   SST↓ step-into still descends into Name-lookup-reached
+   sub-programs.
+
+2. **DBUG accepts Tagged-wrapped Programs.**  Pre-116 the type guard
+   was a strict `isProgram(s.peek())` check, so a Tagged-wrapped
+   Program failed with `Bad argument type` even though its EVAL
+   sibling worked.  Session 116 walks the Tagged chain before the
+   Program check (read-through; no pop) so the same set of
+   EVAL-able values is now DBUG-able.  The actual peel still
+   happens inside EVAL via `_evalValueGen`'s Tagged recursion.
+
+3. **`runArrow` Symbolic body caller label.**  Session 111
+   classified this site as **uncredited** — the
+   `_evalValueSync(s, body, depth+1)` call passed no `caller`
+   string, so a HALT inside (impossibly — Symbolic AST cannot carry
+   a Program) would have surfaced with the default `a sub-program
+   call` text.  Session 116 wires the label `'→ algebraic body'` for
+   defensive consistency with the IFT / IFTE / MAP / SEQ / DOLIST /
+   DOSUBS / STREAM sites; a future Symbolic-AST refactor that swaps
+   in a Program-bearing node would otherwise silently lose the
+   label.
+
+4. **34 new session116-labelled regression assertions** in
+   `tests/test-control-flow.mjs` (and 2 session111 rejection
+   assertions superseded by the new lift behavior).  Coverage:
+
+   - 5 — Tagged-wrapped Program EVAL lifts HALT, CONT resumes,
+     no frame leak (was 2 rejection assertions pre-116).
+   - 5 — double-Tagged Program EVAL lifts through both wrappers.
+   - 5 — Name-on-stack EVAL of a Program with HALT lifts.
+   - 4 — Name → Tagged → Program EVAL composition.
+   - 6 — DBUG on a Tagged-wrapped Program; SST advances per outer
+     token; step flags clean.  Load-bearing SST regression for
+     `isSubProgram=false` at the EVAL entry.
+   - 8 — SST↓ step-into through a Tagged outer + a Name-resolved
+     sub-program: `isSubProgram=false` at the entry does NOT
+     propagate into Name-resolved sub-programs at evalToken time.
+   - 3 — `runArrow` Symbolic body smoke test
+     (`→ a b \`a^2 + b^2\`` with `3, 4` folds to `25`).
+
+Totals: **34 new session116-labelled assertions** in this lane (all
+in `tests/test-control-flow.mjs`); 2 session111 rejection
+assertions superseded by lift-pin replacements.
+Test-control-flow at **402 passing** (prior baseline 368 — Δ+34,
+all from this lane).
+`test-all.mjs` at **4089 passing / 0 failing** (prior baseline
+4053 — Δ+36; this lane contributed +34, and the data-types lane
+contributed +2 in `test-types.mjs` between session 111's release
+and this run's entry).
+`test-persist.mjs` at **34 passing / 0 failing** (unchanged).
+`sanity.mjs` at **22 passing / 6 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`www/src/rpl/ops.js`, `tests/test-control-flow.mjs`).
+
+---
+
+## Session 111 — what shipped
+
+1. **R-003 closed — `_driveGen` docstring rewritten (review finding
+   from session 107).**  Pre-session-106 the docstring's
+   parenthetical listed "variable lookup" as a canonical caller of
+   `_evalValueSync → _driveGen`; session 106 moved variable lookup
+   to `_evalValueGen`, but the lead paragraph of the docstring was
+   never updated.  The rewrite now enumerates the actual sync-path
+   callers (IFT / IFTE / MAP / SEQ / DOLIST / DOSUBS / STREAM /
+   → algebraic body, plus the Name/Tagged recursion those ops
+   trigger) and explicitly calls out that the `evalToken` →
+   `_evalValueGen` path does **not** come through `_driveGen`.
+   Pure-comment edit; `node --check` is the safety net.
+
+2. **Caller-aware HALT-rejection message.**  Pre-session-111
+   `_driveGen` threw `HALT: cannot suspend inside a sub-program
+   call (use EVAL directly)` with no caller context.  The
+   parenthetical "use EVAL directly" was misleading — users who
+   hit this error typed `EVAL` on a program whose sub-op was
+   IFT / IFTE / MAP / etc.  The fix: `_driveGen` accepts an
+   optional `caller` string, baked into the error as
+   `HALT: cannot suspend inside <caller>`.  `_evalValueSync`
+   gained a 4th parameter to thread the label through from each
+   op's call site; internal recursion on Name / Tagged wrappers
+   forwards the original label.  Labels shipped:
+   `IFT action`, `IFTE action`, `MAP program`,
+   `SEQ expression`, `DOLIST program`, `DOSUBS program`,
+   `STREAM program`.  Uncredited call sites (Tagged-wrapped
+   Program EVAL via the EVAL dispatcher's own fallback, and
+   runArrow's Symbolic body) pass no label — they fall through
+   to the historical default (sans the stale "use EVAL
+   directly" suggestion).  The existing session-106
+   regression test at `:3092` uses `/HALT: cannot suspend/`
+   as its regex, so the rename is backward-compatible with
+   the prior pin.
+
+3. **Regression tests — 23 new session111-labelled assertions
+   in `tests/test-control-flow.mjs`.**  Per-op caller-label
+   pins (IFT / IFTE true-branch / IFTE false-branch / MAP /
+   SEQ / DOLIST / DOSUBS / STREAM) = 8 error-message assertions
+   + 8 paired localFramesDepth-zero / haltedDepth-zero cleanup
+   assertions.  Plus a Tagged-wrapped-Program EVAL pin for the
+   uncredited default-message path (2 assertions), a Name-
+   recursion pin confirming the caller label survives the
+   `_evalValueSync` Name branch (2 assertions), and a
+   cross-check that the lifted `_evalValueGen` path is
+   unaffected — a `Name('PHALT') EVAL` inside an outer program
+   still suspends cleanly rather than getting re-rejected by a
+   mis-wired caller-label path (3 assertions).
+
+Totals: **23 new session111-labelled assertions** in this lane
+(all in `tests/test-control-flow.mjs`).  Test-control-flow at
+**368 passing** (prior baseline 345 — Δ+23, all from this lane).
+`test-all.mjs` at **3980 passing / 0 failing** (prior baseline
+3957, Δ+23 — all from this lane, sibling lanes quiescent).
+`test-persist.mjs` at **34 passing / 0 failing** (unchanged).
+`sanity.mjs` at **22 passing / 4 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`www/src/rpl/ops.js`, `tests/test-control-flow.mjs`).
+
+---
+
+## Session 106 — what shipped
+
+1. **HALT lifts through `evalToken` Name lookup (queue item 2)** —
+   Previously a HALT inside a program that was invoked via variable
+   lookup (`'MYPROG' EVAL` or just bare `MYPROG` when `MYPROG` is
+   `STO`'d as a Program) threw
+   `HALT: cannot suspend inside a sub-program call`.  That path
+   went `evalToken` → `_evalValueSync` → `_driveGen(evalRange(…))`,
+   and `_driveGen` is a sync driver that rejects a `yield`.  This
+   session split `_evalValue` into two flavours: `_evalValueSync`
+   (used by the narrow set of callers that still cannot yield — IFT,
+   IFTE, MAP bodies, Symbolic constant-rpl path) and a new
+   `_evalValueGen` generator that `yield*`s an `evalRange` on
+   Program values.  `evalToken` itself is now a `function*` and
+   the one call site inside `evalRange` uses `yield* evalToken(...)`.
+   Result: HALT inside a named sub-program (one level deep or deeply
+   chained A→B→C) suspends cleanly, CONT resumes, KILL closes
+   with `finally` blocks running for every nested `runArrow`
+   local frame.  The session-101 R-002 regression guard was
+   superseded: its assertions now pin the *successful suspend*
+   case rather than the throw case.
+
+2. **SST↓ is a real step-into op (previously alias of SST)** —
+   Session 101 shipped SST↓ as a one-line alias of SST because
+   distinguishing them required the evalToken migration.  That
+   migration landed above, so SST↓ now has its own semantics.
+   Module-private `_stepInto` and `_insideSubProgram` flags were
+   added alongside `_singleStepMode`; `_stepOnce(s, into)` takes an
+   `into` parameter, `SST` passes `false`, `SST↓` passes `true`.
+   The per-token yield site uses a new `_shouldStepYield()`
+   predicate: `_singleStepMode && (!_insideSubProgram || _stepInto)`.
+   Concretely: with a halted program `« HALT MYP 1 + »` where
+   `MYP = « 10 20 * »`, SST runs MYP's entire body in one step;
+   SST↓ yields after each of `10`, `20`, `*`.  `_stepOnce`
+   save/restores both flags in `finally`, and the `_evalValueGen`
+   Program branch save/restores `_insideSubProgram` in `finally`,
+   so KILL mid-step cannot leak either flag.
+
+3. **P-001 doc drift — fix 9 stale `src/...` paths in docs/RPL.md**
+   (review-lane finding from session 103).  `src/rpl/parser.js` →
+   `www/src/rpl/parser.js` and similar at 9 sites (body of the
+   status block and the Reference hooks section at the bottom of the
+   file).  Sibling lanes had already fixed their portions of P-001;
+   this closes the RPL.md share.  See `docs/REVIEW.md` for the full
+   P-001 scoreboard.
+
+Totals: **44 new session106-labelled assertions** in this lane
+(all in `tests/test-control-flow.mjs`: 6 HALT-in-Name-sub-program
+core + 4 deep chain / two-level + 3 IFT/IFTE pilot-limit retention
++ 6 SST step-over on sub-programs + 8 SST↓ step-into core + 5
+step-into reset invariants + 6 KILL-during-step-into + 3 R-002
+supersede + 3 empty/edge cases).  Test-control-flow at **345
+passing** (prior baseline 294 — Δ+51 includes incidental probes).
+`test-all.mjs` at **3886 passing / 0 failing**.
+`test-persist.mjs` at **34 passing / 0 failing** (unchanged).
+`sanity.mjs` at **22 passing / 0 failing in 6 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`www/src/rpl/ops.js`, `tests/test-control-flow.mjs`).
+
+---
+
+## Session 101 — what shipped
+
+1. **SST / SST↓ — single-step debugger** — Queue item 1 from the
+   session-088 close-out.  Built on the generator substrate: a
+   module-private `_singleStepMode` flag in `ops.js`; `evalRange`
+   yields after every token (and at the tail of `runControl` /
+   `runArrow`) when the flag is set.  New `_stepOnce(s)` helper
+   replicates CONT's `takeHalted` / `gen.next` / re-`setHalted`
+   pattern but flips the flag on around the `gen.next()` call so
+   the generator suspends after exactly one token.  Flag is reset
+   in the `_stepOnce` `finally` block, so subsequent CONT/RUN/EVAL
+   calls run at full speed.  Two ops registered: `SST` and `SST↓`
+   (alias — same body for now; full step-into requires the
+   `evalToken` / `_evalValueSync` generator migration that's also
+   needed to lift the HALT-inside-named-sub-program pilot limit).
+   Public observer `singleStepMode()` exported for tests to pin
+   the cleanup invariant.  User-reachable demo: enter
+   `« 1 HALT 2 3 + »` ENTER, EVAL — program halts with [1] on
+   stack; press `SST` repeatedly to advance one token at a time
+   and watch the stack evolve.
+
+2. **DBUG — start a program in single-step mode** — Queue item 3
+   from the session-088 close-out (was blocked on SST).  Pops a
+   Program off level 1, sets `_singleStepMode = true`, delegates
+   to EVAL.  EVAL's generator runs the first token and then
+   yields (because the flag is on), suspending the program on
+   `haltedStack`; the flag is reset in `finally` so any
+   downstream CONT/RUN runs at full speed.  Empty program
+   (`« »`) completes immediately with no halt; non-Program
+   argument throws `Bad argument type` (peek-then-EVAL pattern
+   means the failed argument is preserved on the stack).
+   User-reachable demo: enter `« 7 8 + »` ENTER, DBUG — stack
+   shows [7] and DBUG annunciator implied; press `SST` twice to
+   step through; press `CONT` instead to finish at full speed.
+
+3. **R-002 — `_driveGen` closes the abandoned generator** —
+   Pending review-lane finding from session 089 (low confidence,
+   style/defensive).  In `_driveGen`, before throwing
+   `HALT: cannot suspend inside a sub-program call`, call
+   `try { gen.return(); } catch (_) {}` so the abandoned
+   generator's `finally` blocks (notably `_popLocalFrame()` in
+   `runArrow`) run synchronously.  Not a correctness fix — the
+   outer EVAL handler's `_truncateLocalFrames(framesAtEntry)`
+   safety net already restored frame depth before the abandoned
+   generator reached GC — but makes the cleanup self-contained
+   and obvious to a reader auditing resource lifecycles.  One
+   regression-guard assertion in `tests/test-control-flow.mjs`
+   exercises the throw path and pins `localFramesDepth() === 0`
+   after.
+
+Totals: **30 new session101-labelled assertions** in this lane
+(all in `tests/test-control-flow.mjs`: 8 SST core + 2 SST error
++ 4 SST↓ alias + 6 DBUG + 5 DBUG edge cases + 5 KILL-during-SST
++ 3 R-002 cleanup pin).  Test-control-flow at **294 passing**
+(prior baseline 264 — Δ+30 all from this lane).
+`test-all.mjs` at **3639 passing / 0 failing**.
+`test-persist.mjs` at **34 passing / 0 failing** (unchanged).
+`sanity.mjs` at **22 passing / 0 failing in 4 ms** (unchanged).
+`node --check` clean on every touched JS file
+(`www/src/rpl/ops.js`, `tests/test-control-flow.mjs`).
+
+(Note: the `test-all.mjs` aggregate is below the session-089
+baseline of 3951 because the CAS migration sessions 092–100
+consolidated and replaced large chunks of the test surface; the
+3639 figure is the on-disk baseline this run picked up before
+adding the +30 session-101 assertions, not a regression.)
+
+---
+
+## Session 088 — what shipped
 
 1. **Comment fix (R-001) + dead-import removal (X-006)** —
    `state.js:406` comment updated to correctly state that
@@ -307,9 +751,9 @@ end of session 076, Δ+51 — all from this lane this run).
 
 1. **HALT / CONT / KILL pilot** — suspended-execution substrate at the
    top-level-program-body scope. New class `RPLHalt` in
-   `src/rpl/stack.js` (sibling of `RPLAbort`, **not** an `RPLError`
+   `www/src/rpl/stack.js` (sibling of `RPLAbort`, **not** an `RPLError`
    subclass so `IFERR` cannot trap it). New `state.halted` slot +
-   `setHalted` / `getHalted` / `clearHalted` in `src/rpl/state.js`.
+   `setHalted` / `getHalted` / `clearHalted` in `www/src/rpl/state.js`.
    `evalRange` intercepts the bare-name `HALT` token; when `depth ===
    0 && _localFrames.length === 0` it records `{ tokens, ip: i+1,
    length }` and throws `RPLHalt`; otherwise it raises a clear
@@ -357,7 +801,7 @@ passing).
 ## Session 069 — what shipped
 
 1. **Compiled local environments** — `→ a b c « body »` and
-   `→ a b 'algebraic-body'`. Evaluator hook `runArrow` in `src/rpl/ops.js`:
+   `→ a b 'algebraic-body'`. Evaluator hook `runArrow` in `www/src/rpl/ops.js`:
    scans consecutive bare-name tokens after `→`, pops that many stack
    values (rightmost name gets level 1 per HP50 convention), pushes a
    `_localFrames` frame, evaluates the body, pops the frame in
@@ -392,42 +836,80 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
 ## Next-session queue
 
 ### High priority
-1. **`SST` / `SST↓` — single-step debugger** — The generator
-   substrate is now in place (session 088). SST just needs:
-     1. A module-level `_singleStepMode` flag.
-     2. In `evalRange`: after each `evalToken(...)` call, check
-        `_singleStepMode` and `yield` if set.
-     3. `SST` op: set `_singleStepMode = true`, then call
-        `CONT`'s logic to advance one token. Clear the flag
-        after the yield returns so subsequent tokens don't
-        single-step.
-     4. `SST↓` op: same, but for stepping INTO sub-programs.
-        Since `_evalValueSync` drives sub-programs synchronously,
-        stepping into them requires the same generator refactor
-        for `evalToken` that enables full structural HALT for
-        sub-program calls. For now SST↓ can alias SST (step at
-        the current level only).
-     5. User-reachable demo: enter a program, EVAL, press SST
-        repeatedly to step through token by token.
-   Prerequisite: none — the generator substrate is complete.
+1. **[shipped session 101]** `SST` / `SST↓` — single-step debugger.
+   `_singleStepMode` flag in `ops.js`, `evalRange` `yield`s after
+   every token when set; SST handler peels the live generator off
+   the haltedStack, flips the flag on, drives `gen.next()` once,
+   and re-pushes if the generator yields again.  Clears the flag in
+   `finally` so subsequent CONT/RUN run at full speed.  SST↓ aliases
+   SST until the `_evalValueSync` generator migration lands.
 
-2. **HALT inside sub-program calls (remaining pilot limit)** —
-   `evalToken` → `_evalValueSync` → `_driveGen(evalRange(...))`:
-   the synchronous `_driveGen` rejects a yield. To lift this,
-   convert `evalToken` and `_evalValueSync` to generators and
-   use `yield*` throughout. Low urgency (structural HALT inside
-   control flow works; the sub-program-call case is rare in
-   practice) but needed for full HP50 fidelity.
+2. **[shipped session 106]** HALT inside a sub-program call reached
+   via `evalToken` Name lookup.  `evalToken` and a new
+   `_evalValueGen` are now generator functions; the sync
+   `_evalValueSync` is retained only for the narrow set of callers
+   (IFT / IFTE / MAP / etc.) that still cannot yield.  `yield*` now
+   threads through the Name-lookup path so a HALT inside a named
+   sub-program suspends cleanly.  Session 101's `_driveGen.return()`
+   tightening (R-002) stays in place for the remaining sync callers
+   — supersede notes added in `tests/test-control-flow.mjs`.
 
-3. **`DBUG`** — DBUG initiates single-step mode on a program.
-   Blocked until SST lands; then `DBUG` just does SST setup
-   on EVAL of the target program.
+3. **[shipped session 101]** `DBUG`.  Pops a Program, sets
+   `_singleStepMode`, delegates to EVAL — first token runs and
+   then the generator yields, suspending the program on
+   `haltedStack` for `SST` to drive forward.
 
 4. **Persistence of halted programs** — Generators are not
    serialisable via JSON. To survive a page refresh, we'd need
    to capture enough token/IP state to re-construct the generator
    chain. Not a priority — the `resetHome` hook already clears
    the halted stack on refresh.
+
+5. **[shipped session 111]** R-003 — `_driveGen` docstring
+   named "variable lookup" as a canonical sync-path caller after
+   session 106 moved that path to `_evalValueGen`.  Docstring
+   rewritten to list the actual sync-path callers (IFT / IFTE /
+   MAP / SEQ / DOLIST / DOSUBS / STREAM / → algebraic body) and
+   call out that `evalToken`'s Name-binding branch does **not**
+   come through `_driveGen`.  Same run also shipped the
+   caller-aware rejection message: `HALT: cannot suspend inside
+   <caller>` where `<caller>` is the op label; uncredited sites
+   fall through to `a sub-program call`.
+
+6. **[shipped session 116]** EVAL handler routes through
+   `_evalValueGen` so HALT lifts through Tagged-wrapped Programs
+   and Name-on-stack EVALs.  DBUG widened to peel Tagged in its
+   argument-type guard (matching EVAL's transparency).
+   `runArrow` Symbolic body wired with the
+   `'→ algebraic body'` caller label (defensive consistency with
+   the sibling sync-path call sites; the AST cannot reach a
+   Program subnode so the label is never user-visible today, but
+   a future Symbolic-AST refactor that swaps in a Program-bearing
+   node would otherwise silently lose the label).
+
+7. **[shipped session 121]** `PROMPT` op (HP50 AUR p.2-160), plus
+   HALT/PROMPT lift through IFT and IFTE bodies via `evalRange`
+   intercepts that delegate to new `runIft` / `runIfte` generator
+   helpers.  Sync fallbacks (Name dispatch) keep the session-111
+   reject-with-caller-label behavior.  `state.promptMessage` slot
+   added with setter / getter / clearer; cleared on CONT, SST,
+   KILL, and `resetHome`.
+
+8. **HALT lift through MAP / SEQ / DOLIST / DOSUBS / STREAM
+   bodies (next remaining sync-path callers).**  Same shape as
+   session 121's IFT/IFTE work: each op currently drives
+   `_evalValueSync` with a session-111 caller label
+   (`MAP program`, `SEQ expression`, etc.).  Lifting any of these
+   would require either an `evalRange` intercept (only viable when
+   the op is reached as a Name token in a program body) or a
+   structural rework of the op so it `yield*`s its body call
+   directly.  IFT/IFTE were the simplest cases — single body, no
+   iteration loop — so they shipped first.  MAP-family lift needs
+   thinking about per-iteration yield semantics (what does HALT
+   inside iteration 3 of MAP over a 10-element list mean? CONT
+   resumes mid-iteration — does the partially-mapped result
+   survive?).  Defer to a future session that scopes those
+   semantics carefully.
 
 ### Medium priority
 5. **`CONT` across a `resetHome` — UI signal** — `resetHome`
@@ -501,11 +983,11 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
 
 ## Reference hooks
 
-- Parser: `src/rpl/parser.js` (`parseProgram`, `tokenize`).
-- Evaluator: `src/rpl/ops.js` — search for `evalRange`, `runControl`,
+- Parser: `www/src/rpl/parser.js` (`parseProgram`, `tokenize`).
+- Evaluator: `www/src/rpl/ops.js` — search for `evalRange`, `runControl`,
   the `run…` family, and `_evalValue`.
-- Types: `src/rpl/types.js` — `Program`, `Name`, `Symbolic`, `Tagged`.
-- Stack: `src/rpl/stack.js` — `save` / `restore` for EVAL atomicity.
+- Types: `www/src/rpl/types.js` — `Program`, `Name`, `Symbolic`, `Tagged`.
+- Stack: `www/src/rpl/stack.js` — `save` / `restore` for EVAL atomicity.
 - Tests: `tests/test-control-flow.mjs` (primary), `tests/test-eval.mjs`
   (EVAL dispatch), `tests/test-variables.mjs` (STO/RCL/PURGE + locals
   when those land), `tests/test-reflection.mjs` (OBJ→ / →PRG).
@@ -532,4 +1014,18 @@ already claimed `logs/session-077.md` earlier today with its own
 `session083:` prefix directly — the log file is `logs/session-083.md`;
 session numbering is back in sync with the actual log name for this
 run because sessions 079 (unit-tests) and 080 (code-review) already
-landed on disk with matching log numbers.
+landed on disk with matching log numbers.  Session 088 was this lane
+(generator-based evalRange + SIZE on Program).  Session 101 was this
+lane (SST / SST↓ / DBUG + R-002 cleanup).  Session 106 was this lane
+(HALT lift through evalToken Name-lookup path, SST↓ real step-into
+semantics, P-001 RPL.md doc-path fixes).  Session 111 was this lane
+(R-003 docstring rewrite, caller-aware `_driveGen` HALT-rejection
+message threaded through `_evalValueSync` from IFT / IFTE / MAP /
+SEQ / DOLIST / DOSUBS / STREAM call sites); test-file prefix is
+`session111:` and the log file is `logs/session-111.md`.  Session 116
+is this run (EVAL handler driven through `_evalValueGen` so HALT
+lifts through Tagged-wrapped Programs and Name-on-stack EVALs;
+DBUG widened to peel Tagged in its argument-type guard;
+`runArrow` Symbolic body wired with the `'→ algebraic body'`
+caller label); test-file prefix is `session116:` and the log file
+is `logs/session-116.md`.

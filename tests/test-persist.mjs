@@ -24,6 +24,24 @@ function assert(cond, msg) {
   else console.log('ok  ', msg);
 }
 
+/* session117: local `assertThrows` mirroring `tests/helpers.mjs` so
+   this standalone file can drop the `let threw = …; try { … }
+   catch { threw = true; }` boilerplate.  Returns the caught error
+   so callers can pin message-shape regressions independently. */
+function assertThrows(fn, pattern, msg) {
+  let threw = false;
+  let caught = null;
+  try { fn(); }
+  catch (e) {
+    caught = e;
+    if (pattern == null) threw = true;
+    else if (pattern instanceof RegExp) threw = pattern.test(e.message);
+    else threw = String(e.message).includes(String(pattern));
+  }
+  assert(threw, msg);
+  return caught;
+}
+
 /* --- Seed a rich state: stack with varied types, angle=DEG, a
        subdir, and a variable in it. --- */
 resetHome();
@@ -114,11 +132,40 @@ const subDir = calcState.current.entries.get('SUB');
 assert(subDir && isDirectory(subDir), 'SUB restored as Directory');
 assert(subDir.parent === calcState.home, 'SUB.parent relinked to live HOME');
 
-/* --- Unknown-version rejection --- */
-let threw = false;
-try { rehydrate({ version: 999 }, new Stack()); }
-catch { threw = true; }
-assert(threw, 'unknown version is rejected');
+/* --- Unknown-version rejection ---
+     session117: migrated from `let threw = false; try{…}catch{…}` to
+     `assertThrows` + follow-up regex guards that pin the message
+     shape and the rejection surface of adjacent bad-input shapes.
+     Closes queue item #4 from session 112 (the `test-persist.mjs`
+     :118 migration).  Each new assertion is an independent
+     regression guard over distinct branches in `rehydrate()`'s
+     shape check (`persist.js:125-132`). */
+const verErr = assertThrows(
+  () => rehydrate({ version: 999 }, new Stack()),
+  /unsupported version/,
+  'unknown version is rejected');
+assert(verErr && /\b999\b/.test(verErr.message),
+  'session117: unknown-version error echoes the bad version "999" in the message');
+// Missing-version: same code path (snap.version !== SCHEMA_VERSION)
+// but exercises the `undefined` branch.  Pinning as a separate
+// regression guard because a future schema migration that adds a
+// default-version fallback could silently swallow missing-version
+// snapshots.
+assertThrows(
+  () => rehydrate({}, new Stack()),
+  /unsupported version/,
+  'session117: missing version (snap.version === undefined) is rejected with same shape');
+// Non-object snap: distinct reject path at persist.js:125 — the
+// version check never fires because the object-shape check errors
+// first.  The two branches were previously untested in isolation.
+assertThrows(
+  () => rehydrate(null, new Stack()),
+  /not an object/,
+  'session117: null snap rejected with "not an object" (distinct branch from version check)');
+assertThrows(
+  () => rehydrate('not-a-snap', new Stack()),
+  /not an object/,
+  'session117: string snap rejected with "not an object" (distinct branch from version check)');
 
 /* --- Extended type coverage: Matrix, BinaryInteger, Symbolic.
        Uses an independent snapshot so it doesn't shuffle the level

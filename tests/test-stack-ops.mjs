@@ -17,7 +17,7 @@
 import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import { Real, Integer, isInteger, isReal } from '../www/src/rpl/types.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* Helper: return an array of .value fields from level-N-down to level-1.
    Reads via peek() so we don't touch stack._items directly from tests. */
@@ -53,11 +53,10 @@ function vals(s) {
   assert(v.length === 3 && v[0] === 1n && v[1] === 2n && v[2] === 1n,
     'session064: OVER copies level 2 to top: (1 2 → 1 2 1)');
 
-  let threw = false;
   const t = new Stack();
   t.push(Integer(1n));
-  try { lookup('OVER').fn(t); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session064: OVER on depth 1 → Too few arguments');
+  assertThrows(() => lookup('OVER').fn(t), /Too few/,
+    'session064: OVER on depth 1 → Too few arguments');
 }
 
 /* ---- ROT ---- */
@@ -71,12 +70,11 @@ function vals(s) {
   assert(v.length === 3 && v[0] === 2n && v[1] === 3n && v[2] === 1n,
     'session064: ROT cycles level 3 to top: (1 2 3 → 2 3 1)');
 
-  let threw = false;
   const t = new Stack();
   t.push(Integer(1n));
   t.push(Integer(2n));
-  try { lookup('ROT').fn(t); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session064: ROT on depth 2 → Too few arguments');
+  assertThrows(() => lookup('ROT').fn(t), /Too few/,
+    'session064: ROT on depth 2 → Too few arguments');
 }
 
 /* ---- DUP2 ---- */
@@ -89,11 +87,10 @@ function vals(s) {
   assert(v.length === 4 && v[0] === 1n && v[1] === 2n && v[2] === 1n && v[3] === 2n,
     'session064: DUP2 copies levels 2,1 onto top: (1 2 → 1 2 1 2)');
 
-  let threw = false;
   const t = new Stack();
   t.push(Integer(1n));
-  try { lookup('DUP2').fn(t); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session064: DUP2 on depth 1 → Too few arguments');
+  assertThrows(() => lookup('DUP2').fn(t), /Too few/,
+    'session064: DUP2 on depth 1 → Too few arguments');
 }
 
 /* ---- DROP2 ---- */
@@ -107,11 +104,10 @@ function vals(s) {
   assert(v.length === 1 && v[0] === 1n,
     'session064: DROP2 removes top two levels: (1 2 3 → 1)');
 
-  let threw = false;
   const t = new Stack();
   t.push(Integer(1n));
-  try { lookup('DROP2').fn(t); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session064: DROP2 on depth 1 → Too few arguments');
+  assertThrows(() => lookup('DROP2').fn(t), /Too few/,
+    'session064: DROP2 on depth 1 → Too few arguments');
 }
 
 /* ---- DROPN — pops count from L1, then drops N ---- */
@@ -135,12 +131,11 @@ function vals(s) {
     'session064: 0 DROPN is a no-op (count popped, no drops)');
 
   // Negative N is invalid per HP50 ("Bad argument value").
-  let threw = false;
   const u = new Stack();
   u.push(Integer(1n));
   u.push(Integer(-1n));
-  try { lookup('DROPN').fn(u); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session064: -1 DROPN → Bad argument value');
+  assertThrows(() => lookup('DROPN').fn(u), /Bad argument value/,
+    'session064: -1 DROPN → Bad argument value');
 }
 
 /* ---- DUPN — pops count from L1, then dupes top N ---- */
@@ -169,9 +164,8 @@ function vals(s) {
 /* ---- DUPDUP — error path: asserts "Too few arguments" semantics. ---- */
 {
   const s = new Stack();
-  let threw = false;
-  try { lookup('DUPDUP').fn(s); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session064: DUPDUP on empty → Too few arguments');
+  assertThrows(() => lookup('DUPDUP').fn(s), /Too few/,
+    'session064: DUPDUP on empty → Too few arguments');
 }
 
 /* ---- NIP — drops level 2 ---- */
@@ -185,11 +179,10 @@ function vals(s) {
   assert(v.length === 2 && v[0] === 1n && v[1] === 3n,
     'session064: NIP drops level 2: (1 2 3 → 1 3)');
 
-  let threw = false;
   const t = new Stack();
   t.push(Integer(1n));
-  try { lookup('NIP').fn(t); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session064: NIP on depth 1 → Too few arguments');
+  assertThrows(() => lookup('NIP').fn(t), /Too few/,
+    'session064: NIP on depth 1 → Too few arguments');
 }
 
 /* ---- PICK — pop N from L1, then copy level N onto top ---- */
@@ -212,12 +205,11 @@ function vals(s) {
     'session064: 1 PICK behaves like DUP');
 
   // 0 PICK is invalid (HP50: "Bad argument value").
-  let threw = false;
   const u = new Stack();
   u.push(Integer(9n));
   u.push(Integer(0n));
-  try { lookup('PICK').fn(u); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session064: 0 PICK → Bad argument value');
+  assertThrows(() => lookup('PICK').fn(u), /Bad argument/,
+    'session064: 0 PICK → Bad argument value');
 }
 
 /* ---- PICK3 — shortcut for `3 PICK` ---- */
@@ -311,11 +303,10 @@ function vals(s) {
 
 /* ---- SWAP — already covered in numerics, but assert error path ---- */
 {
-  let threw = false;
   const s = new Stack();
   s.push(Integer(1n));
-  try { lookup('SWAP').fn(s); } catch (e) { threw = /Too few/.test(e.message); }
-  assert(threw, 'session064: SWAP on depth 1 → Too few arguments');
+  assertThrows(() => lookup('SWAP').fn(s), /Too few/,
+    'session064: SWAP on depth 1 → Too few arguments');
 }
 
 /* ---- CLEAR — drop everything ---- */

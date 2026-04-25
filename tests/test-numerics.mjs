@@ -2115,12 +2115,10 @@ setAngle('rad');
   setComplexMode(false);
   const s = new Stack();
   s.push(Real(-10));
-  let threw = false, isRPL = true;
-  try { lookup('LOG').fn(s); } catch (e) {
-    threw = /Bad argument value/.test(e.message);
-    isRPL = e.name !== 'TypeError';
-  }
-  assert(threw && isRPL, 'session054: LOG(-10) CMPLX OFF throws clean RPL error');
+  const logErr = assertThrows(() => lookup('LOG').fn(s), /Bad argument value/,
+    'session054: LOG(-10) CMPLX OFF throws clean RPL error');
+  assert(logErr && logErr.name !== 'TypeError',
+    'session054: LOG(-10) CMPLX OFF error is an RPL error, not a native TypeError');
 }
 
 /* ================================================================
@@ -5743,4 +5741,236 @@ function _arrayEq(a, b) {
   const v = s.peek();
   assert(isReal(v) && Math.abs(v.value - 0.25) < 1e-15,
     'session086: XNUM evaluates Symbolic numerically (→NUM delegate)');
+}
+
+/* =====================================================================
+   session 109 — Ei / Si / Ci — exponential / sine / cosine integrals
+
+   HP50 AUR §2 (CAS-SPECIAL).  Native numeric evaluators:
+     Ei   power series for 0 < x < 40; asymptotic for x ≥ 40;
+          E1 series/CF for x < 0.
+     Si   odd power series for |x| ≤ 4; complex-Lentz CF for |x| > 4.
+     Ci   power series for 0 < x ≤ 4; complex-Lentz CF for x > 4.
+          Ci(x < 0) rejected in HP50 real mode (Bad argument value).
+
+   Reference values sourced from Abramowitz & Stegun Tables 5.1 / 5.3
+   and independently cross-checked against the probe in
+   utils/@ei_si_ci_probe.mjs (all 30 cases at machine precision).
+   ===================================================================== */
+
+// ---- Ei — representative values spanning series, near-cutover, asymptotic.
+{
+  const s = new Stack();
+  s.push(Real(1));
+  lookup('Ei').fn(s);
+  // Ei(1) = 1.8951178163559368…  (A&S Table 5.1)
+  assert(isReal(s.peek()) && Math.abs(s.peek().value - 1.8951178163559368) < 1e-12,
+    'session109: Ei(1) = 1.89511781635…');
+}
+{
+  const s = new Stack();
+  s.push(Real(5));
+  lookup('Ei').fn(s);
+  // Ei(5) = 40.18527535580318…  (series branch still)
+  assert(Math.abs(s.peek().value - 40.18527535580318) < 1e-10,
+    'session109: Ei(5) = 40.18527535…');
+}
+{
+  const s = new Stack();
+  s.push(Real(-1));
+  lookup('Ei').fn(s);
+  // Ei(-1) = -0.21938393439552029…  (E1 small-|x| series branch)
+  assert(Math.abs(s.peek().value - (-0.21938393439552029)) < 1e-13,
+    'session109: Ei(-1) = -0.219383934…');
+}
+{
+  const s = new Stack();
+  s.push(Real(-5));
+  lookup('Ei').fn(s);
+  // Ei(-5) = -0.00114829559127532…  (E1 Lentz CF branch)
+  assert(Math.abs(s.peek().value - (-0.00114829559127532)) < 1e-14,
+    'session109: Ei(-5) = -0.00114829559…');
+}
+{
+  const s = new Stack();
+  s.push(Real(40));
+  lookup('Ei').fn(s);
+  // Ei(40) ≈ 6.039718263611247e15 — right at the asymptotic cutover.
+  assert(Math.abs(s.peek().value / 6.039718263611247e15 - 1) < 1e-12,
+    'session109: Ei(40) ≈ 6.04e15 (asymptotic branch)');
+}
+// Ei — domain & type rejections.
+{
+  const s = new Stack();
+  s.push(Real(0));
+  assertThrows(() => lookup('Ei').fn(s), /Infinite result/,
+    'session109: Ei(0) rejects with Infinite result');
+}
+{
+  const s = new Stack();
+  s.push(Str('foo'));
+  assertThrows(() => lookup('Ei').fn(s), /Bad argument type/,
+    'session109: Ei(String) rejects Bad argument type');
+}
+{
+  // Symbolic lift — Ei(X) stays symbolic.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  lookup('Ei').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'EI',
+    'session109: Ei(Name X) lifts to Symbolic EI(X)');
+}
+{
+  // Tagged transparency.
+  const s = new Stack();
+  s.push(Tagged('E', Real(1)));
+  lookup('Ei').fn(s);
+  const v = s.peek();
+  assert(v.type === 'tagged' && v.tag === 'E'
+      && Math.abs(v.value.value - 1.8951178163559368) < 1e-12,
+    'session109: Ei preserves tag wrapper');
+}
+{
+  // RList distribution.
+  const s = new Stack();
+  s.push(RList([Real(1), Real(-1)]));
+  lookup('Ei').fn(s);
+  const items = s.peek().items;
+  assert(items.length === 2
+      && Math.abs(items[0].value - 1.8951178163559368) < 1e-12
+      && Math.abs(items[1].value - (-0.21938393439552029)) < 1e-13,
+    'session109: Ei distributes over RList');
+}
+
+// ---- Si — odd, entire; series + Lentz-CF branches.
+{
+  const s = new Stack();
+  s.push(Real(0));
+  lookup('Si').fn(s);
+  assert(isReal(s.peek()) && s.peek().value.eq(0),
+    'session109: Si(0) = 0 exactly');
+}
+{
+  const s = new Stack();
+  s.push(Real(1));
+  lookup('Si').fn(s);
+  // Si(1) = 0.9460830703671831…  (A&S Table 5.3)
+  assert(Math.abs(s.peek().value - 0.9460830703671831) < 1e-13,
+    'session109: Si(1) = 0.946083070…');
+}
+{
+  const s = new Stack();
+  s.push(Real(4));
+  lookup('Si').fn(s);
+  // Si(4) = 1.7582031389490532…  (series-branch boundary).
+  assert(Math.abs(s.peek().value - 1.7582031389490532) < 1e-12,
+    'session109: Si(4) = 1.758203138…');
+}
+{
+  const s = new Stack();
+  s.push(Real(10));
+  lookup('Si').fn(s);
+  // Si(10) = 1.6583475942188738…  (CF branch)
+  assert(Math.abs(s.peek().value - 1.6583475942188738) < 1e-12,
+    'session109: Si(10) = 1.658347594…');
+}
+{
+  // Odd parity: Si(-x) = -Si(x).
+  const s = new Stack();
+  s.push(Real(-5));
+  lookup('Si').fn(s);
+  // Si(5) = 1.5499312449446743…
+  assert(Math.abs(s.peek().value - (-1.5499312449446743)) < 1e-12,
+    'session109: Si(-5) = -Si(5) (odd parity across CF branch)');
+}
+{
+  const s = new Stack();
+  s.push(Str('foo'));
+  assertThrows(() => lookup('Si').fn(s), /Bad argument type/,
+    'session109: Si(String) rejects Bad argument type');
+}
+{
+  // Symbolic lift.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  lookup('Si').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'SI',
+    'session109: Si(Name X) lifts to Symbolic SI(X)');
+}
+{
+  // Tagged transparency.
+  const s = new Stack();
+  s.push(Tagged('T', Real(1)));
+  lookup('Si').fn(s);
+  const v = s.peek();
+  assert(v.type === 'tagged' && v.tag === 'T'
+      && Math.abs(v.value.value - 0.9460830703671831) < 1e-13,
+    'session109: Si preserves tag wrapper');
+}
+
+// ---- Ci — x > 0 only; series + Lentz-CF branches.
+{
+  const s = new Stack();
+  s.push(Real(1));
+  lookup('Ci').fn(s);
+  // Ci(1) = 0.3374039229009681…  (A&S Table 5.3)
+  assert(isReal(s.peek()) && Math.abs(s.peek().value - 0.3374039229009681) < 1e-13,
+    'session109: Ci(1) = 0.337403922…');
+}
+{
+  const s = new Stack();
+  s.push(Real(4));
+  lookup('Ci').fn(s);
+  // Ci(4) = -0.140981697886930…  (series-branch boundary).
+  assert(Math.abs(s.peek().value - (-0.140981697886930)) < 1e-13,
+    'session109: Ci(4) = -0.140981697886…');
+}
+{
+  const s = new Stack();
+  s.push(Real(10));
+  lookup('Ci').fn(s);
+  // Ci(10) = -0.045456433004455381…  (CF branch)
+  assert(Math.abs(s.peek().value - (-0.045456433004455381)) < 1e-13,
+    'session109: Ci(10) = -0.045456433…');
+}
+// Ci — domain & type rejections.
+{
+  const s = new Stack();
+  s.push(Real(0));
+  assertThrows(() => lookup('Ci').fn(s), /Infinite result/,
+    'session109: Ci(0) rejects with Infinite result');
+}
+{
+  const s = new Stack();
+  s.push(Real(-1));
+  assertThrows(() => lookup('Ci').fn(s), /Bad argument value/,
+    'session109: Ci(-1) rejects (HP50 real-mode — complex result)');
+}
+{
+  const s = new Stack();
+  s.push(Str('foo'));
+  assertThrows(() => lookup('Ci').fn(s), /Bad argument type/,
+    'session109: Ci(String) rejects Bad argument type');
+}
+{
+  // Symbolic lift.
+  const s = new Stack();
+  s.push(Name('X', { quoted: true }));
+  lookup('Ci').fn(s);
+  const v = s.peek();
+  assert(v.type === 'symbolic' && v.expr.kind === 'fn' && v.expr.name === 'CI',
+    'session109: Ci(Name X) lifts to Symbolic CI(X)');
+}
+{
+  // RList distribution (series branch × CF branch).
+  const s = new Stack();
+  s.push(RList([Real(1), Real(10)]));
+  lookup('Ci').fn(s);
+  const items = s.peek().items;
+  assert(items.length === 2
+      && Math.abs(items[0].value - 0.3374039229009681) < 1e-13
+      && Math.abs(items[1].value - (-0.045456433004455381)) < 1e-13,
+    'session109: Ci distributes over RList');
 }

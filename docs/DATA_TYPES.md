@@ -5,11 +5,51 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 087 (2026-04-23) — == / SAME on Program + Directory; BinaryInteger on FLOOR/CEIL/IP/FP; String lex < > ≤ ≥.
-Session 082 was the prior substantive change.
-Sessions 083 / 084 / 085 / 086 did not touch the
-type-acceptance matrix itself (they were rpl-programming / unit-tests / code-review /
-command-support work).  See "Resolved this session (082)" below.
+**Last updated.** Session 120 (2026-04-24) — three hard-assertion
+widening clusters pinning previously-undertested contracts on
+already-widened ops:
+(1) Hyperbolic family (`SINH` / `COSH` / `TANH` / `ASINH` /
+`ACOSH` / `ATANH`) Tagged transparency, List distribution, and
+Symbolic-lift through Tagged — all six list `T ✓ / L ✓ / N ✓ /
+Sy ✓` since session 063 but no direct test pinned the
+re-tag-with-same-label contract or the wrapper composition
+(`_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`),
+including the principal-branch lift `ATANH(:v:Real(2))` →
+`Tagged(v, Complex)` where the inner handler picks Real-vs-Complex
+*after* the Tagged unwrap and the outer re-tag is type-agnostic
+on the inner; (2) Tagged tag-drop on the percent family
+(`%` / `%T` / `%CH`) — listed `T ✓` since session 064 but no
+direct test pinned the `_withTaggedBinary` either-side-or-both
+unwrap-and-drop on these specific ops (distinct inner handler
+from the arithmetic family pinned in session 115 Cluster 1);
+includes the V/M ✗ rejection pin that session 072 flipped from
+blank to ✗ + List-broadcast on the percent base; (3) Rational
+unary stay-exact contract on `NEG`/`INV`/`SQ`/`ABS`/`SQRT`/`SIGN`/
+`FLOOR`/`CEIL`/`IP`/`FP` plus APPROX-mode Q→R collapse plus
+out-of-domain rejection on `FACT`/`XPON`/`MANT` — the "Rational
+(`Q`) — session 092" convention text describes the EXACT-mode
+stay-exact dispatch and APPROX-mode collapse but no per-op row
+carries a Q column, and no direct test pinned the integer-
+collapse boundaries (FLOOR/CEIL/IP/SIGN drop to Integer; SQRT of
+perfect-square stays Q with d=1 collapse; SQRT of non-square
+lifts to Symbolic in EXACT; SQRT of negative Q lifts to Complex;
+FP keeps Q except integer-valued Q where it returns Integer(0);
+INV(Rational(1, n)) collapses to Integer(n) but SQ(Rational(2, 1))
+deliberately stays as Rational(4, 1)).
++68 assertions in `tests/test-types.mjs` (524 → 594; ops.js /
+test-algebra / test-matrix / COMMANDS.md / REVIEW.md / logs/ are
+lock-held by concurrent session 119 command-support lane).  See
+"Resolved this session (120)" below.  Session 115 was the prior
+widening pass (Binary Tagged tag-drop contract on `+ - * / ^` and
+the binary-numeric family + Rational arithmetic end-to-end on
+`+ - * / ^` + List distribution edge cases).  Session 110 was the
+prior pass before that (BinInt mixed arithmetic + Tagged
+round-trip on rounding/sign/arg + Rational cross-family compare).
+Session 105 was the prior Sy-round-trip pass; session 087 the
+prior matrix-cell change.  Sessions 088–099, 101–109, 111–114,
+116–119 did not touch the type-acceptance matrix itself (review
+/ command-support / Giac-CAS / Decimal-Real / Rational /
+parser-refactor / unit-tests / RPL-programming work).
 
 ---
 
@@ -61,7 +101,7 @@ numbers — those are separate namespaces from the stack Real.
 ## Conventions (shared across all ops below)
 
 - **List distribution** — lists distribute element-wise via
-  `_withListUnary` / `_withListBinary` (defined in `src/rpl/ops.js`).  An op
+  `_withListUnary` / `_withListBinary` (defined in `www/src/rpl/ops.js`).  An op
   that treats a list as a whole object (SIZE, HEAD, aggregate reducers,
   STO, PURGE, …) does NOT list-distribute and is not wrapped.
 - **Tagged transparency** — `_withTaggedUnary` unwraps, applies, re-tags with
@@ -73,7 +113,7 @@ numbers — those are separate namespaces from the stack Real.
 - **Symbolic / Name lift** — either operand being a `Name` or `Symbolic`
   lifts the op to `Symbolic(AstFn('OPNAME', [...]))` (or an `AstBin` when
   that's more natural — see `+` / `-` / `*` / `/` / `^`).  The name must be
-  in `KNOWN_FUNCTIONS` in `src/rpl/algebra.js` so the symbolic result
+  in `KNOWN_FUNCTIONS` in `www/src/rpl/algebra.js` so the symbolic result
   round-trips through `parseEntry`.
 - **Promotion lattice** — Z → R → C (scalar promotion); scalar → V/M
   (broadcast); R / C → Sy (lift).  BinaryInteger does NOT silently promote
@@ -84,7 +124,7 @@ numbers — those are separate namespaces from the stack Real.
 
 ## Widened ops (current state)
 
-Rows are **in registration order** of the op in `src/rpl/ops.js` — grouping
+Rows are **in registration order** of the op in `www/src/rpl/ops.js` — grouping
 matches the code.  Blank cells in otherwise-widened rows are deliberate
 follow-on candidates and listed at the bottom.
 
@@ -92,39 +132,39 @@ follow-on candidates and listed at the bottom.
 
 | Op     | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |--------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| INV    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | ✓ | ✓ | ✓ | ✗ | ✗ | V = · (no standard vector-inverse); M = matrix inverse. Session 064 added T. |
-| SQ     | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | · | ✓ | ✓ | ✗ | ✗ | V/M deliberately · — `SQ/V` = dot product, `SQ/M` = matmul, handled by `*`. Session 064 added T. |
-| SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. |
-| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. |
-| SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. |
-| FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). |
-| LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). |
+| INV    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | ✓ | ✓ | ✓ | ✗ | ✗ | V = · (no standard vector-inverse); M = matrix inverse. Session 064 added T. Session 120 pinned Q stay-exact: `INV Rational(2,3)` → `Rational(3,2)`; `INV Rational(1,5)` → `Integer(5)` (Rational(5,1) collapses to Integer); APPROX-mode collapses to Real. |
+| SQ     | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | · | · | ✓ | ✓ | ✗ | ✗ | V/M deliberately · — `SQ/V` = dot product, `SQ/M` = matmul, handled by `*`. Session 064 added T. Session 120 pinned Q stay-exact: `SQ Rational(-3,4)` → `Rational(9,16)`; deliberately does NOT d=1 collapse on `SQ Rational(2,1)` (stays Rational(4,1) — different code path from INV); APPROX-mode collapses to Real. |
+| SQRT   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Negative real / integer promotes to Complex (principal branch). Session 063 added V/M/T. Session 120 pinned Q routing: perfect-square stays Q (`SQRT Rational(9,16)` → `Rational(3,4)`) with `Rational(0,1)` collapsing to `Integer(0)`; non-square Q lifts to Symbolic in EXACT (`SQRT Rational(2,1)` → Symbolic, no implicit Real coercion); negative Q lifts to Complex (`SQRT Rational(-1,1)` → `Complex(0, 1)`, principal branch). |
+| ABS    | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | V/M = Frobenius norm (bespoke — not the wrapper). Session 068 added T. Session 120 pinned Q stay-exact: `ABS Rational(-3,4)` → `Rational(3,4)`. |
+| SIN..ACOSH..ATANH (elementary) | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Mode-sensitive (DEG/RAD/GRD) for trig. Session 120 pinned hyperbolic (SINH/COSH/TANH/ASINH/ACOSH/ATANH) Tagged transparency, List distribution, and Symbolic-lift through Tagged — including the `ATANH(:v:Real(2))` → `Tagged(v, Complex)` principal-branch lift where the inner handler picks Real-vs-Complex after the Tagged unwrap. |
+| FACT / `!` | ✓ | ✓ | · | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex ✗ (HP50 Γ is real-only). Negative integer = Bad argument value (Γ pole). Session 120 pinned `Q ✗` rejection: `FACT Rational(5,1)` → 'Bad argument type' even at integer-valued Q (Q is not silently coerced to Real on FACT — deliberate Q-as-first-class-type stance). |
+| LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). Session 100: Sy round-trip verified; `defaultFnEval` folds via `Math.log1p` / `Math.expm1` (LNP1 returns null outside `x > -1`). |
 
 ### Unary — rounding / sign / arg
 
 | Op    | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-------|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| FLOOR | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U (`1.5_m FLOOR` → `1_m`, uexpr preserved). Session 087 added B (no-op — BinInt always integer). Complex ✗ — no total order. |
-| CEIL  | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. |
-| IP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Compound uexpr (`m/s^2`) round-trips. |
-| FP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B (`FP #Xb` = `#0b`, same base). `FP(-1.8_m)` = `-0.8_m` (sign preserved). |
-| SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. |
-| ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. |
+| FLOOR | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U (`1.5_m FLOOR` → `1_m`, uexpr preserved). Session 087 added B (no-op — BinInt always integer). Complex ✗ — no total order. Session 110 pinned T transparency (`:x:Real(7.2) FLOOR` → `:x:7` + `:x:Real(-1.5) FLOOR` → `:x:-2` + `:n:Integer(5) FLOOR` → `:n:5` pass-through). Session 120 pinned Q→Z collapse: `FLOOR Rational(7,2)` → `Integer(3)` and `FLOOR Rational(-7,2)` → `Integer(-4)` (round toward -∞); APPROX-mode collapses to Real(3) instead of Integer. |
+| CEIL  | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Session 110 pinned T transparency (`:y:Real(7.2)` → `:y:8`, `:y:Real(-1.5)` → `:y:-1`). Session 120 pinned Q→Z collapse: `CEIL Rational(7,2)` → `Integer(4)` and `CEIL Rational(-7,2)` → `Integer(-3)`. |
+| IP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B. Compound uexpr (`m/s^2`) round-trips. Session 110 pinned T transparency (`:z:Real(-7.2) IP` → `:z:-7`, sign-preserving trunc toward zero). Session 120 pinned Q→Z collapse: `IP Rational(7,2)` → `Integer(3)` and `IP Rational(-7,2)` → `Integer(-3)` (trunc toward zero, NOT -4). |
+| FP    | ✓ | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | Session 062; session 072 added U. Session 087 added B (`FP #Xb` = `#0b`, same base). `FP(-1.8_m)` = `-0.8_m` (sign preserved). Session 110 pinned T transparency (`:w:Real(7.2) FP` → `:w:0.2`). Session 120 pinned Q stay-exact for non-integer Q (`FP Rational(7,2)` → `Rational(1,2)`, `FP Rational(-7,2)` → `Rational(-1,2)` sign preserved); integer-valued Q (e.g. `Rational(6,3)` canonicalises to 2/1) collapses to `Integer(0)` because there's no fractional part. |
+| SIGN  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | SIGN/V = unit direction (bespoke); SIGN/M = per-entry sign. Session 110 pinned T transparency (`:u:Real(-5) SIGN` → `:u:-1`, `:u:Real(0) SIGN` → `:u:0`, `:p:Real(42) SIGN` → `:p:1`). Session 120 pinned Q→Z collapse: `SIGN Rational(-3,4)` → `Integer(-1)`, `SIGN Rational(0,1)` → `Integer(0)`, `SIGN Rational(3,4)` → `Integer(1)`. |
+| ARG   | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Angle-mode sensitive. Session 110 pinned T transparency (`ARG(:v:Complex(3,4))` → `:v:<atan2(4,3)>`). |
 
 ### Binary — MOD / MIN / MAX
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 068 confirmed V/M rejection (HP50 AUR §3 scalar-only). |
-| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. |
-| MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. |
+| MOD | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 068 confirmed V/M rejection (HP50 AUR §3 scalar-only).  Session 105 pinned Sy round-trip + MOD(10,3)=1, MOD(-7,3)=2 floor-div sign, MOD(n,0) → null. |
+| MIN | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MIN(3,5)=3 fold. |
+| MAX | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same V/M rejection.  Session 105 pinned Sy round-trip + MAX(3,5)=5 fold. |
 
 ### Binary — GCD / LCM
 
 | Op  | R* | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|----|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| GCD | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added N/Sy/L/T. R accepted only when integer-valued (non-integer Real = Bad argument value). |
-| LCM | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same as GCD. |
+| GCD | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added N/Sy/L/T. R accepted only when integer-valued (non-integer Real = Bad argument value).  Session 105 pinned Sy round-trip + GCD(12,18)=6, GCD(0,7)=7, GCD(1.5,3) → null fold. |
+| LCM | ~  | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same as GCD.  Session 105 pinned Sy round-trip + LCM(4,6)=12, LCM(0,n)=0 fold. |
 
 *`~` on Real = accepted only when `Number.isInteger(value)`.
 
@@ -132,9 +172,9 @@ follow-on candidates and listed at the bottom.
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | P | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|---|-------|
-| %   | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added L/T; session 072 flipped V/M from blank to ✗ (HP50 AUR §3-1 scalar-only, mirrors MOD/MIN/MAX audit in s068). |
-| %T  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. Infinite result on base = 0 preserved. |
-| %CH | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. |
+| %   | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Session 064 added L/T; session 072 flipped V/M from blank to ✗ (HP50 AUR §3-1 scalar-only, mirrors MOD/MIN/MAX audit in s068). Session 120 pinned `_withTaggedBinary` tag-drop (either-side-or-both unwrap-and-drop, mirror of the binary-arith pin in session 115 Cluster 1) plus the V/M ✗ rejection plus List-broadcast on the percent base (`{80 40} 25 %` → `{20 10}`). |
+| %T  | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. Infinite result on base = 0 preserved. Session 120 pinned both-side Tagged tag-drop. |
+| %CH | ✓ | ✓ | · | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | · | ✗ | ✗ | Same. Session 120 pinned both-side Tagged tag-drop. |
 
 ### Reference rows — already-broad ops from earlier sessions
 
@@ -144,15 +184,76 @@ candidate flagged in session 063.
 
 | Op  | R | Z | B | C | N | Sy | L | V | M | T | U | S | Notes |
 |-----|---|---|---|---|---|----|---|---|---|---|---|---|-------|
-| +   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Concats on String+String; Unit dim-algebra; V+V element-wise (same length). Session 068 added T. |
-| -   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. |
-| *   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | V·V = dot product, M·M = matmul; Real-by-String = repeat (String rep). Session 068 added T. |
-| /   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. |
-| ^   | ✓ | ✓ | ✗ | ✓ | ✓ | ✓  | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | M^n = repeated matmul for integer n. Session 068 added T. |
+| +   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Concats on String+String; Unit dim-algebra; V+V element-wise (same length). Session 068 added T. Session 110 pinned BinInt × Real/Integer mixed scalar at default ws and ws=8 (BinInt base wins, Real trunc-toward-zero coerces, negative wraps via 2^w). |
+| -   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. Session 110 BinInt audit (routes through `_binaryMathMixed('-')`). |
+| *   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | V·V = dot product, M·M = matmul; Real-by-String = repeat (String rep). Session 068 added T. Session 110 pinned `ws=8 Real(300) * #2h → #58h` (600 masked to 8 bits) + `#20h * Real(2.7) → #40h` (trunc coerce). |
+| /   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. Session 110 pinned BinInt `#5h / Integer(0)` → 'Division by zero' via `binIntBinary`. |
+| ^   | ✓ | ✓ | ✗ | ✓ | ✓ | ✓  | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | M^n = repeated matmul for integer n. Session 068 added T. Session 110 pinned BinInt `^` via `_modPow` — `ws=8 #2h ^ 10 → #0h` (1024 masked). |
 | NEG | ✓ | ✓ | ✓ | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | Session 068 added T. |
-| CONJ| ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
-| RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
-| IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. |
+| CONJ| ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (KNOWN_FUNCTIONS + `defaultFnEval` fold `CONJ(x) = x` on Real). |
+| RE  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (`defaultFnEval` fold `RE(x) = x` on Real). |
+| IM  | ✓ | ✓ | · | ✓ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | · | · | Session 068 added T. Session 100: Sy round-trip verified (`defaultFnEval` fold `IM(x) = 0` on Real). |
+
+### Real decomposition / HP50 special-function family (XPON / MANT / TRUNC / ZETA / LAMBERT / PSI)
+
+Per-row table for the ops added to `KNOWN_FUNCTIONS` this session that
+didn't yet have a row.  All six lift Name / Symbolic operands to
+`Symbolic(AstFn(..., [...]))` from the stack (that code path has been
+in place since `ops.js` implemented them); the Sy column here is
+about *round-trip through the entry-line parser*, not "does the
+handler lift".
+
+| Op      | R | Z | C | N | Sy | L | V | M | T | Notes |
+|---------|---|---|---|---|----|---|---|---|---|-------|
+| XPON    | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Decimal exponent.  `XPON(0) = 0` (matches HP50 AUR).  Complex ✗ (HP50 AUR real-only).  Session 100 closed Sy round-trip.  Session 120 pinned Q rejection: `XPON Rational(1,2)` → 'Bad argument type' (Q not in XPON domain; consistent with FACT/MANT). |
+| MANT    | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Mantissa in `[1,10)` (or 0 at x=0).  Pair with XPON — `x = MANT(x) · 10^XPON(x)`.  Session 100 closed Sy round-trip.  Session 120 pinned Q rejection: `MANT Rational(1,2)` → 'Bad argument type'. |
+| TRUNC   | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | 2-arg: `TRUNC(x, n)` truncates to `n` decimals.  `arity: 2` in KNOWN_FUNCTIONS — 1-arg form rejected at parse time.  `defaultFnEval` left unset (no constant fold yet — would need `toFixed`-style logic). Session 100 closed Sy round-trip for the 2-arg form.  Session 105 pinned the arity-2 rejection for both the 1-arg form `TRUNC(X)` and the 3-arg form `TRUNC(X, 3, 4)` (parseAlgebra emits "TRUNC expects 2 argument(s), got N"). |
+| ZETA    | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Riemann ζ.  Arity 1.  No constant fold (would need CAS).  Session 100 closed Sy round-trip — stays symbolic at numeric args. |
+| LAMBERT | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Principal branch W₀.  Arity 1.  No constant fold (series/Halley in a future session).  Session 100 closed Sy round-trip. |
+| PSI     | ✓ | ✓ | · | ✓ | ✓  | · | · | · | ✓ | Digamma / polygamma.  Variadic: `PSI(x)` = ψ(x), `PSI(x, n)` = ψ⁽ⁿ⁾(x).  No `arity` key in KNOWN_FUNCTIONS — both shapes accepted.  No constant fold.  Session 100 closed Sy round-trip for both shapes.  Session 105 pinned the variadic shape via direct `defaultFnEval('PSI', [1])` and `defaultFnEval('PSI', [1, 2])` null-fold guards. |
+
+### Special-function / stat-dist family (UTPC / UTPF / UTPT / BETA / ERF / ERFC / GAMMA / LNGAMMA / HEAVISIDE / DIRAC)
+
+These ops already had stack-side handlers that lift Name / Symbolic
+operands to `Symbolic(AstFn(..., [...]))` and entries in
+`KNOWN_FUNCTIONS`, but the entry-line round-trip
+(`parseEntry → format → parseEntry`) and the `defaultFnEval` fold
+contract had no direct assertion before session 105.  The `Sy`
+column here is about *round-trip through the parser*, not "does
+the handler lift".  Numeric evaluation lives on the stack side for
+all of these — Lanczos gamma / incomplete-beta / erf table / shifted-
+step / impulse — so the simplify-time fold stays conservative.
+
+| Op        | R | Z | C | N | Sy | L | V | M | T | Notes |
+|-----------|---|---|---|---|----|---|---|---|---|-------|
+| HEAVISIDE | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Step function.  Session 105 pinned Sy round-trip + folds: HEAVISIDE(2)=1, HEAVISIDE(0)=1 (HP50 convention: right-continuous at 0), HEAVISIDE(-1)=0. |
+| DIRAC     | ✓ | ✓ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Impulse δ(x).  At non-zero real, folds to 0; at x=0 leaves symbolic (distribution).  Session 105 pinned `DIRAC(X-1)` round-trip + `DIRAC(3)=0`, `DIRAC(0)` → null. |
+| GAMMA     | ✓ | ✓ | ✗ | ✓ | ✓  | · | · | · | ✓ | Γ(x).  Integer fold only (GAMMA(n) = (n-1)! for n ≥ 1, n ≤ 171); non-integer / non-positive / overflow → null (leave symbolic).  Session 105 pinned Sy round-trip + GAMMA(5)=24, GAMMA(0)→null, GAMMA(0.5)→null, GAMMA(180)→null. |
+| LNGAMMA   | ✓ | ✓ | ✗ | ✓ | ✓  | · | · | · | ✓ | ln Γ(x).  No fold (Lanczos lives on the stack).  Session 105 pinned Sy round-trip + null fold. |
+| ERF       | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Error function.  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold. |
+| ERFC      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Complementary erf.  Same as ERF.  Session 105 pinned Sy round-trip + null fold. |
+| BETA      | ✓ | ✓ | · | ✓ | ✓  | · | · | · | ✓ | Arity 2 — B(a, b).  No simplify-time fold (needs log-gamma).  Session 105 pinned Sy round-trip + null fold. |
+| UTPC      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Upper-tail χ² CDF.  Arity 2 — UTPC(ν, x).  No simplify-time fold (needs incomplete gamma).  Session 105 pinned Sy round-trip + null fold. |
+| UTPF      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Upper-tail F CDF.  Arity 3 — UTPF(ν₁, ν₂, x).  No simplify-time fold (needs incomplete beta).  Session 105 pinned Sy round-trip + null fold. |
+| UTPT      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Upper-tail Student-t CDF.  Arity 2 — UTPT(ν, x).  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold. |
+
+### Combinatorial / integer-divmod family (COMB / PERM / IQUOT / IREMAINDER / XROOT)
+
+Arity-2 numeric ops.  All have `defaultFnEval` folds that accept only
+integer-valued Reals (except XROOT, which accepts non-negative real
+radicand with non-zero index); out-of-domain cases return `null` so
+the simplifier leaves the expression symbolic rather than injecting
+NaN.
+
+| Op         | R* | Z | C | N | Sy | L | V | M | T | Notes |
+|------------|----|---|---|---|----|---|---|---|---|-------|
+| COMB       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Binomial coefficient C(n, m).  Rejects m > n, negative args.  Session 105 pinned Sy round-trip + COMB(5,2)=10, COMB(5,0)=1, COMB(5,6)→null, COMB(-1,2)→null. |
+| PERM       | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Falling factorial P(n, m).  Same rejections as COMB.  Session 105 pinned Sy round-trip + PERM(5,2)=20, PERM(5,0)=1, PERM(5,6)→null. |
+| IQUOT      | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | Integer division (truncates towards 0).  Session 105 pinned Sy round-trip + IQUOT(17,5)=3, IQUOT(-17,5)=-3, IQUOT(10,0)→null. |
+| IREMAINDER | ~  | ✓ | · | ✓ | ✓  | ✓ | · | · | ✓ | IREMAINDER(a, b) = a - IQUOT(a,b)·b; same sign as dividend.  Session 105 pinned Sy round-trip + IREMAINDER(17,5)=2, IREMAINDER(-17,5)=-2, IREMAINDER(10,0)→null. |
+| XROOT      | ~  | ✓ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | XROOT(y, x) = y^(1/x).  Session 105 pinned Sy round-trip + XROOT(27,3)=3, XROOT(2,2)=√2, XROOT(-8,3)→null, XROOT(8,0)→null. |
+
+*`~` on Real (COMB/PERM/IQUOT/IREMAINDER/XROOT) = accepted only when the stack op's integer-or-finite-real domain check passes.
 
 ### Ordered comparators — `<` / `>` / `≤` / `≥`
 
@@ -192,25 +293,410 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
 
 (Ordered by estimated effort, smallest first.)
 
-1. **BinaryInteger audit on `+`, `-`, `*`, `/` with mixed scalar operand** —
-   confirm the B + R / B + Z coercion path in `_scalarBinaryMixed`
-   (session 047?) is correct under all four wordsize masks.  Estimated
-   6–8 tests.  HP50 AUR §10.1 describes the masking rule.
-2. **Tagged transparency on `SIGN`, `ARG`, `FLOOR`, `CEIL`, `IP`, `FP`** —
-   audit; most are already ✓ via the existing `_withTaggedUnary` wrapper
-   (added in sessions 062–063).  If any row is still blank, one-line
-   swap + pair of tests.
-3. **Detail rows for `+` / `-` / `*` / `/` / `^`** — pull these out of the
+1. **Detail rows for `+` / `-` / `*` / `/` / `^`** — pull these out of the
    compact reference table into per-op sections with Unit-dim-algebra notes
-   and BinaryInteger STWS masking notes.  Doc-only; low effort.
-4. **Dim-equivalence `==` on Units** — distinct from today's strict
+   and BinaryInteger STWS masking notes.  Doc-only; low effort.  Session
+   110 added the BinInt audit notes inline in the compact table; the
+   per-op detail-section pull-apart is still open.
+2. **Add a Q column to the matrix tables.**  Rational is a first-class
+   numeric peer (Z ⊂ Q ⊂ R ⊂ C).  Session 110 pinned Rational through
+   `==` / `SAME` / `<` / `>` / `≤` (cross-family via `promoteNumericPair`
+   for equality, `comparePair`'s dedicated `rational` branch for ordered
+   compare — cross-multiplies, no Real round-trip).  A formal Q column
+   on the per-op rows would document the widening already shipped for
+   arithmetic, rounding, and comparison ops.
+3. **Dim-equivalence `==` on Units** — distinct from today's strict
    structural `==`.  Could be a new op (`UEQUAL`?) or a flag that
    flips `==` semantics.  Read AUR §20 first.
+4. ~~**Rational × Rational on `^` with integer exponent** — currently
+   Rational^Integer is real-promoted…~~  **Resolved session 115.**
+   The stale claim traced back to an early-session-092 note — by
+   the time Decimal-Real landed, the `^` dispatch was already routing
+   `Q ^ Integer(n)` through `Fraction.pow(n)` for exact stay-exact.
+   `Rational(3,2) ^ Integer(3)` → `Rational(27,8)` and
+   `Rational(7,11) ^ Integer(0)` → `Integer(1)` (d=1 collapse) are
+   now pinned by hard tests in `tests/test-types.mjs`.  Fractional
+   rational exponent (`Rational(2,1) ^ Rational(1,3)`) correctly lifts
+   to Symbolic in EXACT mode (pinned separately).
+
+5. **Named per-op rows for `+` / `-` / `*` / `/` / `^`** — the compact
+   reference row documents Tagged tag-drop, BinInt mixed-scalar, and
+   Rational widening, all of which now have direct pins.  Pull-apart
+   into per-op sections would let Notes column cross-reference the
+   Rational-exact-path vs Q→R widening vs Q→C widening contract
+   session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (120)
+
+- **Cluster 1 — Hyperbolic family Tagged transparency, List
+  distribution, and Symbolic-lift through Tagged.**  All six ops
+  (`SINH`/`COSH`/`TANH`/`ASINH`/`ACOSH`/`ATANH`) sit under the
+  "Unary — invert / square / sqrt / elementary functions" row and
+  show `T ✓ / L ✓ / N ✓ / Sy ✓` since session 063, but no direct
+  test pinned the `_withTaggedUnary` re-tag-with-same-label
+  contract on this specific subfamily, the `_withListUnary`
+  per-element distribution, or the Tagged-outer-of-List unwrap
+  order on a transcendental inner handler.  13 hard assertions:
+  - `:t:Real(0) SINH` → `:t:Real(0)` (identity at zero, tag
+    preserved).
+  - `:lbl:Real(0) COSH` → `:lbl:Real(1)`.
+  - `:k:Real(1) TANH` → `:k:Real(tanh(1))` ≈ 0.7616.
+  - `:v:Real(2) ASINH/ACOSH` → `:v:Real(<asinh(2)/acosh(2)>)` and
+    `:v:Real(0.5) ATANH` → `:v:Real(atanh(0.5))`.
+  - **Wrapper-order pin:** `:v:Real(2) ATANH` →
+    `Tagged(v, Complex)` — the inner handler picks Real-vs-Complex
+    *after* the Tagged unwrap (|x|>1 lifts to Complex via the
+    principal branch), and the outer re-tag is type-agnostic on
+    the inner.
+  - `:z:Complex(0,1) SINH` → `Tagged(z, Complex)` with the
+    inner ≈ `i·sin(1)` (passes the Complex through the Real-domain
+    inner without coercing).
+  - `:v:Name(X) SINH` → `Tagged(v, Symbolic)` — pins the
+    composition order: Tagged unwraps first, the inner handler
+    sees a Name and lifts to Symbolic, the outer re-tag fires
+    on the Symbolic result.
+  - List distribution shape pin for SINH/COSH/TANH/ASINH on
+    `{Real(0), Real(1)}` (each returns a 2-element list of Reals).
+  - SINH numeric pin: `SINH({0 1})` → `{0 sinh(1)}`.
+  - **Tagged-outer-of-List:** `:lbl:{0 1} SINH` → `:lbl:{0 sinh(1)}`
+    (Tagged wrapper unwraps first, List wrapper distributes
+    inside, outer Tagged re-applies — same recursion order as
+    the session 115 Cluster 3 NEG variant but on a transcendental
+    op that reaches a different inner handler).
+
+- **Cluster 2 — Tagged tag-drop on the percent family
+  (`%` / `%T` / `%CH`).**  All three list `T ✓` since session 064
+  with the comment "Session 064 added L/T", but no direct test
+  pinned the `_withTaggedBinary` either-side-or-both unwrap-
+  and-drop on these specific ops (distinct inner handler from the
+  arithmetic family pinned in session 115 Cluster 1).  9 hard
+  assertions:
+  - **Both-sides tag-drop:** `:a:Real(80) :b:Real(25) %` →
+    `Real(20)` (no Tagged envelope on result — HP50 AUR §3.4
+    binary tag-drop, mirror of session 115 Cluster 1).
+  - `:a:Real(50) :b:Real(20) %T` → `Real(40)`.
+  - `:a:Real(50) :b:Real(20) %CH` → `Real(-60)`.
+  - **Left-only tag:** `:a:Real(80) Real(25) %` → `Real(20)`
+    (left tag drops; result is plain Real).
+  - **Right-only tag:** `Real(80) :p:Real(25) %` → `Real(20)`
+    (right tag drops).
+  - **List broadcast on the percent base:** `{80 40} 25 %` →
+    `{Real(20) Real(10)}` (% distributes over base — first
+    argument).
+  - **V/M ✗ rejection** (session 072 flipped these from blank to ✗
+    but no direct test pinned it): `Vector × Real %` and
+    `Real × Matrix %` both throw 'Bad argument type'.
+
+- **Cluster 3 — Rational unary stay-exact contract.**  The
+  "Rational (`Q`) — session 092" convention text describes the
+  EXACT-mode stay-exact dispatch and APPROX-mode Real collapse,
+  but no per-op row carries a Q column and no direct test pinned
+  the integer-collapse boundaries.  29 hard assertions:
+  - **Stay-exact unary:** `NEG Rational(1,2)` → `Rational(-1,2)`
+    (sign on numerator); `INV Rational(2,3)` → `Rational(3,2)`;
+    `SQ Rational(-3,4)` → `Rational(9,16)`; `ABS Rational(-3,4)`
+    → `Rational(3,4)`.
+  - **`d=1` collapse on INV:** `INV Rational(1,5)` → `Integer(5)`
+    (Rational(5,1) collapses to Integer at the result layer).
+    Note that SQ deliberately does NOT collapse — `SQ Rational(2,1)`
+    stays as `Rational(4,1)`, a different code path.  This is a
+    pin of current behavior; the inconsistency is intentional or a
+    review-lane finding for a future pass.
+  - **SQRT routing:** perfect-square Q stays-exact:
+    `SQRT Rational(9,16)` → `Rational(3,4)`; `SQRT Rational(0,1)`
+    → `Integer(0)` (zero radicand collapses).  Non-square Q lifts
+    to Symbolic in EXACT: `SQRT Rational(2,1)` → `Symbolic` (no
+    implicit Real coercion).  Negative Q lifts to Complex:
+    `SQRT Rational(-1,1)` → `Complex(0, 1)` (principal branch).
+  - **SIGN Q→Z collapse:** `SIGN Rational(-3,4)` → `Integer(-1)`,
+    `SIGN Rational(0,1)` → `Integer(0)`,
+    `SIGN Rational(3,4)` → `Integer(1)`.
+  - **Rounding Q→Z collapse:** FLOOR / CEIL / IP all collapse Q
+    to Integer (the integer part is exact, no Rational needed):
+    - `FLOOR Rational(7,2)` → `Integer(3)` (round toward -∞);
+      `FLOOR Rational(-7,2)` → `Integer(-4)`.
+    - `CEIL Rational(7,2)` → `Integer(4)` (round toward +∞);
+      `CEIL Rational(-7,2)` → `Integer(-3)`.
+    - `IP Rational(7,2)` → `Integer(3)` (trunc toward zero);
+      `IP Rational(-7,2)` → `Integer(-3)` (NOT -4 — sign-
+      preserving truncation, contrast with FLOOR).
+  - **FP stays Q for non-integer Q, collapses for integer-valued:**
+    `FP Rational(7,2)` → `Rational(1,2)` (exact fractional);
+    `FP Rational(-7,2)` → `Rational(-1,2)` (sign preserved on
+    numerator); `FP Rational(6,3)` → `Integer(0)` (Rational(6,3)
+    canonicalises to 2/1 at the constructor — integer-valued Q
+    has zero fractional part).
+  - **APPROX-mode collapse:** wrapping
+    `setApproxMode(true) … finally setApproxMode(false)`:
+    `INV Rational(2,3)` → `Real(1.5)`,
+    `SQ Rational(2,3)` → `Real(0.4444…)`,
+    `FLOOR Rational(7,2)` → `Real(3)` (NOT Integer — APPROX flips
+    Q to the real-kind branch even for the rounding family).
+  - **Out-of-domain rejection:** `FACT Rational(5,1)` →
+    'Bad argument type' (Q rejected even at integer-valued —
+    deliberate Q-as-first-class-type stance, NOT silently
+    coerced to Real); `XPON Rational(1,2)` → 'Bad argument type';
+    `MANT Rational(1,2)` → 'Bad argument type'.
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`,
+  or `formatter.js` this session (all held by concurrent session
+  119 command-support lane).  `tests/test-types.mjs`: +68
+  assertions (524 → 594).  `test-all` 4182 / 0; `test-persist`
+  38 / 0; `sanity` 22 / 0.  See `logs/session-120.md` for the
+  user-reachable demo and exact gate counts.
+
+### Resolved this session (115)
+
+- **Cluster 1 — Binary Tagged tag-drop on `+ - * / ^` and the
+  binary-numeric family.**  `_withTaggedBinary` (defined in
+  `www/src/rpl/ops.js`) wraps every binary numeric op and
+  unwraps Tagged on either or both operands before dispatching
+  to the inner handler; the result is returned **without** a
+  Tagged envelope (HP50 AUR §3.4 — unlike unary ops, there is
+  no single obvious label to keep on a binary result).  The
+  matrix carried these cells as ✓ on the T axis but no direct
+  test pinned the drop-on-output contract or the either-side
+  unwrap.  17 hard assertions:
+  - `:a:Real(5) + :b:Real(3)` → `Real(8)` (both-sides tag drop).
+  - `:a:Integer(10) - Integer(3)` → `Integer(7)` (left-only tag).
+  - `Integer(10) * :b:Integer(3)` → `Integer(30)` (right-only tag).
+  - `:a:Real(6) / :b:Real(2)` → `Real(3)`.
+  - `:a:Integer(2) ^ :b:Integer(8)` → `Integer(256)`.
+  - MOD / MIN / MAX / COMB / PERM / IQUOT / IREMAINDER / GCD /
+    LCM with both operands tagged — each pinned with the correct
+    non-Tagged Integer/Real result.
+  - Symbolic-lift through tag unwrap:
+    `:a:Name('X') + :b:Real(5)` → `Symbolic(Bin('+', X, 5))`
+    (tag unwrap runs *before* the Name→Symbolic lift detects the
+    symbolic operand).
+
+- **Cluster 2 — Rational arithmetic on `+ - * / ^` end-to-end.**
+  The `promoteNumericPair` routing (`types.js`) sends mixed
+  numeric pairs through four named kinds: `'integer' / 'rational' /
+  'real' / 'complex'`.  The Rational arithmetic path
+  (`_rationalBinary` in ops.js, line 418) goes through Fraction.js
+  for exact arithmetic with canonical Integer collapse when
+  `d === 1n`.  `Q × Real → Real` widens via the real kind;
+  `Q × Complex → Complex` widens via the complex kind; `Q ^ Integer`
+  stays exact through `Fraction.pow(n)`.  APPROX-mode collapse
+  routes Rational through `toRealOrThrow` at the scalar level.
+  The matrix carried these behaviours under "Rational (`Q`) —
+  session 092" in the convention text but had no direct test of
+  the full arithmetic surface (session 110 pinned compare &
+  equality, not arithmetic).  15 hard assertions:
+  - Q×Q exact: `Rational(1,2) + Rational(1,3)` → `Rational(5,6)`;
+    `Rational(3,4) - Rational(1,4)` → `Rational(1,2)` (canonical
+    form — GCD'd at the constructor); `Rational(2,3) * Rational(3,5)`
+    → `Rational(2,5)`; `Rational(3,4) / Rational(1,2)` → `Rational(3,2)`.
+  - Canonical Integer collapse at d=1: `Rational(4,6) + Rational(1,3)`
+    → `Integer(1)` (result is 1/1 and collapses to Integer).
+  - Q→Real widening: `Rational(1,2) + Real(0.25)` → `Real(0.75)`.
+  - Q→Complex widening: `Rational(1,2) * Complex(2, 4)` →
+    `Complex(1, 2)`.
+  - Integer-exponent exact path: `Rational(3,2) ^ Integer(3)` →
+    `Rational(27,8)`; `Rational(7,11) ^ Integer(0)` → `Integer(1)`
+    (d=1 collapse).
+  - Fractional-exponent EXACT-mode symbolic lift:
+    `Rational(2,1) ^ Rational(1,3)` → `Symbolic` (no implicit
+    Real coercion in EXACT mode).
+  - Division by zero: `Rational(3,2) / Integer(0)` → throws
+    `'Division by Zero'` (Fraction.js error — different capitalisation
+    than the Real path's 'Infinite result').
+  - APPROX-mode collapse (wrapped in `try { setApproxMode(true)… }
+    finally { setApproxMode(false) }`): `Rational(1,2) + Rational(1,3)`
+    → `Real` with value ≈ 0.8333….  This pins that APPROX flips Q
+    to the real-kind branch at `promoteNumericPair`.
+
+- **Cluster 3 — List distribution edge cases on `_withListUnary` /
+  `_withListBinary`.**  The matrix carries an `L ✓` in almost every
+  row but pinning was shallow — session 115 adds depth for the
+  Tagged-outer-of-List unwrap order, nested recursion,
+  pairwise broadcast, size-mismatch rejection, and the *deliberate*
+  rejection when a List contains inner Tagged scalars (the
+  `_withTaggedUnary` wrapper sits OUTSIDE `_withListUnary` in the
+  composition chain, so `{:lbl:scalar}` has no unwrapper at the
+  inner scalar handler — this is by design).  8 hard assertions:
+  - Tagged-outer-of-List: `:lbl:{1 -2 3} NEG` → `:lbl:{-1 2 -3}`
+    (Tagged unwraps first, list distributes inside, outer tag
+    re-applies).
+  - Nested list: `{{1 -2} {3 -4}} NEG` → `{{-1 2} {-3 4}}`.
+  - Mixed-type list: `{Integer(5) Real(3.2) Real(-7.5)} FLOOR` →
+    `{Integer(5) Real(3) Real(-8)}` (per-element FLOOR, each
+    element's own type path).
+  - List×scalar broadcast: `{1 2 3} + Integer(10)` →
+    `{Integer(11) Integer(12) Integer(13)}`.
+  - Scalar×List: `Integer(2) * {1 2 3}` → `{2 4 6}`.
+  - Pairwise same-size: `{1 2 3} + {4 5 6}` → `{5 7 9}`.
+  - Size mismatch: `{1 2} + {1 2 3}` → `'Invalid dimension'`.
+  - Deliberate inner-Tagged rejection: `{:x:1 :y:-2} NEG` →
+    `'Bad argument type'` (list wrapper recurses into the inner
+    scalar handler; inner handler is NOT Tagged-aware).
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`, or
+  `formatter.js` this session (all held by concurrent session 114
+  command-support lane).  `tests/test-types.mjs`: +40 assertions;
+  `test-all`, `test-persist`, `sanity` all green (see
+  `logs/session-115.md` for exact counts).
+
+### Resolved this session (110)
+
+- **Cluster 1 — BinInt × Real/Integer mixed-scalar arithmetic audit.**
+  `_scalarBinaryMixed` + `_binaryMathMixed` routes mixed-BinInt pairs
+  through `binIntBinary` with the BinInt side's base preserved (HP50
+  AUR §10.1).  The matrix had treated these cells as ✓ via the
+  compact `+ - * / ^` reference row, but no direct test pinned the
+  wordsize-aware coercion contract.  Eleven hard assertions in
+  `tests/test-types.mjs`:
+  - `#FFh + Integer(3)` and `Integer(3) + #FFh` → `#102h` (BinInt
+    base wins regardless of operand order).
+  - `#20h * Real(2.7)` → `#40h` (Real trunc-coerced to Integer 2 via
+    `_coerceToBinInt`).
+  - `#10h + Real(-3)` → `#Dh` at ws=64 (negative Real wraps via
+    `2^w - 3` then masks back).
+  - `#12d + Real(5)` → `#17d` (decimal base preserved).
+  - `#2h ^ Integer(3)` → `#8h` (via `binIntBinary('^')` → `_modPow`).
+  - ws=8 block (setWordsize(8), restore at exit): `#FFh + 2` → `#01h`
+    (257 masked), `#2h ^ 10` → `#0h` (1024 masked), `Real(300) * #2h`
+    → `#58h` (600 masked).
+  - Rejection guards: `#5h / Integer(0)` → 'Division by zero' (BinInt
+    branch, distinct from the Real path's 'Infinite result');
+    `#5h + Complex(1,2)` → 'Bad argument type' (no BinInt×Complex
+    path — coercion is integer-only).
+
+- **Cluster 2 — Tagged transparency on SIGN / ARG / FLOOR / CEIL /
+  IP / FP.**  All six ops are wrapped in `_withTaggedUnary` so
+  `:lbl:v OP` → `:lbl:OP(v)`.  The matrix listed all six T-cells
+  as ✓ but no direct test pinned the re-tag-with-same-label
+  contract.  15 hard assertions in `tests/test-types.mjs`:
+  - FLOOR on `:x:Real(7.2)`, `:x:Real(-1.5)`, `:n:Integer(5)`
+    (Integer pass-through, rounding is a no-op).
+  - CEIL on `:y:Real(7.2)` and `:y:Real(-1.5)`.
+  - IP on `:z:Real(7.2)` and `:z:Real(-7.2)` (trunc toward zero).
+  - FP on `:w:Real(7.2)` (`≈ 0.2` modulo IEEE drift — FP uses the
+    `x - Math.trunc(x)` real path, not an exact reduction).
+  - SIGN on `:u:Real(-5)`, `:u:Real(0)`, `:p:Real(42)`.
+  - ARG on `:v:Complex(3,4)` (inner value is `Real`, approximately
+    `atan2(4,3) = 0.9273…` at default RAD mode).
+
+- **Cluster 3 — Rational cross-family compare & equality.**
+  `eqValues` routes numeric pairs through `promoteNumericPair`;
+  Rational is in `isNumber` (unlike BinInt), so Rational widens
+  through the Integer / Real / Complex lattice on both `==` and
+  `SAME`.  `comparePair` has a dedicated `rational` branch for
+  `<` / `>` / `≤` / `≥` that cross-multiplies (no round-trip
+  through Real — preserves exactness).  11 hard assertions:
+  - Pure Q×Q equality with canonicalisation guard:
+    `Rational(1,2) == Rational(2,4)` → 1 (the stored form is 1/2;
+    the incoming 2/4 canonicalises at the constructor).
+  - Q×Q inequality: `Rational(1,2) == Rational(2,3)` → 0.
+  - Q×Z: `Rational(6,3) == Integer(2)` → 1 (Integer widens to
+    `{n:2n, d:1n}` in `promoteNumericPair`).
+  - Q×R: `Rational(1,2) == Real(0.5)` → 1 via real-kind promotion.
+  - Q×R on SAME: `SAME Rational(1,2) Real(0.5)` → 1 — pinning
+    that SAME DOES cross-widen Rational (contrast with
+    BinInt×Integer SAME which stays strict; BinInt is out of
+    `isNumber`, Rational is in).
+  - Q×C: `Rational(1,2) == Complex(0.5, 0)` → 1 via complex-kind
+    widen (im=0 on both sides).
+  - Ordered Q compares: `Rational(1,2) < Integer(1)` → 1,
+    `Rational(3,2) > Real(1.4)` → 1, `Rational(1,2) < Rational(3,4)`
+    → 1, `Rational(1,2) ≤ Rational(1,2)` → 1, plus a negative
+    cross-multiply case `Rational(-3,4) < Rational(-2,3)` → 1
+    (−9 vs −8 after cross-multiply).
+
+  No changes to `www/src/rpl/ops.js`, `algebra.js`, `types.js`, or
+  `formatter.js` this session (ops.js + tests/test-algebra.mjs +
+  tests/test-numerics.mjs + COMMANDS.md + REVIEW.md + logs/session-109.md
+  are lock-held by concurrent session 109 command-support lane).
+  `tests/test-types.mjs`: +45 assertions (429 → 474); `test-all`:
+  3871 → 3957 (+86 including concurrent session 109 output; locally
+  the +45 came from this lane).  `test-persist` 34/0, `sanity` 22/0.
+
+### Resolved this session (105)
+
+- **`Sy` axis round-trip hardening for twenty-three multi-arg ops.**
+  Session 100 closed the Sy axis for eleven arity-1 ops (CONJ / RE /
+  IM / LNP1 / EXPM / XPON / MANT / TRUNC / ZETA / LAMBERT / PSI) via
+  hard tests in `tests/test-algebra.mjs`.  Session 105 extends the
+  same pattern to the arity-2 and variadic surface that was never
+  pinned — all of these ops already had working stack handlers and
+  `KNOWN_FUNCTIONS` entries, but the
+  `parseEntry → format → parseEntry` idempotency and the
+  `defaultFnEval` fold / no-fold contract had no direct test.
+  `tests/test-algebra.mjs` was lock-held by the concurrent session 104
+  command-support lane, so the new assertions live in
+  `tests/test-types.mjs` (end-of-file `session 105` block).
+  +149 assertions; test-all: 3681 → 3830.
+  - **Cluster A — two-arg HP50 ops (10):** MIN, MAX, MOD, COMB, PERM,
+    IQUOT, IREMAINDER, GCD, LCM, XROOT.  For each:
+    `isKnownFunction` (case-insensitive), `parseEntry` → Symbolic,
+    `format` + reparse idempotent, and the `defaultFnEval` numeric
+    fold pinned on representative Integer arguments (including
+    out-of-domain and edge cases that must return `null`
+    — MOD(10,0), COMB(5,6), GCD(1.5,3), XROOT(-8,3), etc.).
+  - **Cluster B — special-function / stat-dist (10):** UTPC, UTPF,
+    UTPT, BETA, ERF, ERFC, GAMMA, LNGAMMA, HEAVISIDE, DIRAC.  Parser
+    round-trip + fold guards.  HEAVISIDE / DIRAC / GAMMA fold on
+    safe inputs (`HEAVISIDE(0) = 1` per HP50 convention, `DIRAC(0)`
+    leaves symbolic, `GAMMA(5) = 24` integer fold, `GAMMA(180)` ->
+    null on overflow, `GAMMA(0.5)` -> null on non-integer); the
+    other seven have `null` evaluators — the Lanczos / incomplete-
+    beta path lives on the stack side, not at simplify time.
+  - **Cluster C — variadic arity (3):** `TRUNC(X, 3)` round-trips;
+    `TRUNC(X)` and `TRUNC(X, 3, 4)` are both rejected at
+    `parseAlgebra` with a "TRUNC expects 2 argument(s), got N"
+    message (pinning the `spec.arity === 2` check).  `PSI(X)` and
+    `PSI(X, 2)` both round-trip (the `spec.arity` key is omitted,
+    so the parser's `spec.arity !== undefined` guard is skipped).
+    Both shapes yield `null` at `defaultFnEval` — PSI has no
+    simplify-time fold at any arity.
+
+  No changes to `ops.js`, `algebra.js`, `types.js`, or `formatter.js`
+  (ops.js + tests/test-algebra.mjs were lock-held this session).
+  P-002 (types.js header docstring Rational omission + pre-move
+  vendor path) was also fixed this session — that's a pure-doc
+  edit inside types.js, not a matrix widening, and tracked in the
+  session log rather than here.
+
+### Resolved this session (100)
+
+- **`Sy` axis round-trip closure for eleven Symbolic-lifting ops.**
+  The stack-level handlers for CONJ, RE, IM, LNP1, EXPM, XPON, MANT,
+  TRUNC, ZETA, LAMBERT, and PSI were already lifting Name / Symbolic
+  operands correctly (they build `Symbolic(AstFn('NAME', [...]))`),
+  but the algebra parser's whitelist (`KNOWN_FUNCTIONS` in
+  `www/src/rpl/algebra.js`) didn't include those names.  Consequence:
+  the formatted result `` `NAME(X)` `` would *print* fine but
+  re-entering the same text at the entry line (or round-tripping
+  through `parseEntry`) fell through to the fallback path — the
+  parser returned a plain `Name` rather than a `Symbolic`, breaking
+  reversibility.  Verified live with `utils/@probe-roundtrip.mjs`
+  before the edit (all 11 ops showed `reparsed-type=name same=false`)
+  and again after (all showed `reparsed-type=symbolic same=true`).
+  Also added each op's `eval` callback where a simplify-time constant
+  fold makes sense — `CONJ/RE = x`, `IM = 0`, `LNP1 = log1p`,
+  `EXPM = expm1`, `XPON/MANT = HP50 real-decomposition`, leaving
+  TRUNC / ZETA / LAMBERT / PSI as `arity`-only (library-grade
+  approximations would need CAS or a hand-rolled series; not in
+  scope for this session).  TRUNC declared `arity: 2` so the
+  two-arg `TRUNC(X, 3)` form parses; PSI has no `arity` key — both
+  unary `PSI(X)` and binary `PSI(X, k)` are accepted (variadic).
+  ~40 hard tests added to `tests/test-algebra.mjs` covering:
+  `isKnownFunction`, parseAlgebra shape, parseEntry → Symbolic,
+  formatAlgebra round-trip (each op), TRUNC's 2-arg form plus an
+  arity-enforcement rejection guard for the 1-arg form, PSI's
+  variadic shape, and each `defaultFnEval` numeric fold
+  (`CONJ(5) = 5`, `RE(5) = 5`, `IM(5) = 0`, `LNP1(0.5) ≈ log1p(0.5)`,
+  `EXPM(1) ≈ expm1(1)`, `XPON(2500) = 3`, `MANT(2500) = 2.5`,
+  `XPON(0) = 0`, `MANT(0) = 0`, `LNP1(-1) = null`, plus null-returns
+  for ZETA / LAMBERT / PSI which stay symbolic).  Test count climbed
+  from 3550 → 3605 (+55).  No changes to `ops.js` or `formatter.js`
+  (out of lock scope; owned this session by `session099-command-support`).
 
 ### Resolved this session (087)
 
 - **`==` / `SAME` on Program and Directory.**  Two branches added to
-  `eqValues()` in `src/rpl/ops.js`.  Program: structural equality via
+  `eqValues()` in `www/src/rpl/ops.js`.  Program: structural equality via
   `_eqArr(a.tokens, b.tokens)` (recurses through eqValues so nested
   Programs and mixed-type tokens all compare correctly).  Directory:
   reference identity (`a === b`) — two distinct Directory allocations
@@ -235,7 +721,7 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
 ### Resolved this session (082)
 
 - **DERIV — hyperbolic function coverage.**  `derivFn()` in
-  `src/rpl/algebra.js` now handles the full hyperbolic family
+  `www/src/rpl/algebra.js` now handles the full hyperbolic family
   (`SINH`, `COSH`, `TANH`, `ASINH`, `ACOSH`, `ATANH`) in addition
   to the existing trig / log / exp / sqrt / abs rules.  Previously
   `DERIV('SINH(X)', 'X')` threw *"DERIV: unsupported function

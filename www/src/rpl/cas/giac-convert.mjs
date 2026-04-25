@@ -19,7 +19,11 @@
 // This module doesn't depend on the Giac engine itself. It's pure
 // string / AST manipulation, so it's safe to use in Node tests.
 
-import { Num, Var, Neg, Bin, Fn, parseAlgebra, formatAlgebra, freeVars } from "../algebra.js";
+// Only the parseAlgebra entry point is needed at runtime — Num/Var/Neg/
+// Bin/Fn/formatAlgebra appear in the comments above as references to
+// the AST shape but are never constructed or called from this file.
+// (REVIEW.md X-009 closed session 114.)
+import { parseAlgebra } from "../algebra.js";
 import { isValidHpIdentifier } from "../types.js";
 import { RPLError } from "../stack.js";
 
@@ -499,12 +503,3 @@ export function isGiacErrorString(s) {
   return false;
 }
 
-/* ------------------------------------------------------------------
-   Convenience round-trippers.
-   ------------------------------------------------------------------ */
-
-/** Quick helper: input AST, get the Giac input string via astToGiac,
-    compare against formatAlgebra of the same tree. Used by tests. */
-export function compareRoundTrip(ast) {
-  return { giac: astToGiac(ast), rpl: formatAlgebra(ast) };
-}

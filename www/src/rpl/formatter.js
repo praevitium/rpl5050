@@ -7,7 +7,7 @@
    ================================================================= */
 
 import {
-  TYPES, isReal, isInteger, isRational, isBinaryInteger, isComplex, isString,
+  isReal, isInteger, isRational, isBinaryInteger, isComplex, isString,
   isName, isList, isVector, isMatrix, isProgram, isTagged, isSymbolic,
   isDirectory, isUnit,
   Decimal,

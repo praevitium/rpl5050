@@ -4,62 +4,157 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 098 (2026-04-24).  In-file assertion labels
-written this session read `session096:`/`session097:`/`session098:` —
-all the same calendar day.  Session 098 is the follow-up to 097's
-`giacToAst` diagnostic wrap, which revealed the *real* CAS-boundary
-bug: Giac's `purge(X)` throws `No such variable X` when `X` was never
-assigned, which aborts the `purge(X);factor(...)` semicolon-sequence
-before it ever reaches `factor`.
+**Last updated.** Session 122 (2026-04-24).  Unit-tests lane run.
 
-Initial fix attempted a Giac-level `try{purge(X);}catch(err){0;}` wrap
-— but that kept the preamble alive and the underlying assumption (we
-*need* to purge) never got tested.  Final fix: **remove the purge
-preamble entirely** from `buildGiacCmd`.  Rationale: rpl5050's CAS
-flow never assigns values to variables inside Giac's session — every
-op passes the symbolic AST and treats the returned string as
-symbolic.  Xcas therefore already treats free variables as unassigned
-`DOM_IDENT` by default, so purging was cargo-cult insurance against a
-class of bug rpl5050's flow doesn't create.  `buildGiacCmd` is now a
-thin wrapper around `astToGiac` + the caller's command factory.
-`giacToAst` keeps the new defensive `isGiacErrorString` detector for
-known runtime-error prefixes (`No such variable`, `Error:`,
-`Syntax error`, …) so any future Giac value-channel error surfaces as
-a clean `GiacResultError` instead of a `parseAlgebra` character-offset
-leak.  All existing test fixtures that pinned the purge prefix were
-stripped to the bare command shape.  This lane's log file is
-`logs/session-098.md`.
+Sibling deltas absorbed since the session-117 snapshot (4089 → 4228,
+**+139**):
+- Session 119 (command-support) shipped **+25** assertions in
+  `test-algebra.mjs` (913 → 938) for the EGV / RSD / GREDUCE
+  ops + `_astToRplValue` neg-num lift.
+- Session 120 (data-type-support) shipped **+68** assertions in
+  `test-types.mjs` (526 → 594) for hyperbolic Tagged transparency
+  + percent Tagged tag-drop + Rational unary stay-exact pins.
+- Session 121 (rpl-programming) shipped **+46** PROMPT / KILL
+  assertions in `test-control-flow.mjs` (402 → 448) BUT the lock
+  was stale-pruned without writing `logs/session-121.md` — work
+  landed concurrently with this run's session-122 lock acquisition
+  (file mtime is well after the lock-overlap window).  This is the
+  O-008 process-failure pattern (lock-release-via-stale-prune as
+  missing-log signal); re-file under the code-review lane.  The
+  session-121 PROMPT cluster does not collide with the session-122
+  edits — different line ranges (s121 at `:3656-3929`, s122 at
+  `:432`/`:660`/`:825`/`:2098`).
 
-## Coverage snapshot (session 098)
+Session 122 unit-tests deltas:
+- **+4 new regression guards** in `test-control-flow.mjs`,
+  closing queue item #2 from session 117 (the 5 `let threw`
+  sites in `test-control-flow.mjs`).  Migrated 4 of the 5
+  sites to `assertThrows()` + added a value-add regression
+  guard at each:
+  - `:432` (START 1/0 in body) — pinned the previously-
+    unguarded HP50 error-message shape to `/Infinite result/`.
+  - `:660` (IFERR-without-THEN with END) — added stack-
+    rollback guard `s.depth === 1 && isProgram(s.peek())`
+    (previously only the throw was checked).
+  - `:825` (FOR/STEP of 0) — pinned exact message
+    `=== 'STEP of 0'`.
+  - `:2098` (IFERR with neither THEN nor END) — same
+    stack-rollback guard as the with-END variant; pins that
+    the no-END path also restores Program to level 1.
+  The 5th site at `:919` is the negated form
+  `assert(!threw, …)` for the `DOERR 0` no-op — deliberately
+  left as-is, mirroring the `tests/test-matrix.mjs` RDZ-0
+  precedent (`assertThrows` would invert the meaning).
 
-Baseline at session start: `node tests/test-all.mjs` = **3512 passing /
-0 failing** (session-097 close).
-Final: **3532 passing / 0 failing** (+20 — 20 new assertions in
-`test-algebra.mjs` pinning buildGiacCmd's try/catch-wrapped purges
-(3), `isGiacErrorString` prefix detector (9), `giacToAst` runtime-error
-routing (4), and FACTOR end-to-end with an error-shaped fixture (4);
-no drift elsewhere).  `test-persist.mjs` 34 / 0.  `sanity.mjs` 22 / 0.
+Prior session-117 snapshot deltas (retained for context — the
+session-117 close was 4089 / 0 in `test-all.mjs`, 38 / 0 in
+`test-persist.mjs`, 22 / 0 in `sanity.mjs`):
+- Session 113 (code-review) — doc-only lane run; **0** assertion
+  deltas (filed new O-009 / X-009 / X-010 findings but made no
+  source/test edits).
+- Session 114 (command-support) shipped assertions in
+  `test-algebra.mjs` (891 → 913, **+22**).
+- Session 115 (data-type-support) shipped **+50** assertions in
+  `test-types.mjs` (474 → 524) for FLOOR/CEIL/IP/FP BinInt
+  widening + List/scalar broadcast + Tagged-inside-List rejection
+  guards.  `:2068`/`:2074` TRUNC sites were left as-is for the
+  unit-tests lane.
+- Session 116 (rpl-programming) shipped **+34** assertions in
+  `test-control-flow.mjs` (368 → 402) for EVAL-HALT-lift-through-
+  Tagged + caller-label sweep.  (Session 116 lock was still held
+  at session-117 entry; first baseline `test-all.mjs` reported
+  a module-load error on `test-control-flow.mjs` which cleared
+  mid-run — my lane did not touch that file.)
+
+Session 117 unit-tests deltas:
+- **+2 new regression guards** in `test-types.mjs` — closing
+  queue item #3 from session 112 (the `:2068`/`:2074` TRUNC sites
+  deliberately skipped for `${threw?.message}` interpolation).
+  Migrated both `let threw = null; try{…}catch(e){threw = e;}`
+  scaffolds to `assertThrows(…, /TRUNC expects 2 argument/, …)`
+  (message-shape pin, 1:1 with the pre-existing assertion) +
+  follow-up `/got 1\b/` / `/got 3\b/` guards on the
+  actual-arg-count tail of the error message, which was
+  previously uncovered.  Precedent: session-112 LOG(-10)-CMPLX-OFF
+  split.  524 → 526.
+- **+4 new regression guards** in `test-persist.mjs` — closing
+  queue item #4 from session 112 (the standalone file's :118
+  site).  Added a **local `assertThrows` helper** mirroring the
+  `tests/helpers.mjs` signature (so test-persist can stay
+  standalone).  Migrated the unknown-version rejection to
+  `assertThrows(…, /unsupported version/, …)` + three new
+  regression guards: (a) `/\b999\b/` on the error message
+  (echo-bad-version invariant), (b) missing-version
+  (`rehydrate({})`) rejected with same shape — exercises the
+  `snap.version === undefined` branch of `persist.js:126`, (c)/(d)
+  `rehydrate(null)` and `rehydrate('not-a-snap')` each reject
+  with `/not an object/` — distinct reject path at `persist.js:125`.
+  34 → 38.
+- **P-001 remainder cleared for `docs/TESTS.md`** — fixed the two
+  stale `src/…` path references at lines 233 (`src/rpl/ops.js`)
+  and 355 (`src/rpl/algebra.js`) to `www/src/…`.  Both sites sit
+  inside historical narrative blocks (s084 KNOWN-GAP test plan +
+  concurrent-lane awareness note); the prefix rewrite is
+  mechanical and does not alter the historical intent.  Completes
+  `docs/` side of P-001 for this lane's files.
+- **O-009 deferred** — the two stray `tests/test-control-flow.mjs.bak{,2}`
+  files cannot be deleted from within the unsupervised scheduled-task
+  session: `rm` returned `Operation not permitted`, and the
+  `cowork_allow_file_delete` permission prompt is blocked in
+  unsupervised mode.  Filed an "open — blocked by tooling" pointer
+  in the known-gaps list for a human-present run to clear.
+
+## Coverage snapshot (session 122)
+
+Baseline at session start: `node tests/test-all.mjs` = **4182 / 0**
+(session-120 close: +68 in `test-types.mjs` for hyperbolic Tagged +
+percent Tagged + Rational unary stay-exact).  `test-persist.mjs`
+38 / 0.  `sanity.mjs` 22 / 0.  No active locks at entry — sessions
+119, 120 cleanly released; session 121's lock had been stale-pruned
+with no log written.
+
+Final: **4232 passing / 0 failing**.  Composition: +4 session-122
+regression guards in `test-control-flow.mjs` (the queue-#2
+`assertThrows` migration); +46 session-121 PROMPT/KILL assertions
+landed concurrently in the same file (s121 stale-pruned its lock,
+work was already on disk under `session121:` labels at session-122
+verification).  Net delta to the file: 402 → 452.
+`test-persist.mjs` 38 / 0 (unchanged).  `sanity.mjs` 22 / 0
+(unchanged).
 
 | File                        | OK   | FAIL | Notes                                    |
 |-----------------------------|------|------|------------------------------------------|
-| test-algebra.mjs            |  815 | 0    | +8 session-096 (algebra auto-close at EOF: 4; CAS name-validator in astToGiac / buildGiacCmd: 4).  +10 session-097 (stripGiacQuotes iterative unwrap: 5; giacToAst diagnostic wrap: 3; FACTOR nested-quote end-to-end: 2).  +20 session-098 (buildGiacCmd try/catch-wrapped purges: 3; isGiacErrorString prefix detector: 9; giacToAst runtime-error routing: 4; FACTOR error-shape end-to-end: 4). |
+| test-algebra.mjs            |  938 | 0    | +25 session-119 (command-support: EGV / RSD / GREDUCE + neg-num lift). |
 | test-arrow-aliases.mjs      |   19 | 0    |                                          |
-| test-binary-int.mjs         |  122 | 0    |                                          |
-| test-comparisons.mjs        |   73 | 0    |                                          |
-| test-control-flow.mjs       |  260 | 0    | `'SUM'` → `'TOTAL'` rename for WHILE loop (name validator: SUM is reserved). |
-| test-entry.mjs              |   90 | 0    | +4 session-096 backtick-body validator guard (auto-close, ghost-Name rejection, `+` / `Y` round-trips). |
-| test-eval.mjs               |   62 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    | session-112 migration snapshot retained. |
+| test-comparisons.mjs        |   95 | 0    | +15 session-107 Rational coverage (retained from prior snapshot). |
+| test-control-flow.mjs       |  **452** | 0    | +34 session-116; **+46 session-121** PROMPT/KILL cluster (lock stale-pruned, no log written — see top-of-file note); **session-122: +4 regression guards** on the queue-item-#2 `let threw` sites — `:432` START 1/0 message-shape pin (`/Infinite result/`), `:660` IFERR-without-THEN stack-rollback (`s.depth === 1 && isProgram(s.peek())`), `:825` FOR/STEP-of-0 exact-message pin (`=== 'STEP of 0'`), `:2098` no-END IFERR stack-rollback companion.  5th site `:919` (negated `assert(!threw, …)` DOERR-0 no-op) deliberately left — same precedent as test-matrix RDZ-0. |
+| test-entry.mjs              |   90 | 0    | session-112 migration snapshot retained. |
+| test-eval.mjs               |   62 | 0    | session-112 migration snapshot retained. |
 | test-helpers.mjs            |   43 | 0    |                                          |
-| test-lists.mjs              |  171 | 0    |                                          |
-| test-matrix.mjs             |  347 | 0    |                                          |
-| test-numerics.mjs           |  660 | 0    |                                          |
-| test-reflection.mjs         |  178 | 0    |                                          |
+| test-lists.mjs              |  171 | 0    | session-112 migration snapshot retained. |
+| test-matrix.mjs             |  347 | 0    | Remaining 1 site is the negated `assert(!threw, …)` RDZ-0 acceptance check, deliberately untouched. |
+| test-numerics.mjs           |  687 | 0    | +27 session-109 + session-112 LOG-CMPLX-OFF split (retained). |
+| test-reflection.mjs         |  196 | 0    |                                          |
 | test-stack-ops.mjs          |   32 | 0    |                                          |
-| test-stats.mjs              |   20 | 0    |                                          |
-| test-types.mjs              |  276 | 0    | +33 session-095 validator block (syntactic validity, reserved-name bookkeeping, STO / CRDIR integration). |
-| test-ui.mjs                 |   73 | 0    |                                          |
+| test-stats.mjs              |   20 | 0    | session-112 migration snapshot retained. |
+| test-types.mjs              |  594 | 0    | +50 session-115 + 2 session-117; **+68 session-120** (hyperbolic Tagged transparency + percent Tagged tag-drop + Rational unary stay-exact).  526 → 594. |
+| test-ui.mjs                 |   77 | 0    | session-112 migration snapshot retained. |
 | test-units.mjs              |   39 | 0    |                                          |
-| test-variables.mjs          |  248 | 0    | `'SUB'` → `'AFOO'` rename (name validator: SUB is reserved); SVX empty-string assertion now expects "Invalid name". |
+| test-variables.mjs          |  248 | 0    | session-112 migration snapshot retained. |
+| **test-all (aggregate)**    | **4232** | **0** | Session 122 close (includes session-121 PROMPT/KILL cluster landed concurrently).  |
+| test-persist.mjs (separate) |   38 | 0    | session-117 baseline retained — no persist-schema touches this run. |
+| sanity.mjs (standalone)     |   22 | 0    | <5 ms smoke suite.                       |
+
+### Prior snapshot — Session 102 (retained for context)
+
+Baseline at session start: `node tests/test-all.mjs` = **3639 / 0**
+(session-101 close).  Final: **3660 / 0** (+21 session-102 adds).
+Deltas: +7 String-lex edges in `test-comparisons.mjs` (73 → 80),
++4 BinInt-rounder base-preservation edges in `test-types.mjs`
+(276 → 280), +10 SST/DBUG regression guards in `test-control-flow.mjs`
+(294 → 304).  Behaviour-preserving migrations: 9 sites in `test-stack-ops.mjs`,
+5 sites in `test-types.mjs`.
 
 ---
 
@@ -206,7 +301,7 @@ Grand total assertions available across all runnable `.mjs` files
    data-types lane:
    - **Program × Program:** add `if (isProgram(a) && isProgram(b))
      return _eqArr(a.tokens, b.tokens);` to `eqValues` in
-     `src/rpl/ops.js` (the existing `_eqArr` already recurses via
+     `www/src/rpl/ops.js` (the existing `_eqArr` already recurses via
      `eqValues`, so any nested Programs / Lists / etc. compare
      correctly).
    - **Directory × Directory:** add `if (isDirectory(a) &&
@@ -246,6 +341,19 @@ Grand total assertions available across all runnable `.mjs` files
 
 No new missing-op gaps flagged this run.  (The coverage sweep revealed
 no zero-coverage ops in `docs/COMMANDS.md` — the lanes have kept up.)
+
+### File hygiene (blocked by tooling — `rpl5050-unit-tests`)
+
+- **O-009 — `tests/test-control-flow.mjs.bak{,2}` stray backups.**
+  Two backup files sitting beside the live test-control-flow.mjs
+  (92,129 bytes + 92,141 bytes, pre-session-111 snapshots).  Not
+  referenced by any runner but creates grep noise and
+  source-of-truth confusion.  **Session 117 attempted `rm` from
+  the scheduled-task sandbox and got `Operation not permitted`;
+  the `cowork_allow_file_delete` permission prompt is gated
+  behind user-present approval, which is unavailable in
+  unsupervised scheduled-task runs.  Deferred to a human-supervised
+  unit-tests run or the code-review lane.**
 
 ### Harness / test-plumbing (own items — `rpl5050-unit-tests`)
 
@@ -328,7 +436,7 @@ no zero-coverage ops in `docs/COMMANDS.md` — the lanes have kept up.)
   order processed cleanly on every flake-scan invocation.
 - **Concurrent-lane awareness.**  Session 083 (rpl-programming —
   `tests/test-control-flow.mjs`, `tests/test-reflection.mjs`,
-  `src/rpl/algebra.js`, `docs/RPL.md`) was active at lane entry; my
+  `www/src/rpl/algebra.js`, `docs/RPL.md`) was active at lane entry; my
   s084 lock scope explicitly excluded all of those.  Session 085
   (code-review — `docs/REVIEW.md`, `logs/`) opened mid-run; per the
   README's `logs/` exemption I used a unique session-084 filename
@@ -349,50 +457,135 @@ when the next flake appears.
 
 ## Next-session queue (priority order)
 
-1. **Continue the `assertThrows` migration — `test-numerics.mjs`.**
-   ~115 sites.  Now the biggest single target on the queue (s084
-   cleared test-matrix.mjs's 104).  Suggested approach: chunk of
-   ~30 per commit, re-run suite after each commit to confirm pass
-   count unchanged.  test-numerics has more regex variety than
-   test-matrix did (Bad argument type / Bad argument value /
-   Invalid dimension / Infinite result / Undefined name / Bad
-   modulus / …) — preserve each regex exactly to keep specificity.
-   The s084 SPLIT-then-SIMPLE Python regex pattern is reusable
-   (see "Mid-session events" above).
+1. **~~Close the HALT/CONT rpl-programming filing.~~** — assumed
+   closed by session 111 / 116 rpl-programming runs; no flake-scan
+   reproduction in any session since s084.  Drop this item if it
+   reappears in the Known-gaps list on next read.
 
-2. **Continue the `assertThrows` migration — `test-algebra.mjs`.**
-   ~53 sites.  Largest remaining after test-numerics.  CAS-domain,
-   so most rejections are `Bad argument type` / `Bad argument
-   value` / `Undefined name` patterns.
+2. **~~`assertThrows` migration — `test-control-flow.mjs` (5
+   sites).~~**  **Resolved session 122.**  4 of 5 sites migrated
+   to `assertThrows()` + new regression guard at each (+4
+   assertions); 5th site is the negated DOERR-0 form, deliberately
+   left.  Only `let threw` line remaining in the file is line 919
+   (DOERR-0 no-op); `grep -n 'let threw' tests/test-control-flow.mjs`
+   confirms.
 
-3. **Confirm HALT/CONT flake closure & close the
-   rpl-programming-lane filing.**  Already at 25+ consecutive
-   clean runs; one more `flake-scan 20 --quiet` run + a coordinated
-   write to TESTS.md (delete the "Assigned to rpl-programming"
-   block) puts this to bed.  Time budget: ~10 min.
+3. **~~`assertThrows` migration — `test-types.mjs` (:2068/:2074).~~**
+   **Resolved session 117.**  Both TRUNC sites migrated to
+   `assertThrows(/TRUNC expects 2 argument/)` + follow-up
+   `/got N\b/` regression guards on the previously-uncovered
+   actual-arg-count tail of the error message.  +2 assertions.
 
-4. **Duplicate-label cleanup — opportunistic.**  Still 64 labels
-   duplicated across files (3808 unique vs 3872 total).  Not a
-   correctness concern but confusing for `grep`-based attribution.
-   Best done during other test-file edits to avoid touching files
-   for a single-purpose label rename.
+4. **~~`assertThrows` migration — `test-persist.mjs` (1 site at
+   :118).~~**  **Resolved session 117.**  Migrated to `assertThrows`
+   via a local helper + added 3 new regression guards on adjacent
+   reject branches (missing-version, `null` snap, string snap).
+   +4 assertions.
 
-5. **Explicit positive-coverage pass on ✓ cells in DATA_TYPES that
+5. **O-009 — `tests/test-control-flow.mjs.bak{,2}` cleanup —
+   DEFERRED, blocked by tooling.**  Session 117 attempted to
+   delete the two stray backup files but `rm` returned
+   `Operation not permitted`, and `cowork_allow_file_delete`
+   requires a user-present approval that is unavailable in
+   unsupervised scheduled-task runs.  Re-try on a human-supervised
+   unit-tests run, or hand to the code-review lane.
+
+6. **Duplicate-label cleanup — opportunistic.**  Still ~100 labels
+   duplicated across files (exact count drifts as sibling lanes
+   ship).  Not a correctness concern but confusing for `grep`-
+   based attribution.  Best done during other test-file edits
+   to avoid touching files for a single-purpose label rename.
+
+7. **Explicit positive-coverage pass on ✓ cells in DATA_TYPES that
    only have negative / rejection evidence today.**  Plan:
    enumerate ✓ cells → grep for op name in tests → flag any ✓ cell
    whose op has no adjacent positive assertion.
 
-6. **`assertThrows` migration — smaller files.**  Once test-numerics
-   and test-algebra are done, mop up test-variables/lists/stack-
-   ops/binary-int/types/control-flow/eval/ui/persist (~65 sites
-   total across 9 files).  These are small enough to combine 2–3
-   files into one session.
+8. **assertThrows migration — MOSTLY DONE.**  All remaining
+   `let threw =` sites in the `test-all.mjs` aggregate are either:
+   deliberately-skipped (label interpolation, negated form, orphan
+   dead code — ~5 sites in `test-control-flow.mjs` per queue item
+   #2), or the negated `assert(!threw, …)` RDZ-0 acceptance in
+   `test-matrix.mjs`.  Queue items #3, #4 from session 112 are
+   closed by session 117.
 
 ---
 
 ## Session-by-session log index
 
-- Session 084 (2026-04-23) — this run.  Unit-tests lane.  Migrated
+- Session 122 (2026-04-24) — this run.  Unit-tests lane.  Closed
+  queue item #2 from session 117 — the `assertThrows` migration in
+  `test-control-flow.mjs`.  **+4 regression guards** added at the
+  5 `let threw` sites (4 migrated; the 5th is the negated DOERR-0
+  no-op form, deliberately left): `:432` (START 1/0 →
+  `/Infinite result/` shape pin), `:660` (IFERR-without-THEN →
+  stack-rollback `s.depth === 1 && isProgram(s.peek())`), `:825`
+  (FOR/STEP-of-0 → exact-message `=== 'STEP of 0'`), `:2098`
+  (no-END IFERR → stack-rollback companion).  Final test-all
+  **4232 / 0** (entry 4182; +4 from session 122 + 46 from a
+  concurrent session-121 PROMPT/KILL cluster that landed in
+  `tests/test-control-flow.mjs` while this lock was held — see
+  the top-of-file delta note).  test-persist 38 / 0 (unchanged).
+  sanity 22 / 0 (unchanged).  Log file: `logs/session-122.md`.
+  Note: session 121 (rpl-programming) acquired its lock and was
+  stale-pruned without writing `logs/session-121.md` — re-file
+  under code-review per O-008 pattern.  Session 121 also wrote to
+  `tests/test-control-flow.mjs` after stale-prune / past my
+  acquire — flagged for the code-review lane as a lock-protocol
+  violation companion to the missing-log finding.
+- Session 117 (2026-04-24) — Unit-tests lane.  Closed
+  queue items #3 and #4 from session 112.  **+2 regression
+  guards** in `test-types.mjs` at the `:2068`/`:2074` TRUNC
+  sites (migrated to `assertThrows(/TRUNC expects 2 argument/)`
+  + new `/got 1\b/` / `/got 3\b/` guards pinning the actual-
+  arg-count tail of the error message — previously uncovered).
+  **+4 regression guards** in `test-persist.mjs` at the :118
+  unknown-version site (added local `assertThrows` helper,
+  migrated to pattern-matching + 3 new adjacent reject-branch
+  guards: echo-bad-version, missing-version, `null`/`string`
+  snap → "not an object").  **P-001 remainder cleared for
+  `docs/TESTS.md`**: fixed two stale `src/…` → `www/src/…`
+  references at lines 233 / 355.  **O-009 deferred** — `rm`
+  of the two `tests/test-control-flow.mjs.bak{,2}` files blocked
+  in unsupervised mode (`Operation not permitted`; permission
+  tool requires user-present approval).  Final test-all
+  **4089 / 0**; test-persist 38 / 0 (+4 from 34); sanity 22 / 0.
+  Log file: `logs/session-117.md`.
+- Session 112 (2026-04-24) — this run.  Unit-tests lane.  Closed
+  queue item #6 from session 107 — the `assertThrows` migration in
+  smaller files.  **+52 inline `try/catch/threw` sites migrated**
+  across 10 files: `test-variables.mjs` (13), `test-lists.mjs` (15),
+  `test-binary-int.mjs` (12), `test-eval.mjs` (2), `test-ui.mjs` (2),
+  `test-stats.mjs` (2), `test-entry.mjs` (1), plus leftover sites
+  in `test-algebra.mjs` (3), `test-numerics.mjs` (1).
+  Behaviour-preserving except for **+1 new regression guard** in
+  `test-numerics.mjs` at :2118 — split the LOG(-10)-CMPLX-OFF
+  one-assertion-two-checks site into `assertThrows(…, /Bad argument
+  value/)` + a follow-up `assert(err.name !== 'TypeError', …)`.
+  Confirmed HALT/CONT flake non-reproduction: `flake-scan 5` →
+  3919 stable-ok, 0 flakes; cumulative clean-run count for the
+  filing now 30+ runs plus 24 bisect shuffles.  Final suite
+  **3981 / 0**; persist 34 / 0; sanity 22 / 0.  Log file:
+  `logs/session-112.md`.
+- Session 107 (2026-04-24).  Unit-tests lane.  Cleared
+  queue item #2 (the `test-algebra.mjs` migration) — all **53 inline
+  `try/catch/threw` sites migrated to `assertThrows()`**,
+  behaviour-preserving (891 pre/post); Python migration script
+  saved at `outputs/migrate.py`.  Added **+15 Rational (Q)
+  assertions to `test-comparisons.mjs`** (80 → 95) — the promotion-
+  lattice peer had zero prior coverage in this file despite being
+  first-class since s092: Q×Q canonicalisation, Q×Z / Q×R cross-
+  type equality, sign-crossing ordering, ≠/<>, SAME pinned non-
+  strict as regression guard opposing BinInt SAME-is-strict-type.
+  Migrated **3 inline `try/catch/threw` sites** in `test-types.mjs`
+  at the three `let threw = null` rejection sites
+  (STO / STO / CRDIR Invalid-name), behaviour-preserving; the two
+  TRUNC sites interpolating `${threw?.message}` deliberately left.
+  Confirmed `test-numerics.mjs` migration (queue #1) already
+  cleared pre-s107 (~146 `assertThrows` calls present, zero
+  inline remaining).  Final suite **3886 / 0**; persist 34 / 0;
+  sanity 22 / 0.  Log file: `logs/session-107.md`.
+- Session 084 (2026-04-23) — unit-tests lane.  Migrated
   **all 104 inline `assertThrows`-pattern sites in
   `tests/test-matrix.mjs`** to the `assertThrows()` helper —
   behaviour-preserving (347 passes before/after); queue item #1 from

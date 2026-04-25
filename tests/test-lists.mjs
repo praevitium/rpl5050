@@ -18,7 +18,7 @@ import {
   setApproxMode,
 } from '../www/src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* List ops — GET / PUT / HEAD / TAIL / SUB / →LIST / LIST→ / POS. */
 
@@ -742,9 +742,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(1), Real(2)]));
   s.push(Program([Name('DROP')]));     // consumes the element, pushes nothing
-  let threw = false;
-  try { lookup('MAP').fn(s); } catch (e) { threw = /MAP: bad program/i.test(e.message); }
-  assert(threw, 'session044: MAP with 1-in 0-out program throws MAP: bad program');
+  assertThrows(() => lookup('MAP').fn(s), /MAP: bad program/i,
+               'session044: MAP with 1-in 0-out program throws MAP: bad program');
 }
 
 /* ---- MAP: non-container throws Bad argument type ---- */
@@ -752,9 +751,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(5));
   s.push(Program([Name('SQ')]));
-  let threw = false;
-  try { lookup('MAP').fn(s); } catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw, 'session044: MAP on Real throws Bad argument type');
+  assertThrows(() => lookup('MAP').fn(s), /Bad argument type/i,
+               'session044: MAP on Real throws Bad argument type');
 }
 
 /* ---- MAP: non-program/non-name/non-symbolic in the combinator slot throws ---- */
@@ -762,9 +760,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(1)]));
   s.push(Real(5));          // not a program
-  let threw = false;
-  try { lookup('MAP').fn(s); } catch (e) { threw = /Bad argument type/i.test(e.message); }
-  assert(threw, 'session044: MAP with Real combinator throws Bad argument type');
+  assertThrows(() => lookup('MAP').fn(s), /Bad argument type/i,
+               'session044: MAP with Real combinator throws Bad argument type');
 }
 
 // ------------------------------------------------------------------
@@ -811,9 +808,8 @@ import { assert } from './helpers.mjs';
   s.push(Real(1));
   s.push(Real(5));
   s.push(Real(0));
-  let threw = false;
-  try { lookup('SEQ').fn(s); } catch (e) { threw = /Bad argument value/.test(e.message); }
-  assert(threw, 'session045: SEQ with step=0 throws Bad argument value');
+  assertThrows(() => lookup('SEQ').fn(s), /Bad argument value/,
+               'session045: SEQ with step=0 throws Bad argument value');
 }
 
 /* ---- SEQ: empty range (start past end in step's direction) ---- */
@@ -891,9 +887,8 @@ import { assert } from './helpers.mjs';
   s.push(RList([Real(1)]));
   s.push(Real(1.5));                      // not integer
   s.push(Program([Name('DUP')]));
-  let threw = false;
-  try { lookup('DOLIST').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session045: DOLIST with non-integer n throws');
+  assertThrows(() => lookup('DOLIST').fn(s), /Bad argument type/,
+               'session045: DOLIST with non-integer n throws');
 }
 
 /* ---- DOSUBS: sliding window of size 2 with + ---- */
@@ -973,9 +968,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([]));
   s.push(Program([Name('+')]));
-  let threw = false;
-  try { lookup('STREAM').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'session045: STREAM on empty list throws Invalid dimension');
+  assertThrows(() => lookup('STREAM').fn(s), /Invalid dimension/,
+               'session045: STREAM on empty list throws Invalid dimension');
 }
 
 /* ---- STREAM: compute max via MAX combinator ---- */
@@ -1001,9 +995,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(1), Real(2), Real(3)]));
   s.push(Program([Name('DROP'), Name('DROP')]));
-  let threw = false;
-  try { lookup('STREAM').fn(s); } catch (e) { threw = /bad program/i.test(e.message); }
-  assert(threw, 'session045: STREAM with DROP-DROP program throws bad program');
+  assertThrows(() => lookup('STREAM').fn(s), /bad program/i,
+               'session045: STREAM with DROP-DROP program throws bad program');
 }
 {
   // DOSUBS window=2 with `DROP DROP` consumes both window items → delta 0
@@ -1011,18 +1004,16 @@ import { assert } from './helpers.mjs';
   s.push(RList([Real(1), Real(2), Real(3)]));
   s.push(Integer(2n));
   s.push(Program([Name('DROP'), Name('DROP')]));
-  let threw = false;
-  try { lookup('DOSUBS').fn(s); } catch (e) { threw = /bad program/i.test(e.message); }
-  assert(threw, 'session045: DOSUBS with DROP-DROP program throws bad program');
+  assertThrows(() => lookup('DOSUBS').fn(s), /bad program/i,
+               'session045: DOSUBS with DROP-DROP program throws bad program');
 }
 {
   // DOLIST with a 2-push program (net +1 per element expected, not +2)
   const s = new Stack();
   s.push(RList([Real(1), Real(2)]));
   s.push(Program([Name('DUP')]));         // net +1 extra per call
-  let threw = false;
-  try { lookup('DOLIST').fn(s); } catch (e) { threw = /bad program/i.test(e.message); }
-  assert(threw, 'session045: DOLIST with DUP (delta=+2) throws bad program');
+  assertThrows(() => lookup('DOLIST').fn(s), /bad program/i,
+               'session045: DOLIST with DUP (delta=+2) throws bad program');
 }
 
 // ------------------------------------------------------------------
@@ -1187,9 +1178,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Real(1), Real(2)]));
   s.push(Integer(5));
-  let threw = false;
-  try { lookup('GETI').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session052: GETI out-of-range throws');
+  assertThrows(() => lookup('GETI').fn(s), /Bad argument/,
+               'session052: GETI out-of-range throws');
 }
 
 /* ---- GETI on Matrix with {r c} index, column-major advance ---- */
@@ -1261,9 +1251,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Real(42));
   s.push(Integer(1));
-  let threw = false;
-  try { lookup('GETI').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session052: GETI on Real throws Bad argument type');
+  assertThrows(() => lookup('GETI').fn(s), /Bad argument/,
+               'session052: GETI on Real throws Bad argument type');
 }
 
 /* ---- PUTI on List: (L 2 'X' → L' 3) ---- */
@@ -1337,9 +1326,8 @@ import { assert } from './helpers.mjs';
   s.push(RList([Real(1)]));
   s.push(Integer(5));
   s.push(Real(0));
-  let threw = false;
-  try { lookup('PUTI').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session052: PUTI out-of-range throws');
+  assertThrows(() => lookup('PUTI').fn(s), /Bad argument/,
+               'session052: PUTI out-of-range throws');
 }
 
 /* ---- PUTI on unsupported type (String) throws ---- */
@@ -1348,9 +1336,8 @@ import { assert } from './helpers.mjs';
   s.push(Str('abc'));
   s.push(Integer(1));
   s.push(Str('z'));
-  let threw = false;
-  try { lookup('PUTI').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session052: PUTI on String throws (strings immutable)');
+  assertThrows(() => lookup('PUTI').fn(s), /Bad argument/,
+               'session052: PUTI on String throws (strings immutable)');
 }
 
 // ------------------------------------------------------------------
@@ -1402,9 +1389,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(Integer(1n));
   s.push(Integer(2n));
-  let threw = false;
-  try { lookup('APPEND').fn(s); } catch (e) { threw = /Bad argument/.test(e.message); }
-  assert(threw, 'session053: APPEND on non-list throws');
+  assertThrows(() => lookup('APPEND').fn(s), /Bad argument/,
+               'session053: APPEND on non-list throws');
 }
 
 /* ---- APPEND does not mutate the original list ---- */
@@ -1495,9 +1481,8 @@ import { assert } from './helpers.mjs';
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(2n)]));
   s.push(RList([Integer(10n), Integer(20n), Integer(30n)]));
-  let threw = false;
-  try { lookup('+').fn(s); } catch (e) { threw = /Invalid dimension/.test(e.message); }
-  assert(threw, 'list-distribute: mismatched lengths throw Invalid dimension');
+  assertThrows(() => lookup('+').fn(s), /Invalid dimension/,
+               'list-distribute: mismatched lengths throw Invalid dimension');
 }
 
 // ---- Nested lists: {1 {4 9}} SQRT → {1 {2 3}} ----

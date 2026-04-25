@@ -18,7 +18,7 @@ import {
   setApproxMode, setCoordMode,
 } from '../www/src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* UI helpers — paging, physical-keyboard modifier shortcuts,
    interactive-stack pure helpers, Display click/tooltip rendering. */
@@ -389,9 +389,7 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Real(1));
-    let threw = false;
-    try { rollLevel(s, 5); } catch (e) { threw = true; }
-    assert(threw, 'rollLevel: out-of-range throws');
+    assertThrows(() => rollLevel(s, 5), null, 'rollLevel: out-of-range throws');
   }
 
   // rollDownToLevel is the inverse of rollLevel.
@@ -420,9 +418,7 @@ import { assert } from './helpers.mjs';
   {
     const s = new Stack();
     s.push(Real(1));
-    let threw = false;
-    try { dropLevel(s, 2); } catch (e) { threw = true; }
-    assert(threw, 'dropLevel: out-of-range throws');
+    assertThrows(() => dropLevel(s, 2), null, 'dropLevel: out-of-range throws');
   }
 }
 

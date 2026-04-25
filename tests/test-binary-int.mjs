@@ -18,7 +18,7 @@ import {
   setApproxMode,
 } from '../www/src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
-import { assert } from './helpers.mjs';
+import { assert, assertThrows } from './helpers.mjs';
 
 /* BinaryInteger type, STWS wordsize, HEX/DEC/OCT/BIN display, bitwise ops,
    B→R / R→B converters, parse-time literal truncation. */
@@ -41,9 +41,8 @@ setBinaryBase(null);
          'BinaryInteger(255,h) has type/value/base set');
   const b = BinaryInteger(-3, 'h');
   assert(b.value === 0n, 'BinaryInteger clamps negative to 0');
-  let threw = false;
-  try { BinaryInteger(1, 'z'); } catch (_) { threw = true; }
-  assert(threw, 'BinaryInteger rejects invalid base letter');
+  assertThrows(() => BinaryInteger(1, 'z'), null,
+               'BinaryInteger rejects invalid base letter');
   const c = BinaryInteger(10n, 'D');  // uppercase input, lowercased
   assert(c.base === 'd', 'BinaryInteger lowercases the base letter');
 }
@@ -87,9 +86,8 @@ setBinaryBase(null);
 
 // Parser rejects malformed literals
 {
-  let threw1 = false;
-  try { parseEntry('#'); } catch (_) { threw1 = true; }
-  assert(threw1, 'parseEntry("#") throws (no digits, no base)');
+  assertThrows(() => parseEntry('#'), null,
+               'parseEntry("#") throws (no digits, no base)');
   // parseEntry('#123') accepts a missing base letter — it falls back to
   // the currently-selected display base (state.binaryBase, default 'h').
   // Explicit-suffix literals still drive the base.  See parser.js around
@@ -98,15 +96,12 @@ setBinaryBase(null);
   assert(noSuffix.length === 1 && noSuffix[0].type === 'binaryInteger' &&
          noSuffix[0].value === 0x123n && noSuffix[0].base === 'h',
          'parseEntry("#123") defaults to active base (hex)');
-  let threw3 = false;
-  try { parseEntry('#8o'); } catch (_) { threw3 = true; }
-  assert(threw3, 'parseEntry("#8o") throws (8 not a valid octal digit)');
-  let threw4 = false;
-  try { parseEntry('#2b'); } catch (_) { threw4 = true; }
-  assert(threw4, 'parseEntry("#2b") throws (2 not a valid binary digit)');
-  let threw5 = false;
-  try { parseEntry('#Gh'); } catch (_) { threw5 = true; }
-  assert(threw5, 'parseEntry("#Gh") throws (G not a valid hex digit)');
+  assertThrows(() => parseEntry('#8o'), null,
+               'parseEntry("#8o") throws (8 not a valid octal digit)');
+  assertThrows(() => parseEntry('#2b'), null,
+               'parseEntry("#2b") throws (2 not a valid binary digit)');
+  assertThrows(() => parseEntry('#Gh'), null,
+               'parseEntry("#Gh") throws (G not a valid hex digit)');
 }
 
 // Binary integers inside programs and lists survive parse + format unchanged
@@ -364,9 +359,8 @@ setBinaryBase(null);
   resetBinaryState();
   const s = new Stack();
   s.pushMany([BinaryInteger(1n, 'h'), Real(0)]);
-  let threw = false;
-  try { lookup('AND').fn(s); } catch (_) { threw = true; }
-  assert(threw, 'BinInt AND Real errors "Bad argument type"');
+  assertThrows(() => lookup('AND').fn(s), null,
+               'BinInt AND Real errors "Bad argument type"');
   resetBinaryState();
 }
 
@@ -429,15 +423,13 @@ setBinaryBase(null);
   // Wrong-type inputs rejected.
   s.clear();
   s.push(Real(1));
-  let threw = false;
-  try { lookup('B→R').fn(s); } catch (_) { threw = true; }
-  assert(threw, 'B→R on Real errors "Bad argument type"');
+  assertThrows(() => lookup('B→R').fn(s), null,
+               'B→R on Real errors "Bad argument type"');
 
   s.clear();
   s.push(BinaryInteger(1n, 'h'));
-  threw = false;
-  try { lookup('R→B').fn(s); } catch (_) { threw = true; }
-  assert(threw, 'R→B on BinInt errors "Bad argument type"');
+  assertThrows(() => lookup('R→B').fn(s), null,
+               'R→B on BinInt errors "Bad argument type"');
 
   resetBinaryState();
 }
@@ -676,18 +668,16 @@ setBinaryBase(null);
 {
   const s = new Stack();
   s.push(Real(5));
-  let threw = false;
-  try { lookup('SL').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session044: SL on Real throws Bad argument type');
+  assertThrows(() => lookup('SL').fn(s), /Bad argument type/,
+               'session044: SL on Real throws Bad argument type');
 }
 
 // Bad argument type — RR on a Real
 {
   const s = new Stack();
   s.push(Real(5));
-  let threw = false;
-  try { lookup('RR').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session044: RR on Real throws Bad argument type');
+  assertThrows(() => lookup('RR').fn(s), /Bad argument type/,
+               'session044: RR on Real throws Bad argument type');
 }
 
 // Full wordsize RL wraps completely (value unchanged after wsSize rotates)
@@ -788,9 +778,8 @@ setBinaryBase(null);
   resetBinaryState();
   const s = new Stack();
   s.pushMany([BinaryInteger(0xFFn, 'h'), Real(0.5)]);  // 0.5 → 0
-  let threw = false;
-  try { lookup('/').fn(s); } catch (e) { threw = /Division by zero/.test(e.message); }
-  assert(threw, 'session045: #FFh 0.5 / → Division by zero (0.5 truncates to 0)');
+  assertThrows(() => lookup('/').fn(s), /Division by zero/,
+               'session045: #FFh 0.5 / → Division by zero (0.5 truncates to 0)');
   resetBinaryState();
 }
 
@@ -799,9 +788,8 @@ setBinaryBase(null);
   resetBinaryState();
   const s = new Stack();
   s.pushMany([BinaryInteger(1n, 'h'), Complex(1, 2)]);
-  let threw = false;
-  try { lookup('+').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session045: #1h (1,2) + → Bad argument type (no BinInt/Complex promotion)');
+  assertThrows(() => lookup('+').fn(s), /Bad argument type/,
+               'session045: #1h (1,2) + → Bad argument type (no BinInt/Complex promotion)');
   resetBinaryState();
 }
 
@@ -810,9 +798,8 @@ setBinaryBase(null);
   resetBinaryState();
   const s = new Stack();
   s.pushMany([BinaryInteger(1n, 'h'), Real(0)]);
-  let threw = false;
-  try { lookup('AND').fn(s); } catch (e) { threw = /Bad argument type/.test(e.message); }
-  assert(threw, 'session045: AND of mixed BinInt + Real still errors');
+  assertThrows(() => lookup('AND').fn(s), /Bad argument type/,
+               'session045: AND of mixed BinInt + Real still errors');
   resetBinaryState();
 }
 
@@ -1041,10 +1028,7 @@ setBinaryBase(null);
   {
     const s = new Stack();
     s.pushMany([BinaryInteger(1n, 'h'), Str('a')]);
-    let threw = false;
-    try { lookup('<').fn(s); }
-    catch (e) { threw = /Bad argument type/i.test(e.message); }
-    assert(threw,
+    assertThrows(() => lookup('<').fn(s), /Bad argument type/i,
       'session074: #1h < "a" throws Bad argument type (BinInt × String is not comparable).');
   }
 

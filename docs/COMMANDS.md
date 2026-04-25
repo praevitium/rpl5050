@@ -13,7 +13,7 @@ exists at all**, not the shape of its type coverage.
 
 | Symbol | Meaning |
 |--------|---------|
-| `✓` | Fully shipped — registered in `src/rpl/ops.js`, reachable from the keypad, ≥1 positive + ≥1 rejection test covered. |
+| `✓` | Fully shipped — registered in `www/src/rpl/ops.js`, reachable from the keypad, ≥1 positive + ≥1 rejection test covered. |
 | `~` | Partially shipped — e.g. the op exists but rejects a whole argument class HP50 accepts, or an alias is missing, or there's no rejection-path coverage yet. |
 | `✗` | Not yet implemented. |
 | `will-not` | Explicitly out of scope per `docs/@!MY_NOTES.md` (USER, ENTRY, S.SLV, NUM.SLV, FINANCE, TIME, DEF, LIB, OFF) or replaced by a deliberate design deviation. |
@@ -21,21 +21,69 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 086 — 2026-04-23)
+## Counts (as of session 119 — 2026-04-24)
 
-- Fully shipped (✓): 416
+- Fully shipped (✓): 431
 - Partially shipped (~): 0
-- Not yet implemented (✗): 23 (see "Not yet supported" below)
+- Not yet implemented (✗): 7 (see "Not yet supported" below)
 - Will-not-support (by design): 9 menu groups
 
-The registry lives at `src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" src/rpl/ops.js` = **447** at the end of session 086
-(was 441 at the end of session 081).  4 rows flipped ✗ → ✓:
-`ZETA`, `LAMBERT`, `XNUM`, `XQ`.  The +6 grep delta vs. +4 op delta
-reflects 2 shipped-prior-session rows that the grep-based count had not
-been re-tallied after (the on-disk register count is authoritative;
-the Fully-shipped count reflects HP50 ops with a user-visible
-entry point).
+The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
+`grep -c "register(" www/src/rpl/ops.js` = **448** at the end of session 119
+(was 445 at the end of session 114).  The +3 loose-count delta reflects
+three new op registrations this session (`EGV`, `RSD`, `GREDUCE` —
+right-eigenvector matrix + eigenvalue vector via Giac; native residual
+B − A·Z over Real/Integer entries; Grœbner reduction via Giac).  Row
+transitions this session:
+- **3 ops newly shipped** (✗ → ✓): `EGV` (new row in Vectors / Matrices /
+  Arrays — paired note with the session-114 `PCAR` / `CHARPOL` / `EGVL`
+  cluster), `RSD` (new row in Vectors / Matrices / Arrays), `GREDUCE`
+  (new row in CAS).
+- **Not-yet-supported table reshape**: `EGV` row removed outright;
+  `RSD` row removed from Matrix decomps (the four-decomp row collapses
+  to `JORDAN` / `SCHUR` / `LQD` only); `GREDUCE` removed from the
+  CAS row, which collapses to `GXROOT` only.
+- **Helper improvement (carry-over benefit).** `_astToRplValue` now
+  unwraps `Neg(Num(v))` to a negative Real, so any future Giac call
+  that returns `-1` / `-3.14` / etc. lands on the stack as a numeric
+  Real instead of a single-leaf-Negation Symbolic.  Surfaced when
+  GREDUCE's AUR worked example returned `-1`; benefits EGVL / EGV /
+  PCAR / FACTOR alike.
+
+Prior baseline (session 114):
+- 4 rows newly shipped (✗ → ✓): `PCAR`, `CHARPOL`, `EGVL`, `PA2B2`.
+- 1 phantom row retired: `SRPLY` (zero hits in all three HP50 PDFs).
+- 2 REVIEW.md cleanups closed: X-009 + X-010.
+
+Prior baseline (session 109):
+- 3 rows newly shipped (✗ → ✓): `Ei`, `Si`, `Ci`.
+- 1 row doc-drift corrected (✗ → ✓): `SST` / `SST↓` / `DBUG` —
+  session 101 shipped these but its ledger edit never landed in this
+  file (session-101 log says "Status table flipped: SST / SST↓ and
+  DBUG from 'not…'", but the row here read ✗ through sessions 102–108).
+  Corrected under the C-006 close — see below.
+
+Session 109 also closed one code-review finding from
+`docs/REVIEW.md`: **C-006** (the session-103 `HALT` / `SST↓` doc-drift
+row — Notes column on `HALT` now mentions the session-106 named-sub-
+program lift via `_evalValueGen`, the `SST` / `SST↓` / `DBUG` row flips
+✗ → ✓ with the session-101 initial ship + session-106 step-into
+refinement captured in the Notes column).
+
+Session 104 also cleaned up two code-review findings from
+`docs/REVIEW.md`: **X-007** (deleted the dead `compareRoundTrip` export
+from `www/src/rpl/cas/giac-convert.mjs`) and **X-008** (dropped the
+unused `freeVars` import from the same file — leftover from the
+session-094 FACTOR-purge pilot that session 098 removed).
+
+Session 099 also cleaned up three code-review findings from
+`docs/REVIEW.md`: **X-001** (4 unused imports from state.js —
+`varList`, `goInto`, `getTextbookMode`, `setComplexMode`, `getPrngSeed`),
+**X-002** (3 dead private helpers — `_maskVal`, `_isqrtBig`, `_ratAdd`),
+**X-004** (unused `trigFwd` / `trigInv` helpers after shadow deletion),
+**X-005** (21 duplicate `register()` names), and **O-004** remainder
+(`docs/@!MY_NOTES.md:55` still referenced the retired
+`COMMANDS_INVENTORY.md` — now `COMMANDS.md`).
 
 Session 081 also cleaned up two code-review findings from session 080's
 `docs/REVIEW.md`: **C-001** (split the stale `MEM TVARS` row —
@@ -101,6 +149,9 @@ DERIV, etc. via Giac).
 | `PSI` | ✓ | **Session 081** — digamma ψ(x) (1-arg) + polygamma ψ⁽ⁿ⁾(x) (2-arg with integer n ≥ 0).  Reflection for x < 0.5, integer-shift recurrence, Bernoulli asymptotic (2k=12).  Poles at non-positive integers throw `Infinite result`.  Tagged + List + V/M + Sym lift. |
 | `ZETA` | ✓ | **Session 086** — Riemann zeta ζ(s).  Euler-Maclaurin (N=15, M=6 Bernoulli terms) for s ≥ 0.5, functional-equation reflection below.  s=0 → -1/2; s=1 → `Infinite result` (simple pole); negative even integers → exact 0 (trivial zeros).  Tagged + List + V/M + Sym lift. |
 | `LAMBERT` | ✓ | **Session 086** — Lambert W₀ (principal branch).  Halley iteration seeded with a Puiseux expansion near x=-1/e so the branch point returns -1 exactly in double precision.  x < -1/e → `Bad argument value`.  Tagged + List + V/M + Sym lift. |
+| `Ei` | ✓ | **Session 109** — exponential integral Ei(x).  x > 0: power series γ + ln x + Σ x^k/(k·k!) for x < 40; asymptotic (e^x/x) · Σ k!/x^k truncated at the smallest term for x ≥ 40.  x < 0: Ei(x) = -E1(-x) via series for \|x\| < 1 and modified-Lentz CF for \|x\| ≥ 1.  x = 0 → `Infinite result`.  Tagged + List + V/M + Sym lift. |
+| `Si` | ✓ | **Session 109** — sine integral Si(x), entire and odd.  \|x\| ≤ 4: odd power series Σ (-1)^k x^{2k+1}/((2k+1)(2k+1)!).  \|x\| > 4: complex-Lentz CF for E1(i·\|x\|) gives Si(\|x\|) = π/2 + Im(E1(i·\|x\|)).  Si(0) = 0 exact.  Tagged + List + V/M + Sym lift. |
+| `Ci` | ✓ | **Session 109** — cosine integral Ci(x), real-mode x > 0.  x ≤ 4: γ + ln x + Σ (-1)^k x^{2k}/((2k)(2k)!).  x > 4: Ci(x) = -Re(E1(i·x)) via the same complex-Lentz CF as Si.  x = 0 → `Infinite result`; x < 0 → `Bad argument value` (complex result deferred).  Tagged + List + V/M + Sym lift. |
 | `XROOT` | ✓ | Sy lift. |
 | `EXP` `EXPM` `LN` `LNP1` `LOG` `ALOG` | ✓ | |
 | `SIN` `COS` `TAN` `ASIN` `ACOS` `ATAN` | ✓ | Angle-mode aware. |
@@ -162,13 +213,14 @@ DERIV, etc. via Giac).
 | `BYTES` | ✓ | |
 | `APPROX` `EXACT` `→NUM` `→Q` `→Qπ` | ✓ | |
 | `XNUM` `XQ` | ✓ | **Session 086** — ASCII aliases for `→NUM` / `→Q`.  Thin wrappers that delegate via `OPS.get('→NUM').fn` / `OPS.get('→Q').fn` so they pick up any future refinement automatically. |
+| `TVARS` | ✓ | **Session 099** — filter names in the current directory by HP50 type code.  Single-arg form `(code → {names})` accepts Integer or integer-valued Real; List-arg form `({codes} → {names})` unions matches across codes.  Negative codes complement ("not of this type"); a list mixing positives and negatives = `{union of positives} ∖ {union of |negatives|}` (HP50 AUR p.2-218).  Rejects non-integer Real, Name, String, and non-integer list elements with `Bad argument type`. |
 
 ## Lists
 
 | Command | Status | Notes |
 |---------|--------|-------|
 | `→LIST` `LIST→` `→LIST` (arrow) | ✓ | |
-| `SIZE` `HEAD` `TAIL` `APPEND` | ✓ | |
+| `SIZE` `HEAD` `TAIL` `APPEND` | ✓ | **Session 088** — `SIZE` widened to Program (count of top-level tokens; matches HP50 AUR). |
 | `GET` `GETI` `PUT` `PUTI` | ✓ | |
 | `SUB` `POS` `REVLIST` `SORT` | ✓ | |
 | `SEQ` `DOLIST` `DOSUBS` `NSUB` `ENDSUB` `STREAM` | ✓ | |
@@ -199,6 +251,9 @@ DERIV, etc. via Giac).
 | `IDN` `CON` `RANM` `RDM` | ✓ | |
 | `HILBERT` `VANDERMONDE` `AUGMENT` `FLAT` | ✓ | |
 | `MAD` | ✓ | |
+| `PCAR` `CHARPOL` `EGVL` | ✓ | **Session 114 [Giac]** — characteristic polynomial (`PCAR` = HP50 canonical, `CHARPOL` = Giac-style alias both via `charpoly(M,vx)`) and eigenvalue vector via `eigenvals(M)` (Xcas's list form; `egvl(M)` is the Jordan-matrix form and isn't what HP50 wants).  HP50 AUR §3-196, §3-90.  Square-matrix input only; entries serialised to Giac brackets via `_matrixToGiacStr` + `_scalarToGiacStr` (Integer/Real/Rational/Complex/Symbolic/Name).  Eigenvalues come back as a flat bracket list → Vector of AST-lifted items via `_astToRplValue`.  No-fallback policy. |
+| `EGV` | ✓ | **Session 119 [Giac]** — `( [[ M ]] → [[ EVec ]] [ EVal ] )`. HP50 AUR §3-73.  Square-matrix-only.  Eigenvector matrix via Xcas `egv(M)` (columns = right eigenvectors so `M·P = P·diag(EVal)`); eigenvalue vector via the same `eigenvals(M)` call EGVL uses, so the i-th eigenvalue corresponds to the i-th column of EVec by construction.  Reuses `_matrixToGiacStr` / `_popSquareMatrix` from PCAR; non-list Giac output → `Bad argument value`.  No-fallback policy. |
+| `RSD` | ✓ | **Session 119** — `( B A Z → B−A·Z )` residual.  HP50 AUR §3-213.  Native numeric (Real / Integer entries); reuses `_asNumArray*` and `_matMulNum` / `_matVecNum`.  Both vector-vector and matrix-matrix shapes supported; mixed shapes (vec/mat) reject with `Bad argument type`; cols(A) ≠ len(Z)/rows(Z) or rows(A) ≠ len(B)/rows(B) reject with `Invalid dimension`.  Symbolic entries reject (numeric-only path, mirrors LSQ). |
 
 ## Polynomials / algebra
 
@@ -212,6 +267,7 @@ DERIV, etc. via Giac).
 | `ISPRIME?` `NEXTPRIME` `PREVPRIME` | ✓ | |
 | `EUCLID` | ✓ | **Session 076** — `( a b → {u v g} )` extended-Euclid / Bezout; `u*a + v*b = g`.  Rejects `(0,0)` ("Bad argument value"), non-Integer ("Bad argument type").  Re-signs u,v for negative inputs. |
 | `INVMOD` | ✓ | **Session 076** — `( a n → a⁻¹ mod n )` two-arg modular inverse.  Reduces `a` into `[0, n)`.  Rejects `n < 2`, `a ≡ 0 (mod n)`, `gcd(a,n) ≠ 1` ("Bad argument value").  One-arg MODULO-state form deferred until MODULO lands. |
+| `PA2B2` | ✓ | **Session 114** — `( p → (a,b) )` Fermat sum of two squares for primes with `p=2` or `p ≡ 1 (mod 4)`; native Cornacchia via the existing BigInt helpers (`_isPrimeBig`, `_powModBig`, new `_bigIntSqrtFloor`).  Returns a native Complex Gaussian integer with the smaller component real, larger imag.  Rejects non-prime / `p ≡ 3 (mod 4)` with "Bad argument value".  HP50 AUR §3-162. |
 | `CYCLOTOMIC` | ✓ | **Session 081** — `( n → Φ_n(X) )` n-th cyclotomic polynomial as a Symbolic in X.  BigInt long-division build via `Φ_n = (Xⁿ − 1) / ∏_{d\|n, d<n} Φ_d`.  Capped at n ≤ 200 (MAX_SAFE_INTEGER guard on the descending-degree coefficient array).  Rejects non-Integer and n < 1. |
 
 ## CAS (symbolic)
@@ -244,6 +300,10 @@ not fallbacks.  Migration is incremental — rows below are flagged
 | `COLLECT` `EPSX0` | ✓ | |
 | `VX` `SVX` | ✓ | **Session 076** — CAS main variable slot.  `VX` pushes the current name (default `X`); `SVX` sets it from a Name or String, rejects Real ("Bad argument type") and empty string ("Bad argument value").  Persists across reload (snapshot field `casVx`).  LAPLACE/ILAP/PREVAL now honor VX for variable selection. |
 | `EXLR` | ✓ | **Session 076** — extract left/right of an equation-style Symbolic.  `( 'L==R' → 'L' 'R' )`; works on any top-level binary (`==`, `+`, `-`, `<`, `≤`, …).  Rejects bare variable / function application ("Bad argument value"), non-Symbolic ("Bad argument type"). |
+| `PROPFRAC` | ✓ | **Session 104 [Giac]** — proper-fraction form via `propfrac(...)`.  Symbolic routed through Giac; Rational lifts to Symbolic via `_toAst` so `43 12 / PROPFRAC → '3 + 7/12'` (HP50 AUR §3-197).  Real/Integer/Name pass-through.  No-fallback policy. |
+| `PARTFRAC` | ✓ | **Session 104 [Giac]** — partial-fraction decomposition via `partfrac(...)`.  Symbolic routed through Giac; Real/Integer/Rational/Name pass-through (no non-trivial decomp on a bare number). HP50 AUR §3-180.  No-fallback policy. |
+| `COSSIN` | ✓ | **Session 104 [Giac]** — rewrite in SIN/COS basis via Giac `tan2sincos(...)` (TAN(x) → SIN(x)/COS(x)).  Symbolic routed through Giac; Real/Integer/Rational/Name pass-through.  HP50 AUR §3-64.  No-fallback policy. |
+| `GREDUCE` | ✓ | **Session 119 [Giac]** — `( poly basis vars → reduced )` Grœbner reduction via `greduce(p,[basis],[vars])`.  HP50 AUR §3-99.  Level 1 must be a Vector of bare Names; level 2 a Vector of polynomials (Symbolic / Name / Integer / Real / Rational); level 3 the polynomial to reduce.  Empty basis or empty vars list → `Invalid dimension`.  Result lifts back through `giacToAst` + `_astToRplValue` so a numeric remainder lands as Real and a polynomial remainder stays Symbolic (`_astToRplValue`'s session-119 `Neg(Num)` unwrap fixes the AUR `-1` worked example).  No-fallback policy. |
 
 ## Statistics
 
@@ -278,9 +338,9 @@ not fallbacks.  Migration is incremental — rows below are flagged
 | `→PRG` `OBJ→` (on Program) | ✓ | Session 067. |
 | `ABORT` | ✓ | Session 067. |
 | `DECOMP` | ✓ | |
-| `HALT` `CONT` `KILL` | ✓ | Session 074 pilot — top-level program bodies only; HALT inside control flow or `→` raises a pilot-limit error. **Session 083:** multi-slot halted LIFO (`state.haltedStack`) matches HP50 AUR p.2-135; CONT/KILL pop one slot off the top, new `clearAllHalted()` drains, `haltedDepth()` exposes depth. |
+| `HALT` `CONT` `KILL` | ✓ | Session 074 pilot — top-level program bodies only; HALT inside control flow or `→` raises a pilot-limit error. **Session 083:** multi-slot halted LIFO (`state.haltedStack`) matches HP50 AUR p.2-135; CONT/KILL pop one slot off the top, new `clearAllHalted()` drains, `haltedDepth()` exposes depth. **Session 088:** generator-based `evalRange` — structural HALT pilot-limit fully lifted; HALT now works from inside `FOR`, `IF`, `WHILE`, `DO`, `IFERR`, and `→` bodies. **Session 106:** named-sub-program HALT lifted via `evalToken` → `_evalValueGen` for Name-binding evaluations; only HALT inside a sync-path call (IFT / IFTE / MAP / SEQ body) still rejects with `HALT: cannot suspend inside a sub-program call`.  See `docs/RPL.md:144-148`. |
 | `RUN` | ✓ | **Session 083** — registered as a CONT synonym for the no-DBUG case (AUR p.2-177). Will upgrade to debug-aware resume once DBUG substrate lands. |
-| `SST` `DBUG` | ✗ | Blocked on RunState refactor — rpl5050-rpl lane. |
+| `SST` `SST↓` `DBUG` | ✓ | **Session 101** — single-step debugger.  `SST` steps token-by-token through the most-recently-halted program (AUR p.2-184); `DBUG` installs a freshly-pushed Program as halted so the user can step from the first token (AUR p.2-77); `SST↓` originally registered as an alias for `SST`.  **Session 106:** `SST↓` shipped as a real step-into op via `_stepInto` + `_insideSubProgram` + `_shouldStepYield` (`ops.js:2944-3118`) — single-stepping now descends into the body of a sub-program reached by name lookup, while plain `SST` keeps stepping over.  See `docs/RPL.md:75-148`. |
 
 ## Variables & directories
 
@@ -315,23 +375,17 @@ lane; `rpl5050-ui-development` owns them.
 ## Not yet supported (in-lane candidates for future runs)
 
 These are HP50 AUR commands, in-lane for this file, with no registration
-in `src/rpl/ops.js`.  Listed with the cluster they belong to so they
+in `www/src/rpl/ops.js`.  Listed with the cluster they belong to so they
 can be picked up as a group.
 
 | Command | Cluster | Priority | Notes |
 |---------|---------|----------|-------|
-| `Ei` `Si` `Ci` | CAS-special | low | Exponential / sine / cosine integrals. |
-| `GREDUCE` `GXROOT` | CAS | low | Groebner reduction — deferred behind SOLVE. |
-| `CHARPOL` `EGVL` `EGV` | Matrix | medium | Characteristic poly + eigenvalues. |
-| `JORDAN` `SCHUR` `LQD` `RSD` | Matrix | low | Advanced decomps. |
+| `GXROOT` | CAS | low | Variant of `GBASIS` extracting common roots — deferred until `GBASIS` itself ships (separate row not yet listed; `GREDUCE` shipped session 119 so the standalone-reduce path is live but `GBASIS` is still pending). |
+| `JORDAN` `SCHUR` `LQD` | Matrix | low | Advanced decomps.  (`RSD` shipped session 119 — was previously grouped on this row.) |
 | `ACKER` `CTRB` `OBSV` | Matrix | low | Control-theory. |
-| `SRPLY` | list | low | Slightly obscure — Sum-of-Repeated-Pairs. |
-| `TVARS` | reflection | low | TVARS selects vars by type.  (MEM shipped — see L242.) |
 | `BARPLOT` `HISTPLOT` `SCATRPLOT` | graphics | ui-lane | (graphics — not in this lane) |
 | `ATTACH` `DETACH` `LIBS` | libraries | will-not | `LIB` not supported per `@!MY_NOTES.md`. |
 | `POLYEVAL` `MULTMOD` | modular | low | Modular poly ops — `EUCLID` / `INVMOD` shipped session 076; these two remain (need MODULO state). |
-| `PA2B2` `PROPFRAC` `PARTFRAC` | algebra | medium | PARTFRAC is the big one. |
-| `COSSIN` | trig-form | low | Rewrite in cos/sin basis. |
 
 ## Will-not-support (by design deviation)
 
@@ -357,6 +411,196 @@ If a user asks for one of these, the correct response is to point at
 
 Maintain chronologically, most recent first.
 
+- **session 119** (2026-04-24) — `EGV` + `RSD` + `GREDUCE` ship as
+  three new ops in the Matrix and CAS sections, plus a small lift to
+  the shared `_astToRplValue` helper that benefits every Giac-backed
+  unwrap site.  `EGV` (HP50 AUR §3-73) is the natural follow-on to
+  the session-114 `EGVL` ship: pop a square matrix, hand Giac `egv(M)`
+  for the eigenvector matrix and `eigenvals(M)` for the value list,
+  push matrix on level 2 and vector on level 1.  Reuses the
+  session-114 helpers (`_matrixToGiacStr`, `_popSquareMatrix`,
+  `_astToRplValue`) end-to-end; the eigenvalue order matches EGVL by
+  construction because the same `eigenvals(M)` call is used for both
+  ops.  `RSD` (HP50 AUR §3-213) is pure native linear algebra:
+  three-arg `( B A Z → B − A·Z )` over Real / Integer entries,
+  reusing `_asNumArray2D`, `_asNumArray1D`, `_matVecNum`, and
+  `_matMulNum` from the LSQ infrastructure.  Both `vector / vector`
+  and `matrix / matrix` shapes supported; mixed shapes (vector B
+  with matrix Z, etc.) reject with `Bad argument type`; shape
+  mismatches reject with `Invalid dimension`; Symbolic entries
+  reject because the path is numeric-only (mirrors LSQ).  `GREDUCE`
+  (HP50 AUR §3-99) wraps Giac `greduce(p, [basis], [vars])`:
+  level 3 polynomial, level 2 Vector of basis polynomials, level 1
+  Vector of bare Names; rejects empty basis / empty vars list with
+  `Invalid dimension`, rejects Symbolic-in-vars with `Bad argument
+  type`.  Result lifts back through the same `giacToAst` →
+  `_astToRplValue` chain PCAR / EGVL use.  `_astToRplValue` extended
+  to unwrap `Neg(Num(v))` directly to `Real(−v)` — surfaced by
+  GREDUCE's AUR worked example returning `-1` (which previously
+  came back as a single-leaf-Neg Symbolic instead of a numeric
+  Real); the same lift now makes any negative numeric Giac scalar
+  unwrap cleanly across EGVL / EGV / PCAR / FACTOR.  `register()`
+  count 445 → 448 (+3).  3 rows flipped ✗ → ✓ (one new row each
+  in Vectors / Matrices / Arrays for `EGV` and `RSD`; one in CAS
+  for `GREDUCE`).  Not-yet-supported table reshape: `EGV` row
+  removed; the four-decomp `JORDAN SCHUR LQD RSD` row collapses to
+  `JORDAN SCHUR LQD` with a sibling-note about RSD; the CAS
+  `GREDUCE GXROOT` row collapses to `GXROOT` only.  +25
+  assertions in `tests/test-algebra.mjs` (8 EGV, 8 RSD, 9 GREDUCE).
+  4089 → 4114 passing (sanity 22, persist 34 unchanged).  See
+  `logs/session-119.md`.  User-reachable keypress demo: at the
+  calculator web page (`http://localhost:8080`) push the matrix
+  `[[2,0],[0,5]]` (use the matrix-editor or type
+  `[[2,0],[0,5]]` ENTER), then type `EGV` ENTER → level 2 holds the
+  eigenvector matrix and level 1 holds the eigenvalue vector
+  `[2 5]`; for RSD push `[2 6]` ENTER `[[2,0],[0,3]]` ENTER
+  `[1 2]` ENTER then `RSD` ENTER → `[0 0]`; for GREDUCE push
+  `'X^2*Y - X*Y - 1'` ENTER `[X 2*Y^3-1]` ENTER `[X Y]` ENTER
+  then `GREDUCE` ENTER → `-1`.
+- **session 114** (2026-04-24) — `PCAR` + `CHARPOL` + `EGVL` + `PA2B2`
+  ship (four new ops) plus the phantom `SRPLY` row retires and REVIEW.md
+  X-009 + X-010 dead-import cleanups close.  `PCAR` (HP50 AUR §3-196)
+  is the HP50 canonical name for the characteristic polynomial; the
+  Giac-style alias `CHARPOL` is registered as a thin call-through to
+  `OPS.get('PCAR').fn`.  Both pop a square matrix, pin the CAS main
+  variable via `getCasVx()`, serialise the matrix with new helpers
+  `_matrixToGiacStr` / `_scalarToGiacStr` / `_popSquareMatrix`
+  (Integer / Real / Rational / Complex / Symbolic / Name supported —
+  Matrix-of-Symbolic works too), hand Giac `charpoly(M,vx)`, and push
+  the resulting Symbolic.  `EGVL` (HP50 AUR §3-90) is eigenvalues-only
+  via Giac's `eigenvals(M)` (the list form — `egvl(M)` is the Jordan
+  diagonal matrix form in Xcas and didn't match HP50 EGVL semantics);
+  result is a Giac list that's split by `splitGiacList` and lifted
+  back through `giacToAst` + `_astToRplValue` into a Vector of stack
+  values (Real / Complex / Symbolic / Name depending on what Giac
+  emits).  `PA2B2` (HP50 AUR
+  §3-162) is Fermat sum-of-two-squares: the input must be `p = 2` or a
+  prime with `p ≡ 1 (mod 4)`; implementation is native Cornacchia
+  using the existing BigInt helpers (`_isPrimeBig`, `_powModBig`) plus
+  a new `_bigIntSqrtFloor` (Newton iteration, pairs with the existing
+  perfect-square-only `_bigIntIsqrt`).  Scans `z = 2, 3, …` for a QNR
+  via Euler's criterion, sets `r = z^((p−1)/4) mod p` so `r² ≡ −1`,
+  then runs the (a, b) ← (b, a mod b) reduction until `b ≤ √p`;
+  output is `Complex(min(b,c), max(b,c))` where `c = √(p − b²)` so
+  the real/imag ordering is deterministic.  Rejects non-primes and
+  primes with `p ≡ 3 (mod 4)` with "Bad argument value"; non-integer
+  inputs hit "Bad argument type" via `_toBigIntStrict`.  Also retires
+  the phantom `SRPLY` row: `pdftotext` on all three HP50 PDFs
+  (Advanced Guide, User Guide, User Manual) returns zero hits, so the
+  entry was speculative — removed from "Not yet supported".  REVIEW.md
+  X-009 (6 dead imports in `giac-convert.mjs`: `Num` / `Var` / `Neg` /
+  `Bin` / `Fn` / `formatAlgebra` all comment-only after the session 95
+  Giac-based conversion landed) and X-010 (`RPLHalt` unused import in
+  `ops.js` line 44 — only the class name was ever imported, never
+  referenced) both close.  `register()` count 441 → 445 (+4).  4 rows
+  flipped ✗ → ✓ in Vectors / Matrices / Arrays + Polynomials / algebra;
+  the Not-yet-supported `CHARPOL EGVL EGV` row is rewritten to just
+  `EGV` (the eigenvector variant still needs Giac's `egv(M)` list-of-
+  vector-bundles decoded).  User-reachable keypress demos: (1) on the
+  calculator web page at `http://localhost:8080`, stack `[[2,1],[1,2]]`
+  ENTER, then type `PCAR` ENTER → Symbolic polynomial in VX appears on
+  stack level 1, e.g. `'X^2-4*X+3'`; (2) `EGVL` on the same matrix
+  returns `[1 3]` as a Vector; (3) `5 PA2B2` → `(1,2)` native complex
+  — these exercise the keypad→command-line→eval loop through the
+  ops.js boundary.  See `logs/session-114.md` for the full run.
+- **session 109** (2026-04-24) — `Ei` + `Si` + `Ci` ship as three
+  native special-function ops in the CAS-special section, plus
+  REVIEW.md C-006 doc-drift close.  `Ei` (HP50 AUR §2-CAS-SPECIAL)
+  covers positive x via power series for x < 40 and (e^x/x)·Σ k!/x^k
+  asymptotic truncated at the smallest term for x ≥ 40; negative x
+  via the E1 relation (series for |x| < 1, modified-Lentz CF for
+  |x| ≥ 1).  x = 0 → `Infinite result`.  `Si` is entire and odd:
+  odd power series for |x| ≤ 4, complex-Lentz CF for E1(i·|x|) on
+  |x| > 4 yields `Si(|x|) = π/2 + Im(E1(i·|x|))`.  `Si(0) = 0` exact.
+  `Ci` real-mode: γ + ln x + Σ (-1)^k x^{2k}/((2k)(2k)!) for x ≤ 4;
+  `Ci(x) = -Re(E1(i·x))` via the same complex-Lentz CF for x > 4.
+  x = 0 → `Infinite result`; x < 0 → `Bad argument value` (complex
+  result deferred from real mode).  All three: Tagged + List + V/M +
+  Sym lift; Ast round-trip via `EI` / `SI` / `CI` entries in
+  `KNOWN_FUNCTIONS`.  Reference values verified at machine precision
+  against A&S Tables 5.1 / 5.3 — see `utils/@ei_si_ci_probe.mjs`.
+  3 rows flipped ✗ → ✓.  +27 assertions in `tests/test-numerics.mjs`
+  (Ei 9, Si 8, Ci 10).  Also closed REVIEW.md C-006: `HALT` Notes
+  column now records the session-106 named-sub-program lift via
+  `_evalValueGen`, and the `SST` / `SST↓` / `DBUG` row flips ✗ → ✓
+  with session-101 ship + session-106 step-into refinement captured
+  in the Notes column (session-101's own ledger edit had drifted —
+  one row doc-drift corrected in parallel with the three Notes-column
+  edits C-006 called out).  `register()` count 438 → 441 (+3 new
+  registrations).  3930 → 3957 passing (sanity 22, persist 34).
+  See `logs/session-109.md`.
+- **session 104** (2026-04-24) — `PROPFRAC` + `PARTFRAC` + `COSSIN`
+  ship as three Giac-backed ops in the CAS section + X-007/X-008
+  cleanup.  `PROPFRAC` (HP50 AUR §3-197) routes Symbolic through
+  `propfrac(...)` and lifts Rational via `_toAst` so a numeric
+  `43/12 PROPFRAC → '3 + 7/12'` works the same as `'(X^2+1)/(X+1)'
+  PROPFRAC → 'X - 1 + 2/(X + 1)'`; Real/Integer/Name pass-through.
+  `PARTFRAC` (HP50 AUR §3-180) routes Symbolic through
+  `partfrac(...)`; Real/Integer/Rational/Name pass-through.
+  `COSSIN` (HP50 AUR §3-64) rewrites TAN as SIN/COS via Giac
+  `tan2sincos(...)`; Real/Integer/Rational/Name pass-through.  All
+  three obey the no-fallback policy: if Giac isn't ready or caseval
+  errors, the op errors.  3 rows flipped ✗ → ✓.  +21 assertions in
+  `tests/test-algebra.mjs`.  Also closed REVIEW.md X-007 (deleted
+  dead `compareRoundTrip` export from
+  `www/src/rpl/cas/giac-convert.mjs`) and X-008 (dropped unused
+  `freeVars` import from the same file).  `register()` count
+  432 → 438 (+6 loose; +3 new registrations + 3 comment-level
+  mentions from sessions 100/101).  3660 → 3681 passing
+  (sanity 22, persist 34).  See `logs/session-104.md`.
+- **session 099** (2026-04-24) — `TVARS` ships + X-001..X-005 + O-004
+  remainder.  `TVARS` reflection op: with Integer/integer-Real code arg
+  returns names of that HP50 type in CWD; with List-of-codes unions
+  matches across codes; negative codes complement.  Rejects non-integer
+  Real, Name, String, and non-integer list element with `Bad argument
+  type`.  X-005 sweep deleted 21 shadowed first-pass registrations
+  (`+ − * / ^` + 16 trig/inverse-trig/log/exp shadows) that `Map.set`
+  semantics had been silently overwriting; also uprooted `trigFwd` /
+  `trigInv` helpers left stranded, and refactored `_stoArith`,
+  `_incrDecrOp`, `_foldListOp` to defer `lookup(opSymbol)` into the
+  returned closure (factory-time lookup was order-dependent on the
+  now-deleted shadows).  X-001..X-002: 5 unused state.js imports +
+  3 dead private helpers removed.  O-004 remainder:
+  `docs/@!MY_NOTES.md:55` `COMMANDS_INVENTORY.md` → `COMMANDS.md`.
+  1 row flipped ✗ → ✓ (`TVARS`).  +18 assertions in
+  `tests/test-reflection.mjs`.  `register()` count 447 → 432.
+  3532 → 3550 passing (sanity 22, persist 34).  See `logs/session-099.md`.
+- **session 087** (2026-04-23) — data-type widening (not a
+  command-support lane session, but logged here because three
+  COMMANDS.md rows moved): FLOOR/CEIL/IP/FP accept BinaryInteger
+  (no-op; FP of BinInt = `#0` in same base); `<` `>` `≤` `≥` accept
+  String × String (char-code lex; HP50 User Guide App. J); `==` /
+  `SAME` widen to Program (structural) and Directory (reference
+  identity).  See `logs/session-087.md`.
+- **session 088** (2026-04-23) — rpl-programming: generator-based
+  `evalRange` lifts the structural HALT pilot-limit — HALT now works
+  from inside `FOR`, `IF`, `WHILE`, `DO`, `IFERR`, and `→` bodies.
+  `SIZE` widened to Program (count of top-level tokens).  No new
+  registrations; two COMMANDS.md rows annotated.  See
+  `logs/session-088.md`.
+- **session 092** (2026-04-24) — CAS migration phase 1 + numeric-type
+  upgrade.  `FACTOR` routed through Giac (`caseval('factor(...)')`);
+  Integer path stays native trial-division to preserve HP50 semantics.
+  `Rational` type added (Fraction.js), `Real` arithmetic lifted onto
+  decimal.js at precision 15 (stack payload migration finalized in
+  093), `Complex` routed through complex.js.  No-fallback policy
+  codified.  See `logs/session-092.md`, `logs/session-093.md`.
+- **session 094** (2026-04-24) — `FACTOR` / Giac boundary: purge free
+  vars before caseval so user variables don't leak into CAS scope.
+  See `logs/session-094.md`.
+- **session 095** (2026-04-24) — Giac migration finish: pilot four
+  (`EXPAND`, `DERIV`, `INTEG`, `SOLVE`) + `COLLECT` / `SUBST` /
+  `DISTRIB` / `TEXPAND` / `TLIN` / `LNCOLLECT` / `EXPLN` / `TSIMP` /
+  `TCOLLECT` / `LAPLACE` / `ILAP` / `PREVAL` routed through
+  `caseval`; native Pythagorean walker deleted.  HP50 name validator
+  added at the CAS boundary.  Row notes updated in the CAS section.
+  See `logs/session-095.md`.
+- **session 096–098** (2026-04-24) — CAS boundary hardening (not a
+  command-support lane session, logged for ops visibility):
+  algebra auto-close + name-validator guard (096), iterative
+  `stripGiacQuotes` + diagnostic wrap (097), purge-preamble removal
+  + Giac runtime-error detector (098).  No new ops; no row flips.
+  See `logs/session-096.md`, `-097.md`, `-098.md`.
 - **session 086** (2026-04-23) — `ZETA`, `LAMBERT`, `XNUM`, `XQ`.
   `ZETA`: Riemann ζ(s) — Euler-Maclaurin (N=15, M=6 Bernoulli terms)
   for s ≥ 0.5; functional-equation reflection `ζ(s)=2ˢπ^(s-1)sin(πs/2)Γ(1-s)ζ(1-s)`
