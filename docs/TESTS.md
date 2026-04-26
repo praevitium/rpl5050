@@ -4,8 +4,162 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 160 (2026-04-25).  Unit-tests lane run
-(release wrap-up — last full day before the 2026-04-26 ship).
+**Last updated.** Session 168 (2026-04-25).  Unit-tests lane run
+(release wrap-up — last full day before the 2026-04-26 ship; 5th
+release-window run in this lane after sessions 156, 160, 164,
+160-unit-tests).
+
+Sibling deltas absorbed since the session-164 snapshot
+(5167 → 5206, **+39** over three sibling sessions):
+- Session 165 (command-support) — doc-only run; **0** assertion
+  deltas (`docs/COMMANDS.md` OBJ→ row Notes amendment folding in
+  the s163 BinInt/Rational widening + Counts heading bump from
+  "as of session 161" → "as of session 165" + session-log
+  back-fill of sessions 162 / 163 / 164-code-review /
+  164-unit-tests).  No source / test edits.
+- Session 166 (data-type-support) shipped **+19** assertions
+  in `tests/test-types.mjs` (870 → 889) across two pinning
+  clusters lifting session 160's n=0 / n=1 boundary pattern
+  onto the LOG / EXP / ALOG trio (Cluster 1, +12: 4 pins × 3
+  ops covering bare-List n=0, Tagged-of-List n=0, bare-List
+  n=1 integer-clean, Tagged-of-List n=1 integer-clean) and the
+  ACOSH / ATANH dual pair (Cluster 2, +7: ATANH bare n=0,
+  both ops Tagged-of-List n=0, both ops bare n=1, both ops
+  Tagged-of-List n=1).  No source change — wrappers were live
+  since session 145 / 158.
+- Session 167 (rpl-programming) shipped **+20** assertions in
+  `tests/test-reflection.mjs` (295 → 315) for the **NEWOB
+  AUR-fidelity audit extension to the Rational shape**
+  (sibling to session 163's OBJ→ widening).  Source edit at
+  `www/src/rpl/ops.js:9313`: added the Rational branch
+  (`if (isRational(v)) return Rational(v.n, v.d);`) to
+  `_newObCopy` so all five enumerated numeric-scalar shapes
+  (Real / Integer / BinaryInteger / Rational / Complex) share
+  the same distinct-object identity contract.  20 pins across
+  6 scenarios: distinct-object on Rational(3/4), sign on
+  Rational(-7/2), n/1 type-stability on Rational(5/1), zero
+  canonical on Rational(0/1), List-of-Rational + Tagged-of-
+  Rational shallow-copy contract, NEWOB-then-OBJ→ on Rational
+  composition with the s163 push-back branch.
+
+Session 168 unit-tests deltas:
+- **+34 NEWOB session-167 follow-up edge / composition pins**
+  in `tests/test-reflection.mjs` (315 → 349) closing edges
+  session 167's pin set did not enumerate.  The s167 widening
+  enumerated every numeric-scalar shape (Real / Integer /
+  BinaryInteger / Rational / Complex) in `_newObCopy` at
+  `www/src/rpl/ops.js:9309-9314`, but only Rational got
+  hard-assertion pin coverage; sessions 047 / 047b covered
+  Real / List / Matrix at the distinct-object level only.
+  This cluster pins the three remaining numeric-scalar arms
+  (Integer / BinaryInteger / Complex) and extends Tagged-of-X
+  composition coverage to all five enumerated numeric-scalar
+  shapes (s167 covered Tagged-of-Rational only).  Pin set:
+  Integer distinct-object + Integer(-7) negative-sign + BinInt
+  #15h value+base preservation + BinInt #7o octal-base
+  preservation (closes BIN_BASES quartet on NEWOB) + Complex
+  re/im preservation + Tagged-of-Integer / Tagged-of-BinInt /
+  Tagged-of-Complex / Tagged-of-Real shallow-copy contract
+  (closes Tagged composition row across all five enumerated
+  shapes) + Vector-of-Real shallow-copy contract (mirror of
+  s167 List-of-Rational onto Vector container; pins
+  `_newObCopy:9319` Vector branch's `slice()` rebuilds the
+  items array but preserves inner Real identity) + empty-List
+  rebuild (closes the n=0 List boundary that s047 only
+  pinned on empty-Matrix) + List-of-Tagged nested composition
+  (mirror of s146 nested-Program shallow-copy onto Tagged
+  inner) + NEWOB-then-OBJ→ on BinaryInteger composition pin
+  (companion to s167's NEWOB-then-OBJ→ on Rational; pins the
+  s163 push-back branch composes correctly with s167's NEWOB
+  Rational widening on the BinInt arm).
+- **+6 LOG / EXP / ALOG heterogeneous-output mixed-input pins**
+  in `tests/test-types.mjs` (889 → 895) closing the
+  heterogeneous-output axis session 166 deferred (its scope was
+  n=0 / n=1 boundary closures only).  Lifts session 162's
+  bare-List heterogeneous mixed-input pattern + session 164's
+  Tagged-of-List heterogeneous mixed-input pattern onto the
+  LOG / EXP / ALOG trio (3 ops × 2 axes = 6 pins).  Per-op
+  inputs use the natural identity points (LOG(1)=0, EXP(0)=1,
+  ALOG(0)=1) paired with a non-identity value to surface
+  per-position output divergence and pin per-element wrapper
+  dispatch end-to-end:  `{ Real(10) Real(1) } LOG → { Real(1)
+  Real(0) }` + Tagged-of-List variant; `{ Real(0) Real(1) }
+  EXP → { Real(1) Real(e) }` + Tagged-of-List variant;
+  `{ Real(0) Real(1) } ALOG → { Real(1) Real(10) }` + Tagged-
+  of-List variant.
+
+Sibling deltas absorbed since the session-160 snapshot
+(5133 → 5156, **+23** over three sibling sessions):
+- Session 161 (command-support) — doc-only run; **0** assertion
+  deltas (`docs/COMMANDS.md` OBJ→ row Notes amendment closing
+  the s156 R-012 filing pointer once s159 had landed the
+  `isUnit` branch + Counts heading bump + session-log back-fill
+  for sessions 158 / 159 / 160-code-review / 160-unit-tests +
+  the s161 self-summary).  No source / test edits.
+- Session 162 (data-type-support) shipped **+15** assertions
+  in `test-types.mjs` (852 → 867) for the **LNP1 / EXPM
+  bare-List + Tagged-of-List composition** clusters lifting
+  session 158's LN/LOG/EXP/ALOG L+T axis onto the LNP1/EXPM
+  dual pair.  Cluster 1 (9): bare-List Real-pass-through pair
+  + Integer→Real-per-element pair (pins LNP1/EXPM bypass
+  `_unaryCx` so no EXACT-mode Integer-stay-exact arm fires —
+  DISTINCT from session 158 LN axis Integer-stay-Integer) +
+  Tagged-of-List composition pair + heterogeneous-output
+  mixed-input bare-List pair + LNP1 boundary-throw under
+  bare-List.  Cluster 2 (6): LNP1/EXPM n=0 bare-List + n=0
+  Tagged-of-List + n=1 single-element bare-List boundary pairs
+  (mirror of session 160's LN n=0 / n=1 closures lifted onto
+  the LNP1/EXPM dual).  No source change — wrappers were live
+  since session 130 / 140.
+- Session 163 (rpl-programming) shipped **+8** assertions in
+  `test-reflection.mjs` (279 → 287) for the **OBJ→ AUR-fidelity
+  audit extension to BinaryInteger and Rational**.  Source
+  edit at `ops.js:6746-6762`: the existing Real/Integer
+  push-back branch's guard expanded from
+  `isReal(v) || isInteger(v)` to
+  `isReal(v) || isInteger(v) || isBinaryInteger(v) ||
+  isRational(v)` so all four numeric-scalar shapes share the
+  same `s.push(v); return;` body (matches the s155 R-008 close
+  rationale that AUR §3-149 lists no row for any numeric
+  scalar).  Eight test blocks: BinInt push-back at three bases
+  (#15h / #255d / #0b), Rational push-back (3/4) + Rational
+  sign convention (-7/2), `OBJ->` ASCII alias parity on
+  BinInt, and EVAL-as-literal-push pair (BinInt + Rational —
+  guards against a refactor that re-routes BinInt through
+  B→R during EVAL).
+
+Session 164 unit-tests deltas:
+- **+8 OBJ→ session-163 follow-up edge / composition pins**
+  in `test-reflection.mjs` (287 → 295): Tagged-of-BinInt
+  one-layer peel (3 sub-pins: depth=2, level-1 = "bn" Str,
+  level-2 = #15h with base preserved); Tagged-of-Rational
+  one-layer peel (1 conjunction pin closing Tagged composition
+  for the second numeric-scalar shape s163 added); ASCII alias
+  `OBJ->` on Rational (closes s163's alias-parity pin which
+  only covered BinInt); BinInt at octal base #7o (closes the
+  BIN_BASES quartet — s163 covered h/d/b only, missed 'o');
+  Rational(0/1) zero-value boundary (mirror of s163's BinInt
+  #0b zero pin onto the Rational arm); Rational(5/1)
+  denominator-1 (pins n/1 NOT normalised to Integer through
+  the OBJ→ push-back branch — distinct from s163's -7/2
+  negative-numerator pin which has d>1).  All pins exercise
+  the widened branch s163 added at `ops.js:6746` plus the
+  existing Tagged peel at `:6690-6696`.  No source change.
+- **+3 LNP1 / EXPM session-162 follow-up T+L composition
+  edge pins** in `test-types.mjs` (867 → 870): LNP1 boundary-
+  throw under Tagged-of-List `:l:{ Real(-1) }` → Infinite
+  result (mirror of s162's bare-List boundary pin lifted onto
+  T+L; pins inner handler's RPLError propagates through both
+  outer Tagged peel AND the bare-List wrapper's apply loop —
+  guards against a refactor that swallows inner throws under
+  Tagged composition); LNP1 heterogeneous-output mixed-input
+  under Tagged-of-List `:n:{ Real(-0.5) Real(0) }` →
+  `:n:{ Real(log1p(-0.5)) Real(0) }` (pins per-element
+  distinct-value output under Tagged peel — NOT a uniform-
+  output short-circuit); EXPM heterogeneous-output mixed-input
+  under Tagged-of-List `:e:{ Real(1) Real(0) }` →
+  `:e:{ Real(expm1(1)) Real(0) }` (companion pin closing the
+  LNP1/EXPM dual pair on the T+L heterogeneous-output axis).
 
 Sibling deltas absorbed since the session-156 snapshot
 (5086 → 5120, **+34** over three sibling sessions):
@@ -595,65 +749,102 @@ Session 117 unit-tests deltas:
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
 
-## Coverage snapshot (session 160)
+## Coverage snapshot (session 168)
 
-Baseline at session start: `node tests/test-all.mjs` = **5120
-passing / 0 failing** (session-159 close, fully green; sibling
-deltas absorbed in the prelude above — +0 s157 doc-only, +19
-s158 test-types, +15 s159 test-reflection R-012 close).
-`test-persist.mjs` 66 / 0 (unchanged since session 156).
+Baseline at session start: `node tests/test-all.mjs` = **5206
+passing / 0 failing** (session-167 close, fully green; sibling
+deltas absorbed in the prelude above — +0 s165 doc-only, +19
+s166 test-types LOG/EXP/ALOG + ACOSH/ATANH n=0 / n=1 boundary,
++20 s167 test-reflection NEWOB Rational widening + composition
+pin set).
+`test-persist.mjs` 66 / 0 (unchanged since session 156 — D-001
+fully closed at ship-prep 2026-04-25).
 `sanity.mjs` 22 / 0.
 
-Final: **5133 passing / 0 failing** — fully green.  The +13
-session-160 deltas land in three files across three substantive
+Final: **5246 passing / 0 failing** — fully green.  The +40
+session-168 deltas land in two files across two substantive
 clusters:
-- `test-reflection.mjs` 273 → 279 (**+6**) — OBJ→ Unit follow-up
-  boundary edges session 159's R-012 pin set did not enumerate:
-  zero-value `0_m → 0  1_m` (with prototype shape pin),
-  fractional `2.5_m → 2.5  1_m`, higher-power uexpr
-  `3_m^2 → 3  1_m^2`, multi-symbol round-trip `5_m/s OBJ→ *`,
-  higher-power round-trip `3_m^2 OBJ→ *`.
-- `test-types.mjs` 848 → 852 (**+4**) — transcendental wrapper-
-  LIST n=0 / n=1 boundary pins lifting session 156's empty-V/L/P
-  n=0 closure pattern onto the session-158 wrapper-LIST
-  composition: `{ } ACOSH → { }` (direct-registered),
-  `{ } LN → { }` (bare via `_unaryCx`), `:l:{ } LN → :l:{ }`
-  (Tagged-of-empty), `{ Integer(1) } LN → { Integer(0) }` (n=1
-  shoulder).
-- `test-algebra.mjs` 1058 → 1061 (**+3**) — MODULO ARITH
-  follow-up edges session 156's pin-set did not enumerate:
-  DIV2MOD MODSTO consultation pair (m=12 + m=7 baseline/
-  alternate; mirror of s156 DIVMOD pair on the two-result
-  sibling per AUR §3-62), GCDMOD(0, 0) both-zero edge → Bad
-  argument value (closes the s156 gcd-with-one-zero pair on
-  the mathematically-undefined corner).
+- `test-reflection.mjs` 315 → 349 (**+34**) — NEWOB session-167
+  follow-up edges: Integer distinct-object + Integer(-7)
+  negative-sign + BinInt #15h value+base preservation + BinInt
+  #7o octal-base preservation (closes BIN_BASES quartet on
+  NEWOB) + Complex re/im preservation + Tagged-of-Integer /
+  Tagged-of-BinInt / Tagged-of-Complex / Tagged-of-Real
+  shallow-copy contract (closes Tagged composition row across
+  all five enumerated numeric-scalar shapes Real/Integer/
+  BinInt/Rational/Complex; s167 covered Tagged-of-Rational
+  only) + Vector-of-Real shallow-copy contract (mirror of s167
+  List-of-Rational onto Vector container; pins
+  `_newObCopy:9319` Vector branch's `slice()` rebuilds the
+  items array but preserves inner Real identity) + empty-List
+  rebuild boundary (closes the n=0 List boundary that s047
+  only pinned on empty-Matrix) + List-of-Tagged nested
+  composition (mirror of s146 nested-Program shallow-copy onto
+  Tagged inner) + NEWOB-then-OBJ→ on BinaryInteger composition
+  (companion to s167's NEWOB-then-OBJ→ on Rational; pins the
+  s163 push-back branch composes correctly with s167's NEWOB
+  Rational widening on the BinInt arm).
+- `test-types.mjs` 889 → 895 (**+6**) — LOG / EXP / ALOG
+  heterogeneous-output mixed-input pinning under bare-List +
+  Tagged-of-List composition.  Closes the heterogeneous-output
+  axis session 166 deferred (its scope was n=0 / n=1 boundary
+  closures only).  Lifts session 162's bare-List heterogeneous
+  mixed-input pattern + session 164's Tagged-of-List
+  heterogeneous mixed-input pattern onto the LOG / EXP / ALOG
+  trio (3 ops × 2 axes = 6 pins): `{ Real(10) Real(1) } LOG →
+  { Real(1) Real(0) }` + Tagged-of-List variant; `{ Real(0)
+  Real(1) } EXP → { Real(1) Real(e) }` + Tagged-of-List
+  variant; `{ Real(0) Real(1) } ALOG → { Real(1) Real(10) }` +
+  Tagged-of-List variant.
 
 `test-persist.mjs` 66 / 0 (unchanged this run).  `sanity.mjs`
 22 / 0 (unchanged).
 
 | File                        | OK   | FAIL | Notes                                    |
 |-----------------------------|------|------|------------------------------------------|
-| test-algebra.mjs            | **1061** | 0    | +25 s119, +25 s124, +9 s127, +13 s139, +29 s144, +30 s149, +10 s156 (MODULO follow-up), **+3 session-160** (MODULO ARITH follow-up: DIV2MOD MODSTO consultation pair + GCDMOD(0,0) both-zero reject). |
+| test-algebra.mjs            | 1061 | 0    | +25 s119, +25 s124, +9 s127, +13 s139, +29 s144, +30 s149, +10 s156 (MODULO follow-up), +3 s160 (MODULO ARITH follow-up: DIV2MOD MODSTO consultation pair + GCDMOD(0,0) both-zero reject).  Sessions 164 / 165 / 166 / 167 / 168 did not touch this file. |
 | test-arrow-aliases.mjs      |   19 | 0    |                                          |
 | test-binary-int.mjs         |  122 | 0    |                                          |
 | test-comparisons.mjs        |  111 | 0    |                                          |
-| test-control-flow.mjs       |  775 | 0    | s151 fully closed (CASE / fully-closed START/NEXT and START/STEP / DO/UNTIL / FOR/STEP).  Session 160 did not touch this file. |
+| test-control-flow.mjs       |  775 | 0    | s151 fully closed (CASE / fully-closed START/NEXT and START/STEP / DO/UNTIL / FOR/STEP).  Sessions 164 / 165 / 166 / 167 / 168 did not touch this file. |
 | test-entry.mjs              |   90 | 0    |                                          |
 | test-eval.mjs               |   61 | 0    |                                          |
 | test-helpers.mjs            |   43 | 0    |                                          |
 | test-lists.mjs              |  185 | 0    | +14 ship-prep-r4 (List EVAL HP50 §3-77 fix; R-010). |
 | test-matrix.mjs             |  347 | 0    |                                          |
-| test-numerics.mjs           |  701 | 0    | +27 s109 + s112 + s153 + s156 retained.  Session 160 did not touch this file (s156's C-011 follow-up cluster is the closing pass). |
-| test-reflection.mjs         |  **279** | 0    | +50 s146, +5 net + 2 flipped s155 (R-008 OBJ→ Real-branch fix), +7 s156 (n=0 boundary closures), +15 s159 (R-012 close — OBJ→ Unit branch), **+6 session-160** (OBJ→ Unit follow-up boundary edges: zero / fractional / higher-power uexpr / multi-symbol round-trip / higher-power round-trip). |
+| test-numerics.mjs           |  701 | 0    | +27 s109 + s112 + s153 + s156 retained.  Sessions 164 / 165 / 166 / 167 / 168 did not touch this file. |
+| test-reflection.mjs         |  **349** | 0    | +50 s146, +5 net + 2 flipped s155 (R-008 OBJ→ Real-branch fix), +7 s156 (n=0 boundary closures), +15 s159 (R-012 close — OBJ→ Unit branch), +6 s160 (OBJ→ Unit follow-up boundary edges), +8 s163 (OBJ→ AUR-fidelity audit extension to BinInt/Rational), +8 s164 (OBJ→ s163 follow-up edges), +20 s167 (NEWOB AUR-fidelity audit extension to Rational + composition pin set), **+34 session-168** (NEWOB s167 follow-up: Integer / BinInt / Complex distinct-object + Tagged-of-each-numeric-scalar composition + Vector-of-Real shallow-copy + empty-List boundary + List-of-Tagged nested composition + NEWOB-then-OBJ→ on BinInt). |
 | test-stack-ops.mjs          |   48 | 0    |                                          |
 | test-stats.mjs              |   55 | 0    |                                          |
-| test-types.mjs              |  **852** | 0    | +50 s115, +2 s117, +68 s120, +43 s125, +35 s130, +31 s135, +36 s140, +23 s142, +41 s145, +26 s150, +19 s158 (LN/LOG/EXP/ALOG + ACOSH/ATANH bare-List + Tagged-of-List composition), **+4 session-160** (transcendental wrapper-LIST n=0 / n=1 boundary closures: ACOSH n=0 direct-registered, LN n=0 bare + Tagged-of-empty + n=1 shoulder). |
+| test-types.mjs              |  **895** | 0    | +50 s115, +2 s117, +68 s120, +43 s125, +35 s130, +31 s135, +36 s140, +23 s142, +41 s145, +26 s150, +19 s158, +4 s160, +15 s162 (LNP1/EXPM bare-List + Tagged-of-List composition), +3 s164 (LNP1/EXPM T+L follow-up edges), +19 s166 (LOG/EXP/ALOG + ACOSH/ATANH n=0/n=1 boundary closures), **+6 session-168** (LOG/EXP/ALOG heterogeneous-output mixed-input under bare-List + Tagged-of-List composition — closes the heterogeneous-output axis s166 deferred). |
 | test-ui.mjs                 |   77 | 0    |                                          |
 | test-units.mjs              |   56 | 0    |                                          |
 | test-variables.mjs          |  251 | 0    |                                          |
-| **test-all (aggregate)**    | **5133** | **0** | Session 160 close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
+| **test-all (aggregate)**    | **5246** | **0** | Session 168 close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
 | test-persist.mjs (separate) |   66 | 0    | Unchanged this run; session 156 baseline retained. |
 | sanity.mjs (standalone)     |   22 | 0    | <5 ms smoke suite.                       |
+
+### Prior snapshot — Session 164 (retained for context)
+
+Baseline at session start: `node tests/test-all.mjs` = **5156
+passing / 0 failing** (session-163 close); final **5167 / 0** —
++11 deltas across `test-reflection.mjs` 287 → 295 (**+8**, OBJ→
+session-163 follow-up edges) and `test-types.mjs` 867 → 870
+(**+3**, LNP1/EXPM session-162 T+L composition follow-up edges).
+
+### Prior snapshot — Session 160 (retained for context)
+
+Baseline at session start: `node tests/test-all.mjs` = **5120
+passing / 0 failing** (session-159 close, fully green; sibling
+deltas absorbed in the prelude above — +0 s157 doc-only, +19
+s158 test-types, +15 s159 test-reflection R-012 close).
+
+Final: **5133 passing / 0 failing** — fully green.  The +13
+session-160 deltas land in three files across three substantive
+clusters: test-reflection.mjs +6 OBJ→ Unit follow-up, test-types.mjs
++4 transcendental wrapper-LIST n=0 / n=1 boundary, test-algebra.mjs
++3 MODULO ARITH follow-up.  See "Session 160 unit-tests deltas"
+in the prelude for cluster details.
 
 ### Prior snapshot — Session 156 (retained for context)
 
@@ -1291,7 +1482,74 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 156 (2026-04-25) — this run.  Unit-tests lane (release
+- Session 164 (2026-04-25) — this run.  Unit-tests lane (release
+  wrap-up — last full day before the 2026-04-26 ship).  **+11
+  assertions across 2 substantive clusters** (meets the 2-item
+  release-mode floor) — pinning-only run; no source edits, no
+  REVIEW.md findings filed:
+  - **Cluster 1 (8)** — `test-reflection.mjs` 287 → 295.  OBJ→
+    session-163 follow-up edges that the s163 pin-set did not
+    enumerate.  Tagged-of-BinInt one-layer peel (3 sub-pins:
+    depth=2, level-1 = "bn" Str, level-2 = #15h with base
+    preserved); Tagged-of-Rational one-layer peel (1 conjunction
+    pin closing Tagged composition for the second numeric-scalar
+    shape s163 added); ASCII alias `OBJ->` on Rational (closes
+    s163's alias-parity coverage which only covered BinInt);
+    BinInt at octal base #7o (closes the BIN_BASES quartet —
+    s163 covered h/d/b only, missed 'o'); Rational(0/1) zero-
+    value boundary (mirror of s163's BinInt #0b zero pin onto
+    the Rational arm); Rational(5/1) denominator-1 (pins n/1
+    NOT normalised to Integer through the OBJ→ push-back branch
+    — distinct from s163's -7/2 negative-numerator pin which
+    has d>1).  All exercise the widened branch s163 added at
+    `ops.js:6746` plus the existing Tagged peel at `:6690-6696`.
+  - **Cluster 2 (3)** — `test-types.mjs` 867 → 870.  LNP1/EXPM
+    session-162 follow-up T+L composition edge pins.  LNP1
+    boundary-throw under Tagged-of-List `:l:{ Real(-1) }` →
+    Infinite result (mirror of s162's bare-List boundary pin
+    lifted onto T+L; pins inner handler's RPLError propagates
+    through both outer Tagged peel AND the bare-List wrapper's
+    apply loop); LNP1 heterogeneous-output mixed-input under
+    Tagged-of-List `:n:{ Real(-0.5) Real(0) }` →
+    `:n:{ Real(log1p(-0.5)) Real(0) }` (pins per-element
+    distinct-value output under Tagged peel — NOT a uniform-
+    output short-circuit); EXPM heterogeneous-output mixed-input
+    under Tagged-of-List `:e:{ Real(1) Real(0) }` →
+    `:e:{ Real(expm1(1)) Real(0) }` (companion pin closing the
+    LNP1/EXPM dual pair on the T+L heterogeneous-output axis).
+  - No REVIEW.md findings filed — ship-mode coverage closure
+    only.  All 11 pins exercise behaviour live since
+    session 163 (Cluster 1) / session 130/140/162 (Cluster 2);
+    no source change required.
+
+- Session 160 (2026-04-25) — earlier run.  Unit-tests lane.
+  **+13 assertions across 3 substantive clusters** (above the
+  3-item floor) — distributed across `test-reflection.mjs`,
+  `test-types.mjs`, `test-algebra.mjs`:
+  - **Cluster 1 (6)** — `test-reflection.mjs` 273 → 279.  OBJ→
+    Unit follow-up boundary edges session 159's R-012 pin set
+    did not enumerate: zero-value `0_m → 0  1_m`, fractional
+    `2.5_m → 2.5  1_m`, higher-power uexpr `3_m^2 → 3  1_m^2`,
+    multi-symbol round-trip `5_m/s OBJ→ *`, higher-power
+    round-trip `3_m^2 OBJ→ *`.
+  - **Cluster 2 (4)** — `test-types.mjs` 848 → 852.
+    Transcendental wrapper-LIST n=0 / n=1 boundary pins lifting
+    session 156's empty-V/L/P n=0 closure pattern onto the
+    session-158 wrapper-LIST composition: `{ } ACOSH → { }`,
+    `{ } LN → { }`, `:l:{ } LN → :l:{ }`, `{ Integer(1) } LN
+    → { Integer(0) }` (n=1 shoulder).
+  - **Cluster 3 (3)** — `test-algebra.mjs` 1058 → 1061.  MODULO
+    ARITH follow-up edges: DIV2MOD MODSTO consultation pair
+    (m=12 + m=7 baseline/alternate; mirror of s156 DIVMOD pair
+    on the two-result sibling), GCDMOD(0, 0) both-zero → Bad
+    argument value (closes the s156 gcd-with-one-zero identity
+    pair on the mathematically-undefined corner).
+  - Final test-all **5133 passing / 0 failing** — fully green
+    (entry was 5120 / 0; +13 from this run).  test-persist
+    66 / 0 (unchanged).  sanity 22 / 0 (unchanged).
+    Log file: `logs/session-160.md`.
+
+- Session 156 (2026-04-25) — earlier run.  Unit-tests lane (release
   wrap-up — penultimate day before the 2026-04-26 ship).  **+23
   assertions across 3 substantive clusters** (above the 3-item
   floor) plus **R-012 filed** (REVIEW.md `Findings — RPL` bucket)

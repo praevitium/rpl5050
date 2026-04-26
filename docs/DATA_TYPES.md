@@ -5,7 +5,73 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 158 (2026-04-25, release-mode wrap-up) —
+**Last updated.** Session 166 (2026-04-25, release-mode wrap-up
+on T-1 day) — two pinning clusters closing the n=0 empty-List + n=1
+single-element boundary axes on already-widened transcendental ops
+in the same family that session 162 closed for LNP1/EXPM.  No
+source-side changes; lane held only `tests/test-types.mjs`,
+`docs/DATA_TYPES.md`, `logs/session-166.md`.
+(1) **LOG / EXP / ALOG n=0 + n=1 boundary closures on bare-List +
+Tagged-of-List composition** — session 160 added n=0 / n=1 pins on
+the LN axis only (single-cluster scope); the remaining three ops in
+the session-158 `_unaryCx`-routed quartet (LOG / EXP / ALOG) had
+n=2 / n=3 pins from session 158 but no n=0 empty-List or n=1
+single-element shoulder pins.  This cluster closes the trio on
+those shoulders: `{ } LOG/EXP/ALOG` → `{ }`, `:l:{ } LOG/EXP/ALOG`
+→ `:l:{ }`, `{ Integer(10) } LOG` → `{ Integer(1) }`, `{ Integer(0)
+} EXP` → `{ Integer(1) }`, `{ Integer(2) } ALOG` → `{ Integer(100)
+}`, plus T+L counterparts.  Closes the LOG/EXP/ALOG trio on the n=0
+/ n=1 axes that session 160 deferred when it scoped to LN only.
+(2) **ACOSH / ATANH n=0 + n=1 boundary closures on the direct-
+registered (non-`_unaryCx`) wrapper shape** — session 160 added an
+n=0 bare-List ACOSH pin (`{ } ACOSH → { }`) but did NOT pin the
+symmetric ATANH n=0 case, the Tagged-of-List n=0 case for either
+op, or the n=1 single-element shoulder for either op.  This cluster
+closes the inverse-hyperbolic dual pair on the n=0 / n=1 boundary
+axes: `{ } ATANH → { }`, `:h:{ } ACOSH/ATANH → :h:{ }`, `{ Real(1)
+} ACOSH → { Real(0) }`, `{ Real(0) } ATANH → { Real(0) }`, plus T+L
+counterparts.  Mirror of session 162 Cluster 2 on the LNP1/EXPM
+dual-pair direct-registered wrapper, lifted onto the ACOSH/ATANH
+direct-registered wrapper.
++19 hard assertions in `tests/test-types.mjs` (870 → 889).
+Verification gates at exit: `node tests/test-all.mjs` 5186/0/0,
+`node tests/test-persist.mjs` 40/0, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (166)" below.
+
+**Last updated (prior — session 162).** Session 162 (2026-04-25, release-mode wrap-up) —
+two pinning clusters lifting session 158's bare-List + Tagged-of-
+List composition work onto the LNP1 / EXPM dual pair (which
+session 158 deliberately deferred — it iterated the LN / LOG /
+EXP / ALOG quartet that routes through `_unaryCx`'s EXACT-mode
+arm).  No source-side changes; lane held only `tests/test-types.mjs`,
+`docs/DATA_TYPES.md`, `logs/session-162.md`, `docs/REVIEW.md`.
+(1) **LNP1 / EXPM bare-List + Tagged-of-List composition** — pins
+per-element `Math.log1p` / `Math.expm1` fold under bare
+`_withListUnary` and Tagged-of-List composition through the 3-deep
+wrapper `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`,
+including the **`_exactUnaryLift`-bypass contrast** with session
+158's LN/LOG/EXP/ALOG L+T pin: LNP1/EXPM bypass `_unaryCx` entirely
+(direct registration at `ops.js:7702/7709`), so the EXACT-mode
+Integer-stay-exact arm DOES NOT FIRE — `LNP1 { Integer(0) Integer(0) }`
+→ `{ Real(0) Real(0) }` (Integer→Real per element via
+`toRealOrThrow`), DISTINCT from session 158's `LN { Integer(1)
+Integer(1) }` → `{ Integer(0) Integer(0) }` integer-stay.  Plus
+the LNP1 boundary throw `{ Real(-1) } LNP1` → `Infinite result`
+(propagates through wrapper `apply` loop) and heterogeneous-output
+mixed-input pins (`LNP1 { Real(-0.5) Real(0) }` → `{ Real(log1p(
+-0.5)) Real(0) }` distinct values per List position).
+(2) **LNP1 / EXPM n=0 empty-List + n=1 single-element boundary
+closures** — mirror of session 160's LN n=0 / n=1 pins lifted onto
+the LNP1/EXPM duals: `{ } LNP1` → `{ }`, `:l:{ } LNP1` → `:l:{ }`,
+`{ Real(0) } LNP1` → `{ Real(0) }`, EXPM symmetric.  Closes the
+LNP1/EXPM dual pair on the n=0 / n=1 boundary axis that session
+160 left open (single-cluster scope on LN only).
++15 hard assertions in `tests/test-types.mjs` (852 → 867).
+Verification gates at exit: `node tests/test-all.mjs` 5148/0/0,
+`node tests/test-persist.mjs` 40/0, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (162)" below.
+
+**Last updated (prior — session 158).** Session 158 (2026-04-25, release-mode wrap-up) —
 two pinning clusters lifting session 150's wrapper-VM-under-Tagged
 work onto the LIST axis (bare-List + Tagged-of-List) on already-
 widened transcendental ops; closes the L/T composition axis on the
@@ -585,7 +651,7 @@ follow-on candidates and listed at the bottom.
 | LN, LOG, EXP, ALOG | ✓ | ✓ | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Logarithmic / exponential family — dispatch through `_unaryCx` (`ops.js:7984`); Complex via `_cxLn` / `_cxExp` etc.; same Tagged / List / V/M wrapping as the trig / hyperbolic family. The matrix didn't carry these as a dedicated row through session 142 — they were considered covered by the "elementary functions" umbrella and the convention text. Session 145 broke them out and pinned the **EXACT-mode `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic contract** on bare scalars (the canonical examples called out in `_exactUnaryLift`'s doc-comment at `ops.js:1130-1137`): `LN(Integer(1))` → `Integer(0)`, `LN(Integer(2))` → Symbolic; `LOG(1)/LOG(10)/LOG(100)/LOG(1000)` = Integer(0/1/2/3) — full powers-of-ten quartet; `LOG(Integer(2))` → Symbolic; `EXP(Integer(0))` → `Integer(1)`, `EXP(Integer(1))` → Symbolic (preserves e unevaluated); `ALOG(Integer(0))` → `Integer(1)`, `ALOG(Integer(2))` → `Integer(100)`, `ALOG(Integer(3))` → `Integer(1000)` — non-zero integer outputs pin BigInt round-trip without precision loss; `ALOG(Integer(-1))` → Symbolic (10⁻¹=0.1 not integer-clean). Rational arm: `LN(Rational(1,1))` → `Integer(0)` (Rational arm CAN produce Integer when 1/1=1.0 → ln(1)=0 integer-clean — distinct from session 142 Cluster 1's ASIN(Rational) where the angle-mode `fromRadians` produced the integer-clean output, here it's the Rational value itself collapsing to 1.0 before the numeric primitive); `LN(Rational(1,2))` → Symbolic with `Bin('/', Num(1), Num(2))` payload preservation. APPROX-mode bypass on `LN(Integer(1))` / `LOG(Integer(100))` / `EXP(Integer(0))` → Real not Integer (pins APPROX flips KIND not VALUE). Session 158 lifted session 150 Cluster 3's wrapper composition onto the **LIST axis** (bare-List + Tagged-of-List): `LN {Integer(1) Integer(1)} → {Integer(0) Integer(0)}` (EXACT-mode `_exactUnaryLift` composes through bare `_withListUnary` on LN axis); `LOG {Integer(1) Integer(10) Integer(100)} → {Integer(0) Integer(1) Integer(2)}` (three distinct integer-clean outputs at three List positions); `EXP {Integer(0) Integer(0)} → {Integer(1) Integer(1)}` (non-zero output pins inner EXP arm ran per element); `ALOG {Integer(0) Integer(2) Integer(3)} → {Integer(1) Integer(100) Integer(1000)}` (high-magnitude integer outputs pin BigInt round-trip per element under bare List); `LN :l:{Integer(1) Integer(1)} → :l:{Integer(0) Integer(0)}` and `LOG :l:{Integer(1) Integer(10) Integer(100)} → :l:{Integer(0) Integer(1) Integer(2)}` (Tagged-of-List composition closes LN/LOG axes on T+L); HETEROGENEOUS within bare List `LOG {Integer(2) Integer(10)} → {Symbolic LOG(2), Integer(1)}` (mixed integer-clean / stay-symbolic per element under bare `_withListUnary` WITHOUT uniform-kind collapse — mirror of session 150 Cluster 3 mixed-kind Tagged-V LOG pin on the bare-List axis); `LOG :l:{Integer(2) Integer(10)} → :l:{Symbolic LOG(2), Integer(1)}` (heterogeneous within Tagged-of-List composition); APPROX-mode bypass under bare List `LOG {Integer(1) Integer(100)} APPROX → {Real(0) Real(2)}` (KIND flips from Integer to Real per element under bare List wrapper). Closes the L/T composition axis on LN/LOG/EXP/ALOG; closes the transcendental wrapper-LIST-under-Tagged matrix on the LN/LOG/EXP/ALOG quartet.
 
 Session 150 lifted the bare-scalar pin into the **Tagged-V/M wrapper composition** (closes the LN/LOG/EXP/ALOG axis on the wrapper composition; mirror of session 145 Cluster 3a's forward-trig wrapper composition pin on the LN/LOG/EXP/ALOG family): `:v:V(Z(1), Z(1)) LN` → `:v:V(Z(0), Z(0))` (zero trio), `:v:V(Z(1), Z(10), Z(100)) LOG` → `:v:V(Z(0), Z(1), Z(2))` (three distinct integer outputs at distinct V positions — pins per-element wrapper dispatch), `:v:V(Z(0), Z(0)) EXP` → `:v:V(Z(1), Z(1))` non-zero output, `:v:V(Z(0), Z(2), Z(3)) ALOG` → `:v:V(Z(1), Z(100), Z(1000))` (high-magnitude integers pin BigInt round-trip per element under wrapper), `:m:M[[1,10],[100,1000]] LOG` → `:m:M[[0,1],[2,3]]` Matrix-axis closure, **mixed integer-clean / stay-symbolic within a single Tagged-V** (`:v:V(Z(2), Z(10)) LOG` → `:v:V(Symbolic LOG(2), Integer(1))` — strong heterogeneous-kind pin: result is mixed-kind Vector inside Tagged wrapper, exercises type-heterogeneity contract on wrapper composition), and APPROX-mode bypass under wrapper composition (`:v:V(Z(1), Z(100)) LOG` APPROX → `:v:V(Real(0), Real(2))` — APPROX flips KIND from Integer to Real per element under wrapper). |
-| LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). Session 100: Sy round-trip verified; `defaultFnEval` folds via `Math.log1p` / `Math.expm1` (LNP1 returns null outside `x > -1`). Session 130 pinned Tagged-of-Vector wrapper-VM composition on LNP1: `LNP1 :v:Vector(0, 0)` → `:v:Vector(0, 0)` (stable-near-zero log per element through outer Tagged). Session 140 pinned EXPM Tagged-of-Vector and Tagged-of-Matrix wrapper-VM composition (`EXPM :e:V[0,0]` → `:e:V[0,0]`, `EXPM :e:M[[0,0],[0,0]]` → `:e:M[[0,0],[0,0]]`) — closes the LNP1/EXPM dual pair on the Tagged-V/M axis (LNP1 was pinned on V in session 130 but EXPM and the M axis on both ops were unpinned). |
+| LNP1, EXPM | ✓ | ✓ | · | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · | ✗ | ✗ | Session 063. Complex · by design (stable-near-zero real form). Session 100: Sy round-trip verified; `defaultFnEval` folds via `Math.log1p` / `Math.expm1` (LNP1 returns null outside `x > -1`). Session 130 pinned Tagged-of-Vector wrapper-VM composition on LNP1: `LNP1 :v:Vector(0, 0)` → `:v:Vector(0, 0)` (stable-near-zero log per element through outer Tagged). Session 140 pinned EXPM Tagged-of-Vector and Tagged-of-Matrix wrapper-VM composition (`EXPM :e:V[0,0]` → `:e:V[0,0]`, `EXPM :e:M[[0,0],[0,0]]` → `:e:M[[0,0],[0,0]]`) — closes the LNP1/EXPM dual pair on the Tagged-V/M axis (LNP1 was pinned on V in session 130 but EXPM and the M axis on both ops were unpinned). Session 162 closed the **bare-List + Tagged-of-List composition axis** on the LNP1/EXPM dual pair (mirror of session 158 LN/LOG/EXP/ALOG L+T pins lifted onto the LNP1/EXPM duals — but with the **`_exactUnaryLift`-bypass contrast**: LNP1/EXPM bypass `_unaryCx` so the EXACT-mode Integer-stay-exact arm DOES NOT FIRE; Integer input lands as Real per element via `toRealOrThrow`, DISTINCT from session 158 where `LN { Integer(1) Integer(1) }` → `{ Integer(0) Integer(0) }` integer-stay holds). Pins: `LNP1 { Real(0) Real(0) }` → `{ Real(0) Real(0) }` (per-element log1p fold under bare List), `LNP1 { Integer(0) Integer(0) }` → `{ Real(0) Real(0) }` (Integer→Real degrade — contrast with session 158 LN integer-stay), `LNP1 :n:{ Real(0) Real(0) }` → `:n:{ Real(0) Real(0) }` (Tagged-of-List composition outer-tag preservation), `LNP1 { Real(-0.5) Real(0) }` → `{ Real(log1p(-0.5)) Real(0) }` (heterogeneous-output mixed-input pin, distinct values per List position pin per-element wrapper dispatch), and the **LNP1 boundary-throw propagation**: `{ Real(-1) } LNP1` → `Infinite result` propagates through bare `_withListUnary`'s `apply` loop (NOT swallowed, NOT replaced with NaN/null). EXPM symmetric: `EXPM { Real(0) Real(0) }` → `{ Real(0) Real(0) }`, `EXPM { Integer(0) Integer(0) }` → `{ Real(0) Real(0) }`, `EXPM :e:{ Real(0) Real(0) }` → `:e:{ Real(0) Real(0) }`, `EXPM { Real(1) Real(0) }` → `{ Real(expm1(1)) Real(0) }`. Session 162 also closed the **n=0 empty-List + n=1 single-element boundary axis** on the LNP1/EXPM dual pair (mirror of session 160's LN n=0 / n=1 pins lifted onto the duals): `{ } LNP1/EXPM` → `{ }` (empty-shell preservation under bare wrapper), `:l:{ } LNP1/EXPM` → `:l:{ }` (n=0 under Tagged composition), `{ Real(0) } LNP1/EXPM` → `{ Real(0) }` (n=1 singleton — guards against refactor that special-cases n=1 to bare-scalar code path). |
 
 ### Unary — rounding / sign / arg
 
@@ -772,6 +838,175 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (166)
+
+- **Cluster 1 — LOG / EXP / ALOG n=0 empty-List + n=1
+  single-element boundary closures on the bare-List + Tagged-of-List
+  wrapper composition.**  Session 160 added n=0 / n=1 boundary pins
+  on the LN axis only (explicit single-cluster scope), and session
+  162 lifted those n=0 / n=1 closures onto the LNP1/EXPM dual pair
+  (which bypasses `_unaryCx` entirely — distinct code path).  But
+  the LOG / EXP / ALOG trio (the remaining three ops in the
+  session-158 `_unaryCx`-routed quartet) had n=2 / n=3 pins from
+  session 158 but no n=0 empty-List or n=1 single-element shoulder
+  pins.  The matrix has carried L ✓ T ✓ on these ops since session
+  100/105's wrapper-VM cleanup; the n=0 / n=1 axes were inherited
+  from the convention rather than from a hard pin.  This cluster
+  closes the LOG / EXP / ALOG trio on those shoulders.  12 hard
+  assertions:
+  - **LOG bare/Tagged n=0 pair:** `{ } LOG → { }`,
+    `:l:{ } LOG → :l:{ }` — wrapper preserves empty shell unchanged
+    on both bare and T+L paths; mirror of session 160 LN n=0 pin
+    lifted onto LOG.
+  - **LOG bare/Tagged n=1 pair:** `{ Integer(10) } LOG → { Integer(
+    1) }`, `:l:{ Integer(10) } LOG → :l:{ Integer(1) }` — pins
+    per-element EXACT-mode integer-clean fold runs through the
+    wrapper for n=1; guards against a refactor that special-cases
+    n=1 to bare-scalar dispatch and bypasses `_withListUnary`.
+  - **EXP bare/Tagged n=0 pair:** `{ } EXP → { }`,
+    `:l:{ } EXP → :l:{ }` — closes the EXP n=0 corner that the
+    s158 n=2 pin does not enumerate.
+  - **EXP bare/Tagged n=1 pair:** `{ Integer(0) } EXP → { Integer(
+    1) }`, `:l:{ Integer(0) } EXP → :l:{ Integer(1) }` — exp(0)=1
+    integer-clean per element under wrapper for n=1.
+  - **ALOG bare/Tagged n=0 pair:** `{ } ALOG → { }`,
+    `:l:{ } ALOG → :l:{ }` — closes the ALOG n=0 corner.
+  - **ALOG bare/Tagged n=1 pair:** `{ Integer(2) } ALOG → {
+    Integer(100) }`, `:l:{ Integer(2) } ALOG → :l:{ Integer(100) }`
+    — high-magnitude integer output at n=1 pins
+    `_exactUnaryLift`'s BigInt round-trip ran through the wrapper
+    for the singleton.
+
+- **Cluster 2 — ATANH n=0 closure + ACOSH/ATANH Tagged-of-List
+  n=0 closures + ACOSH/ATANH n=1 single-element boundary closures
+  on the direct-registered (non-`_unaryCx`) wrapper shape.**
+  Session 160 added an n=0 bare-List ACOSH pin (`{ } ACOSH → { }`)
+  but the symmetric ATANH n=0 case, both ops' Tagged-of-List n=0
+  case, and both ops' n=1 single-element shoulder were unpinned.
+  These ops dispatch through a bespoke direct-registered wrapper
+  shape (not `_unaryCx`, see session 158 Cluster 1 header at
+  `tests/test-types.mjs:5266-5278`), so the n=0 / n=1 boundary
+  closures need explicit pinning on this shape — they aren't
+  covered by the session-160 LN-axis pins (different code path) or
+  session 162 LNP1/EXPM pins (different direct-registered ops).
+  This cluster mirrors session 162 Cluster 2's structure (which
+  closed the LNP1/EXPM dual on n=0 / n=1) onto the ACOSH/ATANH
+  direct-registered dual.  7 hard assertions:
+  - **ATANH bare-List n=0:** `{ } ATANH → { }` — symmetric to
+    session 160's ACOSH n=0 pin lifted onto ATANH.  Closes the
+    inverse-hyp dual on the n=0 bare-List axis.
+  - **ACOSH/ATANH Tagged-of-List n=0 pair:** `:h:{ } ACOSH →
+    :h:{ }`, `:h:{ } ATANH → :h:{ }` — outer tag preserved across
+    empty inner List dispatch through 3-deep wrapper on direct-
+    registered shape.  Closes the inverse-hyp dual on the n=0 T+L
+    axis.
+  - **ACOSH/ATANH bare-List n=1 pair:** `{ Real(1) } ACOSH → {
+    Real(0) }` (acosh(1)=0 boundary), `{ Real(0) } ATANH → { Real(
+    0) }` (atanh(0)=0 trivial) — n=1 shoulder pins on the direct-
+    registered wrapper.
+  - **ACOSH/ATANH Tagged-of-List n=1 pair:** `:h:{ Real(1) } ACOSH
+    → :h:{ Real(0) }`, `:h:{ Real(0) } ATANH → :h:{ Real(0) }` —
+    outer tag preserved + per-element fold for the singleton.
+    Closes the inverse-hyp dual on the n=1 T+L axis.
+
+- **Verification at exit.**  `node tests/test-all.mjs` 5186 / 0,
+  `node tests/test-persist.mjs` 40 / 0, `node tests/sanity.mjs`
+  22 / 0; `node tests/test-types.mjs` 889 ok lines (was 870 at
+  session 166 entry — +19 hard assertions exactly matches the 12
+  cluster-1 + 7 cluster-2 pins).  Probes used to verify the
+  candidate paths before adding tests:
+  `utils/@probe-log-exp-alog-boundary.mjs` and
+  `utils/@probe-acosh-atanh-boundary.mjs`.
+
+- **No source-side changes.**  Both clusters are pure pinning of
+  already-live behavior; no `www/src/rpl/ops.js` or
+  `www/src/rpl/algebra.js` edits.  Lane held: `tests/test-types
+  .mjs`, `docs/DATA_TYPES.md`, `logs/session-166.md`.
+
+### Resolved this session (162)
+
+- **Cluster 1 — LNP1 / EXPM bare-List + Tagged-of-List composition
+  through the 3-deep wrapper `_withTaggedUnary(_withListUnary(
+  _withVMUnary(handler)))`.**  Session 130 Cluster 1 pinned LNP1
+  Tagged-of-Vector composition; session 140 Cluster 2 pinned EXPM
+  Tagged-of-Vector and Tagged-of-Matrix — closing the V/M axis on
+  the LNP1/EXPM dual pair.  Session 158 closed the L + T+L
+  composition axis on the LN / LOG / EXP / ALOG quartet (which
+  routes through `_unaryCx`'s EXACT-mode `_exactUnaryLift` arm).
+  But the LNP1/EXPM L + T+L composition was deferred — LNP1/EXPM
+  bypass `_unaryCx` entirely (direct registration at
+  `ops.js:7702/7709` with the bare 3-deep wrapper; inner handler
+  is `Real(Math.log1p(toRealOrThrow(v)))` /
+  `Real(Math.expm1(toRealOrThrow(v)))`), so the per-element fold
+  contract is structurally distinct from the LN/LOG/EXP/ALOG
+  family.  The matrix carried L ✓ T ✓ on both ops since session
+  063 / 130 but no direct assertion on bare-List dispatch,
+  Tagged-of-List composition outer-tag preservation, or the
+  `_exactUnaryLift`-bypass contract.  9 hard assertions:
+  - **LNP1 / EXPM bare-List Real-element pass-through pair**
+    (`LNP1 { Real(0) Real(0) } → { Real(0) Real(0) }` per-element
+    `Math.log1p` fold; `EXPM { Real(0) Real(0) } → { Real(0)
+    Real(0) }` per-element `Math.expm1` fold) — pins bare
+    `_withListUnary` distribution on both ops.
+  - **LNP1 / EXPM bare-List Integer-input → Real-output per
+    element pair** (`LNP1 { Integer(0) Integer(0) } → { Real(0)
+    Real(0) }`; `EXPM { Integer(0) Integer(0) } → { Real(0)
+    Real(0) }`) — DISTINCT from session 158's `LN { Integer(1)
+    Integer(1) } → { Integer(0) Integer(0) }` integer-stay pin.
+    Pins the absence of the `_exactUnaryLift` arm on LNP1/EXPM
+    (which is correct — both ops bypass `_unaryCx`).  Closes the
+    `_exactUnaryLift`-bypass contract on the L axis.
+  - **LNP1 / EXPM Tagged-of-List composition pair** (`LNP1
+    :n:{ Real(0) Real(0) } → :n:{ Real(0) Real(0) }`; `EXPM
+    :e:{ Real(0) Real(0) } → :e:{ Real(0) Real(0) }`) — outer
+    tag preserved across element-wise List dispatch through
+    3-deep wrapper.  Closes the LNP1/EXPM dual pair on the T+L
+    composition axis.
+  - **LNP1 / EXPM heterogeneous-output mixed-input bare-List
+    pair** (`LNP1 { Real(-0.5) Real(0) } → { Real(log1p(-0.5))
+    Real(0) }`; `EXPM { Real(1) Real(0) } → { Real(expm1(1))
+    Real(0) }`) — distinct values per List position pin per-
+    element wrapper dispatch (NOT a uniform-output short-
+    circuit).
+  - **LNP1 boundary-throw propagation under bare-List** (`LNP1
+    { Real(-1) }` → `Infinite result`) — pins that the inner
+    handler's `RPLError('Infinite result')` propagates through
+    bare `_withListUnary`'s `apply` loop (NOT swallowed, NOT
+    replaced with NaN/null).  The Real(-1) point is the vertical
+    asymptote of `log1p` (ln(0) = -∞).  Sibling contract to
+    LN / LOG / etc. throwing on out-of-domain input.
+
+- **Cluster 2 — LNP1 / EXPM n=0 empty-List + n=1 single-element
+  boundary closures.**  Session 160 added n=0 / n=1 boundary pins
+  on the LN axis but the same boundary closures on the LNP1/EXPM
+  dual pair were not added (session 160 was a single-cluster
+  scope on LN only).  This cluster lifts the n=0 / n=1 boundary
+  closures onto LNP1 and EXPM, closing the dual pair on those
+  shoulders.  6 hard assertions:
+  - **LNP1 / EXPM n=0 bare-List boundary pair** (`{ } LNP1 → { }`;
+    `{ } EXPM → { }`) — pins that the inner `_withListUnary`
+    `apply` loop preserves an empty-List shell unchanged on both
+    ops.  Mirror of session 160 LN n=0 pin lifted onto the duals.
+  - **LNP1 / EXPM n=0 empty Tagged-of-List boundary pair**
+    (`:l:{ } LNP1 → :l:{ }`; `:l:{ } EXPM → :l:{ }`) — outer tag
+    preserved across empty inner List dispatch through 3-deep
+    wrapper.  Closes the LNP1/EXPM dual pair on the n=0 T+L
+    boundary.
+  - **LNP1 / EXPM n=1 single-element bare-List boundary pair**
+    (`{ Real(0) } LNP1 → { Real(0) }`; `{ Real(0) } EXPM →
+    { Real(0) }`) — guards against a refactor that special-cases
+    n=1 to the bare-scalar code path and bypasses the
+    `_withListUnary` wrapper.  Closes the n=1 shoulder between
+    cluster-2's n=0 pins and cluster-1's n=2 pins on both ops.
+
+- **Verification at exit.**  `node tests/test-all.mjs` 5148 / 0,
+  `node tests/test-persist.mjs` 40 / 0, `node tests/sanity.mjs`
+  22 / 0; `node tests/test-types.mjs` 867 ok lines (was 852 at
+  session 162 entry — +15 hard assertions exactly matches the 9
+  cluster-1 + 6 cluster-2 pins).  Probe used to verify the
+  candidate paths before adding tests:
+  `utils/@probe-lnp1-expm-list.mjs`.
 
 ### Resolved this session (158)
 

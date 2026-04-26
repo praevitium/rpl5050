@@ -1,9 +1,9 @@
 import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import {
-  Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
+  Real, Integer, BinaryInteger, Rational, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix, Symbolic, Unit,
-  isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
+  isReal, isInteger, isBinaryInteger, isRational, isComplex, isDirectory, isProgram, isName,
   isString, isUnit,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
@@ -507,6 +507,258 @@ import { assert } from './helpers.mjs';
         && s.peek(1).uexpr.length === 1
         && s.peek(1).uexpr[0][0] === 'm' && s.peek(1).uexpr[0][1] === 2,
       'session160: 3_m^2 OBJ→ * → 3_m^2 (higher-power uexpr round-trip via Real*Unit fold; exponent=2 reconstructed exactly)');
+  }
+
+  /* session163 — OBJ→ on the remaining numeric-scalar shapes
+     (BinaryInteger / Rational).  AUR §3-149 lists no row for any
+     numeric scalar, so the same fidelity choice the session-155
+     close made for Real / Integer extends symmetrically to the
+     other two scalar kinds: push the value back unchanged
+     (1-in / 1-out).  Prior to session 163 these shapes fell
+     through the OBJ→ dispatch and threw `Bad argument type` —
+     a divergence from the choice already documented for
+     Real / Integer.  Closes the AUR-fidelity audit of OBJ→'s
+     numeric-scalar dispatch.  Eight new pins covering both
+     direct-OBJ→ and EVAL-as-literal-push behavior, plus the
+     ASCII-alias `OBJ->` parity check.  Companion to s155 (Real /
+     Integer / Tagged) and s159/s160 (Unit) — leaves OBJ→'s
+     dispatch table fully covered for every value type the
+     evaluator can produce. */
+  {
+    /* BinaryInteger OBJ→ pushes back unchanged.  Hex base #15h is
+       the most common entry-line shape; pin it explicitly so the
+       branch type-asserts the BinaryInteger payload survives the
+       round-trip (no implicit B→R coercion). */
+    const s = new Stack();
+    s.push(BinaryInteger(15n, 'h'));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isBinaryInteger(s.peek(1))
+        && s.peek(1).value === 15n
+        && s.peek(1).base === 'h',
+      'session163: OBJ→ #15h → #15h (BinaryInteger pushed back unchanged; matches the s155 Real/Integer choice)');
+  }
+  {
+    /* BinaryInteger in decimal base — pin that base preservation
+       survives OBJ→.  Distinct from the hex pin so the prototype
+       isn't accidentally normalising base on the round-trip. */
+    const s = new Stack();
+    s.push(BinaryInteger(255n, 'd'));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isBinaryInteger(s.peek(1))
+        && s.peek(1).value === 255n
+        && s.peek(1).base === 'd',
+      'session163: OBJ→ #255d → #255d (BinInt base preserved across OBJ→; no hex/decimal normalization)');
+  }
+  {
+    /* BinaryInteger zero — value=0n is the natural boundary
+       case; pin it so a future refactor that special-cases zero
+       (e.g. via Number coercion) is caught. */
+    const s = new Stack();
+    s.push(BinaryInteger(0n, 'b'));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isBinaryInteger(s.peek(1))
+        && s.peek(1).value === 0n
+        && s.peek(1).base === 'b',
+      'session163: OBJ→ #0b → #0b (BinInt zero-value boundary preserved)');
+  }
+  {
+    /* Rational OBJ→ pushes back unchanged.  Pin both n and d
+       so a refactor that flips to Decimal/Real coercion (the
+       implicit conversion most rationals undergo) is caught. */
+    const s = new Stack();
+    s.push(Rational(3n, 4n));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isRational(s.peek(1))
+        && s.peek(1).n === 3n
+        && s.peek(1).d === 4n,
+      'session163: OBJ→ 3/4 → 3/4 (Rational pushed back unchanged; no coercion to Real)');
+  }
+  {
+    /* Rational with negative numerator — pin that the sign rides
+       the numerator, not flipped onto the denominator, after
+       OBJ→'s push-back. */
+    const s = new Stack();
+    s.push(Rational(-7n, 2n));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isRational(s.peek(1))
+        && s.peek(1).n === -7n
+        && s.peek(1).d === 2n,
+      'session163: OBJ→ -7/2 → -7/2 (Rational sign convention preserved)');
+  }
+  {
+    /* ASCII alias OBJ-> on BinaryInteger — parity with the s155
+       OBJ-> pin on List and the s159 OBJ-> pin on Unit. */
+    const s = new Stack();
+    s.push(BinaryInteger(7n, 'h'));
+    lookup('OBJ->').fn(s);
+    assert(s.depth === 1
+        && isBinaryInteger(s.peek(1))
+        && s.peek(1).value === 7n,
+      'session163: ASCII alias OBJ-> on BinaryInteger behaves the same as OBJ→');
+  }
+  {
+    /* EVAL on a BinaryInteger pushed onto level 1 should be a
+       literal push (no decomposition, no coercion to Real).
+       Symmetric with EVAL on Real / Integer — pinning the
+       evaluator side complements the OBJ→ branch above so a
+       future refactor that re-routes BinInt through B→R during
+       EVAL is caught immediately. */
+    const s = new Stack();
+    s.push(BinaryInteger(15n, 'h'));
+    const gen = lookup('EVAL').fn(s);
+    if (gen && typeof gen.next === 'function') {
+      let r;
+      while (!(r = gen.next()).done) { /* drain */ }
+    }
+    assert(s.depth === 1
+        && isBinaryInteger(s.peek(1))
+        && s.peek(1).value === 15n
+        && s.peek(1).base === 'h',
+      'session163: EVAL #15h → #15h (BinInt evaluates to itself; literal-push semantics)');
+  }
+  {
+    /* EVAL on a Rational pushed onto level 1 — same literal-push
+       contract as BinaryInteger above; pin so EVAL stays
+       parallel with OBJ→ for every numeric-scalar shape. */
+    const s = new Stack();
+    s.push(Rational(3n, 4n));
+    const gen = lookup('EVAL').fn(s);
+    if (gen && typeof gen.next === 'function') {
+      let r;
+      while (!(r = gen.next()).done) { /* drain */ }
+    }
+    assert(s.depth === 1
+        && isRational(s.peek(1))
+        && s.peek(1).n === 3n
+        && s.peek(1).d === 4n,
+      'session163: EVAL 3/4 → 3/4 (Rational evaluates to itself; literal-push semantics)');
+  }
+
+  /* session164 — OBJ→ session-163 follow-up edges that the s163 pin-set
+     did not enumerate.  Six pins covering: Tagged-of-BinInt and
+     Tagged-of-Rational composition (one-layer Tagged peel applied to
+     the new BinInt/Rational push-back branch — mirror of session
+     159's Tagged-of-Unit pin extended to the remaining numeric-scalar
+     shapes), the missing OBJ-> ASCII alias parity on Rational
+     (s163 only pinned the alias on BinInt), the missing octal-base
+     pin on BinInt (s163 covered 'h'/'d'/'b' but not 'o' — the fourth
+     and final valid base per types.js BIN_BASES), the Rational(0/1)
+     zero-value boundary (mirror of s163's BinInt #0b zero-value pin
+     onto the Rational sibling — closes the value=0 corner on the
+     Rational arm of the s163 cluster), and a Rational with
+     denominator=1 (e.g. 5/1) which pins the OBJ→ branch does NOT
+     normalize n/1 to Integer — distinct from the s163 -7/2
+     negative-numerator pin which has d>1.  All six exercise the
+     widened `isReal(v) || isInteger(v) || isBinaryInteger(v) ||
+     isRational(v)` branch session 163 added at ops.js:6746 plus
+     the existing Tagged peel at ops.js:6690-6696.  No source
+     change. */
+  {
+    /* Tagged-of-BinInt OBJ→ — one-layer Tagged peel: outer Tagged
+       drops to the existing isTagged branch, which pushes the
+       inner BinInt on level 2 and the tag as a String on level 1.
+       Mirror of session 159's Tagged-of-Unit pin lifted onto the
+       BinInt arm of the s163 cluster.  Guards against a future
+       refactor that recurse-evaluates the Tagged inner value
+       through OBJ→ a second time (would push the BinInt back
+       unchanged via the s163 branch — same observable, but the
+       intermediate Str("tag") would be missing). */
+    const s = new Stack();
+    s.push(Tagged('bn', BinaryInteger(15n, 'h')));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2,
+      'session164: OBJ→ :bn:#15h → 2 stack items (one-layer Tagged peel; mirror of session 159 Tagged-of-Unit pin onto BinInt)');
+    assert(isString(s.peek(1)) && s.peek(1).value === 'bn',
+      'session164: OBJ→ :bn:#15h level-1 = "bn" (tag as String per AUR §3-149)');
+    assert(isBinaryInteger(s.peek(2)) && s.peek(2).value === 15n && s.peek(2).base === 'h',
+      'session164: OBJ→ :bn:#15h level-2 = #15h (inner BinInt preserved with base, NOT recursively decomposed via the s163 push-back branch)');
+  }
+  {
+    /* Tagged-of-Rational OBJ→ — same one-layer Tagged peel applied
+       to the Rational arm; closes the s163 cluster on the Tagged
+       composition axis for both numeric-scalar shapes the run
+       added.  Distinct from the BinInt pin above by inner-value
+       payload shape (n/d struct vs. BigInt+base) — pins both
+       payload shapes survive the Tagged peel intact. */
+    const s = new Stack();
+    s.push(Tagged('rat', Rational(3n, 4n)));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 2
+        && isString(s.peek(1)) && s.peek(1).value === 'rat'
+        && isRational(s.peek(2)) && s.peek(2).n === 3n && s.peek(2).d === 4n,
+      'session164: OBJ→ :rat:3/4 → 3/4 + "rat" (one-layer Tagged peel onto the Rational arm of the s163 cluster; closes Tagged composition for both numeric-scalar shapes)');
+  }
+  {
+    /* ASCII alias OBJ-> on Rational — session 163 pinned the
+       alias on BinInt but not on Rational.  Closes the s163
+       alias-parity coverage for the second numeric-scalar shape
+       added that run.  Pins OPS.get('OBJ→').fn dispatches
+       identically through both glyphs on the Rational branch. */
+    const s = new Stack();
+    s.push(Rational(3n, 4n));
+    lookup('OBJ->').fn(s);
+    assert(s.depth === 1
+        && isRational(s.peek(1))
+        && s.peek(1).n === 3n
+        && s.peek(1).d === 4n,
+      'session164: ASCII alias OBJ-> on Rational behaves the same as OBJ→ (closes the s163 alias-parity coverage on the Rational arm)');
+  }
+  {
+    /* BinaryInteger at octal base — types.js BIN_BASES lists
+       'h' / 'd' / 'o' / 'b'.  Session 163 pinned three of the
+       four ('h' / 'd' / 'b').  This pin closes the missing
+       'o' base — the fourth and final valid BinInt display
+       base.  Catches a refactor that special-cases base=='o'
+       (e.g., a digit-grouping rendering tweak that accidentally
+       reformats the value through OBJ→). */
+    const s = new Stack();
+    s.push(BinaryInteger(7n, 'o'));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isBinaryInteger(s.peek(1))
+        && s.peek(1).value === 7n
+        && s.peek(1).base === 'o',
+      'session164: OBJ→ #7o → #7o (octal-base preservation; closes the BIN_BASES quartet — s163 covered h/d/b only)');
+  }
+  {
+    /* Rational zero-value boundary — Rational(0n, 1n) is the
+       canonical zero (GCD reduces 0/anything to 0/1).  Mirror of
+       s163's BinInt #0b zero-value pin onto the Rational arm;
+       closes the value=0 corner on the second numeric-scalar
+       shape s163 added.  Guards against a refactor that
+       short-circuits zero through Integer(0) (e.g., a fast-path
+       optimization in the OBJ→ branch). */
+    const s = new Stack();
+    s.push(Rational(0n, 1n));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isRational(s.peek(1))
+        && s.peek(1).n === 0n
+        && s.peek(1).d === 1n,
+      'session164: OBJ→ Rational(0/1) → 0/1 (zero-value boundary on the Rational arm; mirror of s163 BinInt #0b zero pin)');
+  }
+  {
+    /* Rational with denominator=1 — Rational(5n, 1n) is the
+       n/1 boundary the Rational normalizer keeps as a Rational
+       (does NOT auto-collapse to Integer).  Distinct from the
+       s163 -7/2 pin which has d>1; this one pins the OBJ→
+       push-back branch leaves the n/1 shape unchanged.  Catches
+       a refactor that tries to canonicalise n/1 to Integer at
+       the OBJ→ boundary (a tempting "simplification" that would
+       break programs relying on type stability across OBJ→). */
+    const s = new Stack();
+    s.push(Rational(5n, 1n));
+    lookup('OBJ→').fn(s);
+    assert(s.depth === 1
+        && isRational(s.peek(1))
+        && s.peek(1).n === 5n
+        && s.peek(1).d === 1n,
+      'session164: OBJ→ Rational(5/1) → 5/1 (n/1 shape NOT normalised to Integer through OBJ→; pins type stability across the push-back branch)');
   }
 
 /* ================================================================
@@ -1966,6 +2218,427 @@ function _roundTripProgram(prog) {
     'session146: NEWOB→DECOMP→STR→ on Program preserves shape');
   assert(back.tokens[1].type === 'name' && back.tokens[1].id === 'X' && back.tokens[1].quoted,
     'session146: NEWOB→DECOMP→STR→ preserves quoted Name token');
+}
+
+/* ================================================================
+   Session 167 — NEWOB on Rational (audit-driven asymmetry close).
+
+   `_newObCopy` in `www/src/rpl/ops.js` enumerated every numeric-scalar
+   shape (Real / Integer / BinaryInteger / Complex) and every composite
+   container (List / Vector / Matrix / Program), but Rational fell
+   through the unenumerated tail and returned identity (`v`).  That
+   left NEWOB on a Rational as the lone outlier vs. every sibling
+   numeric-scalar shape — the same kind of audit-driven asymmetry
+   session 163 closed on the OBJ→ side (BinInt and Rational fell
+   through OBJ→'s dispatch and threw `Bad argument type`).
+
+   The fix is a one-line `_newObCopy` widening:
+     `if (isRational(v)) return Rational(v.n, v.d);`
+   placed alongside the existing Real / Integer / BinaryInteger
+   branches.  Rational's constructor performs sign-on-numerator
+   normalisation + GCD reduction, so reconstructing from `(v.n, v.d)`
+   is observably idempotent — the n / d payload of a Rational is
+   already canonicalised at first construction.
+
+   These pins lock in the distinct-object identity contract for
+   every numeric-scalar shape NEWOB enumerates.  Companion to
+   session 146's NEWOB-on-Program cluster above.
+
+   Why under the rpl-programming lane:  NEWOB lives in the same
+   reflection / metaprogramming family as OBJ→ / →PRG / DECOMP /
+   STR→ — all programming-lane scope per RPL.md's lane charter.
+   The session-163 OBJ→ widening was filed here for the same
+   reason; closing the matching NEWOB asymmetry is the natural
+   follow-on.
+   ================================================================ */
+
+/* ---- NEWOB on a Rational returns a distinct frozen Rational ---- */
+{
+  const s = new Stack();
+  const orig = Rational(3n, 4n);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isRational(copy),
+    'session167: NEWOB on Rational leaves a Rational on the stack');
+  assert(copy !== orig,
+    'session167: NEWOB on Rational returns a distinct object (not === to input; closes the audit-driven asymmetry vs. Real/Integer/BinInt which were already enumerated)');
+  assert(copy.n === 3n && copy.d === 4n,
+    'session167: NEWOB on Rational preserves n / d payload (3/4)');
+  assert(Object.isFrozen(copy),
+    'session167: NEWOB on Rational returns a frozen instance (matches Rational() constructor invariant)');
+}
+
+/* ---- NEWOB on a negative Rational preserves sign convention ---- */
+{
+  const s = new Stack();
+  const orig = Rational(-7n, 2n);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isRational(copy) && copy !== orig,
+    'session167: NEWOB on Rational(-7/2) returns a distinct Rational');
+  assert(copy.n === -7n && copy.d === 2n,
+    'session167: NEWOB on Rational(-7/2) preserves sign-on-numerator convention (sign rides n, denominator stays positive)');
+}
+
+/* ---- NEWOB on a Rational with denominator=1 keeps n/1 shape ---- */
+{
+  // Mirror of session164's OBJ→ Rational(5/1) pin — pin that NEWOB
+  // does NOT auto-collapse n/1 to Integer.  A refactor that
+  // canonicalises Rational(n, 1n) → Integer(n) at the NEWOB
+  // boundary would break programs relying on type stability across
+  // the reflection ops.
+  const s = new Stack();
+  const orig = Rational(5n, 1n);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isRational(copy) && copy !== orig,
+    'session167: NEWOB on Rational(5/1) returns a distinct Rational');
+  assert(copy.n === 5n && copy.d === 1n,
+    'session167: NEWOB on Rational(5/1) preserves n/1 shape (no auto-collapse to Integer)');
+}
+
+/* ---- NEWOB on a zero Rational preserves the canonical 0/1 form ---- */
+{
+  // Rational's GCD-reduce normalises 0/anything to 0/1.  Pin that
+  // NEWOB's reconstruction round-trips this canonical form.
+  const s = new Stack();
+  const orig = Rational(0n, 1n);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isRational(copy) && copy !== orig,
+    'session167: NEWOB on Rational(0/1) returns a distinct Rational');
+  assert(copy.n === 0n && copy.d === 1n,
+    'session167: NEWOB on Rational(0/1) preserves canonical zero shape');
+}
+
+/* ---- NEWOB on a List containing a Rational rebuilds the outer
+        List but keeps the inner Rational identity (shallow-copy
+        contract per the session 146 nested-Program pin) ---- */
+{
+  const s = new Stack();
+  const innerRat = Rational(3n, 4n);
+  const orig = RList([Integer(1n), innerRat, Real(2.5)]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session167: NEWOB on List rebuilds the outer List object');
+  assert(copy.items.length === 3,
+    'session167: NEWOB on List preserves item count');
+  // The shallow-copy contract per session 146:  the outer container
+  // is rebuilt but inner immutable values keep identity.
+  assert(copy.items[1] === innerRat,
+    'session167: NEWOB on List preserves nested Rational identity (shallow-copy contract — outer rebuilt, immutable inner shared)');
+  assert(isRational(copy.items[1]) && copy.items[1].n === 3n && copy.items[1].d === 4n,
+    'session167: NEWOB on List nested Rational payload survives by reference');
+}
+
+/* ---- NEWOB on a Tagged-of-Rational rebuilds the Tagged shell
+        and preserves the inner Rational by reference ---- */
+{
+  const s = new Stack();
+  const innerRat = Rational(3n, 4n);
+  const orig = Tagged('rat', innerRat);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session167: NEWOB on Tagged-of-Rational rebuilds the Tagged outer');
+  assert(copy.tag === 'rat' && copy.value === innerRat,
+    'session167: NEWOB on Tagged-of-Rational preserves tag + inner Rational identity (shallow-copy contract)');
+}
+
+/* ---- NEWOB on Rational composes correctly with the OBJ→ Rational
+        push-back branch session 163 added — a NEWOB-then-OBJ→
+        round-trip leaves an equal Rational on the stack with
+        distinct-object identity from the original ---- */
+{
+  const s = new Stack();
+  const orig = Rational(3n, 4n);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const afterNewob = s.peek();
+  lookup('OBJ→').fn(s);
+  const afterObjTo = s.peek();
+  assert(isRational(afterObjTo),
+    'session167: NEWOB-then-OBJ→ on Rational leaves a Rational on stack');
+  assert(afterObjTo === afterNewob,
+    'session167: OBJ→ on a Rational push-back is identity (per s163 branch — same instance, no further re-wrap)');
+  assert(afterObjTo !== orig,
+    'session167: NEWOB-then-OBJ→ on Rational is distinct from the original input (NEWOB rebuild survives the OBJ→ push-back)');
+  assert(afterObjTo.n === 3n && afterObjTo.d === 4n,
+    'session167: NEWOB-then-OBJ→ on Rational preserves the 3/4 payload');
+}
+
+/* ================================================================
+   Session 168 — NEWOB session-167 follow-up edges.
+
+   The session-167 NEWOB widening enumerated every numeric-scalar
+   shape (Real / Integer / BinaryInteger / Rational / Complex) in
+   _newObCopy at www/src/rpl/ops.js:9309-9314, but only the
+   Rational arm got hard-assertion pin coverage above (session 047
+   covered Real / List / Matrix; session 146 covered Program;
+   session 167 covered Rational + List-of-Rational + Tagged-of-
+   Rational + NEWOB→OBJ→ composition on Rational).
+
+   The other three numeric-scalar arms (Integer / BinaryInteger /
+   Complex) and their Tagged-of-X composition shapes have been
+   live since session 067 but have no hard-assertion pin set.  A
+   refactor that drops one of those branches from _newObCopy
+   would silently regress the distinct-object identity contract
+   without surfacing a test failure.  These pins close that
+   shoulder by mirroring session 167's pin pattern onto the three
+   remaining numeric-scalar arms + extending the container
+   composition coverage to Vector (session 167 covered List +
+   Tagged of Rational; this run adds Vector-of-Real shallow-copy
+   contract + List-of-Tagged-of-Real nested composition + the
+   empty-List boundary that session 167's pin set did not
+   enumerate).
+
+   Why under the unit-tests lane (not rpl-programming):  this is
+   pure coverage closure of an already-shipped enumeration; no
+   source-side widening, no behaviour change.  Session 167's own
+   widening (the Rational branch) was rpl-programming-lane scope
+   because it edited www/src/rpl/ops.js; this follow-up only
+   touches tests/.
+   ================================================================ */
+
+/* ---- NEWOB on an Integer returns a distinct frozen Integer ---- */
+{
+  const s = new Stack();
+  const orig = Integer(42n);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isInteger(copy),
+    'session168: NEWOB on Integer leaves an Integer on the stack');
+  assert(copy !== orig,
+    'session168: NEWOB on Integer returns a distinct object (mirror of s167 Rational distinct-object pin onto the Integer arm of the s163/s167 numeric-scalar enumeration; pins _newObCopy:9311 isInteger branch fired)');
+  assert(copy.value === 42n,
+    'session168: NEWOB on Integer preserves BigInt value (42n)');
+}
+
+/* ---- NEWOB on a negative Integer preserves sign ---- */
+{
+  const s = new Stack();
+  const orig = Integer(-7n);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isInteger(copy) && copy !== orig,
+    'session168: NEWOB on Integer(-7) returns a distinct Integer');
+  assert(copy.value === -7n,
+    'session168: NEWOB on Integer(-7) preserves negative sign on BigInt value');
+}
+
+/* ---- NEWOB on a BinaryInteger preserves value AND base ---- */
+{
+  const s = new Stack();
+  const orig = BinaryInteger(0x15n, 'h');
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isBinaryInteger(copy),
+    'session168: NEWOB on BinaryInteger leaves a BinaryInteger on the stack');
+  assert(copy !== orig,
+    'session168: NEWOB on BinaryInteger returns a distinct object (pins _newObCopy:9312 isBinaryInteger branch — mirror of s167 Rational identity-decoupling pin onto BinInt)');
+  assert(copy.value === 0x15n,
+    'session168: NEWOB on BinaryInteger preserves BigInt value (#15h = 21)');
+  assert(copy.base === 'h',
+    'session168: NEWOB on BinaryInteger preserves base ("h" not normalised to "d") — pins the second BinInt() constructor argument is threaded through');
+}
+
+/* ---- NEWOB on a BinaryInteger at octal base preserves base ---- */
+{
+  // Mirror of session 164's OBJ→ #7o octal-base preservation pin
+  // applied to the NEWOB sibling op.  Closes the BIN_BASES quartet
+  // (h / d / b / o) on NEWOB; the .h pin above + this .o pin
+  // demonstrate base-string is preserved across reconstruction.
+  const s = new Stack();
+  const orig = BinaryInteger(7n, 'o');
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isBinaryInteger(copy) && copy !== orig,
+    'session168: NEWOB on BinaryInteger(#7o) returns a distinct BinaryInteger');
+  assert(copy.base === 'o',
+    'session168: NEWOB on BinaryInteger(#7o) preserves octal base');
+}
+
+/* ---- NEWOB on a Complex returns a distinct Complex ---- */
+{
+  const s = new Stack();
+  const orig = Complex(3, 4);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isComplex(copy),
+    'session168: NEWOB on Complex leaves a Complex on the stack');
+  assert(copy !== orig,
+    'session168: NEWOB on Complex returns a distinct object (pins _newObCopy:9314 isComplex branch — closes the numeric-scalar enumeration follow-up cluster started by s167 Rational)');
+  assert(copy.re === 3 && copy.im === 4,
+    'session168: NEWOB on Complex preserves re / im components (3+4i)');
+}
+
+/* ---- NEWOB on a Tagged-of-Integer rebuilds the Tagged shell
+        and preserves the inner Integer by reference ---- */
+{
+  // Mirror of session 167 Tagged-of-Rational shallow-copy pin onto
+  // the Integer arm.  Since Integer is also frozen / immutable, the
+  // shallow-copy contract preserves the inner by reference.
+  const s = new Stack();
+  const innerInt = Integer(42n);
+  const orig = Tagged('n', innerInt);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session168: NEWOB on Tagged-of-Integer rebuilds the Tagged outer (mirror of s167 Tagged-of-Rational pin onto Integer arm)');
+  assert(copy.tag === 'n' && copy.value === innerInt,
+    'session168: NEWOB on Tagged-of-Integer preserves tag + inner Integer identity (shallow-copy contract — outer rebuilt, immutable inner shared by ref)');
+}
+
+/* ---- NEWOB on a Tagged-of-BinaryInteger preserves inner identity ---- */
+{
+  const s = new Stack();
+  const innerBI = BinaryInteger(0x15n, 'h');
+  const orig = Tagged('bn', innerBI);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session168: NEWOB on Tagged-of-BinaryInteger rebuilds the Tagged outer');
+  assert(copy.tag === 'bn' && copy.value === innerBI,
+    'session168: NEWOB on Tagged-of-BinaryInteger preserves tag + inner BinInt identity (shallow-copy: inner is BinInt, base=h preserved by-ref through the outer rebuild — mirror of s164 OBJ→ Tagged-of-BinInt pin onto NEWOB)');
+}
+
+/* ---- NEWOB on a Tagged-of-Complex preserves inner identity ---- */
+{
+  const s = new Stack();
+  const innerCx = Complex(1, 2);
+  const orig = Tagged('cx', innerCx);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session168: NEWOB on Tagged-of-Complex rebuilds the Tagged outer');
+  assert(copy.tag === 'cx' && copy.value === innerCx,
+    'session168: NEWOB on Tagged-of-Complex preserves tag + inner Complex identity (shallow-copy contract — closes Tagged composition for all five enumerated numeric-scalar shapes Real/Integer/BinInt/Rational/Complex; s167 covered Rational, this run covers Integer/BinInt/Complex)');
+}
+
+/* ---- NEWOB on a Tagged-of-Real preserves inner identity ---- */
+{
+  // Closes the Tagged-of-X composition row for the Real arm.
+  // Session 167 only pinned Tagged-of-Rational; session 047 didn't
+  // touch Tagged composition at all.  This pin completes the
+  // shallow-copy composition row across all five enumerated
+  // numeric-scalar shapes.
+  const s = new Stack();
+  const innerR = Real(2.5);
+  const orig = Tagged('r', innerR);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session168: NEWOB on Tagged-of-Real rebuilds the Tagged outer');
+  assert(copy.tag === 'r' && copy.value === innerR,
+    'session168: NEWOB on Tagged-of-Real preserves tag + inner Real identity (shallow-copy contract — closes the Tagged composition row across all five numeric-scalar shapes)');
+}
+
+/* ---- NEWOB on a Vector containing Real items rebuilds the
+        outer Vector but keeps inner Real items by reference ---- */
+{
+  // Mirror of session 167's List-of-Rational shallow-copy pin onto
+  // the Vector container.  Vector is the next-most-common composite
+  // after List for User-RPL programs; session 047 pinned NEWOB on
+  // an empty Matrix only (distinct-object) but did not pin the
+  // shallow-copy contract on Vector items.  Vector items are
+  // typed as Real per the constructor invariant; pin that
+  // _newObCopy:9319 Vector branch's slice() rebuilds the items
+  // array but preserves inner Real identity.
+  const s = new Stack();
+  const innerR = Real(2.5);
+  const orig = Vector([Real(1), innerR, Real(3)]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session168: NEWOB on Vector rebuilds the outer Vector object (pins _newObCopy:9319 Vector branch ran)');
+  assert(copy.items.length === 3,
+    'session168: NEWOB on Vector preserves item count');
+  assert(copy.items !== orig.items,
+    'session168: NEWOB on Vector produces a distinct items array (slice() makes a fresh array, not === to orig.items)');
+  assert(copy.items[1] === innerR,
+    'session168: NEWOB on Vector preserves inner Real identity (shallow-copy contract — outer items array is fresh but immutable inner Real is shared by reference; mirror of s167 List-of-Rational shallow-copy pin onto the Vector container)');
+}
+
+/* ---- NEWOB on an empty List rebuilds the outer List ---- */
+{
+  // Closes the n=0 List boundary on NEWOB.  Session 047's empty-
+  // Matrix pin established the empty-container distinct-object
+  // contract on Matrix; this pin extends it to the List shape.
+  // Without this pin, a refactor that special-cases empty containers
+  // (e.g. returning the same frozen empty literal) could silently
+  // share identity between input and output.
+  const s = new Stack();
+  const orig = RList([]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session168: NEWOB on empty List rebuilds the outer List even at n=0 (pins no special-case empty-container short-circuit; mirror of s047 empty-Matrix distinct-object pin lifted onto List)');
+  assert(copy.items.length === 0,
+    'session168: NEWOB on empty List preserves zero-item count');
+}
+
+/* ---- NEWOB on a List containing a Tagged value preserves the
+        inner Tagged by reference (nested composition) ---- */
+{
+  // Mirror of session 146's nested-Program inside-Program shallow-
+  // copy pin, lifted onto a Tagged inner value.  Session 167 pinned
+  // List-of-Rational (immutable inner) and List-of-Real implicit
+  // via session 047; this pin extends to List-of-Tagged so that
+  // nested composite shapes are also covered.  Tagged is itself
+  // immutable, so inner identity is preserved by-ref.
+  const s = new Stack();
+  const innerTagged = Tagged('t', Real(7));
+  const orig = RList([Integer(1n), innerTagged, Real(3)]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(copy !== orig,
+    'session168: NEWOB on List-of-Tagged rebuilds the outer List');
+  assert(copy.items[1] === innerTagged,
+    'session168: NEWOB on List-of-Tagged preserves nested Tagged identity (shallow-copy contract through nested composition — outer List rebuilt, immutable inner Tagged preserved by-ref; closes the s167 List-of-Rational shallow-copy pin on the Tagged inner-value composition)');
+}
+
+/* ---- NEWOB-then-OBJ→ on BinaryInteger composes correctly ---- */
+{
+  // Companion to session 167's NEWOB-then-OBJ→ on Rational composition
+  // pin, lifted onto the BinaryInteger arm of the s163 push-back
+  // branch.  The session-163 OBJ→ widening brought BinInt into the
+  // push-back branch; pin that NEWOB-then-OBJ→ round-trip on BinInt
+  // is identity at the OBJ→ stage (the BinInt rebuilt by NEWOB is
+  // pushed back unchanged by OBJ→) and distinct from the original.
+  const s = new Stack();
+  const orig = BinaryInteger(0x15n, 'h');
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const afterNewob = s.peek();
+  lookup('OBJ→').fn(s);
+  const afterObjTo = s.peek();
+  assert(isBinaryInteger(afterObjTo),
+    'session168: NEWOB-then-OBJ→ on BinaryInteger leaves a BinaryInteger on stack');
+  assert(afterObjTo === afterNewob,
+    'session168: OBJ→ on a BinaryInteger push-back is identity (per s163 branch — same instance, no further re-wrap; mirror of s167 NEWOB-then-OBJ→ Rational composition pin onto BinInt)');
+  assert(afterObjTo !== orig,
+    'session168: NEWOB-then-OBJ→ on BinaryInteger is distinct from the original input (NEWOB rebuild survives the OBJ→ push-back; pins identity-decoupling holds across the composition)');
+  assert(afterObjTo.value === 0x15n && afterObjTo.base === 'h',
+    'session168: NEWOB-then-OBJ→ on BinaryInteger preserves value AND base across the round-trip (#15h survives both reflection ops intact)');
 }
 
 /* ================================================================

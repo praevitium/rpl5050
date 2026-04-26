@@ -6,45 +6,26 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 160 (2026-04-25, code-review release-
-wrap-up run).  Sixteenth review-lane run.  Prior baseline =
-session 152; session 156 was a meta-only review-lane pass
-(`logs/meta-2026-04-25-code-review.md`) that re-verified all
-findings but could not fold the closures into REVIEW.md because
-`session156-unit-tests` held `docs/REVIEW.md` + `logs/` for the
-duration.  This run folds in everything that landed since
-session 152: ship-prep-2026-04-25 (interactive coordinator pass
-— closed O-007, R-007, R-009, R-010, R-011 and re-greened the
-test-persist gate, promoting D-001 from partial to fully
-resolved); 153 (command-support — closed C-011 with a narrow
-`_combPermArgs` argument-type guard tightening at
-`www/src/rpl/ops.js:1683`, mirroring `_intQuotientArg`'s
-per-arg `isInteger || isReal` shape; +8 `session153:` rejection
-pins in `tests/test-numerics.mjs`); 154 (data-type-support —
-release-mode coverage-matrix reconciliation pass on
-`docs/DATA_TYPES.md`; no source edits); 155 (rpl-programming —
-closed R-008 — Real branch reduced from mantissa/exponent
-split to `s.push(v); return;` matching the AUR no-numeric-
-scalar entry, Tagged branch was a phantom per AUR §3-149's
-String-literal `"tag"` notation; +5 net session155 pins in
-`tests/test-reflection.mjs` plus the two prior 1-in/2-out
-assertions flipped to pin the new 1-in/1-out shape); 156 (unit-
-tests — pinned recently-shipped session-149 / 150 / 153 / 155
-behaviours, refreshed TESTS.md; **filed R-012** as the third
-row of the AUR §3-149 OBJ→ table that session 155's audit did
-not address); 156 (code-review meta-only — no REVIEW.md
-edits, narrow scope only); 157 (command-support — release-mode
-doc-reconciliation, COMMANDS.md drift sweep + `register()`
-stamp refresh "as of session 153" → "as of session 157"; OBJ→
-row Notes amended for the session-155 audit close); 158 (data-
-type-support — two more hard-assertion pinning clusters lifting
-session-150 wrapper-VM-under-Tagged work onto the LIST axis on
-already-widened transcendental ops; no source-side changes,
-`tests/test-types.mjs` widened); 159 (rpl-programming — closed
-R-012 by adding the missing `isUnit` branch to OBJ→'s dispatch
-at `www/src/rpl/ops.js:6720-6738`, matching AUR §3-149's
-`x_unit  →  x  1_unit` row; +15 session159 pins in
-`tests/test-reflection.mjs`).
+**Last updated.** Session 169-code-review (2026-04-25, third
+release wrap-up code-review run — afternoon slot, T-1 day before
+the Sunday 2026-04-26 ship).  Eighteenth review-lane run.
+Prior baseline = session 164-code-review (seventeenth run, also
+2026-04-25).  This run folds in the four sibling-lane closures
+since session 164: 165 (command-support — release-mode doc-
+reconciliation, COMMANDS.md Counts heading refreshed `as of
+session 161` → `as of session 165`, session-log back-fill
+sessions 162 / 163 / 164; no source edits); 166 (data-type-
+support — two more pinning clusters lifting the n=0/n=1
+boundary axis onto LOG / EXP / ALOG and ACOSH / ATANH;
+`tests/test-types.mjs` widened +19 assertions; no source-side
+changes); 167 (rpl-programming — audit-driven NEWOB widening
+to Rational, sibling to session 163's OBJ→ extension; one-line
+predicate widening at `_newObCopy` in `www/src/rpl/ops.js`
+plus header / inline comment expansion, +20 `session167:` pins
+in `tests/test-reflection.mjs`).  `session168-unit-tests` is
+in flight at this run's acquisition (scope `tests/` + `docs/
+TESTS.md`); their TESTS.md refresh + coverage closure for the
+165 / 166 / 167 deltas will land after this REVIEW.md update.
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -67,69 +48,72 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 160).** Sibling lane `session160-unit-tests`
-was active at acquisition (scope `tests/test-reflection.mjs` +
-`tests/test-types.mjs` + `tests/test-algebra.mjs` +
-`docs/TESTS.md`).  No overlap with this run's claimed scope
-(`docs/REVIEW.md` + `logs/` + `www/src/app.js`), so the helper
-allowed acquisition.  At review-lane *entry* `node tests/test-
-all.mjs` = **5120 passing / 0 failing** (fully green; was 5063
-at session 156's close + 5086 at session 157's entry / +57
-across 156 / 157 / 158 / 159 deltas — 156 unit-tests pin sweep
-+13, 157 doc-only, 158 LIST-axis Tagged pinning +25, 159 R-012
-OBJ→-Unit pins +15, plus a few sub-cluster between-session
-adjustments); `node tests/test-persist.mjs` = **40 passing / 0
-failing** (stable, fully green since the D-001 ship-prep close);
-`node tests/sanity.mjs` = **22 passing / 0 failing in ~6 ms**
-(stable).  `node --check www/src/app.js` clean post-edit.  Δ
-from session 152's run-close 5038: **+82** test-all (5038 →
-5120 across ship-prep + 153 + 155 + 156 + 158 + 159 — see
-preamble for the per-session attribution).  test-persist Δ from
-session 152's 40 / 0 close: stable at 40 / 0.  Since acquisition
-the sibling unit-tests lane has continued to add pins; final
-exit count captured at the verification block below.
+**Baseline (session 169-code-review).** Sibling lane
+`session168-unit-tests` was active at acquisition (scope
+`tests/` + `docs/TESTS.md`, started ~1 minute before this
+run's lock claim).  No overlap with this run's claimed scope
+(`docs/REVIEW.md` + `logs/`), so the helper allowed
+acquisition.  At review-lane *entry* `node tests/test-all.mjs`
+= **5206 passing / 0 failing** (fully green; was 5156 at
+session-164-code-review close, +50 across the four sibling-
+lane closures since: session-164-unit-tests +11 release-mode
+pin clusters, session 166 +19 LOG/EXP/ALOG + ACOSH/ATANH
+n=0/n=1 boundary pins, session 167 +20 NEWOB-on-Rational
+pins; session 165 was doc-only); `node tests/test-persist.mjs`
+= **66 passing / 0 failing** (stable, fully green since the
+D-001 ship-prep close — count unchanged across sessions 165 /
+166 / 167); `node tests/sanity.mjs` = **22 passing / 0 failing
+in ~5 ms** (stable).  `node --check` clean across all four
+core sources (`www/src/app.js`, `www/src/rpl/ops.js`,
+`www/src/rpl/state.js`, `www/src/rpl/types.js`).  Δ from
+session 164's run-close 5156: **+50** test-all.  test-persist
+unchanged at 66 / 0.  `grep -c "register(" www/src/rpl/ops.js`
+= **476** (unchanged since session 149 — no new registrations
+across sessions 150 → 167; session 167's NEWOB widening was a
+predicate widening of an existing `register()` call, not a
+new registration).  Since acquisition the sibling
+`session168-unit-tests` lane has continued to add pins for the
+session-165 / 166 / 167 deltas; final exit count captured at
+the verification block below.
 
-**This run's own edits.** Two edits this run — one doc/hygiene,
-one in-place dead-import drop:
+**This run's own edits.** One edit this run — pure
+doc/hygiene, no source changes:
   1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 160 (16th review-lane run); baseline block
-     rewritten; "between sessions 152 and 160" prelude rewritten
-     to attribute deltas across ship-prep-2026-04-25 + sessions
-     153 / 154 / 155 / 156 / 157 / 158 / 159 (see preamble);
-     three carried-forward open findings aged (**X-003** 14 →
-     **resolved this run**; **O-009** 8 → 9 runs — still
-     `[deferred - post-ship]`, tooling gate unchanged;
-     **O-011** 3 → 4 runs — `[deferred - post-ship]` per the
-     session 156 meta-log triage); five prior open findings
-     promoted to resolved by sibling lanes since session 152
-     (**O-007**, **D-001**, **C-011**, **R-008**, **R-012**;
-     status blocks already amended by the closing lanes —
-     this run's REVIEW.md edit only fold the closures into the
-     baseline + Ship priorities + session log narratives).
-  2. **`www/src/app.js:13-15`** — dropped `clampLevel` from
-     the `./ui/interactive-stack.js` import block (X-003 close).
-     The function lives at `interactive-stack.js:24` and is
-     only used internally by `levelUp` / `levelDown`; no
-     cross-module caller in `app.js` or anywhere else in
-     `www/src/`.  One-line change matching the X-003 fix
-     suggestion exactly; `node --check www/src/app.js` clean
-     post-edit.  Charter-permitted: dead-import drop with
-     certainty about the unused-ness, behaviour-preserving.
+     session 169-code-review (18th review-lane run); preamble
+     rewritten to fold in the session 165 / 166 / 167 sibling-
+     lane work since session 164; baseline block rewritten with
+     the 5206 / 66 / 22 entry gates; two carried-forward open
+     findings aged (**O-009** 10 → 11 runs — still
+     `[deferred - post-ship]`, both `.bak` files still on disk
+     at the same byte counts and mtimes, tooling gate
+     unchanged; **O-011** 5 → 6 runs — still
+     `[deferred - post-ship]` per the session 156 meta-log
+     triage, with three additional occurrences logged across
+     sessions 165 / 166 / 167's lock bodies and a fourth from
+     `session168-unit-tests` in flight, bringing the running
+     count of underlying-ambiguity occurrences to **twenty-
+     four** since session 106).  No promotions to resolved
+     this run (no sibling lane closed an open R-bucket /
+     D-bucket / C-bucket / X-bucket finding since session 164
+     — sessions 165 / 166 / 167 were release-mode doc-recon /
+     pinning / audit-extension work that didn't touch any
+     open finding).
 
-Session 160 log added (`logs/session-160-code-review.md` to
-disambiguate from the concurrent `session160-unit-tests` lane's
-own `logs/session-160.md`).  No RPL op behavior changed by
-review lane, no types widened, no tests added or deleted, no
-interpreter touched, no registrations added or removed.
+Session 169-code-review log added (`logs/session-169-code-
+review.md` to disambiguate from the concurrent
+`session168-unit-tests` lane's eventual `logs/session-168.md`
+when that lane writes its own log at close).  No RPL op
+behavior changed by review lane, no types widened, no tests
+added or deleted, no interpreter touched, no registrations
+added or removed.
 
-**Lock.** Held `utils/@locks/rpl5050-code-review-2026-04-25.json`
-throughout, scope = `docs/REVIEW.md` + `logs/` + `www/src/app.js`
-(broadened from the canonical review-lane scope at run-entry to
-fold in the X-003 in-place edit before close).  Sibling lock
-at run-entry: `session160-unit-tests` (scope `tests/test-
-reflection.mjs` + `tests/test-types.mjs` + `tests/test-
-algebra.mjs` + `docs/TESTS.md`) — no overlap with my scope, so
-the helper allowed acquisition.  Released at end of run.
+**Lock.** Held `utils/@locks/session169-code-review.json`
+throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
+review-lane scope; no broadening required this run since no
+in-place source edits were taken).  Sibling lock at run-
+entry: `session168-unit-tests` (scope `tests/` + `docs/
+TESTS.md`) — no overlap with my scope, so the helper allowed
+acquisition.  Released at end of run.
 
 ---
 
@@ -218,9 +202,15 @@ Translated into ledger items, in priority order:
    field; pure-infrastructure hygiene best landed post-ship per
    the session 156 meta-log triage.
 
-Open queue at session 160 close: O-009 + O-011 — both
-`[deferred - post-ship]`, no behavior risk for the release.
-**Zero release-blocker class findings remain.**
+Open queue at session 169-code-review close: O-009 + O-011 —
+both `[deferred - post-ship]`, no behavior risk for the
+release.  **Zero release-blocker class findings remain.**
+Re-verified at this run's entry: no sibling lane closed an
+open finding since session 164; no new findings surfaced by
+the audit-axis sweep (lane-id drift, COMMANDS_INVENTORY refs,
+`src/...` path drift, doc-stamp freshness, register-count vs.
+COMMANDS.md heading) — see the session-169-code-review log
+block below for the per-axis verification.
 
 Lane priority through Sunday close: **`rpl5050-rpl-programming`
 runs take precedence** over the other lanes' work where there
@@ -3132,7 +3122,44 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   still present at 92,129 / 92,141 bytes / Apr 24 11:54 / 13:41
   mtimes; the live file has continued to grow with sibling-lane
   pin-additions (~250 KB at this point); no scheduled-task lane
-  has been able to delete them.  9 review-lane runs aging.
+  has been able to delete them.  Re-verified session 164-code-
+  review: same — `ls -la tests/test-control-flow.mjs*` shows
+  both `.bak` files still at 92,129 / 92,141 bytes / Apr 24
+  11:54 / 13:41 mtimes; the live file is now 237,247 bytes
+  (was ~250 KB phrasing in session 160; now exactly 237 KB
+  after sibling sessions 161 / 162 / 163 added pins on top).
+  Sessions 161 (command-support — doc-only) / 162 (data-types
+  — `tests/test-types.mjs` only, the live file) / 163 (rpl-
+  programming — `tests/test-reflection.mjs` + `tests/test-
+  eval.mjs`, live files only) did not delete the `.bak` files
+  (none had `tests/test-control-flow.mjs.bak*` in scope, none
+  was a unit-tests lane).  `session164-unit-tests` is in
+  flight at this run's acquisition with `tests/` broadly in
+  scope — they are running under the scheduled-task sandbox
+  and would hit the same `Operation not permitted` permission
+  gate the prior unit-tests sessions hit.  10 review-lane runs
+  aging.  Status remains **[deferred - post-ship]**.
+  Re-verified session 169-code-review: `ls -la
+  tests/test-control-flow.mjs*` still shows both `.bak` files
+  at the same 92,129 / 92,141 byte counts and same Apr 24
+  11:54 / 13:41 mtimes; the live file has continued to grow
+  with sibling-lane pin additions (now 237,247 bytes after
+  sessions 165 / 166 / 167 added pins — actually unchanged
+  from session 164's reading because the +50 test deltas all
+  landed in `tests/test-types.mjs` and `tests/test-reflection.mjs`,
+  not `tests/test-control-flow.mjs`).  Sessions 165 (command-
+  support — doc-only `docs/COMMANDS.md` + `docs/REVIEW.md` +
+  `logs/`) / 166 (data-types — `tests/test-types.mjs` +
+  `docs/DATA_TYPES.md` only) / 167 (rpl-programming —
+  `www/src/rpl/ops.js` + `tests/test-reflection.mjs` +
+  `docs/RPL.md` only, no `test-control-flow.mjs.bak*` in
+  scope) did not delete the `.bak` files (none had them in
+  declared scope, none was a unit-tests lane).
+  `session168-unit-tests` is in flight at this run's
+  acquisition with `tests/` broadly in scope — it is running
+  under the scheduled-task sandbox and would hit the same
+  `Operation not permitted` permission gate the prior
+  unit-tests sessions hit.  11 review-lane runs aging.
   Status remains **[deferred - post-ship]**.
 
 ### O-010  Session 121 shipped substantive changes without writing `logs/session-121.md`, COMMANDS.md update, RPL.md narrative, or tests
@@ -3442,8 +3469,40 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   to **sixteen** since session 106.  Triaged
   **[deferred - post-ship]** by the session 156 meta-log: change
   shape of shared tooling, cycle frequency makes a post-ship
-  landing more appropriate than a rushed in-window edit.  4
-  review-lane runs aging; status remains
+  landing more appropriate than a rushed in-window edit.
+  Re-verified session 164-code-review: `grep -n
+  "releaseReason" utils/@locks/lock.mjs utils/@locks/README.md`
+  still returns zero hits.  Sessions 161 (command-support —
+  `heartbeatAt: 1777148616` ≡ `startedAt`, `releasedAt:
+  1777148892`, no `releaseReason`) / 162 (data-types —
+  `heartbeatAt: 1777149087` ≡ `startedAt`, `releasedAt:
+  1777149493`) / 163 (rpl-programming — `heartbeatAt:
+  1777150039` ≡ `startedAt`, `releasedAt: 1777150394`) lock
+  bodies all carry the same shape ambiguity, plus
+  `session164-unit-tests` in flight at this run's acquisition
+  (`heartbeatAt: 1777150581` ≡ `startedAt`, no `releasedAt`
+  yet but the same shape will materialize at its release).
+  Running count of underlying-ambiguity occurrences now
+  **twenty** since session 106 (was 16 at session 160 close +
+  3 from 161 / 162 / 163 + 1 in flight from 164).  5 review-
+  lane runs aging; status remains
+  **[deferred - post-ship]**.
+  Re-verified session 169-code-review: `grep -n
+  "releaseReason" utils/@locks/lock.mjs utils/@locks/README.md`
+  still returns zero hits.  Sessions 165 (command-support —
+  `heartbeatAt: 1777155768` ≡ `startedAt`, `releasedAt:
+  1777156116`, no `releaseReason`) / 166 (data-type-support —
+  `heartbeatAt: 1777156351` ≡ `startedAt`, `releasedAt:
+  1777156575`) / 167 (rpl-programming — `heartbeatAt:
+  1777157170` ≡ `startedAt`, `releasedAt: 1777157533`) lock
+  bodies all carry the same shape ambiguity, plus
+  `session168-unit-tests` in flight at this run's acquisition
+  (`heartbeatAt: 1777157778` ≡ `startedAt`, no `releasedAt`
+  yet but the same shape will materialize at its release).
+  Running count of underlying-ambiguity occurrences now
+  **twenty-four** since session 106 (was 20 at session 164
+  close + 3 from 165 / 166 / 167 + 1 in flight from 168).
+  6 review-lane runs aging; status remains
   **[deferred - post-ship]**.
 
 ---
@@ -5521,3 +5580,328 @@ contained:
 Both items are pure hygiene with no behavior risk.
 
 Log pointer: `logs/session-160-code-review.md`.
+
+---
+
+### Session 164-code-review — what shipped (seventeenth review-lane run, second release wrap-up)
+
+One edit this run.  This is a follow-on review-lane pass after
+session 160's release wrap-up, taken inside the same 2026-04-25
+day window after sessions 161 / 162 / 163 closed sibling-lane
+work.  The 2026-04-26 ship-date guard remains active.
+
+- **`docs/REVIEW.md`** — Last-updated stamp bumped to
+  session 164-code-review (17th review-lane run); preamble
+  rewritten to fold in the three sibling-lane closures since
+  session 160 (161 command-support doc-recon / 162 data-types
+  LNP1 / EXPM pinning / 163 rpl-programming OBJ→ BinInt /
+  Rational extension); baseline block rewritten with the
+  5156 / 66 / 22 entry gates; **Open queue at session 164-
+  code-review close** narrative added with per-axis
+  verification breadcrumb; O-009 age trail extended (10
+  review-lane runs aging — both `.bak` files still present
+  at unchanged byte counts and mtimes; sessions 161 / 162 /
+  163 / 164 did not delete them; tooling gate unchanged);
+  O-011 age trail extended (5 review-lane runs aging — three
+  more lock-body occurrences from sessions 161 / 162 / 163
+  plus one in-flight from `session164-unit-tests`, bringing
+  the running count of underlying-ambiguity occurrences to
+  **twenty** since session 106; status remains
+  `[deferred - post-ship]` per the session 156 meta-log
+  triage).  No new findings filed (audit-axis sweep clean).
+
+**Findings delta this run:**
+
+- **No promotions to resolved this run.**  No sibling lane
+  closed an open finding since session 160 — sessions 161 /
+  162 / 163 were release-mode pinning / doc-reconciliation /
+  audit-extension work that did not touch any of the open
+  R-bucket / D-bucket / C-bucket / X-bucket findings (which
+  are all already resolved).  The two open items (O-009,
+  O-011) are both `[deferred - post-ship]`.
+- **Still-open findings carried forward and aged:**
+  - **O-009** — 9 → 10 runs.  `[deferred - post-ship]`.
+    `ls -la tests/test-control-flow.mjs*` shows both `.bak`
+    files at 92,129 / 92,141 bytes, Apr 24 11:54 / 13:41
+    mtimes (frozen since session 113); the live file has
+    grown to 237,247 bytes after sibling-lane pin additions
+    in sessions 161 / 162 / 163.  No scheduled-task lane
+    can delete the `.bak` files without the
+    `mcp__cowork__allow_cowork_file_delete` interactive
+    prompt; deferred to user-side cleanup post-ship.
+  - **O-011** — 4 → 5 runs.  `[deferred - post-ship]`.
+    `grep -n "releaseReason" utils/@locks/lock.mjs
+    utils/@locks/README.md` returns zero hits.  Sessions
+    161 / 162 / 163 lock bodies inspected this run — all
+    three carry the `heartbeatAt === startedAt` signature
+    documented in O-011 (no lane body in the repo currently
+    calls `heartbeat()`, so this is the default for any
+    release).  `session164-unit-tests` in flight at this
+    run's acquisition fits the same shape — bringing the
+    running count of underlying-ambiguity occurrences to
+    **twenty** since session 106 (sixteen at session 160
+    close + three new from 161 / 162 / 163 + one in flight
+    from 164).
+- **No new findings filed.**  Cross-checked the codebase
+  against the audit axes from the lane charter; no new
+  defects surfaced.  Verified at session 164-code-review:
+  - `docs/COMMANDS.md` Counts heading reads "as of session
+    161 — 2026-04-25" — current (session 161 was the last
+    command-support run).
+  - `docs/COMMANDS.md` `register()` count line reads "= **476**
+    at the end of session 161" — matches `grep -c "register("
+    www/src/rpl/ops.js` = **476**, current.
+  - `docs/DATA_TYPES.md` Last-updated reads "Session 162
+    (2026-04-25, release-mode wrap-up)" — current.
+  - `docs/RPL.md` Current-implementation-status header reads
+    "as of session 163" — current.
+  - `docs/TESTS.md` Last-updated reads "Session 160 (2026-04-25)"
+    — `session164-unit-tests` is in flight at this run's
+    acquisition with declared scope including `docs/TESTS.md`,
+    so any drift will be addressed by their refresh, not this
+    run.
+  - **Lane-task-id drift sweep** — `grep -rnE
+    "rpl5050-data-types[^-]|rpl5050-tests[^-]|hp50-type-support"
+    docs/ --include='*.md'` (excluding REVIEW.md) returns zero
+    hits.
+  - **`COMMANDS_INVENTORY.md` references** — only two surviving
+    in `docs/COMMANDS.md` (lines 300 and 1670), both inside
+    historical audit-trail narratives describing the original
+    O-004 fix.  Not drift.
+  - **`src/...` path drift** — only two surviving in
+    `docs/RPL.md:1710` and `docs/TESTS.md:585`, both inside
+    historical-narrative passages re-stating P-001's own
+    description.  Not drift.
+  - **`(this run)` heading drift (R-005 pattern)** — only one
+    each in `docs/RPL.md:288` (session 163's own chapter, the
+    sole current authoring-window heading) and `docs/COMMANDS.md:44`
+    (session 161's own narrative).  Each doc carries exactly one
+    "this run" heading — current authoring window only — which
+    is the steady-state per the R-005 close.  Not drift.
+
+Total open findings carried forward to next run: **2** (O-009,
+O-011 — both `[deferred - post-ship]`, no behavior risk for
+the release).  Resolved cumulative: **41** (unchanged from
+session 160 close).
+
+**Verification gates (session 164-code-review):**
+
+- `node --check` — clean across `www/src/app.js`,
+  `www/src/rpl/ops.js`, `www/src/rpl/state.js`,
+  `www/src/rpl/types.js` (this run made no source edits;
+  `node --check` was run on the four core files as a
+  precaution).
+- `node tests/test-all.mjs` = **5156 passing / 0 failing** at
+  run-entry (was 5120 at session-160-code-review close + 36
+  across the four sibling-lane closures: 160-unit-tests +13
+  close-out clusters / 162 +15 LNP1/EXPM / 163 +8 OBJ→
+  BinInt+Rational; 161 was doc-only).  Final exit count
+  captured at the run-close in `logs/session-164-code-
+  review.md` since `session164-unit-tests` is concurrently
+  pinning during this run's window.
+- `node tests/test-persist.mjs` = **66 passing / 0 failing**
+  (stable, fully green since the D-001 ship-prep close;
+  count grew from 40 → 66 between sessions 160 and 162 as
+  persist-side coverage was added).
+- `node tests/sanity.mjs` = **22 passing / 0 failing in ~6 ms**
+  (stable).
+
+**Lock.** Held `utils/@locks/session164-code-review.json`
+throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
+review-lane scope; no broadening required this run since no
+in-place source edits were taken).  Sibling lock at run-
+entry: `session164-unit-tests` holding `tests/` + `docs/
+TESTS.md`; their lock body fits the `heartbeatAt ===
+startedAt` signature documented in O-011 (twentieth
+occurrence — but triaged `[deferred - post-ship]` at the
+session-156 meta-log).  Released at end of run.
+
+**Next session's queue (priority order):**
+
+There is no "next" review-lane run before the 2026-04-26
+ship.  The hard ship-date guard at the top of every recurring
+scheduled task aborts immediately on dates after 2026-04-26,
+and a one-time kill-switch task disables all six recurring
+tasks at `2026-04-26T23:55:00-07:00`.  Any post-ship review-
+lane work would start from a clean slate after the ship-mode
+restrictions are lifted.
+
+For the audit trail, the post-ship to-do list remains the same
+as at session 160's close:
+
+1. **O-009** — user-side `rm tests/test-control-flow.mjs.bak{,2}`,
+   pair with adding `*.bak` / `*.bak2` to `.gitignore`.
+2. **O-011** — one-line per-call-site addition to
+   `utils/@locks/lock.mjs` (`release()` → `releaseReason:
+   "graceful"`; `pruneStale()` → `releaseReason: "stale-prune"`)
+   plus a parallel update to `utils/@locks/README.md`.
+
+Both items are pure hygiene with no behavior risk.
+
+Log pointer: `logs/session-164-code-review.md`.
+
+### Session 169-code-review — what shipped (eighteenth review-lane run, third release wrap-up)
+
+One edit this run.  This is a follow-on review-lane pass after
+session 164's release wrap-up, taken inside the same 2026-04-25
+day window after sessions 165 / 166 / 167 closed sibling-lane
+work.  The 2026-04-26 ship-date guard remains active.
+
+- **`docs/REVIEW.md`** — Last-updated stamp bumped to
+  session 169-code-review (18th review-lane run); preamble
+  rewritten to fold in the three sibling-lane closures since
+  session 164 (165 command-support doc-recon / 166 data-types
+  LOG/EXP/ALOG + ACOSH/ATANH boundary pinning / 167 rpl-
+  programming NEWOB-on-Rational widening); baseline block
+  rewritten with the 5206 / 66 / 22 entry gates; **Open queue
+  at session 169-code-review close** narrative carried forward
+  with per-axis verification breadcrumb; O-009 age trail
+  extended (11 review-lane runs aging — both `.bak` files
+  still present at unchanged byte counts and mtimes; sessions
+  165 / 166 / 167 / 168 did not delete them; tooling gate
+  unchanged); O-011 age trail extended (6 review-lane runs
+  aging — three more lock-body occurrences from sessions
+  165 / 166 / 167 plus one in-flight from `session168-unit-
+  tests`, bringing the running count of underlying-ambiguity
+  occurrences to **twenty-four** since session 106; status
+  remains `[deferred - post-ship]` per the session 156 meta-
+  log triage).  No new findings filed (audit-axis sweep
+  clean).
+
+**Findings delta this run:**
+
+- **No promotions to resolved this run.**  No sibling lane
+  closed an open finding since session 164 — sessions 165 /
+  166 / 167 were release-mode doc-reconciliation /
+  pinning-cluster / audit-extension work that did not touch
+  any of the open R-bucket / D-bucket / C-bucket / X-bucket
+  findings (which are all already resolved).  The two open
+  items (O-009, O-011) are both `[deferred - post-ship]`.
+- **Still-open findings carried forward and aged:**
+  - **O-009** — 10 → 11 runs.  `[deferred - post-ship]`.
+    `ls -la tests/test-control-flow.mjs*` shows both `.bak`
+    files at 92,129 / 92,141 bytes, Apr 24 11:54 / 13:41
+    mtimes (frozen since session 113); the live file is
+    237,247 bytes — unchanged from session 164's reading
+    because the +50 test deltas across sessions 165 / 166 /
+    167 all landed in `tests/test-types.mjs` and
+    `tests/test-reflection.mjs`, not `tests/test-control-
+    flow.mjs`.  No scheduled-task lane can delete the `.bak`
+    files without the `mcp__cowork__allow_cowork_file_delete`
+    interactive prompt; deferred to user-side cleanup
+    post-ship.
+  - **O-011** — 5 → 6 runs.  `[deferred - post-ship]`.
+    `grep -n "releaseReason" utils/@locks/lock.mjs
+    utils/@locks/README.md` returns zero hits.  Sessions
+    165 / 166 / 167 lock bodies inspected this run — all
+    three carry the `heartbeatAt === startedAt` signature
+    documented in O-011 (no lane body in the repo currently
+    calls `heartbeat()`, so this is the default for any
+    release).  `session168-unit-tests` in flight at this
+    run's acquisition fits the same shape — bringing the
+    running count of underlying-ambiguity occurrences to
+    **twenty-four** since session 106 (twenty at session
+    164 close + three new from 165 / 166 / 167 + one in
+    flight from 168).
+- **No new findings filed.**  Cross-checked the codebase
+  against the audit axes from the lane charter; no new
+  defects surfaced.  Verified at session 169-code-review:
+  - `docs/COMMANDS.md` Counts heading reads "as of session
+    165 — 2026-04-25" — current (session 165 was the last
+    command-support run; no new ✗ → ✓ row transitions in
+    sessions 166 or 167, both of which expanded coverage on
+    already-✓ ops, so the heading does not need to bump).
+  - `docs/COMMANDS.md` `register()` count line reads "= **476**
+    at the end of session 165" — matches `grep -c "register("
+    www/src/rpl/ops.js` = **476**, current.  Session 167's
+    `_newObCopy` widening was an in-body predicate change,
+    not a new `register()` call, so the count is unchanged.
+  - `docs/DATA_TYPES.md` Last-updated reads "Session 166
+    (2026-04-25, release-mode wrap-up" — current.
+  - `docs/RPL.md` Current-implementation-status header reads
+    "as of session 167" — current.
+  - `docs/TESTS.md` Last-updated reads "Session 164
+    (2026-04-25)" — `session168-unit-tests` is in flight at
+    this run's acquisition with declared scope including
+    `docs/TESTS.md`, so any drift will be addressed by their
+    refresh, not this run.
+  - **Lane-task-id drift sweep** — `grep -rnE
+    "rpl5050-data-types[^-]|rpl5050-tests[^-]|hp50-type-support"
+    docs/ www/src/ --include='*.md'` (excluding REVIEW.md)
+    returns zero hits.
+  - **`COMMANDS_INVENTORY.md` references** — only two surviving
+    in `docs/COMMANDS.md` (lines 320 and 1797), both inside
+    historical audit-trail narratives describing the original
+    O-004 fix.  Not drift.
+  - **`src/...` path drift** — only two surviving in
+    `docs/RPL.md:1825` and `docs/TESTS.md:658`, both inside
+    historical-narrative passages re-stating P-001's own
+    description.  Not drift.
+  - **`(this run)` heading drift (R-005 pattern)** — only one
+    in `docs/RPL.md:301` (session 167's own chapter, the sole
+    current authoring-window heading).  COMMANDS.md /
+    DATA_TYPES.md / TESTS.md carry no `## Session NNN (this
+    run)` heading.  Each doc carries at most one "this run"
+    heading — current authoring window only — which is the
+    steady-state per the R-005 close.  Not drift.
+
+Total open findings carried forward to next run: **2** (O-009,
+O-011 — both `[deferred - post-ship]`, no behavior risk for
+the release).  Resolved cumulative: **41** (unchanged from
+session 164 close).
+
+**Verification gates (session 169-code-review):**
+
+- `node --check` — clean across `www/src/app.js`,
+  `www/src/rpl/ops.js`, `www/src/rpl/state.js`,
+  `www/src/rpl/types.js` (this run made no source edits;
+  `node --check` was run on the four core files as a
+  precaution).
+- `node tests/test-all.mjs` = **5206 passing / 0 failing** at
+  run-entry (was 5156 at session-164-code-review close + 50
+  across the four sibling-lane closures: 164-unit-tests +11
+  release-mode pin clusters / 166 +19 LOG/EXP/ALOG +
+  ACOSH/ATANH boundary pins / 167 +20 NEWOB-on-Rational pins;
+  165 was doc-only).  Final exit count captured at the
+  run-close in `logs/session-169-code-review.md` since
+  `session168-unit-tests` is concurrently pinning during this
+  run's window.
+- `node tests/test-persist.mjs` = **66 passing / 0 failing**
+  (stable, fully green since the D-001 ship-prep close —
+  unchanged across sessions 165 / 166 / 167).
+- `node tests/sanity.mjs` = **22 passing / 0 failing in ~5 ms**
+  (stable).
+
+**Lock.** Held `utils/@locks/session169-code-review.json`
+throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
+review-lane scope; no broadening required this run since no
+in-place source edits were taken).  Sibling lock at run-
+entry: `session168-unit-tests` holding `tests/` + `docs/
+TESTS.md`; their lock body fits the `heartbeatAt ===
+startedAt` signature documented in O-011 (twenty-fourth
+occurrence — but triaged `[deferred - post-ship]` at the
+session-156 meta-log).  Released at end of run.
+
+**Next session's queue (priority order):**
+
+There is no "next" review-lane run before the 2026-04-26
+ship.  The hard ship-date guard at the top of every recurring
+scheduled task aborts immediately on dates after 2026-04-26,
+and a one-time kill-switch task disables all six recurring
+tasks at `2026-04-26T23:55:00-07:00`.  Any post-ship review-
+lane work would start from a clean slate after the ship-mode
+restrictions are lifted.
+
+For the audit trail, the post-ship to-do list remains the same
+as at session 164's close:
+
+1. **O-009** — user-side `rm tests/test-control-flow.mjs.bak{,2}`,
+   pair with adding `*.bak` / `*.bak2` to `.gitignore`.
+2. **O-011** — one-line per-call-site addition to
+   `utils/@locks/lock.mjs` (`release()` → `releaseReason:
+   "graceful"`; `pruneStale()` → `releaseReason: "stale-prune"`)
+   plus a parallel update to `utils/@locks/README.md`.
+
+Both items are pure hygiene with no behavior risk.
+
+Log pointer: `logs/session-169-code-review.md`.

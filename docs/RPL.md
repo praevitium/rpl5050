@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 159)
+## Current implementation status (as of session 167)
 
 
 ### Program value — parser & round-trip
@@ -240,6 +240,16 @@ open, and the next-session queue.
   mantissa / exponent split that prior versions performed is the job
   of `MANT` (AUR p.3-6) and `XPON` (AUR p.3-9) — those ops are wired
   separately and unchanged by this edit.  Closes R-008.
+- `OBJ→` on BinaryInteger / Rational: **session 163: AUR-fidelity
+  extension** — pushes the value back unchanged (1-in / 1-out),
+  matching the same AUR §3-149 choice the session-155 close made
+  for Real / Integer (no numeric-scalar entry in the AUR table, so
+  push back is the consistent fidelity choice).  Pre-163 these
+  branches fell through `OBJ→`'s dispatch and threw `Bad argument
+  type` — a divergence from the choice already documented for
+  Real / Integer.  Format-specific splits remain at `B→R` (BinInt
+  → Real, AUR p.3-46) and the rational `→NUM` / `→DEN` ops.  No
+  REVIEW.md finding open against this branch — caught by audit.
 - `OBJ→` on Tagged: **AUR-verified session 155** — pushes
   `value, "tag"` where `"tag"` is a String, not a Name.  R-008 had
   flagged this branch as suspect; the AUR §3-149 re-read confirmed
@@ -259,8 +269,21 @@ open, and the next-session queue.
   **session 074: DECOMP→STR→ round-trip pinned** by assertions in
   `tests/test-reflection.mjs` (9 new), including a DECOMP→STR→→DECOMP
   canonical-form idempotence check.
-- `NEWOB` — supports Program via the existing `_newObCopy` switch
-  (frozen tokens array copied).
+- `NEWOB` — supports every numeric-scalar shape (Real / Integer /
+  BinaryInteger / Rational / Complex), every composite container
+  (List / Vector / Matrix / Program — frozen tokens array copied),
+  and Tagged / Unit / String / Name / Symbolic via the
+  `_newObCopy` switch.  **Session 167:** Rational branch added —
+  closes the audit-driven asymmetry vs. the other numeric-scalar
+  shapes (Real / Integer / BinInt were already enumerated; a
+  Rational reaching the unenumerated tail returned identity, the
+  lone outlier vs. the session-163 OBJ→ widening that brought
+  BinInt and Rational into the OBJ→ push-back branch).
+  Reconstruction is `Rational(v.n, v.d)`; the constructor's
+  sign-on-numerator + GCD-reduce pass is observably idempotent
+  on already-canonicalised inputs.  Directory and Grob fall
+  through to identity on purpose — Directories are live mutable
+  containers and Grobs flow through their own value-copy path.
 
 ### Error-machinery
 - `ERRM` / `ERRN` / `ERR0` / `DOERR` — registered and tested.
@@ -275,7 +298,221 @@ open, and the next-session queue.
 
 ---
 
-## Session 159 (this run) — what shipped
+## Session 167 (this run) — what shipped
+
+Final RPL-lane run on Saturday 2026-04-25 ahead of the Sunday
+2026-04-26 ship — the third rpl-programming-lane run since
+ship-prep (sessions 155 / 159 / 163 closed the OBJ→ AUR-fidelity
+audit one numeric-scalar shape at a time; this run closes the
+matching NEWOB asymmetry).  The R-bucket of `docs/REVIEW.md`
+remained empty at run-entry (R-007 / R-009 / R-010 / R-011 closed
+at ship-prep, R-008 at session 155, R-012 at session 159,
+R-001 — R-006 all resolved across earlier sessions; the open queue
+at session-164-code-review's close is O-009 + O-011 only, both
+`[deferred - post-ship]`).  This run extends the same kind of
+audit-driven fidelity edit to **NEWOB** — closing the asymmetry
+where every other numeric-scalar shape was enumerated by
+`_newObCopy` but Rational fell through the unenumerated tail and
+returned identity (`v`).  No REVIEW.md finding was open against
+this branch; caught by audit while reviewing the session-163
+OBJ→ widening for sibling-op coverage.
+
+1. **Rational branch added to `_newObCopy`**
+   (`www/src/rpl/ops.js`).  The existing scalar-rebuild block was
+   widened with `if (isRational(v)) return Rational(v.n, v.d);`
+   placed alongside the pre-existing Real / Integer / BinaryInteger
+   / Complex branches.  Pre-fix behaviour: NEWOB on a Rational
+   returned the same frozen instance — `===` against the input
+   was `true`, breaking the distinct-object-identity contract that
+   every other numeric-scalar shape honoured.  Post-fix: NEWOB
+   reconstructs via the Rational() constructor, which performs
+   sign-on-numerator + GCD-reduce normalisation; on an
+   already-canonical input that's observably idempotent (n / d
+   pair survives byte-for-byte) but the returned object is a fresh
+   frozen instance distinct from the input.  Header comment block
+   at `:9270-9279` rewritten to enumerate every covered scalar
+   shape and to call out Directory / Grob's deliberate
+   fall-through to identity (Directory is a live mutable container,
+   Grob flows through its own value-copy path).  Inline comment in
+   `_newObCopy`'s fall-through block expanded to record the
+   session-167 audit rationale and the link back to the
+   session-163 OBJ→ widening.
+2. **20 session167 hard assertions added to
+   `tests/test-reflection.mjs`** (5 distinct scenarios × 4 asserts
+   on average), inserted after the session 146 NEWOB-on-Program
+   cluster.  Coverage:
+   - Bare Rational distinct-object contract:  `is`-shape /
+     `!== orig` / payload preserved (3/4) / frozen.
+   - Negative Rational sign-convention preservation
+     (Rational(-7n, 2n) keeps sign on numerator).
+   - n/1 type stability (Rational(5n, 1n) does NOT collapse to
+     Integer through NEWOB — mirrors session 164's OBJ→ pin).
+   - Zero canonicalisation (Rational(0n, 1n) round-trips through
+     NEWOB unchanged — mirror of session 163's BinInt #0b
+     zero-value pin onto the Rational arm).
+   - Composition with the existing shallow-copy contract:
+     List-of-Rational rebuilds the outer List but preserves the
+     inner Rational identity by reference (matches session 146's
+     nested-Program shallow-copy pin); Tagged-of-Rational rebuilds
+     the Tagged shell, preserves tag, preserves inner Rational by
+     reference.
+   - NEWOB→OBJ→ composition with the session-163 push-back
+     branch:  the post-NEWOB Rational survives the OBJ→ push-back
+     intact, distinct from the pre-NEWOB original — verifying
+     that the two reflection ops compose without losing the
+     freshly-allocated identity NEWOB just produced.
+
+User-reachable demo (keypad sequence the user can replay):
+
+```
+3 ENTER 4 / ENTER       (level 1: 3/4 — Rational, EXACT mode)
+DUP                     (level 2: 3/4, level 1: 3/4 — same instance)
+NEWOB                   (level 1: 3/4 — fresh instance)
+==                      (level 1: 1.   — value-equal, but the
+                         underlying objects are now distinct;
+                         pre-167 the NEWOB produced the same
+                         frozen instance and `==` would still
+                         be true since `==` compares values, not
+                         references — the visible regression is
+                         on the metaprogramming side via the
+                         shallow-copy contract pinned in tests)
+```
+
+The user-visible behaviour change is invisible on `==` (which
+compares values), but a metaprogramming user calling NEWOB to
+force a decoupled copy of a Rational previously got the *same*
+frozen object, which would surprise any program relying on
+identity-distinct copies.  The fix matches every other
+numeric-scalar shape's contract.
+
+Verification gates (all four green at run-close):
+- `node --check www/src/rpl/ops.js` — clean.
+- `node tests/test-all.mjs` — **5206 / 0** (was 5186 at session
+  166 close; +20 matches this run's session167 pin count exactly).
+- `node tests/test-persist.mjs` — **66 / 0** (stable since the
+  D-001 ship-prep close).
+- `node tests/sanity.mjs` — **22 / 0 in 6 ms** (unchanged).
+
+No REVIEW.md ledger edit this run — no R-bucket finding was open
+against the NEWOB Rational asymmetry; this run's audit-driven
+extension is captured in the session log + this RPL.md chapter
+rather than promoted from a finding.
+
+---
+
+## Session 163 — what shipped
+
+Final RPL-lane run on Saturday 2026-04-25 ahead of the Sunday
+2026-04-26 ship.  The R-bucket of `docs/REVIEW.md` is empty
+(R-007 / R-009 / R-010 / R-011 closed at ship-prep, R-008 at
+session 155, R-012 at session 159, R-001 — R-006 all resolved
+across earlier sessions; the open queue at session-160's close is
+O-009 + O-011 only, both `[deferred - post-ship]`).  This run
+extends `OBJ→`'s AUR-fidelity audit to the two remaining
+numeric-scalar shapes — **BinaryInteger** and **Rational** —
+matching the choice the session-155 close already made for
+Real / Integer.  No REVIEW.md finding was open against these
+branches; the divergence was caught by audit while reviewing the
+session-155 / 159 / 160 OBJ→ closures for any unaddressed rows.
+
+1. **BinaryInteger and Rational branches added to OBJ→**
+   (`www/src/rpl/ops.js:6740-6757`).  The existing Real / Integer
+   branch was widened from `if (isReal(v) || isInteger(v))` to
+   `if (isReal(v) || isInteger(v) || isBinaryInteger(v) ||
+   isRational(v))` so all four numeric-scalar shapes share the
+   same `s.push(v); return;` body.  Pre-fix behaviour: BinInt and
+   Rational fell through to the trailing `throw new RPLError('Bad
+   argument type')` — a divergence from the AUR-fidelity choice
+   the Real/Integer branch already documented.  AUR §3-149's
+   Input/Output table still lists no row for any numeric scalar,
+   so push-back is the consistent fidelity choice — symmetric
+   with the rationale recorded by session 155.
+
+2. **Header comment block updated** (`www/src/rpl/ops.js:6605-
+   6660`).  The dispatch comment block — last rewritten in
+   session 159 for the R-012 close — gains BinaryInteger and
+   Rational rows in the AUR-table summary alongside Real /
+   Integer / Unit, plus a paragraph noting that format-specific
+   splits remain at `B→R` (AUR p.3-46) and the rational
+   `→NUM` / `→DEN` ops, not `OBJ→`.  The body comment in the
+   widened branch was rewritten to reference all four shapes
+   explicitly and to call out that BinInt and Rational formerly
+   fell through to `Bad argument type`.
+
+3. **Pinned with eight new session163 assertions** in
+   `tests/test-reflection.mjs` covering: BinaryInteger
+   push-back at hex base (`#15h → #15h`); BinaryInteger base
+   preservation across OBJ→ (`#255d → #255d`, no
+   hex/decimal normalization); BinaryInteger zero-value
+   boundary (`#0b → #0b`); Rational push-back (`3/4 → 3/4`,
+   no coercion to Real); negative-numerator Rational
+   (`-7/2 → -7/2`, sign convention preserved); ASCII alias
+   `OBJ-> ` parity on BinaryInteger (matching the s155
+   List / s159 Unit alias parity pins); EVAL-as-literal-push
+   semantics on BinaryInteger (`#15h EVAL → #15h`);
+   EVAL-as-literal-push on Rational (`3/4 EVAL → 3/4`).
+   The EVAL pins close the parallel between OBJ→ and EVAL
+   for every numeric-scalar shape — a future refactor that
+   re-routes BinInt through B→R during EVAL would now be
+   caught immediately.
+
+Files edited:
+- `www/src/rpl/ops.js` — `isBinaryInteger || isRational`
+  added to the existing Real/Integer branch (one-line
+  predicate widening); header comment block extended with
+  BinInt and Rational rows (~22 added lines); body comment
+  in the widened branch rewritten to cite all four scalar
+  shapes (~7 added lines).
+- `tests/test-reflection.mjs` — `Rational` and `isRational`
+  added to the shared imports; eight session163 assertions
+  appended after the session160 OBJ→-Unit follow-up cluster
+  and before the `→ARRY / ARRY→` divider; file 596 →
+  734 lines.
+- `docs/RPL.md` — this chapter; OBJ→ implementation-status
+  row for BinaryInteger / Rational added under "Program
+  decomposition / composition"; "as of session N" stamp
+  bumped from 159 → 163; session 159's `(this run)`
+  heading demoted to plain past tense per R-005's
+  recurring drift pattern.
+- `docs/REVIEW.md` — no finding to promote (no open R-bucket
+  finding existed against this branch); session 163 noted in
+  the run-log narrative below the existing entry.
+
+Totals: **+8 new session163-labelled assertions** in
+`tests/test-reflection.mjs` (counted by `grep -c session163`).
+`test-all.mjs` at **5156 passing / 0 failing** (entry baseline
+5148 from session 162 close, Δ+8 — entirely this lane this run).
+`test-persist.mjs` at **66 passing / 0 failing** (stable
+since the D-001 ship-prep close).  `sanity.mjs` at
+**22 passing / 5 ms** (unchanged).  `node --check` clean on
+both touched JS files.
+
+User-reachable demo (`OBJ→` on a BinaryInteger / Rational
+pushes back unchanged):
+
+```
+8                       (level 1: 8 — Integer entry)
+…&BR  HEX               (set BIN mode, hex base)
+#FFh ENTER              (level 1: #FFh — BinaryInteger)
+OBJ→                    (level 1: #FFh — push-back; pre-163
+                         this would have thrown "Bad argument type")
+
+3 4 / ENTER             (level 1: 3/4 — Rational from /
+                         in EXACT mode; if you're in APPROX
+                         use → 3 ENTER 4 / and EXACT first)
+OBJ→                    (level 1: 3/4 — push-back unchanged)
+
+EVAL                    (level 1: 3/4 — same value, EVAL of
+                         a numeric scalar is a literal push)
+```
+
+The third line in each block also works — `#FFh EVAL → #FFh`
+and `3/4 EVAL → 3/4` — confirming OBJ→ and EVAL stay parallel
+for every numeric scalar shape on the HP50.
+
+---
+
+## Session 159 — what shipped
 
 This run closes the open RPL-bucket finding **R-012**: the HP50
 AUR §3-149 fidelity edit of `OBJ→`'s **Unit** branch — the third
@@ -2064,6 +2301,35 @@ lanes during the same day). `test-persist.mjs` unchanged (32 passing).
     `_roundTripProgram` helper invoked by the new round-trip
     pins.  No `www/src/rpl/ops.js` source change this run.
 
+13. **[shipped session 163]** `OBJ→` on BinaryInteger and
+    Rational — AUR-fidelity extension matching the choice the
+    session-155 close made for Real / Integer.  Pre-163, BinInt
+    and Rational fell through `OBJ→`'s dispatch and threw `Bad
+    argument type`; post-163, all four numeric-scalar shapes
+    share the same push-back branch.  +8 session163 pins in
+    `tests/test-reflection.mjs` covering OBJ→ and EVAL parity
+    on both shapes plus the ASCII-alias parity check.  No
+    REVIEW.md finding open against the branch — caught by audit
+    while reviewing the s155 / s159 / s160 OBJ→ closures for
+    unaddressed rows.
+
+14. **[shipped session 167]** `NEWOB` on Rational — audit-driven
+    asymmetry close, sibling to the session-163 OBJ→ extension.
+    `_newObCopy` enumerated every other numeric-scalar shape
+    (Real / Integer / BinaryInteger / Complex) and every
+    composite container, but Rational fell through the
+    unenumerated tail and returned identity (`v`).  Post-167,
+    `_newObCopy` reconstructs via `Rational(v.n, v.d)` — fresh
+    frozen instance, distinct from the input.  +20 session167
+    pins in `tests/test-reflection.mjs` covering the
+    distinct-object identity contract, sign convention
+    preservation, n/1 type stability, zero canonicalisation,
+    composition with the shallow-copy contract on List /
+    Tagged inners, and composition with the session-163 OBJ→
+    push-back branch.  No REVIEW.md finding open against the
+    branch — caught by audit while reviewing the session-163
+    OBJ→ widening for sibling-op coverage.
+
 ### Medium priority
 5. **`CONT` across a `resetHome` — UI signal** — `resetHome`
    now closes generators correctly (session 088). Follow-up
@@ -2239,7 +2505,7 @@ exponent split per AUR p.3-6 / p.3-9; +5 net new + 2 flipped =
 +7 session155 assertions in `tests/test-reflection.mjs`); test-
 file prefix is `session155:` and the log file is
 `logs/session-155.md`.
-Session 159 is this run (R-012 close — HP50 AUR §3-149 fidelity
+Session 159 was this lane (R-012 close — HP50 AUR §3-149 fidelity
 edit of `OBJ→`'s Unit branch, the third row of the §3-149 table
 that session 155's audit did not address; new `isUnit` branch
 pushes `Real(v.value)` on level 2 and `Unit(1, v.uexpr)` on
@@ -2248,20 +2514,50 @@ level-1 push using the bare `Unit()` constructor rather than
 `_makeUnit` so the prototype shape is preserved; +15 session159
 assertions in `tests/test-reflection.mjs`); test-file prefix is
 `session159:` and the log file is `logs/session-159.md`.
+Session 163 was this lane (release-mode AUR-fidelity extension of
+`OBJ→`'s numeric-scalar branch — BinaryInteger and Rational push
+back unchanged, matching the choice the s155 close made for Real
+and Integer; pre-163 they fell through to `Bad argument type`,
+post-163 all four numeric-scalar shapes share the same push-back
+branch.  No REVIEW.md finding open against the branch — caught by
+audit while reviewing the s155 / s159 / s160 OBJ→ closures for
+unaddressed rows; +8 session163 assertions in
+`tests/test-reflection.mjs` covering OBJ→ and EVAL parity on both
+shapes plus the ASCII-alias parity check); test-file prefix is
+`session163:` and the log file is `logs/session-163.md`.
+Session 167 is this run (release-mode audit-driven asymmetry
+close on `NEWOB`, sibling to the session-163 OBJ→ widening — a
+Rational reaching `_newObCopy`'s unenumerated tail returned
+identity (`v`) while every other numeric-scalar shape was
+already enumerated; one-line widening
+`if (isRational(v)) return Rational(v.n, v.d);` placed alongside
+the pre-existing Real / Integer / BinaryInteger / Complex
+branches.  No REVIEW.md finding was open against the branch —
+caught by audit while reviewing the s163 OBJ→ widening for
+sibling-op coverage.  +20 session167 assertions in
+`tests/test-reflection.mjs` covering: bare-Rational
+distinct-object identity, sign-convention preservation, n/1
+type stability, zero canonicalisation, List-of-Rational and
+Tagged-of-Rational shallow-copy contracts, and NEWOB→OBJ→
+composition with the s163 push-back branch); test-file prefix is
+`session167:` and the log file is `logs/session-167.md`.
 
 (Footnote — sessions 074 / 078 / 088 / 106 / 116 / 121 / 126 / 131
-/ 141 / 146 / 151 / 155 used the historical "is this run" wording
-in their authoring session; that label has since been demoted to
-plain past tense as the lane runs forward.  Demotion to plain past
-tense for sessions 121 / 126 / 131 / 136 was bundled into session
-141 per R-005; demotion of session 141's own `(this run)` heading
-was bundled into session 146; demotion of session 146's own `(this
-run)` heading was bundled into session 151; demotion of session
-151's own `(this run)` heading was bundled into session 155;
-demotion of session 155's own `(this run)` heading is bundled into
-this session 159 run as part of the new session-159 chapter
-becoming the sole `(this run)` holder.  This is the recurring
-R-005 drift pattern — every substantive rpl-programming-lane run
-that adds a new `(this run)` chapter must also demote its
-predecessor; the recurrence is by design, the demote is the
-ship-discipline check.)
+/ 141 / 146 / 151 / 155 / 159 / 163 used the historical "is this
+run" wording in their authoring session; that label has since
+been demoted to plain past tense as the lane runs forward.
+Demotion to plain past tense for sessions 121 / 126 / 131 / 136
+was bundled into session 141 per R-005; demotion of session 141's
+own `(this run)` heading was bundled into session 146; demotion
+of session 146's own `(this run)` heading was bundled into
+session 151; demotion of session 151's own `(this run)` heading
+was bundled into session 155; demotion of session 155's own
+`(this run)` heading was bundled into session 159; demotion of
+session 159's own `(this run)` heading was bundled into session
+163; demotion of session 163's own `(this run)` heading is
+bundled into this session 167 run as part of the new
+session-167 chapter becoming the sole `(this run)` holder.  This
+is the recurring R-005 drift pattern — every substantive
+rpl-programming-lane run that adds a new `(this run)` chapter
+must also demote its predecessor; the recurrence is by design,
+the demote is the ship-discipline check.)

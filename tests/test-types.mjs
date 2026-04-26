@@ -7873,5 +7873,765 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
         && isInteger(v.items[0]) && v.items[0].value === 0n,
       `session160: { Integer(1) } LN → { Integer(0) } (n=1 single-element boundary on bare _withListUnary; pins per-element EXACT-mode integer-clean fold runs through the wrapper for n=1 — guards against refactor that bypasses wrapper for singleton); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
   }
+
+  // ============================================================
+  // session162 — LNP1 / EXPM bare-List + Tagged-of-List composition.
+  //
+  // Cluster 1.  Session 130 Cluster 1 pinned LNP1 Tagged-of-Vector
+  // composition through the 3-deep wrapper `_withTaggedUnary(
+  // _withListUnary(_withVMUnary(handler)))`.  Session 140 Cluster 2
+  // pinned EXPM Tagged-of-Vector and Tagged-of-Matrix on the same
+  // wrapper, closing the V/M axis on the LNP1/EXPM dual pair.
+  // Session 158 closed the bare-List + Tagged-of-List composition
+  // axis on the LN / LOG / EXP / ALOG quartet.  But the LNP1/EXPM
+  // L+T composition was not specifically pinned: the matrix carried
+  // L ✓ T ✓ on both ops since session 063 / 130, but no direct
+  // assertion on (a) per-element bare-List dispatch under
+  // `_withListUnary`, (b) Tagged-of-List composition outer-tag
+  // preservation, or (c) the n=0 / n=1 boundary closures (which
+  // session 160 added for LN but not for the LNP1/EXPM duals).
+  //
+  // CONTRAST with session 158 LN/LOG/EXP/ALOG L+T pins: those four
+  // ops dispatch through `_unaryCx` which has an EXACT-mode
+  // `_exactUnaryLift` Integer-stay-exact arm — Integer(1) input
+  // lands as Integer output when the result is integer-clean.
+  // LNP1/EXPM bypass `_unaryCx` entirely (registered directly at
+  // ops.js:7702/7709 with bare `_withTaggedUnary(_withListUnary(
+  // _withVMUnary(...)))` — no `_unaryCx`); the inner handler is
+  // `Real(Math.log1p(toRealOrThrow(v)))` / `Real(Math.expm1(...))`,
+  // so Integer input is silently coerced to Real per element.  The
+  // Integer-stay-exact arm DOES NOT FIRE on LNP1/EXPM — every
+  // numeric input lands as Real output.  This cluster pins that
+  // contrast: bare-List Integer-input → Real-output per element on
+  // LNP1/EXPM (vs. LN/LOG/EXP/ALOG's Integer-stay-Integer when
+  // integer-clean).  Pins also: bare-List Real-input pass-through,
+  // Tagged-of-List composition tag preservation, n=0 empty-List
+  // boundary on both bare and Tagged-of-List, and n=1 single-
+  // element boundary (mirror of session 160's LN n=0 / n=1 pins
+  // lifted onto the LNP1/EXPM duals).
+  //
+  // The mixed-input pin (LNP1 { Real(-0.5) Real(0) } → { Real(ln(
+  // 0.5)) Real(0) }) closes a heterogeneous-output-value axis:
+  // distinct Real values per List position pin per-element wrapper
+  // dispatch (NOT a uniform-output-value short-circuit).
+
+  // ---- LNP1 bare-List Real-element pass-through.  Pins per-element
+  //      `Math.log1p` fold under bare `_withListUnary`: log1p(0)=0
+  //      lands as Real(0) per element (NOT Integer-stay; LNP1 has
+  //      no `_exactUnaryLift` arm — distinct from LN's session 158
+  //      pin where Integer(1) → Integer(0) integer-stay).
+  {
+    const s = new Stack();
+    s.push(RList([Real(0), Real(0)]));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(0)
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session162: LNP1 { Real(0) Real(0) } → { Real(0) Real(0) } (per-element Math.log1p fold under bare _withListUnary on LNP1 axis; closes bare-List axis on LNP1 — log1p(0)=0 boundary, pins wrapper composition fires); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LNP1 bare-List Integer-input → Real-output per element.
+  //      DISTINCT from session 158 LN { Integer(1) Integer(1) } →
+  //      { Integer(0) Integer(0) } where the EXACT-mode integer-
+  //      stay arm fires.  LNP1 routes directly through
+  //      `Real(Math.log1p(toRealOrThrow(v)))` — Integer is silently
+  //      coerced to Real per element.  Pins the absence of the
+  //      `_exactUnaryLift` arm on LNP1 (which is correct — LNP1
+  //      bypasses `_unaryCx`).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(0n), Integer(0n)]));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(0)
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session162: LNP1 { Integer(0) Integer(0) } → { Real(0) Real(0) } (Integer-input → Real-output per element under bare _withListUnary; LNP1 bypasses _unaryCx so no EXACT-mode Integer-stay-exact arm fires — DISTINCT from session 158 LN/LOG/EXP/ALOG L axis where Integer-stay-Integer holds); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LNP1 Tagged-of-List composition: outer tag preserved
+  //      across element-wise List dispatch through 3-deep wrapper.
+  {
+    const s = new Stack();
+    s.push(Tagged('n', RList([Real(0), Real(0)])));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'n'
+        && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(0)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session162: LNP1 :n:{ Real(0) Real(0) } → :n:{ Real(0) Real(0) } (Tagged-of-List composition through 3-deep wrapper on LNP1 axis; outer tag preserved across element-wise List dispatch + per-element Math.log1p fold; closes T+L composition on LNP1 — mirror of session 158 LN/LOG/EXP/ALOG T+L pins on the LNP1 dual); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LNP1 mixed-input bare-List: heterogeneous Real values per
+  //      List position emerge as distinct Real outputs.  Pins per-
+  //      element wrapper dispatch (NOT a uniform short-circuit) —
+  //      log1p(-0.5) ≈ -0.6931 ≠ log1p(0) = 0.
+  {
+    const s = new Stack();
+    s.push(RList([Real(-0.5), Real(0)]));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    const expected0 = Math.log1p(-0.5);
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && Math.abs(v.items[0].value.toNumber() - expected0) < 1e-12
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session162: LNP1 { Real(-0.5) Real(0) } → { Real(log1p(-0.5)) Real(0) } (heterogeneous-output-value pin under bare _withListUnary on LNP1 — distinct values per List position pin per-element wrapper dispatch); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LNP1 boundary throw under bare-List: Real(-1) is the
+  //      vertical asymptote (log1p(-1) = ln(0) = -∞).  The inner
+  //      handler throws `RPLError('Infinite result')`; pins that
+  //      the throw propagates through the wrapper's `apply` loop
+  //      (NOT swallowed, NOT replaced with NaN/null).  Sibling
+  //      contract to LN/LOG/etc. throwing on out-of-domain input.
+  {
+    const s = new Stack();
+    s.push(RList([Real(-1)]));
+    assertThrows(
+      () => lookup('LNP1').fn(s),
+      /Infinite result/,
+      `session162: LNP1 { Real(-1) } throws Infinite result (boundary log1p(-1) = -∞ propagates through bare _withListUnary's apply loop — wrapper does NOT swallow inner throw); got no throw`,
+    );
+  }
+
+  // ---- EXPM bare-List Real-element pass-through.  Pins per-
+  //      element `Math.expm1` fold under bare `_withListUnary`:
+  //      expm1(0)=0 lands as Real(0) per element.
+  {
+    const s = new Stack();
+    s.push(RList([Real(0), Real(0)]));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(0)
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session162: EXPM { Real(0) Real(0) } → { Real(0) Real(0) } (per-element Math.expm1 fold under bare _withListUnary on EXPM axis; closes bare-List axis on EXPM — expm1(0)=0 boundary, dual to LNP1's log1p(0)=0); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXPM bare-List Integer-input → Real-output per element.
+  //      Same `_exactUnaryLift`-bypass contract as LNP1 (Integer-
+  //      stay-exact arm DOES NOT FIRE on EXPM — Integer is coerced
+  //      to Real per element via `toRealOrThrow`).  DISTINCT from
+  //      session 158 EXP { Integer(0) Integer(0) } → { Integer(1)
+  //      Integer(1) } where EXP routes through `_unaryCx`'s EXACT-
+  //      mode arm.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(0n), Integer(0n)]));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(0)
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session162: EXPM { Integer(0) Integer(0) } → { Real(0) Real(0) } (Integer-input → Real-output per element under bare _withListUnary; EXPM bypasses _unaryCx so no EXACT Integer-stay arm fires — DISTINCT from session 158 EXP L axis Integer(0)→Integer(1)); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXPM Tagged-of-List composition: outer tag preserved.
+  //      Closes T+L composition on EXPM — mirror of session 140
+  //      Cluster 2's EXPM Tagged-of-V/M pin lifted onto the L axis
+  //      of the dual (LNP1 closed on T+L just above; this closes
+  //      the dual pair on T+L).
+  {
+    const s = new Stack();
+    s.push(Tagged('e', RList([Real(0), Real(0)])));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'e'
+        && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(0)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session162: EXPM :e:{ Real(0) Real(0) } → :e:{ Real(0) Real(0) } (Tagged-of-List composition through 3-deep wrapper on EXPM axis; outer tag preserved across element-wise List dispatch — closes the LNP1/EXPM dual pair on the T+L composition axis); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXPM mixed-input bare-List: heterogeneous Real outputs at
+  //      distinct positions.  expm1(1) = e - 1 ≈ 1.7183 ≠ expm1(0)
+  //      = 0; pins per-element wrapper dispatch on EXPM.
+  {
+    const s = new Stack();
+    s.push(RList([Real(1), Real(0)]));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    const expected0 = Math.expm1(1);
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && Math.abs(v.items[0].value.toNumber() - expected0) < 1e-12
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session162: EXPM { Real(1) Real(0) } → { Real(expm1(1)) Real(0) } (heterogeneous-output-value pin under bare _withListUnary on EXPM — distinct values per List position pin per-element wrapper dispatch); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ============================================================
+  // session162 — LNP1 / EXPM n=0 empty-List + n=1 single-element
+  // boundary closures.
+  //
+  // Cluster 2.  Session 160 added n=0 empty-List and n=1 single-
+  // element boundary pins on the LN axis (`{ } LN → { }`,
+  // `:l:{ } LN → :l:{ }`, `{ Integer(1) } LN → { Integer(0) }`).
+  // The same boundary closures on the LNP1/EXPM dual pair were
+  // not added in session 160 (single-cluster scope).  This
+  // cluster lifts the n=0 / n=1 boundary closures onto LNP1 and
+  // EXPM — pins that the inner `_withListUnary` `apply` loop
+  // preserves an empty-List shell unchanged AND that the n=1
+  // singleton pass goes through the wrapper (NOT special-cased
+  // to bare-scalar).
+  //
+  // The n=0 boundary is a distinct refactor-guard from the n=2
+  // pin in Cluster 1 above: a future refactor that bypasses the
+  // wrapper for an empty list (e.g. `if items.length === 0
+  // return []` short-circuit) would still pass the n=2 pin but
+  // would miss the wrapper's `RList(items.map(...))` shell-
+  // preservation contract.  Pinning n=0 explicitly closes that
+  // gap (mirror of session 160's reasoning for the LN axis).
+
+  // ---- LNP1 n=0 empty-List boundary: { } LNP1 → { }.
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session162: { } LNP1 → { } (n=0 empty-List boundary on bare _withListUnary — LNP1 wrapper preserves empty shell unchanged; closes n=0 corner the cluster-1 n=2 pin doesn't enumerate, mirror of session 160 LN n=0 pin); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+
+  // ---- LNP1 n=0 empty Tagged-of-List: :l:{ } LNP1 → :l:{ }.
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([])));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 0,
+      `session162: :l:{ } LNP1 → :l:{ } (n=0 empty-List under Tagged composition on LNP1: outer tag preserved across empty inner List dispatch through 3-deep wrapper; mirror of session 160 LN T+L n=0 pin lifted onto LNP1 dual); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- LNP1 n=1 single-element bare-List: { Real(0) } LNP1 →
+  //      { Real(0) }.  Distinct from cluster-1 n=2 pin — the n=1
+  //      case guards against a refactor that special-cases n=1 to
+  //      the bare-scalar code path and bypasses the
+  //      `_withListUnary` wrapper.  Closes the n=1 shoulder
+  //      between this cluster's n=0 pin and cluster-1's n=2 pin.
+  {
+    const s = new Stack();
+    s.push(RList([Real(0)]));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isReal(v.items[0]) && v.items[0].value.eq(0),
+      `session162: { Real(0) } LNP1 → { Real(0) } (n=1 single-element boundary on bare _withListUnary; pins per-element Math.log1p fold runs through the wrapper for n=1 — guards against refactor that bypasses wrapper for singleton on LNP1 axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXPM n=0 empty-List boundary: { } EXPM → { }.
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session162: { } EXPM → { } (n=0 empty-List boundary on bare _withListUnary — EXPM wrapper preserves empty shell unchanged; closes n=0 corner on EXPM dual, mirror of session 160 LN n=0 pin); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+
+  // ---- EXPM n=0 empty Tagged-of-List: :l:{ } EXPM → :l:{ }.
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([])));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 0,
+      `session162: :l:{ } EXPM → :l:{ } (n=0 empty-List under Tagged composition on EXPM: outer tag preserved across empty inner List dispatch through 3-deep wrapper — closes the LNP1/EXPM dual pair on the n=0 T+L boundary); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- EXPM n=1 single-element bare-List: { Real(0) } EXPM →
+  //      { Real(0) }.  Pins n=1 shoulder on EXPM — closes the
+  //      LNP1/EXPM dual pair on the n=1 boundary (LNP1 above).
+  {
+    const s = new Stack();
+    s.push(RList([Real(0)]));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isReal(v.items[0]) && v.items[0].value.eq(0),
+      `session162: { Real(0) } EXPM → { Real(0) } (n=1 single-element boundary on bare _withListUnary; pins per-element Math.expm1 fold runs through the wrapper for n=1 — closes LNP1/EXPM dual pair on n=1 shoulder); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ============================================================
+  // session164 — LNP1 / EXPM session-162 follow-up edges that the
+  // s162 cluster-1 pin-set did not enumerate.  Three pins:
+  //
+  //   (1) LNP1 boundary-throw under Tagged-of-List composition —
+  //       s162 pinned `{ Real(-1) } LNP1 → throws Infinite result`
+  //       on bare-List but did NOT pin the same throw under the
+  //       3-deep wrapper's Tagged peel.  This pin lifts the
+  //       boundary-throw propagation contract onto the T+L
+  //       composition (outer Tagged peel, then the inner bare-List
+  //       wrapper's `apply` loop propagates the inner handler's
+  //       `RPLError('Infinite result')` through both wrappers
+  //       without swallowing).  Catches a refactor that special-
+  //       cases a Tagged outer to swallow inner throws (e.g., a
+  //       try/catch in `_withTaggedUnary` that re-tags an error
+  //       value instead of re-throwing).
+  //
+  //   (2) LNP1 heterogeneous-output mixed-input under Tagged-of-
+  //       List — s162 pinned bare-List `{ Real(-0.5) Real(0) }
+  //       LNP1 → { Real(log1p(-0.5)) Real(0) }` but the same
+  //       heterogeneous pin under Tagged composition was unpinned.
+  //       Lifts the per-element wrapper-dispatch evidence onto the
+  //       T+L composition: outer tag preserved + per-element
+  //       distinct-value output (NOT a uniform-output short-circuit
+  //       under Tagged peel).
+  //
+  //   (3) EXPM heterogeneous-output mixed-input under Tagged-of-
+  //       List — companion to LNP1 pin (2); closes the LNP1/EXPM
+  //       dual pair on the T+L heterogeneous-output axis.  s162
+  //       only pinned EXPM bare-List heterogeneous; the Tagged-of-
+  //       List heterogeneous case is the symmetric closure.
+
+  // ---- LNP1 boundary-throw under Tagged-of-List: :l:{ Real(-1) }
+  //      LNP1 → throws Infinite result.
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Real(-1)])));
+    let threw = null;
+    try { lookup('LNP1').fn(s); } catch (e) { threw = e; }
+    assert(threw && /Infinite result/.test(threw.message),
+      `session164: :l:{ Real(-1) } LNP1 throws Infinite result (boundary log1p(-1) = -∞ propagates through Tagged peel + bare _withListUnary's apply loop — wrappers do NOT swallow inner throw under Tagged-of-List composition; mirror of s162 bare-List boundary pin lifted onto T+L); got ${threw?.message ?? 'no throw'}`);
+  }
+
+  // ---- LNP1 heterogeneous-output mixed-input under Tagged-of-List:
+  //      :n:{ Real(-0.5) Real(0) } LNP1 → :n:{ Real(log1p(-0.5))
+  //      Real(0) }.  Distinct values per List position pin per-
+  //      element wrapper dispatch under Tagged composition.
+  {
+    const s = new Stack();
+    s.push(Tagged('n', RList([Real(-0.5), Real(0)])));
+    lookup('LNP1').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'n'
+        && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0])
+        && Math.abs(v.value.items[0].value.toNumber() - Math.log1p(-0.5)) < 1e-12
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session164: :n:{ Real(-0.5) Real(0) } LNP1 → :n:{ Real(log1p(-0.5)) Real(0) } (heterogeneous-output-value pin under Tagged-of-List composition on LNP1 — outer tag preserved + distinct values per List position via per-element wrapper dispatch; mirror of s162 bare-List heterogeneous pin lifted onto T+L); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXPM heterogeneous-output mixed-input under Tagged-of-List:
+  //      :e:{ Real(1) Real(0) } EXPM → :e:{ Real(expm1(1))
+  //      Real(0) }.  Companion to LNP1 pin above; closes the
+  //      LNP1/EXPM dual pair on the T+L heterogeneous-output axis.
+  {
+    const s = new Stack();
+    s.push(Tagged('e', RList([Real(1), Real(0)])));
+    lookup('EXPM').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'e'
+        && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0])
+        && Math.abs(v.value.items[0].value.toNumber() - Math.expm1(1)) < 1e-12
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session164: :e:{ Real(1) Real(0) } EXPM → :e:{ Real(expm1(1)) Real(0) } (heterogeneous-output-value pin under Tagged-of-List composition on EXPM — closes LNP1/EXPM dual pair on the T+L heterogeneous-output axis; mirror of s162 bare-List heterogeneous pin lifted onto T+L); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ============================================================
+  // session166 — Cluster 1: LOG / EXP / ALOG n=0 empty-List + n=1
+  // single-element boundary closures on the bare-List + Tagged-of-List
+  // wrapper composition.
+  //
+  // Session 160 added n=0 / n=1 boundary pins on the LN axis only —
+  // explicit single-cluster scope.  Session 162 lifted those n=0 / n=1
+  // boundary closures onto the LNP1 / EXPM dual pair (which bypasses
+  // `_unaryCx` entirely — different code path).  But the LOG / EXP /
+  // ALOG trio (the remaining three ops in the session-158 `_unaryCx`-
+  // routed quartet) was never explicitly pinned for n=0 / n=1.  The
+  // matrix has carried L ✓ T ✓ on these ops since session 100/105's
+  // wrapper-VM cleanup, but session 158's L+T pin set used n=2 / n=3
+  // homogeneous + heterogeneous cases without enumerating the n=0
+  // empty-List shoulder or the n=1 single-element shoulder.
+  //
+  // This cluster closes the LOG / EXP / ALOG trio on the n=0 / n=1
+  // boundary axes — same code path as the session-160 LN n=0 / n=1
+  // pins, lifted onto the remaining three ops in the quartet that
+  // routes through `_unaryCx` (`ops.js:7984`).  Pure pinning: no
+  // source-side change.  Mirror of session 162 Cluster 2's structure.
+  //
+  // Why these boundary pins matter: the session-158 n=2 / n=3 pins
+  // can't catch a refactor that special-cases n=0 (e.g. early-return
+  // an empty list to bypass the wrapper) or n=1 (e.g. unwrap to bare
+  // scalar before dispatch).  The n=0 / n=1 pins guard those
+  // shoulders explicitly.
+
+  // ---- LOG bare-List n=0: { } LOG → { } ----
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session166: { } LOG → { } (n=0 empty-List boundary on bare _withListUnary on LOG axis — wrapper preserves empty shell unchanged; closes the boundary the s158 n=2/n=3 pins do not enumerate; mirror of s160 LN n=0 pin lifted onto LOG); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+
+  // ---- LOG Tagged-of-List n=0: :l:{ } LOG → :l:{ } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 0,
+      `session166: :l:{ } LOG → :l:{ } (n=0 empty-List under Tagged composition on LOG: outer tag preserved across empty inner List dispatch through 3-deep wrapper; mirror of s160 LN T+L n=0 pin lifted onto LOG); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- LOG bare-List n=1: { Integer(10) } LOG → { Integer(1) } ----
+  // Single-element boundary; pins per-element EXACT-mode integer-
+  // clean fold runs through the wrapper for n=1 — guards against a
+  // refactor that bypasses the wrapper for singletons.  log10(10)=1
+  // integer-clean → Integer(1).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(10n)]));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isInteger(v.items[0]) && v.items[0].value === 1n,
+      `session166: { Integer(10) } LOG → { Integer(1) } (n=1 single-element boundary on bare _withListUnary on LOG; pins per-element EXACT-mode integer-clean fold runs through the wrapper for n=1 — guards against refactor that bypasses wrapper for singleton); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LOG Tagged-of-List n=1: :l:{ Integer(10) } LOG
+  //      → :l:{ Integer(1) } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Integer(10n)])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 1
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 1n,
+      `session166: :l:{ Integer(10) } LOG → :l:{ Integer(1) } (n=1 single-element under Tagged-of-List composition on LOG; outer tag preserved + inner per-element EXACT integer-clean fold for the singleton); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXP bare-List n=0: { } EXP → { } ----
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session166: { } EXP → { } (n=0 empty-List boundary on bare _withListUnary on EXP axis — wrapper preserves empty shell unchanged; closes EXP n=0 corner that s158 n=2 pin does not enumerate); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+
+  // ---- EXP Tagged-of-List n=0: :l:{ } EXP → :l:{ } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([])));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 0,
+      `session166: :l:{ } EXP → :l:{ } (n=0 empty-List under Tagged composition on EXP: outer tag preserved across empty inner List dispatch); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- EXP bare-List n=1: { Integer(0) } EXP → { Integer(1) } ----
+  // exp(0)=1 integer-clean → Integer(1) per element under bare-List
+  // wrapper for n=1.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(0n)]));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isInteger(v.items[0]) && v.items[0].value === 1n,
+      `session166: { Integer(0) } EXP → { Integer(1) } (n=1 single-element boundary on bare _withListUnary on EXP; non-zero integer output pins inner EXP handler ran via the wrapper for n=1); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXP Tagged-of-List n=1: :l:{ Integer(0) } EXP
+  //      → :l:{ Integer(1) } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Integer(0n)])));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 1
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 1n,
+      `session166: :l:{ Integer(0) } EXP → :l:{ Integer(1) } (n=1 single-element under Tagged-of-List on EXP; outer tag preserved + per-element EXACT integer-clean fold); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ALOG bare-List n=0: { } ALOG → { } ----
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session166: { } ALOG → { } (n=0 empty-List boundary on bare _withListUnary on ALOG axis — wrapper preserves empty shell unchanged; closes ALOG n=0 corner that s158 n=3 pin does not enumerate); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+
+  // ---- ALOG Tagged-of-List n=0: :l:{ } ALOG → :l:{ } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([])));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 0,
+      `session166: :l:{ } ALOG → :l:{ } (n=0 empty-List under Tagged composition on ALOG: outer tag preserved across empty inner List dispatch); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- ALOG bare-List n=1: { Integer(2) } ALOG → { Integer(100) } ----
+  // 10^2=100 integer-clean (high-magnitude relative to LN/EXP n=1
+  // pin) — pins `_exactUnaryLift`'s BigInt round-trip per element
+  // under bare-List wrapper for n=1.
+  {
+    const s = new Stack();
+    s.push(RList([Integer(2n)]));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isInteger(v.items[0]) && v.items[0].value === 100n,
+      `session166: { Integer(2) } ALOG → { Integer(100) } (n=1 single-element boundary on bare _withListUnary on ALOG; high-magnitude integer output pins _exactUnaryLift's BigInt round-trip ran via the wrapper for n=1); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ALOG Tagged-of-List n=1: :l:{ Integer(2) } ALOG
+  //      → :l:{ Integer(100) } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Integer(2n)])));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 1
+        && isInteger(v.value.items[0]) && v.value.items[0].value === 100n,
+      `session166: :l:{ Integer(2) } ALOG → :l:{ Integer(100) } (n=1 single-element under Tagged-of-List on ALOG; outer tag preserved + per-element high-magnitude integer-clean fold); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ============================================================
+  // session166 — Cluster 2: ATANH n=0 + ACOSH/ATANH n=1 boundary
+  // closures + ACOSH/ATANH Tagged-of-List n=0 closures on the
+  // direct-registered (non-`_unaryCx`) wrapper shape.
+  //
+  // Session 160 added an n=0 boundary pin on ACOSH (`{ } ACOSH →
+  // { }`) but did NOT pin (a) the symmetric ATANH n=0 case, (b)
+  // either op's Tagged-of-List n=0 case (`:h:{ } ACOSH/ATANH`),
+  // or (c) the n=1 single-element shoulder on either op.  These
+  // ops dispatch through a bespoke direct-registered composition
+  // shape (not `_unaryCx`), so the n=0 / n=1 boundary closures
+  // need explicit pinning on this shape — they aren't covered by
+  // the session-160 LN-axis pins or the session-162 LNP1/EXPM
+  // pins, which run through different code paths.
+  //
+  // This cluster mirrors the structure of session 162 Cluster 2
+  // (the LNP1 / EXPM n=0 / n=1 closures on a different
+  // direct-registered wrapper) onto the inverse-hyp pair —
+  // closing the n=0 / n=1 boundary axes on ACOSH / ATANH.
+
+  // ---- ATANH bare-List n=0: { } ATANH → { } ----
+  // Symmetric to session 160's ACOSH n=0 pin lifted onto ATANH.
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session166: { } ATANH → { } (n=0 empty-List boundary on direct-registered ATANH bare wrapper; symmetric to s160 ACOSH n=0 pin lifted onto ATANH — closes ATANH n=0 corner that s158 n=2 pins do not enumerate); got ${v?.type} items.length=${v?.items?.length}`);
+  }
+
+  // ---- ACOSH Tagged-of-List n=0: :h:{ } ACOSH → :h:{ } ----
+  // Lifts session 160's bare-List ACOSH n=0 pin onto Tagged-of-
+  // List composition on the direct-registered wrapper shape.
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([])));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h'
+        && isList(v.value) && v.value.items.length === 0,
+      `session166: :h:{ } ACOSH → :h:{ } (n=0 empty-List under Tagged-of-List composition on direct-registered ACOSH; outer tag preserved across empty inner List dispatch through 3-deep wrapper — closes ACOSH T+L n=0 corner that s158/s160 do not enumerate); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- ATANH Tagged-of-List n=0: :h:{ } ATANH → :h:{ } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([])));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h'
+        && isList(v.value) && v.value.items.length === 0,
+      `session166: :h:{ } ATANH → :h:{ } (n=0 empty-List under Tagged-of-List composition on direct-registered ATANH; outer tag preserved across empty inner — closes ATANH T+L n=0 corner); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+  }
+
+  // ---- ACOSH bare-List n=1 (Real): { Real(1) } ACOSH → { Real(0) } ----
+  // acosh(1)=0 boundary value — the same value session 158's bare-List
+  // ACOSH pin uses but at the n=1 shoulder (singleton, distinct from
+  // s158's n=2 pin).  Pins per-element wrapper dispatch fires for n=1
+  // and does NOT bypass the wrapper to scalar handler.
+  {
+    const s = new Stack();
+    s.push(RList([Real(1)]));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isReal(v.items[0]) && v.items[0].value.eq(0),
+      `session166: { Real(1) } ACOSH → { Real(0) } (n=1 single-element boundary on bare _withListUnary on direct-registered ACOSH; pins per-element acosh(1)=0 fold runs through the wrapper for n=1 — guards against singleton bypass refactor); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ATANH bare-List n=1 (Real): { Real(0) } ATANH → { Real(0) } ----
+  // atanh(0)=0 trivial — n=1 shoulder for ATANH.
+  {
+    const s = new Stack();
+    s.push(RList([Real(0)]));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 1
+        && isReal(v.items[0]) && v.items[0].value.eq(0),
+      `session166: { Real(0) } ATANH → { Real(0) } (n=1 single-element boundary on bare _withListUnary on direct-registered ATANH; pins per-element atanh(0)=0 fold runs through the wrapper for n=1); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ACOSH Tagged-of-List n=1: :h:{ Real(1) } ACOSH
+  //      → :h:{ Real(0) } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([Real(1)])));
+    lookup('ACOSH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h'
+        && isList(v.value) && v.value.items.length === 1
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(0),
+      `session166: :h:{ Real(1) } ACOSH → :h:{ Real(0) } (n=1 single-element under Tagged-of-List composition on direct-registered ACOSH; outer tag preserved + per-element acosh(1)=0 fold for the singleton); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ATANH Tagged-of-List n=1: :h:{ Real(0) } ATANH
+  //      → :h:{ Real(0) } ----
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([Real(0)])));
+    lookup('ATANH').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h'
+        && isList(v.value) && v.value.items.length === 1
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(0),
+      `session166: :h:{ Real(0) } ATANH → :h:{ Real(0) } (n=1 single-element under Tagged-of-List composition on direct-registered ATANH; outer tag preserved + per-element atanh(0)=0 fold for the singleton — closes ACOSH/ATANH dual on the T+L n=1 boundary); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ============================================================
+  // session168 — LOG / EXP / ALOG heterogeneous-output mixed-input
+  // pinning under bare-List + Tagged-of-List composition.
+  //
+  // Session 166 closed the n=0 empty-List + n=1 single-element
+  // boundary on LOG / EXP / ALOG.  Session 162 (LNP1 / EXPM dual
+  // pair) and session 164 (LNP1 / EXPM Tagged-of-List heterogeneous
+  // edges) closed the heterogeneous-output mixed-input axis on
+  // their respective dual pair.  The same heterogeneous-output
+  // axis on the LOG / EXP / ALOG trio was deliberately deferred
+  // by session 166 (its scope was n=0 / n=1 boundary closures
+  // only).
+  //
+  // This cluster lifts session 162's bare-List heterogeneous
+  // mixed-input pattern + session 164's Tagged-of-List
+  // heterogeneous mixed-input pattern onto the LOG / EXP / ALOG
+  // trio.  Each pin uses a 2-element input where the elements
+  // have distinct values (NOT a uniform-output short-circuit) so
+  // the per-element wrapper-dispatch path is exercised end-to-end.
+  // Mixed boundary inputs include the natural identity points
+  // (LOG(1)=0, EXP(0)=1, ALOG(0)=1) paired with a non-identity
+  // value to surface per-position output divergence.
+  //
+  // 6 pins total: 3 ops × 2 axes (bare-List + Tagged-of-List).
+  // ============================================================
+
+  // ---- LOG bare-List heterogeneous mixed-input:
+  //      { Real(10) Real(1) } LOG → { Real(1) Real(0) }.
+  //      LOG(10) = 1, LOG(1) = 0 — distinct values per List
+  //      position.  Pins per-element wrapper dispatch under bare
+  //      _withListUnary on the LOG axis; mirror of session 162's
+  //      EXPM heterogeneous-output bare-List pin lifted onto LOG.
+  {
+    const s = new Stack();
+    s.push(RList([Real(10), Real(1)]));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(1)
+        && isReal(v.items[1]) && v.items[1].value.eq(0),
+      `session168: { Real(10) Real(1) } LOG → { Real(1) Real(0) } (heterogeneous-output-value pin under bare _withListUnary on LOG axis — distinct values per List position pin per-element wrapper dispatch; mirror of s162 EXPM bare-List heterogeneous pin lifted onto LOG); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- LOG Tagged-of-List heterogeneous mixed-input:
+  //      :l:{ Real(10) Real(1) } LOG → :l:{ Real(1) Real(0) }.
+  //      Outer tag preserved + per-element distinct-value output
+  //      via per-element wrapper dispatch under Tagged composition.
+  //      Mirror of session 164's LNP1 T+L heterogeneous pin onto LOG.
+  {
+    const s = new Stack();
+    s.push(Tagged('l', RList([Real(10), Real(1)])));
+    lookup('LOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'l'
+        && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(1)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(0),
+      `session168: :l:{ Real(10) Real(1) } LOG → :l:{ Real(1) Real(0) } (heterogeneous-output-value pin under Tagged-of-List composition on LOG — outer tag preserved + distinct values per List position via per-element wrapper dispatch; mirror of s164 LNP1 T+L heterogeneous pin lifted onto LOG); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXP bare-List heterogeneous mixed-input:
+  //      { Real(0) Real(1) } EXP → { Real(1) Real(e) }.
+  //      EXP(0) = 1, EXP(1) = e — distinct values per List
+  //      position pin per-element wrapper dispatch on EXP.
+  {
+    const s = new Stack();
+    s.push(RList([Real(0), Real(1)]));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    const expectedE = Math.E;
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(1)
+        && isReal(v.items[1]) && Math.abs(v.items[1].value.toNumber() - expectedE) < 1e-12,
+      `session168: { Real(0) Real(1) } EXP → { Real(1) Real(e) } (heterogeneous-output-value pin under bare _withListUnary on EXP axis — distinct values per List position pin per-element wrapper dispatch; mirror of s162 EXPM heterogeneous pin lifted onto EXP); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- EXP Tagged-of-List heterogeneous mixed-input:
+  //      :e:{ Real(0) Real(1) } EXP → :e:{ Real(1) Real(e) }.
+  //      Outer tag preserved + per-element distinct-value output.
+  {
+    const s = new Stack();
+    s.push(Tagged('e', RList([Real(0), Real(1)])));
+    lookup('EXP').fn(s);
+    const v = s.peek();
+    const expectedE = Math.E;
+    assert(isTagged(v) && v.tag === 'e'
+        && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(1)
+        && isReal(v.value.items[1]) && Math.abs(v.value.items[1].value.toNumber() - expectedE) < 1e-12,
+      `session168: :e:{ Real(0) Real(1) } EXP → :e:{ Real(1) Real(e) } (heterogeneous-output-value pin under Tagged-of-List composition on EXP — outer tag preserved + distinct values per List position; mirror of s164 EXPM T+L heterogeneous pin lifted onto EXP); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ALOG bare-List heterogeneous mixed-input:
+  //      { Real(0) Real(1) } ALOG → { Real(1) Real(10) }.
+  //      ALOG(0) = 1, ALOG(1) = 10 — distinct values per List
+  //      position pin per-element wrapper dispatch on ALOG.
+  {
+    const s = new Stack();
+    s.push(RList([Real(0), Real(1)]));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 2
+        && isReal(v.items[0]) && v.items[0].value.eq(1)
+        && isReal(v.items[1]) && v.items[1].value.eq(10),
+      `session168: { Real(0) Real(1) } ALOG → { Real(1) Real(10) } (heterogeneous-output-value pin under bare _withListUnary on ALOG axis — distinct values per List position pin per-element wrapper dispatch; closes the LOG/EXP/ALOG trio on the heterogeneous bare-List axis); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ---- ALOG Tagged-of-List heterogeneous mixed-input:
+  //      :a:{ Real(0) Real(1) } ALOG → :a:{ Real(1) Real(10) }.
+  //      Outer tag preserved + per-element distinct-value output —
+  //      closes the LOG/EXP/ALOG trio on the heterogeneous T+L axis.
+  {
+    const s = new Stack();
+    s.push(Tagged('a', RList([Real(0), Real(1)])));
+    lookup('ALOG').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'a'
+        && isList(v.value) && v.value.items.length === 2
+        && isReal(v.value.items[0]) && v.value.items[0].value.eq(1)
+        && isReal(v.value.items[1]) && v.value.items[1].value.eq(10),
+      `session168: :a:{ Real(0) Real(1) } ALOG → :a:{ Real(1) Real(10) } (heterogeneous-output-value pin under Tagged-of-List composition on ALOG — outer tag preserved + distinct values per List position; closes the LOG/EXP/ALOG trio on the heterogeneous T+L axis — completes the s166 cluster's deferred heterogeneous-output axis); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
 }
 

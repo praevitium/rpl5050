@@ -6622,6 +6622,25 @@ register('TYPE', (s) => {
                                                      split is the job of
                                                      MANT / XPON (AUR
                                                      p.3-6 / p.3-9).
+     BinaryInteger #n    → #n                      ← Same AUR-fidelity
+                                                     choice as Real /
+                                                     Integer: §3-149
+                                                     lists no row, so
+                                                     push back unchanged
+                                                     rather than
+                                                     auto-converting to
+                                                     Real (that's what
+                                                     B→R is for, AUR
+                                                     p.3-46) or rejecting
+                                                     with `Bad argument
+                                                     type`.
+     Rational  n/d       → n/d                     ← Same as above; the
+                                                     N/D split lives at
+                                                     →NUM (numerator) /
+                                                     →DEN (denominator)
+                                                     where applicable.
+                                                     Push back unchanged
+                                                     here.
      Unit  x_unit        → x  1_unit                ← AUR §3-149 row.
                                                      The bare numeric
                                                      value rides level 2
@@ -6724,16 +6743,21 @@ register('OBJ→', (s) => {
     for (const item of _symbolicDecompose(v)) s.push(item);
     return;
   }
-  if (isReal(v) || isInteger(v)) {
+  if (isReal(v) || isInteger(v) || isBinaryInteger(v) || isRational(v)) {
     // HP50 AUR §3-149 lists no numeric-scalar entry in the OBJ→ table —
-    // a Real or Integer has no internal structure to decompose into
-    // separate stack items.  AUR-fidelity choice is to push the value
-    // back unchanged (1-in / 1-out).  Users who want the mantissa /
-    // exponent split should reach for MANT (AUR p.3-6) and XPON (AUR
-    // p.3-9) directly — those ops are wired separately and unaffected
+    // a Real, Integer, BinaryInteger, or Rational has no internal
+    // structure to decompose into separate stack items.  AUR-fidelity
+    // choice is to push the value back unchanged (1-in / 1-out).
+    // Users who want format-specific splits should reach for MANT /
+    // XPON (Real, AUR p.3-6 / p.3-9) or B→R (BinaryInteger → Real,
+    // AUR p.3-46).  All those ops are wired separately and unaffected
     // by this branch.  Prior versions did the mantissa/exponent split
-    // here; that was an HP50-divergence noted in REVIEW.md R-008 and
-    // closed in this revision.
+    // for Real here; that was an HP50-divergence noted in REVIEW.md
+    // R-008 and closed session 155.  BinaryInteger and Rational
+    // formerly fell through to the trailing `Bad argument type` throw
+    // — a divergence from the AUR-fidelity choice the Real/Integer
+    // branch already made; closed by extending the same branch to
+    // cover all four numeric-scalar shapes.
     s.push(v);
     return;
   }
@@ -9251,8 +9275,13 @@ register('ORDER', (s) => {
               an identity, but we return a freshly-constructed clone so
               reference-equality (`===`) with the pre-op value is false.
               Composite containers (List / Vector / Matrix) are rebuilt
-              shallowly; scalar atoms are re-wrapped via their
-              constructor to produce a new object.
+              shallowly; scalar atoms (Real / Integer / BinaryInteger /
+              Rational / Complex) are re-wrapped via their constructor
+              to produce a new object.  Directory and Grob fall through
+              the enumerated branches and return identity — Directories
+              are live mutable containers (NEWOB has no useful semantics
+              there) and Grobs flow through their dedicated value-copy
+              ops, not the generic NEWOB path.
      MEM    ( → mem-free )
             — available memory.  HP50 reports the free Port 0 / Port 1
               bytes.  Our sentinel: Real(Number.MAX_SAFE_INTEGER) — big
@@ -9281,6 +9310,7 @@ function _newObCopy(v) {
   if (isReal(v))    return Real(v.value);
   if (isInteger(v)) return Integer(v.value);
   if (isBinaryInteger(v)) return BinaryInteger(v.value, v.base);
+  if (isRational(v)) return Rational(v.n, v.d);
   if (isComplex(v)) return Complex(v.re, v.im);
   if (isString(v))  return Str(v.value);
   if (isName(v))    return Name(v.id, { local: v.local, quoted: v.quoted });
@@ -9291,8 +9321,20 @@ function _newObCopy(v) {
   if (isProgram(v)) return { type: 'program', tokens: Object.freeze([...v.tokens]) };
   if (isTagged(v))  return Tagged(v.tag, v.value);
   if (isUnit(v))    return Unit(v.value, v.uexpr);
-  // Directory or anything unknown: return as-is (NEWOB on a Directory is
-  // meaningless — it's already a live mutable container).
+  // Directory or anything unknown: return as-is.  NEWOB on a Directory
+  // is meaningless (a Directory is a live mutable container, not a
+  // pass-by-reference value the way HP50 NEWOB is meant to "decouple").
+  // Grob is also intentionally not enumerated — graphics objects flow
+  // through the dedicated Grob ops, not the value-copy machinery.  The
+  // Rational branch above closes a session-167 audit-driven asymmetry:
+  // every other numeric-scalar shape (Real, Integer, BinaryInteger) was
+  // already enumerated, so a Rational reaching this fall-through and
+  // sharing identity with the input was the lone outlier vs. the
+  // session-163 OBJ→ widening that brought BinInt and Rational into
+  // the OBJ→ push-back branch.  NEWOB's contract per HP50 AUR §3-130
+  // is "force a new copy"; for an immutable frozen Rational this is
+  // observable only through `===` identity, which is what the test
+  // suite pins below.
   return v;
 }
 
