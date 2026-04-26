@@ -11032,3 +11032,195 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     'session256: "hello" R(5) < → Bad argument type (S×R; String arm requires both-String)');
 }
 
+
+/* ================================================================
+   Session 258 — BinaryInteger (B column) rejection pins
+   ---------------------------------------------------------------
+   The coverage matrix carried `·` (untested) in the B column for
+   a wide range of unary and binary scalar ops.  All of these ops
+   dispatch through handlers that require `isReal`, `isInteger`,
+   `isRational`, or `isComplex` — none of which match BinaryInteger.
+   BinaryInteger is accepted on the binary arithmetic surface
+   (+/-/*// via the BinInt fast path) and by the rounding family
+   (FLOOR/CEIL/IP/FP — B=✓ already pinned in session 087), but
+   NOT by the general numeric-math surface.
+
+   Probe file: `utils/@probe-binary-int.mjs` — all 22 cells
+   returned `Bad argument type` before pinning.
+
+   Matrix cells updated: 22 cells, all `·`→`✗`:
+     INV / SQ / SQRT / ABS / SIN..ATANH (group) /
+     FACT / LN..ALOG (group) / LNP1 / EXPM /
+     SIGN / ARG /
+     MOD / MIN / MAX / GCD / LCM / % / %T / %CH /
+     CONJ / RE / IM
+   ================================================================ */
+{
+  // --- Unary math ops — BinaryInteger rejected ----------------
+
+  // INV
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('INV').fn(s), /Bad argument type/i,
+      'session258: INV BinaryInteger → Bad argument type (B=✗; no isB branch in _invScalar)');
+  }
+  // SQ
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('SQ').fn(s), /Bad argument type/i,
+      'session258: SQ BinaryInteger → Bad argument type (B=✗; _sqScalar requires numeric scalar)');
+  }
+  // SQRT
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('SQRT').fn(s), /Bad argument type/i,
+      'session258: SQRT BinaryInteger → Bad argument type (B=✗; toRealOrThrow rejects BinInt)');
+  }
+  // ABS
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('ABS').fn(s), /Bad argument type/i,
+      'session258: ABS BinaryInteger → Bad argument type (B=✗; _absScalar isReal/isInteger/isRational/isComplex only)');
+  }
+  // SIN — representative for the grouped SIN..ACOSH..ATANH row
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('SIN').fn(s), /Bad argument type/i,
+      'session258: SIN BinaryInteger → Bad argument type (B=✗; _unaryCx→toRealOrThrow rejects BinInt; representative for trig/hyp group)');
+  }
+  // FACT
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('FACT').fn(s), /Bad argument type/i,
+      'session258: FACT BinaryInteger → Bad argument type (B=✗; _factScalar isReal/isInteger only)');
+  }
+  // LN — representative for grouped LN / LOG / EXP / ALOG row
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('LN').fn(s), /Bad argument type/i,
+      'session258: LN BinaryInteger → Bad argument type (B=✗; _unaryCx→toRealOrThrow rejects BinInt; representative for LN/LOG/EXP/ALOG group)');
+  }
+  // LNP1
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('LNP1').fn(s), /Bad argument type/i,
+      'session258: LNP1 BinaryInteger → Bad argument type (B=✗; toRealOrThrow rejects BinInt)');
+  }
+  // EXPM
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('EXPM').fn(s), /Bad argument type/i,
+      'session258: EXPM BinaryInteger → Bad argument type (B=✗; toRealOrThrow rejects BinInt)');
+  }
+  // SIGN
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('SIGN').fn(s), /Bad argument type/i,
+      'session258: SIGN BinaryInteger → Bad argument type (B=✗; _signScalar isReal/isInteger/isRational/isComplex only)');
+  }
+  // ARG
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('ARG').fn(s), /Bad argument type/i,
+      'session258: ARG BinaryInteger → Bad argument type (B=✗; _argScalar isReal/isInteger only)');
+  }
+  // CONJ
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('CONJ').fn(s), /Bad argument type/i,
+      'session258: CONJ BinaryInteger → Bad argument type (B=✗; _conjScalar isReal/isInteger/isRational/isComplex/isName/isSym only)');
+  }
+  // RE
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('RE').fn(s), /Bad argument type/i,
+      'session258: RE BinaryInteger → Bad argument type (B=✗; _reScalar same dispatch as _conjScalar)');
+  }
+  // IM
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    assertThrows(() => lookup('IM').fn(s), /Bad argument type/i,
+      'session258: IM BinaryInteger → Bad argument type (B=✗; _imScalar same dispatch; Integer(0) branch not reached for BinInt)');
+  }
+
+  // --- Binary math ops — BinaryInteger rejected on both sides -
+
+  // MOD
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('MOD').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) MOD → Bad argument type (B=✗; toRealOrThrow rejects BinInt in _modScalar)');
+  }
+  // MIN
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('MIN').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) MIN → Bad argument type (B=✗; _minMaxScalar requires isNumber)');
+  }
+  // MAX
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('MAX').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) MAX → Bad argument type (B=✗; _minMaxScalar requires isNumber)');
+  }
+  // GCD
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('GCD').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) GCD → Bad argument type (B=✗; _toBigIntOrThrow no isBinaryInteger branch)');
+  }
+  // LCM
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('LCM').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) LCM → Bad argument type (B=✗; same _toBigIntOrThrow guard as GCD)');
+  }
+  // %
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('%').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) % → Bad argument type (B=✗; toRealOrThrow rejects BinInt in percent handler)');
+  }
+  // %T
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('%T').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) %T → Bad argument type (B=✗; same toRealOrThrow path as %)');
+  }
+  // %CH
+  {
+    const s = new Stack();
+    s.push(BinaryInteger(10n, 'h'));
+    s.push(BinaryInteger(5n, 'h'));
+    assertThrows(() => lookup('%CH').fn(s), /Bad argument type/i,
+      'session258: B(10) B(5) %CH → Bad argument type (B=✗; same toRealOrThrow path as %)');
+  }
+}
