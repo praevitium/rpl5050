@@ -96,6 +96,12 @@ class App {
     const sidePanelRoot = document.getElementById('sidePanelRoot');
     if (sidePanelRoot) {
       this.sidePanel = new SidePanel({ root: sidePanelRoot, app: this });
+      // Re-render the History tab whenever a new entry is committed.
+      // subscribeHistory fires only on actual additions (not every keystroke),
+      // and refresh() is a no-op when the panel is closed or on another tab.
+      this.entry.subscribeHistory(() => {
+        if (this.sidePanel?.tab === 'history') this.sidePanel.refresh();
+      });
     }
 
     this._installChromeToggles();

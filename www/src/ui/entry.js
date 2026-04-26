@@ -47,6 +47,7 @@ export class Entry {
     this._view = null;
     this.error = '';                       // last error message (for LCD)
     this._listeners = new Set();
+    this._historyListeners = new Set();
     this.onError = options.onError || ((msg) => { this.error = msg; this._emit(); });
     this._history = [];
   }
@@ -185,7 +186,12 @@ export class Entry {
   hasFocus() { return !!this._view?.hasFocus; }
 
   subscribe(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
+  /** Subscribe to history-ring changes only.  Fires after a new entry is
+   *  successfully recorded — i.e. after ENTER / execOp commit, not on
+   *  every keystroke.  Returns an unsubscribe function. */
+  subscribeHistory(fn) { this._historyListeners.add(fn); return () => this._historyListeners.delete(fn); }
   _emit() { for (const fn of this._listeners) fn(this); }
+  _emitHistory() { for (const fn of this._historyListeners) fn(this); }
 
   /** Append raw text at the cursor.  Pulls keyboard focus into the
    *  editor so physical typing flows straight in after a virtual-key or
@@ -345,6 +351,7 @@ export class Entry {
     if (this._history.length > Entry.HISTORY_MAX) {
       this._history.splice(0, this._history.length - Entry.HISTORY_MAX);
     }
+    this._emitHistory();
   }
 
   /** Public snapshot of the command history, newest entry LAST.  The

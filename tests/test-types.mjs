@@ -9518,3 +9518,203 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+/* ================================================================
+   Session 191 — HEAVISIDE / DIRAC  L / V / M / T wrapper-add
+   Both ops wrapped with _withTaggedUnary(_withListUnary(_withVMUnary(…)))
+   matching the same 3-deep composition used by XPON/MANT (session 187).
+   HEAVISIDE: step function — scalar arm returns Real(1)/Real(0) or
+   Integer(1)/Integer(0) depending on input type.  DIRAC: impulse —
+   non-zero scalar folds to Real(0)/Integer(0); x=0 lifts to Symbolic.
+   ================================================================ */
+{
+  /* ---- Cluster 1: HEAVISIDE L/V/M/T ---- */
+
+  // n=0 empty-List — bare axis
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session191: { } HEAVISIDE → { } (n=0 bare List passthrough; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // n=0 empty-List — Tagged-of-List axis
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([])));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'h' && isList(v.value) && v.value.items.length === 0,
+      `session191: :h:{ } HEAVISIDE → :h:{ } (n=0 Tagged-of-List; got tag=${v?.tag} type=${v?.value?.type})`);
+  }
+
+  // n=1 bare List — value-precise: HEAVISIDE(2)=1
+  {
+    const s = new Stack();
+    s.push(RList([Real(2)]));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    const item = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 && isReal(item) && item.value.toNumber() === 1,
+      `session191: { Real(2) } HEAVISIDE → { Real(1) } (n=1 bare List; got item=${item?.value?.toString()})`);
+  }
+
+  // n=2 heterogeneous bare List — HEAVISIDE(2)=1, HEAVISIDE(-1)=0 distinct per slot
+  {
+    const s = new Stack();
+    s.push(RList([Real(2), Real(-1)]));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 1
+        && isReal(b) && b.value.toNumber() === 0,
+      `session191: { Real(2) Real(-1) } HEAVISIDE → { Real(1) Real(0) } (n=2 bare List heterogeneous step output; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // n=2 Tagged-of-List — outer tag re-wrapped
+  {
+    const s = new Stack();
+    s.push(Tagged('h', RList([Real(2), Real(-1)])));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.value?.items ?? [];
+    assert(isTagged(v) && v.tag === 'h' && isList(v.value) && v.value.items.length === 2
+        && isReal(a) && a.value.toNumber() === 1
+        && isReal(b) && b.value.toNumber() === 0,
+      `session191: :h:{ Real(2) Real(-1) } HEAVISIDE → :h:{ Real(1) Real(0) } (Tagged-of-List; got tag=${v?.tag} a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Vector — element-wise: HEAVISIDE(1)=1, HEAVISIDE(-1)=0
+  {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(-1)]));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isVector(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 1
+        && isReal(b) && b.value.toNumber() === 0,
+      `session191: [Real(1) Real(-1)] HEAVISIDE → [Real(1) Real(0)] (Vector element-wise; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Matrix — element-wise: 1×2 [[1 -1]] → [[1 0]]
+  {
+    const s = new Stack();
+    s.push(Matrix([[Real(1), Real(-1)]]));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    const row = v?.rows?.[0] ?? [];
+    assert(isMatrix(v) && v.rows.length === 1 && row.length === 2
+        && isReal(row[0]) && row[0].value.toNumber() === 1
+        && isReal(row[1]) && row[1].value.toNumber() === 0,
+      `session191: [[Real(1) Real(-1)]] HEAVISIDE → [[Real(1) Real(0)]] (Matrix element-wise; got r00=${row[0]?.value?.toString()} r01=${row[1]?.value?.toString()})`);
+  }
+
+  // scalar Tagged-of-Real — tag preserved, inner folded
+  {
+    const s = new Stack();
+    s.push(Tagged('x', Real(3)));
+    lookup('HEAVISIDE').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'x' && isReal(v.value) && v.value.value.toNumber() === 1,
+      `session191: :x:Real(3) HEAVISIDE → :x:Real(1) (scalar Tagged; HEAVISIDE(3)=1; got tag=${v?.tag} val=${v?.value?.value?.toString()})`);
+  }
+
+  /* ---- Cluster 2: DIRAC L/V/M/T ---- */
+
+  // n=0 empty-List — bare axis
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session191: { } DIRAC → { } (n=0 bare List passthrough; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // n=0 empty-List — Tagged-of-List axis
+  {
+    const s = new Stack();
+    s.push(Tagged('d', RList([])));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'd' && isList(v.value) && v.value.items.length === 0,
+      `session191: :d:{ } DIRAC → :d:{ } (n=0 Tagged-of-List; got tag=${v?.tag} type=${v?.value?.type})`);
+  }
+
+  // n=1 bare List — at-zero: DIRAC(Real(0)) → Symbolic(DIRAC(0)) propagates through wrapper
+  {
+    const s = new Stack();
+    s.push(RList([Real(0)]));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    const item = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1
+        && isSymbolic(item) && item.expr?.kind === 'fn' && item.expr?.name === 'DIRAC',
+      `session191: { Real(0) } DIRAC → { Symbolic(DIRAC(0)) } (n=1 bare List; at-zero lifts to Symbolic through wrapper; got item type=${item?.type} expr=${JSON.stringify(item?.expr)})`);
+  }
+
+  // n=2 bare List non-zero — DIRAC(1)=0, DIRAC(2)=0 per slot
+  {
+    const s = new Stack();
+    s.push(RList([Real(1), Real(2)]));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 0
+        && isReal(b) && b.value.toNumber() === 0,
+      `session191: { Real(1) Real(2) } DIRAC → { Real(0) Real(0) } (n=2 bare List non-zero; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // n=2 Tagged-of-List — outer tag re-wrapped
+  {
+    const s = new Stack();
+    s.push(Tagged('d', RList([Real(1), Real(2)])));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.value?.items ?? [];
+    assert(isTagged(v) && v.tag === 'd' && isList(v.value) && v.value.items.length === 2
+        && isReal(a) && a.value.toNumber() === 0
+        && isReal(b) && b.value.toNumber() === 0,
+      `session191: :d:{ Real(1) Real(2) } DIRAC → :d:{ Real(0) Real(0) } (Tagged-of-List; got tag=${v?.tag} a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Vector — element-wise: DIRAC(1)=0, DIRAC(3)=0
+  {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(3)]));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isVector(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 0
+        && isReal(b) && b.value.toNumber() === 0,
+      `session191: [Real(1) Real(3)] DIRAC → [Real(0) Real(0)] (Vector element-wise; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Matrix — element-wise: 1×1 [[Real(1)]] → [[Real(0)]]
+  {
+    const s = new Stack();
+    s.push(Matrix([[Real(1)]]));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    const cell = v?.rows?.[0]?.[0];
+    assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1
+        && isReal(cell) && cell.value.toNumber() === 0,
+      `session191: [[Real(1)]] DIRAC → [[Real(0)]] (Matrix element-wise; got cell=${cell?.value?.toString()})`);
+  }
+
+  // scalar Tagged-of-Real — tag preserved, inner folded
+  {
+    const s = new Stack();
+    s.push(Tagged('x', Real(5)));
+    lookup('DIRAC').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'x' && isReal(v.value) && v.value.value.toNumber() === 0,
+      `session191: :x:Real(5) DIRAC → :x:Real(0) (scalar Tagged; DIRAC(5)=0; got tag=${v?.tag} val=${v?.value?.value?.toString()})`);
+  }
+}
+

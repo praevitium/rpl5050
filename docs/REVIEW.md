@@ -182,21 +182,18 @@ Translated into ledger items, in priority order:
    field; pure-infrastructure hygiene best landed post-ship per
    the session 156 meta-log triage.
 
-Open queue at session 189-code-review close: **O-011 + C-012
-+ O-012** — O-011 `[deferred - post-ship]` (infrastructure
-hygiene); C-012 and O-012 new post-ship findings (doc-drift
-and stray file, both low priority).  **O-009 resolved this
-run.**  **T-003 fully resolved by session 185.**  **Zero
-release-blocker class findings remain.**  Re-verified at this
-run's entry (post-session-189-unit-tests): TESTS.md stamp
-current at "Session 189"; DATA_TYPES.md stamp current at
-"Session 187"; COMMANDS.md stamp "as of session 186"
-(register-count claim stale — see C-012); register-count
-actual 478 / 457.
+Open queue at session 190 close: **O-011 + O-012** — O-011
+`[deferred - post-ship]` (infrastructure hygiene); O-012
+`[deferred - post-ship]` (stray file).  **C-012 resolved this
+run** (session 190 command-support — register-count prose
+corrected to 481 / 460).  **O-009 resolved session
+189-code-review.**  **T-003 fully resolved by session 185.**
+**Zero release-blocker class findings remain.**  COMMANDS.md
+stamp now "as of session 190"; register-count actual 481 / 460.
 
-Ship is complete.  Post-ship lanes may pull O-011 / C-012 /
-O-012 as early post-ship hygiene (all pure infrastructure or
-doc-drift, no behavior risk).
+Ship is complete.  Post-ship lanes may pull O-011 / O-012
+as early post-ship hygiene (both pure infrastructure or
+file-hygiene, no behavior risk).
 
 ---
 
@@ -3641,10 +3638,18 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   edit, no source change required.
 - **Confidence.** high — `grep -c "register("
   www/src/rpl/ops.js` = 478 verified at this run's entry.
-- **Age.** new (filed session 189-code-review).
-  **Status.** open.  Lane = `rpl5050-command-support`.
-  `[ship-stretch]` — pure doc, no behavior risk; natural for
-  next command-support doc-reconciliation pass.
+- **Age.** 1 run.
+  **Status.** `[resolved - session 190]` — closed by
+  `rpl5050-command-support` this run.  Live counts at fix time:
+  `grep -c "register("` = **481**; `grep -cE "^register\("` =
+  **460** (not 478/457 as filed — the extra +3/+3 above the
+  filing figure turned out to be session 149's five EXPANDMOD /
+  FACTORMOD / GCDMOD / DIVMOD / DIV2MOD registrations that were
+  never reflected in the Counts heading; corrected with full
+  audit trail in `docs/COMMANDS.md` Counts block).  Counts
+  heading advanced from "as of session 186" to "as of session
+  190"; register-count prose rewritten with correct 481 / 460
+  figures and accurate history.  `node --check` N/A (doc-only).
 
 ### O-012  Stray `www/src/ui/keyboard.js.bak` backup file
 

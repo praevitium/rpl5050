@@ -838,6 +838,32 @@ export function varStore(id, value) {
   _emit();
 }
 
+/** Rename `oldId` to `newId` within the current directory.
+ *  Preserves insertion order by rebuilding the Map in place.
+ *  Throws if oldId is absent, newId already exists (and is a different
+ *  entry), or newId is not a valid HP name.  For directories the
+ *  internal .name field is updated to match. */
+export function renameCurrentEntry(oldId, newId) {
+  const oldKey = String(oldId);
+  const newKey = String(newId);
+  if (oldKey === newKey) return;
+  const dir = state.current;
+  if (!dir.entries.has(oldKey)) throw new Error(`Undefined name: ${oldKey}`);
+  if (dir.entries.has(newKey)) throw new Error(`Name conflict: ${newKey}`);
+  // Rebuild the Map so the entry keeps its original insertion position.
+  const rebuilt = new Map();
+  for (const [k, v] of dir.entries) {
+    if (k === oldKey) {
+      rebuilt.set(newKey, v);
+      if (v && v.type === TYPES.DIRECTORY) v.name = newKey;
+    } else {
+      rebuilt.set(k, v);
+    }
+  }
+  dir.entries = rebuilt;
+  _emit();
+}
+
 /** Read `id` from the current directory.  Returns undefined if absent.
  *  (HP50 RCL walks up to the parent chain; we follow suit.) */
 export function varRecall(id) {

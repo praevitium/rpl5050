@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 186 — 2026-04-26)
+## Counts (as of session 190 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -172,22 +172,39 @@ touched the row, and any known caveats worth carrying forward.
   5409 → **5433** (+24).  Session 186 (this run,
   `rpl5050-command-support`) is a doc-reconciliation pass: Counts
   stamp 182 → 186 and session-log back-fill for sessions
-  183 / 184 / 185.)
+  183 / 184 / 185.  Session 186 (this run, `rpl5050-command-support`) was
+  a doc-reconciliation pass: Counts stamp 182 → 186 and session-log
+  back-fill for sessions 183 / 184 / 185.  Session 187
+  (`rpl5050-data-type-support`) added XPON + MANT L/V/M/T wrapper-add in
+  `www/src/rpl/ops.js`; +15 pins in `tests/test-types.mjs` (985 → 1000);
+  DATA_TYPES.md stamp refreshed to Session 187; baseline 5433 → 5448.
+  Session 188 (`rpl5050-rpl-programming`) was a verification-only pass —
+  doc-only RPL.md stamp bump; confirmed 5448/0 baseline, all RPL-bucket
+  findings closed.  Session 189 (`rpl5050-unit-tests`) refreshed
+  `docs/TESTS.md`: "Last updated" stamp 185 → 189, sibling-delta narrative
+  for s186–s188 added; confirmed 5448/0 baseline.  Session 189-code-review
+  was a post-ship review-lane run: filed C-012 (register-count drift) and
+  O-012 (stray keyboard.js.bak); O-009 promoted to resolved.  Session 190
+  (this run, `rpl5050-command-support`) closed C-012: Counts stamp 186 →
+  190 and register-count prose updated to live figures 481 / 460.)
 - Partially shipped (~): 0
 - Not yet implemented (✗): 1 (only the `JORDAN` / `SCHUR`
   matrix-decomp row remains — the entire MODULO-family is ✓.)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" www/src/rpl/ops.js` = **476** at the end of session
-186 (unchanged from session 149 — no new registrations across sessions
-150 → 186; was 471 at the end of session 144, was 466 at the end of
-session 139, was 463 at the end of session 134, was 458 at the end of
-session 129, was 455 at the end of session 124, was 448 at the end of
-session 119).  The actual top-level `register()` *call* count
-(`grep -cE '^register\(' www/src/rpl/ops.js`) is **455** (unchanged
-from session 149).  Session 167's `_newObCopy` Rational widening,
-session 172's `_newObCopy` Program-branch freeze-parity fix, and
+`grep -c "register(" www/src/rpl/ops.js` = **481** at the end of session
+190 (was 471 at the end of session 144, was 466 at the end of session
+139, was 463 at the end of session 134, was 458 at the end of session
+129, was 455 at the end of session 124, was 448 at the end of session
+119).  The actual top-level `register()` *call* count
+(`grep -cE '^register\(' www/src/rpl/ops.js`) is **460** at the end of
+session 190 (was 455 at the end of session 144; session 149 added five
+more top-level registrations — `EXPANDMOD`, `FACTORMOD`, `GCDMOD`,
+`DIVMOD`, `DIV2MOD` — bringing the live count to 460, but the Counts
+heading was incorrectly recorded as "unchanged from session 149"; corrected
+this run as part of the C-012 close).  Session 167's `_newObCopy` Rational
+widening, session 172's `_newObCopy` Program-branch freeze-parity fix, and
 session 178's RUN / CONT edits were all in-body edits on existing
 `register()` call sites — not new registrations.
 

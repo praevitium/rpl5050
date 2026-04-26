@@ -5,7 +5,21 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 187 (2026-04-26, post-ship XPON+MANT L/V/M/T wrapper-add;
+**Last updated.** Session 191 (2026-04-26, post-ship HEAVISIDE+DIRAC L/V/M/T wrapper-add;
+lane name **`session191-data-type-support`**) — wrapping HEAVISIDE and DIRAC in
+`_withTaggedUnary(_withListUnary(_withVMUnary(…)))` (same 3-deep composition as XPON/MANT,
+session 187).  +16 hard assertions in `tests/test-types.mjs` (5448 → 5464): Cluster 1
+(HEAVISIDE, +8) covers n=0 empty-List bare + T+L, n=1 bare value-precise, n=2
+heterogeneous bare + T+L, Vector, Matrix, scalar Tagged; Cluster 2 (DIRAC, +8) mirrors the
+same axes — n=1 bare uses DIRAC(Real(0)) to pin the at-zero → Symbolic path through the
+wrapper.  Two stale session-061 "rejects" assertions in `tests/test-algebra.mjs` updated
+to reflect the new accepted-List behavior; `isList` import added.  HEAVISIDE/DIRAC rows in
+the matrix updated: L/V/M/T cells promoted from blank (candidate) to ✓.
+Verification gates at exit: `node tests/test-all.mjs` 5464/0/0,
+`node tests/test-persist.mjs` passed, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (191)" below.
+
+**Last updated (prior — session 187).** Session 187 (2026-04-26, post-ship XPON+MANT L/V/M/T wrapper-add;
 lane name **`session187-data-type-support`**) — wrapping XPON and MANT in
 `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` (same 3-deep composition as
 FACT/LNP1/EXPM) to close the ship-prep 2026-04-25 audit finding that both ops were
@@ -841,8 +855,8 @@ step / impulse — so the simplify-time fold stays conservative.
 
 | Op        | R | Z | C | N | Sy | L | V | M | T | Notes |
 |-----------|---|---|---|---|----|---|---|---|---|-------|
-| HEAVISIDE | ✓ | ✓ | ✗ | ✓ | ✓  |   |   |   |   | Step function.  Session 105 pinned Sy round-trip + folds: HEAVISIDE(2)=1, HEAVISIDE(0)=1 (HP50 convention: right-continuous at 0), HEAVISIDE(-1)=0. **Ship-prep 2026-04-25 audit:** L/V/M/T were carried as ✓ but `register('HEAVISIDE', …)` (`ops.js:15944`) is bare — no `_withTaggedUnary`, `_withListUnary`, or `_withVMUnary` wrappers — and the bare handler dispatches only Real/Integer/BinaryInteger/Sy.  All four collection axes throw `Bad argument type`.  Downgraded to blank pending an op-side wrapper-add (out of this lane's release-mode scope; would need new pin tests).  See `utils/@probe-special-fns-vm.mjs`. |
-| DIRAC     | ✓ | ✓ | · | ✓ | ✓  |   |   |   |   | Impulse δ(x).  At non-zero real, folds to 0; at x=0 leaves symbolic (distribution).  Session 105 pinned `DIRAC(X-1)` round-trip + `DIRAC(3)=0`, `DIRAC(0)` → null. **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — same finding as HEAVISIDE; `register('DIRAC', …)` (`ops.js:15960`) bare handler throws on List/Vector/Matrix/Tagged. |
+| HEAVISIDE | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Step function.  Session 105 pinned Sy round-trip + folds: HEAVISIDE(2)=1, HEAVISIDE(0)=1 (HP50 convention: right-continuous at 0), HEAVISIDE(-1)=0. **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — bare handler.  **Session 191:** wrapped `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` — L/V/M/T promoted to ✓.  +8 pins in `tests/test-types.mjs`: n=0 bare+T+L, n=1 bare {Real(2)}→{Real(1)}, n=2 heterogeneous {2,-1}→{1,0} bare+T+L, Vector [1,-1]→[1,0], Matrix [[1,-1]]→[[1,0]], scalar Tagged :x:Real(3)→:x:Real(1). |
+| DIRAC     | ✓ | ✓ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Impulse δ(x).  At non-zero real, folds to 0; at x=0 leaves symbolic (distribution).  Session 105 pinned `DIRAC(X-1)` round-trip + `DIRAC(3)=0`, `DIRAC(0)` → null. **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — bare handler.  **Session 191:** wrapped `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` — L/V/M/T promoted to ✓.  +8 pins in `tests/test-types.mjs`: n=0 bare+T+L, n=1 bare {Real(0)}→{Symbolic(DIRAC(0))} (at-zero path through wrapper), n=2 bare+T+L non-zero, Vector, Matrix, scalar Tagged :x:Real(5)→:x:Real(0). |
 | GAMMA     | ✓ | ✓ | ✗ | ✓ | ✓  | · | · | · | ✓ | Γ(x).  Integer fold only (GAMMA(n) = (n-1)! for n ≥ 1, n ≤ 171); non-integer / non-positive / overflow → null (leave symbolic).  Session 105 pinned Sy round-trip + GAMMA(5)=24, GAMMA(0)→null, GAMMA(0.5)→null, GAMMA(180)→null. |
 | LNGAMMA   | ✓ | ✓ | ✗ | ✓ | ✓  | · | · | · | ✓ | ln Γ(x).  No fold (Lanczos lives on the stack).  Session 105 pinned Sy round-trip + null fold. |
 | ERF       | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Error function.  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold. |
@@ -940,6 +954,29 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (191)
+
+- **Cluster 1 — HEAVISIDE L/V/M/T wrapper-add.**
+  Wrapped `register('HEAVISIDE', …)` in `_withTaggedUnary(_withListUnary(_withVMUnary(…)))`.
+  Inner scalar handler unchanged (Real/Integer/BinaryInteger step fold; Symbolic → lifted;
+  other types → `Bad argument type`).  Ship-prep audit had downgraded all four collection
+  cells to blank.  Pins (+8): n=0 empty-List bare + T+L; n=1 bare List
+  `{ Real(2) } → { Real(1) }`; n=2 heterogeneous bare List + Tagged-of-List
+  `{ Real(2) Real(-1) } → { Real(1) Real(0) }`; Vector `[ Real(1) Real(-1) ] → [ Real(1)
+  Real(0) ]`; Matrix `[[ Real(1) Real(-1) ]] → [[ Real(1) Real(0) ]]`; scalar Tagged
+  `:x:Real(3) → :x:Real(1)`.  HEAVISIDE matrix row L/V/M/T → ✓.  Two stale session-061
+  "rejects" assertions in `tests/test-algebra.mjs` updated to assert accepted → `{ }`.
+
+- **Cluster 2 — DIRAC L/V/M/T wrapper-add.**
+  Wrapped `register('DIRAC', …)` in the same 3-deep composition.  Inner handler unchanged
+  (non-zero Real → `Real(0)`; non-zero Integer/BinaryInteger → `Integer(0n)`; zero of any
+  numeric type → `Symbolic(DIRAC(0))`; Symbolic → lifted).  Pins (+8): n=0 empty-List
+  bare + T+L; n=1 bare List `{ Real(0) } → { Symbolic(DIRAC(0)) }` (at-zero special case
+  propagates through wrapper); n=2 bare List + T+L non-zero `{ Real(1) Real(2) } → { Real(0)
+  Real(0) }`; Vector `[ Real(1) Real(3) ] → [ Real(0) Real(0) ]`; Matrix
+  `[[ Real(1) ]] → [[ Real(0) ]]`; scalar Tagged `:x:Real(5) → :x:Real(0)`.  DIRAC matrix
+  row L/V/M/T → ✓.
 
 ### Resolved this session (187)
 

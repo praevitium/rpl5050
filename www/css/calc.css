@@ -1346,6 +1346,30 @@ body.mode-minimal .keypad {
   letter-spacing: 0;
   background: #1c2230;
 }
+/* Generic data tables in popup. */
+.cmd-help-inner .cmd-tbl {
+  border-collapse: collapse;
+  margin: 4px 0;
+}
+.cmd-help-inner .cmd-tbl th,
+.cmd-help-inner .cmd-tbl td {
+  padding: 4px 12px;
+  border-bottom: 1px solid #2a3142;
+  vertical-align: top;
+  text-align: left;
+}
+.cmd-help-inner .cmd-tbl th {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #7d8596;
+  font-weight: 600;
+}
+.cmd-help-inner .cmd-tbl td {
+  font-size: 13px;
+  color: #d8dde6;
+}
 .cmd-help-empty {
   color: #8a93a4;
   font-style: italic;

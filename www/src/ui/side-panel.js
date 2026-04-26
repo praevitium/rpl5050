@@ -33,8 +33,9 @@ import {
   state as calcState, subscribe as subscribeState,
   varRecall, varStore, varPurge, goInto, currentPath,
   getDirectoryByPath, moveCurrentEntry, reorderCurrentEntry,
+  renameCurrentEntry,
 } from '../rpl/state.js';
-import { TYPES } from '../rpl/types.js';
+import { TYPES, isStorableHpName } from '../rpl/types.js';
 import { UNIT_CATALOG } from '../rpl/units.js';
 import {
   exportVariableToFile, parseVariableFile,
@@ -114,7 +115,7 @@ export const CATEGORIES = {
     'GBASIS', 'GREDUCE',
   ],
   'CAS / symbolic': [
-    'DERIV', 'INTEG', 'SUBST', 'PREVAL',
+    'DERIV', 'DERVX', 'INTEG', 'INTVX', 'SUBST', 'PREVAL',
     'EXPAND', 'COLLECT', 'FACTOR', 'SOLVE', 'ISOL', 'DISTRIB',
     'EXPLN', 'LNCOLLECT', 'EPSX0', 'SIMPLIFY',
     'TEXPAND', 'TLIN', 'TCOLLECT', 'TSIMP', 'HALFTAN', 'COSSIN',
@@ -590,6 +591,13 @@ export class SidePanel {
     return !this.el.classList.contains('hidden');
   }
 
+  /** Re-render the current tab's body if the panel is open.  Safe to
+   *  call at any time — no-ops when hidden so callers don't need to
+   *  guard with isOpen(). */
+  refresh() {
+    if (this.isOpen()) this._render();
+  }
+
   setTab(tab) {
     this.tab = tab;
     this.el.querySelectorAll('.sp-tab').forEach(b => {
@@ -958,16 +966,16 @@ export class SidePanel {
       dl.setAttribute('aria-label', `Download ${name}`);
       row.appendChild(dl);
 
-      // ↗ Move — prompts for a HOME-rooted destination path.
-      const mv = document.createElement('button');
-      mv.type = 'button';
-      mv.className = 'sp-file-act';
-      mv.dataset.action = 'move-var';
-      mv.dataset.value  = name;
-      mv.textContent = '↗';
-      mv.title = `Move ${name} to another directory`;
-      mv.setAttribute('aria-label', `Move ${name}`);
-      row.appendChild(mv);
+      // ✎ Rename — in-place prompt for a new HP identifier.
+      const rn = document.createElement('button');
+      rn.type = 'button';
+      rn.className = 'sp-file-act';
+      rn.dataset.action = 'rename-var';
+      rn.dataset.value  = name;
+      rn.textContent = '✎';
+      rn.title = `Rename ${name}`;
+      rn.setAttribute('aria-label', `Rename ${name}`);
+      row.appendChild(rn);
 
       // × Delete — calls PURGE semantics (and refuses non-empty dirs,
       // matching the HP50 firmware behavior).
@@ -1107,37 +1115,24 @@ export class SidePanel {
       }
       return;
     }
-    if (action === 'move-var') {
-      // Files: per-row Move.  Prompt for a HOME-rooted destination
-      // path (e.g., 'HOME', 'HOME/A', or 'A/B' — getDirectoryByPath
-      // accepts both forms).  Refuses to move into a non-existent dir,
-      // a non-directory, or a directory that already has the same
-      // name; also refuses to drop a directory inside itself.
-      const here = currentPath().join('/');
-      const dest = (typeof window !== 'undefined' && typeof window.prompt === 'function')
-        ? window.prompt(
-            `Move "${value}" from ${here} to which directory?\n` +
-            `Enter a path like HOME, HOME/A, or A/B.`,
-            here)
+    if (action === 'rename-var') {
+      // Files: per-row Rename.  Prompt for a new name, validate it as
+      // a legal HP identifier, then delegate to renameCurrentEntry
+      // which preserves insertion order and emits a state event.
+      const newName = (typeof window !== 'undefined' && typeof window.prompt === 'function')
+        ? window.prompt(`Rename "${value}" to:`, value)
         : null;
-      if (dest === null) return;                       // user cancelled
-      const trimmed = String(dest).trim();
-      if (trimmed.length === 0) {
-        entry.flashError({ message: 'Move: empty destination' });
-        return;
-      }
-      // Tolerate either '/' or path-style separators; segments come
-      // from the same shape `currentPath()` produces.
-      const segments = trimmed.split(/[\\/]+/).filter(s => s.length > 0);
-      const targetDir = getDirectoryByPath(segments);
-      if (!targetDir) {
-        entry.flashError({ message: `Move: no such directory: ${trimmed}` });
+      if (newName === null) return;                    // user cancelled
+      const trimmed = String(newName).trim();
+      if (trimmed === value) return;                   // no-op
+      if (!isStorableHpName(trimmed)) {
+        entry.flashError({ message: `Rename: invalid name: ${trimmed}` });
         return;
       }
       try {
-        moveCurrentEntry(value, targetDir);
+        renameCurrentEntry(value, trimmed);
       } catch (e) {
-        entry.flashError({ message: `Move: ${e.message}` });
+        entry.flashError({ message: `Rename: ${e.message}` });
       }
       return;
     }

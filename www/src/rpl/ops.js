@@ -5952,6 +5952,38 @@ register('INTEG', (s) => {
   throw new RPLError('Bad argument type');
 });
 
+/* --------------- INTVX / DERVX — VX-implicit forms --------------------
+ *
+ * HP50 AUR §3.4.  Same engines as INTEG / DERIV but the variable comes
+ * from the CAS-main slot rather than the stack — convenient when the
+ * user has already SVX'd their preferred variable.  Implemented as a
+ * thin shim that pushes `Name(VX)` and delegates to the explicit-var
+ * sibling so any future refinement of INTEG / DERIV is automatically
+ * inherited.
+ *
+ * `DERIVX` is the verbose spelling some HP family programs use; we
+ * register it as an alias so either name works. */
+
+register('INTVX', (s) => {
+  if (s.depth < 1) throw new RPLError('Too few arguments');
+  s.push(Name(getCasVx()));
+  OPS.get('INTEG').fn(s);
+});
+
+/* The HP50 token `∫` decompiles to the integration function.  The AUR
+   shows it as a 4-arg form (lower upper integrand var → ∫); this app
+   only ships the 2-arg INTEG semantics so we register the glyph as an
+   alias for INTEG.  Programs that produce `∫` from the keyboard or via
+   `→PRG` therefore still execute. */
+register('∫', (s) => { OPS.get('INTEG').fn(s); });
+
+register('DERVX', (s) => {
+  if (s.depth < 1) throw new RPLError('Too few arguments');
+  s.push(Name(getCasVx()));
+  OPS.get('DERIV').fn(s);
+});
+register('DERIVX', (s) => { OPS.get('DERVX').fn(s); });
+
 /** SUM — sum the elements of a list or vector, or wrap a symbolic
  *  operand as an unevaluated Σ(expr).
  *
@@ -8574,9 +8606,27 @@ register('ALOG', _unaryCx('ALOG', (x) => Math.pow(10, x),
                                        (z) => _cxExp(_cxMul(z, _cx(Math.LN10, 0))),
                                        d => new Decimal(10).pow(d)));
 
-register('SINH',  _unaryCx('SINH',  Math.sinh,  _cxSinh,  d => d.sinh()));
-register('COSH',  _unaryCx('COSH',  Math.cosh,  _cxCosh,  d => d.cosh()));
-register('TANH',  _unaryCx('TANH',  Math.tanh,  _cxTanh,  d => d.tanh()));
+// SINH/COSH/TANH: Decimal.js's native Taylor-series methods hang for
+// large arguments (|x| > ~100,000) because the series converges too
+// slowly.  Replace with exp-based identities that are O(1) in the
+// magnitude of the argument:
+//   sinh(x) = (eˣ − e⁻ˣ) / 2
+//   cosh(x) = (eˣ + e⁻ˣ) / 2
+//   tanh(x) = (eˣ − e⁻ˣ) / (eˣ + e⁻ˣ)
+// For very large |x|, d.exp() overflows to Infinity immediately (fast),
+// which _unaryCx already handles by throwing RPLError / lifting to Complex.
+// For TANH specifically, |tanh(x)| ≥ 1 − 2e⁻⁴³ for |x| > 50 so the
+// Taylor series would converge anyway (just slowly); we short-circuit to
+// ±1 directly — exact to 15 significant digits.
+register('SINH',  _unaryCx('SINH',  Math.sinh,  _cxSinh,
+  d => { const ex = d.exp(), enx = d.negated().exp(); return ex.minus(enx).div(2); }));
+register('COSH',  _unaryCx('COSH',  Math.cosh,  _cxCosh,
+  d => { const ex = d.exp(), enx = d.negated().exp(); return ex.plus(enx).div(2); }));
+register('TANH',  _unaryCx('TANH',  Math.tanh,  _cxTanh,
+  d => {
+    if (d.abs().gt(50)) return new Decimal(d.isNegative() ? -1 : 1);
+    return d.tanh();
+  }));
 register('ASINH', _unaryCx('ASINH', Math.asinh, _cxAsinh, d => d.asinh()));
 // ACOSH and ATANH preserve their domain checks on the real branch
 // (x ≥ 1 for ACOSH, |x| < 1 for ATANH); Complex input goes to the
@@ -16204,14 +16254,14 @@ register('EXPLN', (s) => {
 
 function _realStepValue(x) { return x >= 0 ? 1 : 0; }
 
-register('HEAVISIDE', (s) => {
+register('HEAVISIDE', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const [v] = s.popN(1);
   if (isReal(v))          { s.push(Real(_realStepValue(v.value.toNumber()))); return; }
   if (isInteger(v))       { s.push(Integer(BigInt(_realStepValue(Number(v.value))))); return; }
   if (isBinaryInteger(v)) { s.push(Integer(BigInt(_realStepValue(Number(v.value))))); return; }
   if (_isSymOperand(v))   { s.push(Symbolic(AstFn('HEAVISIDE', [_toAst(v)]))); return; }
   throw new RPLError('Bad argument type');
-});
+}))));
 
 /* ---- DIRAC — Dirac impulse, Symbolic carrier ------------------------
    Real/Integer non-zero input collapses to 0.  A literal 0 stays
@@ -16220,7 +16270,7 @@ register('HEAVISIDE', (s) => {
    symbolic).  Symbolic input is kept symbolic so LAPLACE /  ILAP can
    round-trip `DIRAC(X - a)` through the table. */
 
-register('DIRAC', (s) => {
+register('DIRAC', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const [v] = s.popN(1);
   if (isReal(v)) {
     if (v.value.isZero()) { s.push(Symbolic(AstFn('DIRAC', [AstNum(0)]))); return; }
@@ -16239,7 +16289,7 @@ register('DIRAC', (s) => {
   }
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('DIRAC', [_toAst(v)]))); return; }
   throw new RPLError('Bad argument type');
-});
+}))));
 
 /* ---- TSIMP — trig simplifier (Giac-backed) --------------------------
    HP50 AUR §3-254.  `tsimplify(expr)` runs Giac's Pythagorean-identity

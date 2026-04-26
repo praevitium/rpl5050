@@ -4,7 +4,7 @@ import {
   Real, Integer, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
   RList, Vector, Matrix,
   isReal, isInteger, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
-  isString, isVector, isMatrix,
+  isString, isVector, isMatrix, isList,
   Symbolic, isSymbolic,
 } from '../www/src/rpl/types.js';
 import { parseEntry } from '../www/src/rpl/parser.js';
@@ -5153,11 +5153,16 @@ giac._setFixtures({
     'session061: HEAVISIDE(X-3) stays Symbolic');
 }
 
-/* ---- HEAVISIDE rejects non-numeric type ---- */
+/* ---- HEAVISIDE accepts empty List — session191 wrapper-add ---- */
+/* session061 originally asserted a throw here; wrapper-add (session191)
+   means List is now dispatched element-wise, returning an empty List. */
 {
   const s = new Stack();
   s.push(RList([]));
-  assertThrows(() => { lookup('HEAVISIDE').fn(s); }, /Bad argument type/, 'session061: HEAVISIDE on List rejects');
+  lookup('HEAVISIDE').fn(s);
+  const v = s.peek();
+  assert(isList(v) && v.items.length === 0,
+    'session061: HEAVISIDE on List rejects [updated session191: now accepts → { }]');
 }
 
 /* ---- DIRAC on non-zero Real = 0 ---- */
@@ -5202,11 +5207,16 @@ giac._setFixtures({
     'session061: DIRAC(X-3) stays Symbolic');
 }
 
-/* ---- DIRAC rejects non-numeric type ---- */
+/* ---- DIRAC accepts empty List — session191 wrapper-add ---- */
+/* session061 originally asserted a throw here; wrapper-add (session191)
+   means List is now dispatched element-wise, returning an empty List. */
 {
   const s = new Stack();
   s.push(RList([]));
-  assertThrows(() => { lookup('DIRAC').fn(s); }, /Bad argument type/, 'session061: DIRAC on List rejects');
+  lookup('DIRAC').fn(s);
+  const v = s.peek();
+  assert(isList(v) && v.items.length === 0,
+    'session061: DIRAC on List rejects [updated session191: now accepts → { }]');
 }
 
 // LAPLACE/ILAP HEAVISIDE+DIRAC fixtures — the Giac commands emitted for
