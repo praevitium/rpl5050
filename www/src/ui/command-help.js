@@ -32,7 +32,7 @@ const ALIASES = new Map([
   ['LIM',     'LIMIT'],
   ['TCHEB',   'TCHEBYCHEFF'],
   ['CHARPOL', 'PCAR'],
-  ['INTEG',   'INTVX'],
+  ['INTEG',   '∫'],
   // Statistics ASCII aliases for the Σ-prefixed canonical names.
   ['SX',      'ΣX'],
   ['SY',      'ΣY'],
@@ -150,13 +150,22 @@ export class CommandHelp {
 
     this._backBtn.addEventListener('click', () => this.goBack());
     this._fwdBtn .addEventListener('click', () => this.goForward());
-    this._histSel.addEventListener('change', () => {
+    // `change` fires only on commit (click / Enter / blur after keyboard
+    // navigation), so we also listen for `input` — fires the moment the
+    // <select>'s value flips during arrow-key navigation, which lets the
+    // popup update live while the dropdown has focus.  Both events are
+    // routed through one idempotent handler so a single value change
+    // doesn't render twice.
+    const onSelectNav = () => {
       const idx = Number(this._histSel.value);
-      if (Number.isFinite(idx) && idx >= 0 && idx < this._history.length) {
-        this._historyIdx = idx;
-        this._render(this._history[idx]);
-      }
-    });
+      if (!Number.isFinite(idx)) return;
+      if (idx < 0 || idx >= this._history.length) return;
+      if (idx === this._historyIdx) return;
+      this._historyIdx = idx;
+      this._render(this._history[idx]);
+    };
+    this._histSel.addEventListener('input',  onSelectNav);
+    this._histSel.addEventListener('change', onSelectNav);
 
     el.querySelector('.cmd-help-close').addEventListener('click', () => this.hide());
     // Backdrop click (anywhere on the popup background that isn't the

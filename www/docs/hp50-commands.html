@@ -55,11 +55,18 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
 .cmd-kv td { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.86em; color: #222; }
 .cmd-kv tr.cmd-kv-section th { padding-top: 0.6em; color: #1a4480; font-size: 0.82em; text-transform: none; letter-spacing: 0; border-bottom: 1px solid #d3dbea; background: #f4f7fb; }
 
+/* Generic data tables — converted from PDF-extracted multi-column
+   blocks (truth tables, plot-type listings, key-code listings, etc.). */
+.cmd-tbl { border-collapse: collapse; margin: 0.3em 0; }
+.cmd-tbl th, .cmd-tbl td { padding: 0.22em 0.7em; border-bottom: 1px solid #ececec; vertical-align: top; text-align: left; }
+.cmd-tbl th { font-weight: 600; color: #1a4480; background: #f4f7fb; border-bottom: 1px solid #d3dbea; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.04em; }
+.cmd-tbl td { font-size: 0.92em; }
+
 </style>
 </head>
 <body>
 <h1 id='top'>HP 50g Advanced Guide — Command Reference</h1>
-<p>808 commands extracted from the HP 50g Advanced User's Reference Manual. 404 are implemented in this RPL app. Sections are reproduced verbatim from the PDF.</p>
+<p>809 commands extracted from the HP 50g Advanced User's Reference Manual. 408 are implemented in this RPL app. Sections are reproduced verbatim from the PDF.</p>
 <div class="search-box"><input type="text" id="search" placeholder="Filter commands…" oninput="filterTOC()" autofocus></div>
 <h2 style='background:none; border-left:none; padding-left:0;'>Index (alphabetical)</h2>
 <div class="toc" id="toc">
@@ -201,7 +208,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
 <a href="#cmd-DEPND" class='notinapp'>DEPND</a>
 <a href="#cmd-DEPTH">DEPTH</a>
 <a href="#cmd-DERIV">DERIV</a>
-<a href="#cmd-DERVX" class='notinapp'>DERVX</a>
+<a href="#cmd-DERIVX">DERIVX</a>
+<a href="#cmd-DERVX">DERVX</a>
 <a href="#cmd-DESOLVE" class='notinapp'>DESOLVE</a>
 <a href="#cmd-DET">DET</a>
 <a href="#cmd-DETACH" class='notinapp'>DETACH</a>
@@ -357,7 +365,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
 <a href="#cmd-INPUT" class='notinapp'>INPUT</a>
 <a href="#cmd-INT" class='notinapp'>INT</a>
 <a href="#cmd-INTEGER" class='notinapp'>INTEGER</a>
-<a href="#cmd-INTVX" class='notinapp'>INTVX</a>
+<a href="#cmd-INTVX">INTVX</a>
 <a href="#cmd-INV">INV</a>
 <a href="#cmd-INVMOD">INVMOD</a>
 <a href="#cmd-IP">IP</a>
@@ -821,7 +829,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
 <a href="#cmd-partial-Derivative" class='notinapp'>∂(Derivative)</a>
 <a href="#cmd-sqrt-Square-Root" class='notinapp'>√(Square Root)</a>
 <a href="#cmd-inf-Infinity" class='notinapp'>∞(Infinity)</a>
-<a href="#cmd-integral-Integrate" class='notinapp'>∫(Integrate)</a>
+<a href="#cmd-integral-Integrate">∫(Integrate)</a>
 <a href="#cmd-ne-Not-equal">≠(Not equal)</a>
 <a href="#cmd-le-Less-than-or-Equal">≤(Less than or Equal)</a>
 <a href="#cmd-ge-Greater-than-or-Equal">≥(Greater than or Equal)</a>
@@ -1037,7 +1045,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
     <p>Simplify the following expression:</p>
-    <p>arc cos  -- + arc cos ( x ) 2 3</p>
+    <p>arc cos -- ---- + arc cos ( x ) 2 3</p>
     <table class="cmd-kv"><tbody><tr><th>Command</th><td>ACOS2S(ACOS(2/3)+ACOS(X))</td></tr><tr><th>Result</th><td>π/2-ASIN(2/3)+π/2-ASIN(X)</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
@@ -1090,7 +1098,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
-    <p>+, ∆LIST, ΠLIST, ΣLIST</p>
+    <p>+, ΔLIST, ΠLIST, ΣLIST</p>
   </dd>
 </dl>
 <h2 id="cmd-ADDTMOD">ADDTMOD <span class="in-app">in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
@@ -1228,12 +1236,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>And Function: Returns the logical AND of two arguments. When the arguments are binary integers or strings, AND does a bit-by-bit (base 2) logical comparison.</p><ul class="cmd-bullets"><li>An argument that is a binary integer is treated as a sequence of bits as long as the current wordsize. Each bit in the result is determined by comparing the corresponding bits (bit1 and bit2) in the two arguments as shown in the following table.</li></ul>
-    <pre class="cmd-mono">                    bit1                bit2                bit1 AND bit2
-    
-                 0                     0                    0
-                 0                     1                    0
-                 1                     0                    0
-                 1                     1                    1</pre>
+    <table class="cmd-tbl"><thead><tr><th>bit1</th><th>bit2</th><th>bit1 AND bit2</th></tr></thead><tbody><tr><td>0</td><td>0</td><td>0</td></tr><tr><td>0</td><td>1</td><td>0</td></tr><tr><td>1</td><td>0</td><td>0</td></tr><tr><td>1</td><td>1</td><td>1</td></tr></tbody></table>
     <ul class="cmd-bullets"><li>An argument that is a string is treated as a sequence of bits, using 8 bits per character (that is, using the binary version of the character code). The two string arguments must have the same number of characters. When the arguments are real numbers or symbolics, AND simply does a true/false test. The result is 1 (true) if both arguments are non-zero; it is 0 (false) if either or both arguments are zero. This test is usually done to compare two test results. If either or both of the arguments are algebraic expressions, then the result is an algebraic of the form symb1 AND symb2. Execute →NUM (or set flag –3 before executing AND) to produce a numeric result from the algebraic result.</li></ul>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -1518,7 +1521,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Transforms an expression by replacing asin(x) subexpressions with the following:  x  atan  -----------------  1 – x 2</p>
+    <p>Transforms an expression by replacing asin(x) subexpressions with the following: - x - atan - ------------------ - 1 – x 2-</p>
   </dd>
   <dt class="cmd-label cmd-label-input">Input</dt>
   <dd class="cmd-field cmd-field-input">
@@ -1694,7 +1697,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Transforms an expression by replacing atan(x) subexpressions with the following:  x  asin  ------------------  x 2 + 1</p>
+    <p>Transforms an expression by replacing atan(x) subexpressions with the following: - x - asin - ------------------- - x 2 + 1-</p>
   </dd>
   <dt class="cmd-label cmd-label-input">Input</dt>
   <dd class="cmd-field cmd-field-input">
@@ -1809,19 +1812,11 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Autoscale Command: Calculates a y-axis display range, or an x- and y-axis display range. The action of AUTO depends on the plot type as follows:</p>
-    <pre class="cmd-mono">       Plot Type                                Scaling Action
-    
-     FUNCTION           Samples the equation in EQ at 40 values of the independent</pre>
+    <table class="cmd-tbl"><thead><tr><th>Plot Type</th><th>Scaling Action</th></tr></thead><tbody><tr><td>FUNCTION</td><td>Samples the equation in EQ at 40 values of the independent</td></tr></tbody></table>
     <p>variable, equally spaced through the x-axis plotting range, discards points that return ±∞, then sets the y-axis display range to include the maximum, minimum, and origin.</p>
-    <pre class="cmd-mono"> CONIC              Sets the y-axis scale equal to the x-axis scale.
-    
-     POLAR              Samples the equation in EQ at 40 values of the independent</pre>
+    <table class="cmd-tbl"><thead><tr><th>CONIC</th><th>Sets the y-axis scale equal to the x-axis scale.</th></tr></thead><tbody><tr><td>POLAR</td><td>Samples the equation in EQ at 40 values of the independent</td></tr></tbody></table>
     <p>variable, equally spaced through the plotting range, discards points that return ±∞, then sets both the x- and y-axis display ranges in the same manner as for plot type FUNCTION.</p>
-    <pre class="cmd-mono"> PARAMETRIC         Same as POLAR.
-    
-     TRUTH              No action.
-    
-     BAR                Sets the x-axis display range from 0 to the number of elements in</pre>
+    <table class="cmd-tbl"><thead><tr><th>PARAMETRIC</th><th>Same as POLAR.</th></tr></thead><tbody><tr><td>TRUTH</td><td>No action.</td></tr><tr><td>BAR</td><td>Sets the x-axis display range from 0 to the number of elements in</td></tr></tbody></table>
     <p>ΣDAT, plus 1. Sets the y-range to the minimum and maximum of the elements. The x-axis is always included.</p>
     <pre class="cmd-mono"> HISTOGRAM          Sets the x-axis display range to the minimum and maximum of</pre>
     <p>the elements in ΣDAT. Sets the y-axis display range from 0 to the number of rows in ΣDAT.</p>
@@ -2494,8 +2489,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
     <p>Find the Cholesky factorization of: 11 15</p>
-    <pre class="cmd-mono">                             </pre>
-    <p>CHOLESKY  1 1   15 Command: 1 1 0 2 Result:</p>
+    <pre class="cmd-mono">                        -     -</pre>
+    <p>CHOLESKY - 1 1 - - 15- Command: 1 1 0 2 Result:</p>
   </dd>
 </dl>
 <h2 id="cmd-CHOOSE">CHOOSE <span class="not-in-app">not in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
@@ -2508,9 +2503,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Create User-Defined Choose Box Command: Creates a user-defined choose box. CHOOSE creates a standard single-choice choose box based on the following specifications:</p>
-    <pre class="cmd-mono">        Variable                                                  Function
-    
-     “prompt”                   A message that appears at the top of choose box. If “prompt” is an</pre>
+    <table class="cmd-tbl"><thead><tr><th>Variable</th><th>Function</th></tr></thead><tbody><tr><td>“prompt”</td><td>A message that appears at the top of choose box. If “prompt” is an</td></tr></tbody></table>
     <p>empty string (“”), no message is displayed.</p>
     <pre class="cmd-mono"> {c1 … cn}                  Definitions that appear within the choose box. A choice definition</pre>
     <p>(cx) can have two formats.</p><ul class="cmd-bullets"><li>obj, any object</li><li>{ objdisplay objresult }, the object to be displayed followed by the result returned to the stack if that object is selected.</li></ul>
@@ -2766,8 +2759,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Column Norm Command: Returns the column norm (one-norm) of the array argument. The column norm of a matrix is the maximum (over all columns) of the sum of the absolute values of all elements in each column. For a vector, the column norm is the sum of the absolute values of the vector elements. For complex arrays, the absolute value of a given element (x, y) is</p>
-    <pre class="cmd-mono">  2     2
-     x +y       .</pre>
+    <table class="cmd-tbl"><thead><tr><th>2</th><th>2</th></tr></thead><tbody><tr><td>x +y</td><td>.</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
@@ -3247,8 +3239,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dd class="cmd-field cmd-field-description">
     <p>Covariance Command: Returns the sample covariance of the independent and dependent data columns in the current statistics matrix (reserved variable ΣDAT). The columns are specified by the first two elements in reserved variable ΣPAR, set by XCOL and YCOL respectively. If ΣPAR does not exist, COV creates it and sets the elements to their default values (1 and 2). The covariance is calculated with the following formula: 1 n ----------- ∑ ( x in 1 – x n 1 ) ( x in 2 – x n 2 ) n – 1i = 1</p>
     <p>where x in1 is the ith coordinate value in column n1, x in2 is the ith coordinate value in the column</p>
-    <pre class="cmd-mono">n2 ,    is the
-                 xn1mean of the data in column n1,     is thexnmean</pre>
+    <table class="cmd-tbl"><thead><tr><th>n2 ,</th><th>is the</th></tr></thead><tbody><tr><td>xn1mean of the data in column n1,</td><td>is thexnmean</td></tr></tbody></table>
     <p>2 of the data in column n2, and n is the number of data points.</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
@@ -3403,8 +3394,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
     <p>Exact mode must be set (flag –105 clear). Numeric mode must not be set (flag –3 clear).</p>
-    <pre class="cmd-mono">Example:          Find the 20th cyclotomic polynomial.
-    Command:          CYCLOTOMIC(20)</pre>
+    <table class="cmd-kv"><tbody><tr class="cmd-kv-section"><th colspan="2">Example: Find the 20th cyclotomic polynomial.</th></tr><tr><th>Command</th><td>CYCLOTOMIC(20)</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-result">Result</dt>
   <dd class="cmd-field cmd-field-result">
@@ -3420,7 +3410,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Cylindrical Mode Command: Sets Cylindrical coordinate mode. CYLIN clears flag –15 and sets flag –16. In Cylindrical mode, vectors are displayed as polar components. Therefore, a 3D vector would appear as [ R θ Z ].</p>
+    <p>Cylindrical Mode Command: Sets Cylindrical coordinate mode. CYLIN clears flag –15 and sets flag –16. In Cylindrical mode, vectors are displayed as polar components. Therefore, a 3D vector would appear as [ R θ Z ].</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
@@ -3917,7 +3907,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     <p>DERVX, dn, ∂, POTENTIAL</p>
   </dd>
 </dl>
-<h2 id="cmd-DERVX">DERVX <span class="not-in-app">not in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
+<h2 id="cmd-DERVX">DERVX <span class="in-app">in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
 <div class="meta">PDF page 176 · printed page 3-56</div>
 <dl class="cmd-body">
   <dt class="cmd-label cmd-label-type">Type</dt>
@@ -3944,6 +3934,20 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dd class="cmd-field cmd-field-see-also">
     <p>DERIV, dn, ∂</p>
   </dd>
+</dl>
+<h2 id="cmd-DERIVX">DERIVX <span class="in-app">in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
+<div class="meta">Reference written for this RPL implementation.</div>
+<dl class="cmd-body">
+  <dt class="cmd-label cmd-label-type">Type</dt>
+  <dd class="cmd-field cmd-field-type"><p>Function</p></dd>
+  <dt class="cmd-label cmd-label-description">Description</dt>
+  <dd class="cmd-field cmd-field-description"><p>Verbose alias for DERVX — differentiates the level-1 expression with respect to the current CAS variable VX.  Provided so HP-family programs that spell out the name still work.</p></dd>
+  <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
+  <dd class="cmd-field cmd-field-input-output">
+    <table class="cmd-io"><thead><tr><th>Level 1/Argument 1</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>&#x60;f(VX)&#x60;</td><td class="cmd-io-arrow">→</td><td>&#x60;d/dVX f&#x60;</td></tr></tbody></table>
+  </dd>
+  <dt class="cmd-label cmd-label-see-also">See also</dt>
+  <dd class="cmd-field cmd-field-see-also"><p>DERVX, DERIV, VX, SVX</p></dd>
 </dl>
 <h2 id="cmd-DESOLVE">DESOLVE <span class="not-in-app">not in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
 <div class="meta">PDF page 176 · printed page 3-56</div>
@@ -4096,9 +4100,9 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
     <p>Apply the operator ex to the matrix</p>
-    <pre class="cmd-mono">                                                  
-                   DIAGMAP  1 1 , &lt;&lt; → X&lt;&lt;EXP(X) &gt;&gt; &gt;&gt;
-                            0 2                       </pre>
+    <pre class="cmd-mono">                       -                           -
+                   DIAGMAP - 1 1 , &lt;&lt; → X&lt;&lt;EXP(X) &gt;&gt; &gt;&gt;-
+                           - 0 2                       -</pre>
     <p>Command: or DIAGMAP([[1,1],[0,2]],exp(X)) EXP ( 1 ) – EXP ( 1 ) + EXP ( 2 )</p>
     <pre class="cmd-mono">                  0            EXP ( 2 )</pre>
   </dd>
@@ -4698,7 +4702,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
-    <p>Numeric mode must not be set (flag –3 clear). Complex mode must be set (flag –103 set). In algebraic mode, if any of a, b, c, d are variables, they will be converted to their numeric values, even if “argument to symbolic” mode is set (flag –3 clear). In RPN mode, they will be returned as variables. If ALG mode is set and “constants to numeric” mode is selected (flag –2 set) ̟ and e used in inputs will be converted to their real number approximations, otherwise they will be returned in symbolic form.</p>
+    <p>Numeric mode must not be set (flag –3 clear). Complex mode must be set (flag –103 set). In algebraic mode, if any of a, b, c, d are variables, they will be converted to their numeric values, even if “argument to symbolic” mode is set (flag –3 clear). In RPN mode, they will be returned as variables. If ALG mode is set and “constants to numeric” mode is selected (flag –2 set) π and e used in inputs will be converted to their real number approximations, otherwise they will be returned in symbolic form.</p>
     <table class="cmd-kv"><tbody><tr class="cmd-kv-section"><th colspan="2">Example 1: Find an equation for the straight line through the points (1, 2), (3, 4).</th></tr><tr><th>Command</th><td>DROITE((1, 2), (3, 4))</td></tr><tr><th>Result</th><td>Y=X-1.+2.</td></tr><tr class="cmd-kv-section"><th colspan="2">Example 2: Find a symbolic equation for the straight line through the points (π, e), (e, π).</th></tr><tr><th>Command</th><td>With “constants to symbolic ” mode selected and exact mode set, type:</td></tr></tbody></table>
     <p>DROITE(π+e*i, e+π*i)</p>
     <pre class="cmd-mono"> Result:        Y=(π-e)/(e-π)*(X-π)+e</pre>
@@ -5332,10 +5336,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Evaluate Object Command: Evaluates the object. The following table describes the effect of the evaluation on different object types.</p>
-    <pre class="cmd-mono">            Object Type                                    Effect of Evaluation
-    
-                Local Name                   Recalls the contents of the variable.
-               Global Name                   Calls the contents of the variable:</pre>
+    <table class="cmd-tbl"><thead><tr><th>Object Type</th><th>Effect of Evaluation</th></tr></thead><tbody><tr><td>Local Name</td><td>Recalls the contents of the variable.</td></tr><tr><td>Global Name</td><td>Calls the contents of the variable:</td></tr></tbody></table>
     <ul class="cmd-bullets"><li>A name is evaluated.</li><li>A program is evaluated.</li><li>A directory becomes the current directory.</li><li>Other objects are put on the stack. If no variable exists for a given name, evaluating the name returns the name to the stack.</li></ul>
     <pre class="cmd-mono">              Program                    Enters each object in the program:</pre>
     <ul class="cmd-bullets"><li>Names are evaluated (unless quoted).</li><li>Commands are evaluated.</li><li>Other objects are put on the stack.</li></ul>
@@ -5345,8 +5346,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     <p>specified object. Otherwise, puts the untagged object on the stack.</p>
     <pre class="cmd-mono">             Algebraic                   Enters each object in the algebraic expression:</pre>
     <ul class="cmd-bullets"><li>Names are evaluated.</li><li>Commands are evaluated.</li><li>Other objects are put on the stack.</li></ul>
-    <pre class="cmd-mono"> Command, Function, XLIB Name            Evaluates the specified object.
-            Other Objects                    Puts the object on the stack.</pre>
+    <table class="cmd-tbl"><thead><tr><th>Command, Function, XLIB Name</th><th>Evaluates the specified object.</th></tr></thead><tbody><tr><td>Other Objects</td><td>Puts the object on the stack.</td></tr></tbody></table>
     <p>To evaluate a symbolic argument to a numerical result, evaluate the argument in Numerical Results mode (flag –3 set) or execute →NUM on that argument.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -5425,13 +5425,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Exponential Analytic Function: Returns the exponential, or natural antilogarithm, of the argument; that is, e raised to the given power. EXP uses extended precision constants and a special algorithm to compute its result to full 12- digit precision for all arguments that do not trigger an underflow or overflow error. EXP provides a more accurate result for the exponential than can be obtained by using e Q. The difference in accuracy increases as z increases. For example:</p>
-    <pre class="cmd-mono">               z               EXP(z)                       ez
-    
-                    3            20.0855369232             20.0855369232
-                   10            22026.4657948             22026.4657949
-                 100         2.68811714182E43          2.68811714191E43
-                 500        1.40359221785E217         1.40359221809E217
-               1000          1.9707111402E434          1.9707111469E434</pre>
+    <table class="cmd-tbl"><thead><tr><th>z</th><th>EXP(z)</th><th>ez</th></tr></thead><tbody><tr><td>3</td><td>20.0855369232</td><td>20.0855369232</td></tr><tr><td>10</td><td>22026.4657948</td><td>22026.4657949</td></tr><tr><td>100</td><td>2.68811714182E43</td><td>2.68811714191E43</td></tr><tr><td>500</td><td>1.40359221785E217</td><td>1.40359221809E217</td></tr><tr><td>1000</td><td>1.9707111402E434</td><td>1.9707111469E434</td></tr></tbody></table>
     <p>For complex arguments: e(x,y) = excosy + iexsiny</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -6354,10 +6348,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Freeze Display Command: Freezes the part of the display specified by ndisplay area, so that it is not updated until a key is pressed. Normally, the stack display is updated as soon as the calculator is ready for data input. For example, when HALT stops a running program, or when a program ends, any displayed messages are cleared. The FREEZE command “freezes” a part or all of the display so that it is not updated until a key is pressed. This allows, for example, a prompting message to persist after a program halts to await data input. ndisplay area is the sum of the value codes for the areas to be frozen:</p>
-    <pre class="cmd-mono">                Display Area                              Value Code
-                     Status area                                    1
-        History/Stack/Command-line area                             2
-                     Menu area                                      4</pre>
+    <table class="cmd-tbl"><thead><tr><th>Display Area</th><th>Value Code</th></tr></thead><tbody><tr><td>Status area</td><td>1</td></tr><tr><td>History/Stack/Command-line area</td><td>2</td></tr><tr><td>Menu area</td><td>4</td></tr></tbody></table>
     <p>So, for example, 2 FREEZE freezes the history/stack/command-line area, 3 FREEZE freezes the status area and the history/stack/command-line area, and 7 FREEZE freezes all three areas. Values of ndisplay area ≥ 7 or ≤ 0 freeze the entire display (are equivalent to value 7). To freeze the graphics display, you must freeze the status and stack/command-line areas (by entering 3), or the entire display (by entering 7).</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
@@ -6456,13 +6447,9 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dd class="cmd-field cmd-field-description">
     <p>Function Plot Type Command: Sets the plot type to FUNCTION. When the plot type is FUNCTION, the DRAW command plots the current equation as a real- valued function of one real variable. The current equation is specified in the reserved variable EQ. The plotting parameters are specified in the reserved variable PPAR, which has the form: { (xmin, ymin) (xmax, ymax) indep res axes ptype depend } For plot type FUNCTION, the elements of PPAR are used as follows:</p><ul class="cmd-bullets"><li>(xmin, ymin) is a complex number specifying the lower left corner of PICT (the lower left corner of the display range). The default value is (–6.5,–3.1) for the HP 48gII and (–6.5,–3.9) for the HP 50g and 49g+.</li><li>(xmax, ymax) is a complex number specifying the upper right corner of PICT (the upper right corner of the display range). The default value is (6.5,3.2) for the HP 48gII and (6.5,4.0) for the HP 50g and 49g+.</li><li>indep is a name specifying the independent variable, or a list containing such a name and two numbers specifying the minimum and maximum values for the independent variable (the plotting range). The default value of indep is X.</li><li>res is a real number specifying the interval (in user-unit coordinates) between plotted values of the independent variable, or a binary integer specifying the interval in pixels. The default value is 0, which specifies an interval of 1 pixel.</li><li>axes is a list containing one or more of the following, in the order listed: a complex number specifying the user-unit coordinates of the plot origin, a list specifying the tick-mark annotation, and two strings specifying labels for the horizontal and vertical axes. The default value is (0,0).</li><li>ptype is a command name specifying the plot type. Executing the command FUNCTION places the name FUNCTION in PPAR.</li><li>depend is a name specifying a label for the vertical axis. The default value is Y. The current equation is plotted as a function of the variable specified in indep. The minimum and maximum values of the independent variable (the plotting range) can be specified in indep;</li></ul>
     <p>otherwise, the values in (xmin, ymin) and (xmax, ymax)(the display range) are used. Lines are drawn between plotted points unless flag –31 is set. If EQ contains an expression or program, the expression or program is evaluated in Numerical Results mode for each value of the independent variable to give the values of the dependent variable. If EQ contains an equation, the plotting action depends on the form of the equation, as shown in the following table.</p>
-    <pre class="cmd-mono">        Form of Current Equation                            Plotting Action
-    
-          expr = expr                  Each expression is plotted separately. The intersection of</pre>
+    <table class="cmd-tbl"><thead><tr><th>Form of Current Equation</th><th>Plotting Action</th></tr></thead><tbody><tr><td>expr = expr</td><td>Each expression is plotted separately. The intersection of</td></tr></tbody></table>
     <p>the two graphs shows where the expressions are equal.</p>
-    <pre class="cmd-mono">      name = expr                  Only the expression is plotted.
-    
-          indep = constant             A vertical line is plotted.</pre>
+    <table class="cmd-tbl"><thead><tr><th>name = expr</th><th>Only the expression is plotted.</th></tr></thead><tbody><tr><td>indep = constant</td><td>A vertical line is plotted.</td></tr></tbody></table>
     <p>If flag –28 is set, all equations are plotted simultaneously. If the independent variable in the current equation represents a unit object, you must specify the units by storing a unit object in the corresponding variable in the current directory. For example, if the current equation is X+3_m, and you want X to represent some number of inches, you would store 1_in (the number part of the unit object is ignored) in X. For each plotted point, the numerical value of the independent variable is combined with the specified unit (inches in this example) before the current equation is evaluated. If the result is a unit object, only the number part is plotted.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -6584,7 +6571,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Returns a set of polynomials that are a Grœbner basis G of the ideal I generated from an input set of polynomials F.</p>
+    <p>Returns a set of polynomials that are a Gröbner basis G of the ideal I generated from an input set of polynomials F.</p>
   </dd>
   <dt class="cmd-label cmd-label-input">Input</dt>
   <dd class="cmd-field cmd-field-input">
@@ -6600,9 +6587,9 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
-    <p>Find a Grœbner basis of the ideal polynomial generated by the polynomials: x2 + 2xy2, xy + 2y3 – 1</p>
+    <p>Find a Gröbner basis of the ideal polynomial generated by the polynomials: x2 + 2xy2, xy + 2y3 – 1</p>
     <table class="cmd-kv"><tbody><tr><th>Command</th><td>GBASIS([X^2 + 2*X*Y^2, X*Y + 2*Y^3 – 1], [X,Y])</td></tr><tr><th>Result</th><td>[X, 2*Y^3-1]</td></tr></tbody></table>
-    <p>Note this is not the minimal Grœbner basis, as the leading coefficient of the second term is not 1; the algorithm used avoids giving results with fractions.</p>
+    <p>Note this is not the minimal Gröbner basis, as the leading coefficient of the second term is not 1; the algorithm used avoids giving results with fractions.</p>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -6812,15 +6799,15 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Reduces a polynomial with respect to a Grœbner basis.</p>
+    <p>Reduces a polynomial with respect to a Gröbner basis.</p>
   </dd>
   <dt class="cmd-label cmd-label-input">Input</dt>
   <dd class="cmd-field cmd-field-input">
-    <p>Level 3/Argument 1: A vector of polynomials in several variables. Level 2/Argument 2: A vector of polynomials that is a Grœbner basis in the same variables. Level 1/Argument 3: A vector giving the names of the variables.</p>
+    <p>Level 3/Argument 1: A vector of polynomials in several variables. Level 2/Argument 2: A vector of polynomials that is a Gröbner basis in the same variables. Level 1/Argument 3: A vector giving the names of the variables.</p>
   </dd>
   <dt class="cmd-label cmd-label-output">Output</dt>
   <dd class="cmd-field cmd-field-output">
-    <p>Level 1/Item 1: A vector containing the input polynomial reduced with respect to the Grœbner basis, up to a constant; as with GBASIS, fractions in the result are avoided.</p>
+    <p>Level 1/Item 1: A vector containing the input polynomial reduced with respect to the Gröbner basis, up to a constant; as with GBASIS, fractions in the result are avoided.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
@@ -6828,9 +6815,9 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
-    <p>Reduce the polynomial: x2y – xy – 1 with respect to the Grœbner basis (obtained in the example for GBASIS): x, 2y3 – 1</p>
+    <p>Reduce the polynomial: x2y – xy – 1 with respect to the Gröbner basis (obtained in the example for GBASIS): x, 2y3 – 1</p>
     <table class="cmd-kv"><tbody><tr><th>Command</th><td>GREDUCE(X^2*Y–X*Y–1, [X,2*Y^3–1], [X,Y])</td></tr><tr><th>Result</th><td>-1</td></tr></tbody></table>
-    <p>Note this is the remainder of the input polynomial modulo the term x in the Grœbner basis</p>
+    <p>Note this is the remainder of the input polynomial modulo the term x in the Gröbner basis</p>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -6972,8 +6959,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
     <p>Find the Hadamard product of the following two matrices:</p>
-    <pre class="cmd-mono">                3 –1 2         2 3 0
-                    0 1 4          1 5 2</pre>
+    <table class="cmd-tbl"><thead><tr><th>3 –1 2</th><th>2 3 0</th></tr></thead><tbody><tr><td>0 1 4</td><td>1 5 2</td></tr></tbody></table>
     <p>and</p>
     <table class="cmd-kv"><tbody><tr><th>Command</th><td>HADAMARD([[3,-1,2][0,1,4]],[2,3,0][1,5,2]])</td></tr><tr><th>Result</th><td>[[6,-3,0][0,5,8]]</td></tr></tbody></table>
   </dd>
@@ -7937,16 +7923,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>User-Defined Dialog Box Command: Creates a user-defined input form (dialog box). INFORM creates a standard dialog box based upon the following specifications:</p>
-    <pre class="cmd-mono">    Variable                                                   Function
-    “title”            Title. This appears at the top of the dialog box.
-    
-    
-    
-    
-    
-    
-         Variable                                                Function
-    {s1 s2 … sn}        Field definitions. A field definition (sx) can have two formats: “label”, a field</pre>
+    <table class="cmd-tbl"><thead><tr><th>Variable</th><th>Function</th></tr></thead><tbody><tr><td>“title”</td><td>Title. This appears at the top of the dialog box.</td></tr><tr><td>Variable</td><td>Function</td></tr><tr><td>{s1 s2 … sn}</td><td>Field definitions. A field definition (sx) can have two formats: “label”, a field</td></tr></tbody></table>
     <p>label, or { “label” “helpInfo” type0 type1 … typen }, a field label with optional help text that appears near the bottom of the screen, and an optional list of valid object types for that field. If object types aren’t specified, all object types are valid. For information about object types, see the TYPE command. When creating a multi-column dialog box, you can span columns by using an empty list as a field definition. A field that appears to the left of an empty field automatically expands to fill the empty space.</p>
     <pre class="cmd-mono">format              Field format information. This is the number col or a list of the form { col tabs</pre>
     <p>}: col is the number of columns the dialog box has, and tabs optionally specifies the number of tab stops between the labels and the highlighted fields. This list can be empty. col defaults to 1 and tabs defaults to 3.</p>
@@ -8043,7 +8020,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     <p>ALGB, ARIT, CONSTANTS, DIFF, EXP&amp;LN, MAIN, MATHS, MATR, MODULAR, POLYNOMIAL, REWRITE, TESTS, TRIGO</p>
   </dd>
 </dl>
-<h2 id="cmd-INTVX">INTVX <span class="not-in-app">not in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
+<h2 id="cmd-INTVX">INTVX <span class="in-app">in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
 <div class="meta">PDF page 239 · printed page 3-119</div>
 <dl class="cmd-body">
   <dt class="cmd-label cmd-label-type">Type</dt>
@@ -8086,8 +8063,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Inverse (1/x) Analytic Function: Returns the reciprocal or the matrix inverse. For a complex argument (x, y), the inverse is the complex number:</p>
-    <pre class="cmd-mono">                                 x                      –y </pre>
-    <p>2, 2  ---------------- 2 ----------------2  x +y x +y  Matrix arguments must be square (real or complex). The computed inverse matrix A-1 satisfies A × A-1 = In, where In is the n × n identity matrix.</p>
+    <pre class="cmd-mono">                                - x                      –y -</pre>
+    <p>2, 2 - ---------------- 2 ----------------2 - -x +y x +y - Matrix arguments must be square (real or complex). The computed inverse matrix A-1 satisfies A × A-1 = In, where In is the n × n identity matrix.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
@@ -8266,12 +8243,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     <table class="cmd-kv"><tbody><tr><th>Command</th><td>ISOM([[0,-1] [-1,0]])</td></tr><tr><th>Result</th><td>{ [1, 1] –1}, meaning the matrix represents a symmetry in the line y = –x, and this is an indirect</td></tr></tbody></table>
     <p>isometry.</p>
     <p>1 – 3 -- --------- 2 2</p>
-    <pre class="cmd-mono">                                                                 3    1
-                                                                 ------   --
-                                                                   2      2
-    Example 2:     Analyze the isometry given by the matrix
-     Command:      ISOM([[1/2, -√3/2][√3/2, 1/2]])
-     Result:       { π/3, 1 }, meaning the matrix represents a rotation of π/3 radians, and this is a direct isometry.</pre>
+    <table class="cmd-tbl"><thead><tr><th>3</th><th>1</th></tr></thead><tbody><tr><td>------</td><td>--</td></tr><tr><td>2</td><td>2</td></tr><tr><td>Example 2:</td><td>Analyze the isometry given by the matrix</td></tr><tr><td>Command:</td><td>ISOM([[1/2, -√3/2][√3/2, 1/2]])</td></tr><tr><td>Result:</td><td>{ π/3, 1 }, meaning the matrix represents a rotation of π/3 radians, and this is a direct isometry.</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -8453,11 +8425,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Actions the specified key press. You input a number, in the format ab.c, that represents the key. In the number ab.c:</p><ul class="cmd-bullets"><li>a is the row coordinate number, where row 1 is the top-most row.</li><li>b is the column number, where column 1 is the left-most column.</li><li>c is the shift state of the key, i.e., whether it is normal, alpha-shifted, left shifted, etc. The shift state representations are as follows: 1: Normal function.</li></ul>
-    <pre class="cmd-mono">  2: Left-shift function.                            21: Left shift-and-hold function.
-      3. Right-shift function.                           31: Right shift-and-hold function.
-      4. Alpha-function.                                 41: Alpha shift-and-hold function.
-      5. Alpha-left-shift function.                      51: Alpha-left-shift-and-hold function.
-      6. Alpha-right-shift function.                     61: Alpha-right-shift-and-hold function.</pre>
+    <table class="cmd-tbl"><thead><tr><th>2: Left-shift function.</th><th>21: Left shift-and-hold function.</th></tr></thead><tbody><tr><td>3. Right-shift function.</td><td>31: Right shift-and-hold function.</td></tr><tr><td>4. Alpha-function.</td><td>41: Alpha shift-and-hold function.</td></tr><tr><td>5. Alpha-left-shift function.</td><td>51: Alpha-left-shift-and-hold function.</td></tr><tr><td>6. Alpha-right-shift function.</td><td>61: Alpha-right-shift-and-hold function.</td></tr></tbody></table>
     <p>The sign of the input controls whether USER mode key assignments are used. Positive inputs specify the USER mode key definition. Negative inputs specify the default system keyboard.</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
@@ -8598,8 +8566,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
     <p>Find an interpolating polynomial for the data (1,6), (3,7), (4,8), (2,9)</p>
-    <pre class="cmd-mono">Command:         LAGRANGE([[1,3,4,2][6,7,8,9]])
-                           3                2</pre>
+    <table class="cmd-tbl"><thead><tr><th>Command:</th><th>LAGRANGE([[1,3,4,2][6,7,8,9]])</th></tr></thead><tbody><tr><td>3</td><td>2</td></tr></tbody></table>
     <p>8x – 63x + 151 x – 60 -------------------------------------------------------</p>
     <pre class="cmd-mono"> Result:                                    6</pre>
   </dd>
@@ -9020,8 +8987,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dd class="cmd-field cmd-field-example">
     <p>Find the following limit:</p>
     <pre class="cmd-mono">                             n      n</pre>
-    <p> lim  x--------------- –y</p>
-    <pre class="cmd-mono">               x → y x – y
+    <p>- lim - x--------------- –y</p>
+    <pre class="cmd-mono">              - x → y- x – y
     
     Command:      lim((X^N-Y^N)/(X-Y), X=Y)
     Result:       N*EXP(N*LN(Y))/Y</pre>
@@ -9110,11 +9077,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Regression Model Formula Command: Returns an expression representing the best fit line according to the current statistical model, using X as the independent variable name, and explicit values of the slope and intercept taken from the reserved variable ΣPAR. For each curve fitting model, the following table indicates the form of the expression returned by ΣLINE, where m is the slope, x is the independent variable, and b is the intercept.</p>
-    <pre class="cmd-mono">                        Model                Form of Expression
-                    LINFIT                       mx + b
-                    LOGFIT                       m ln(x) + b
-                    EXPFIT                       bemx
-                    PWRFIT                       bxm</pre>
+    <table class="cmd-tbl"><thead><tr><th>Model</th><th>Form of Expression</th></tr></thead><tbody><tr><td>LINFIT</td><td>mx + b</td></tr><tr><td>LOGFIT</td><td>m ln(x) + b</td></tr><tr><td>EXPFIT</td><td>bemx</td></tr><tr><td>PWRFIT</td><td>bxm</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
@@ -9237,7 +9200,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
     <p>→ARRY, LIST→, →STR, →TAG, →UNIT</p>
-    <p>∆LIST</p>
+    <p>ΔLIST</p>
   </dd>
   <dt class="cmd-label cmd-label-type">Type</dt>
   <dd class="cmd-field cmd-field-type">
@@ -9273,7 +9236,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
-    <p>ΣLIST, ∆LIST, STREAM</p>
+    <p>ΣLIST, ΔLIST, STREAM</p>
   </dd>
 </dl>
 <h2 id="cmd-ΣLIST">ΣLIST <span class="in-app">in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
@@ -9293,7 +9256,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
-    <p>ΠLIST, ∆LIST, STREAM</p>
+    <p>ΠLIST, ΔLIST, STREAM</p>
   </dd>
 </dl>
 <h2 id="cmd-LN">LN <span class="in-app">in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
@@ -9517,12 +9480,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Linear Regression Command: Uses the currently selected statistical model to calculate the linear regression coefficients (intercept and slope) for the selected dependent and independent variables in the current statistics matrix (reserved variable ΣDAT). The columns of independent and dependent data are specified by the first two elements in the reserved variable ΣPAR, set by XCOL and YCOL, respectively. (The default independent and dependent columns are 1 and 2.) The selected statistical model is the fifth element in ΣPAR. LR stores the intercept and slope (untagged) as the third and fourth elements, respectively, in ΣPAR. The coefficients of the exponential (EXPFIT), logarithmic (LOGFIT), and power (PWRFIT) models are calculated using transformations that allow the data to be fitted by standard linear regression. The equations for these transformations appear in the table below, where b is the intercept and m is the slope. The logarithmic model requires positive x-values (XCOL), the exponential model requires positive y-values (YCOL), and the power model requires positive x- and y-values.</p>
-    <pre class="cmd-mono">                       Model                   Transformation
-                Logarithmic                   y = b + m ln(x)
-    
-                Exponential                   ln(y) = ln(b) + mx
-    
-                Power                         ln(y) = ln(b) + m ln(x)</pre>
+    <table class="cmd-tbl"><thead><tr><th>Model</th><th>Transformation</th></tr></thead><tbody><tr><td>Logarithmic</td><td>y = b + m ln(x)</td></tr><tr><td>Exponential</td><td>ln(y) = ln(b) + mx</td></tr><tr><td>Power</td><td>ln(y) = ln(b) + m ln(x)</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
@@ -10928,11 +10886,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>OR Function: Returns the logical OR of two arguments. When the arguments are binary integers or strings, OR does a bit-by-bit (base 2) logical comparison.</p><ul class="cmd-bullets"><li>An argument that is a binary integer is treated as a sequence of bits as long as the current wordsize. Each bit in the result is determined by comparing the corresponding bits (bit1 and bit2) in the two arguments as shown in the following table:</li></ul>
-    <pre class="cmd-mono">                    bit1                      bit2              bit1 OR bit2
-                         0                         0                     0
-                         0                         1                     1
-                         1                         0                     1
-                         1                         1                     1</pre>
+    <table class="cmd-tbl"><thead><tr><th>bit1</th><th>bit2</th><th>bit1 OR bit2</th></tr></thead><tbody><tr><td>0</td><td>0</td><td>0</td></tr><tr><td>0</td><td>1</td><td>1</td></tr><tr><td>1</td><td>0</td><td>1</td></tr><tr><td>1</td><td>1</td><td>1</td></tr></tbody></table>
     <ul class="cmd-bullets"><li>An argument that is a string is treated as a sequence of bits, using 8 bits per character (that is, using the binary version of the character code). The two string arguments must be the same length. When the arguments are real numbers or symbolics, OR simply does a true/false test. The result is 1 (true) if either or both arguments are nonzero; it is 0 (false) if both arguments are zero. This test is usually done to compare two test results. If either or both of the arguments are algebraic objects, then the result is an algebraic of the form symb1 OR symb2. Execute →NUM (or set flag –3 before executing OR) to produce a numeric result from the algebraic result.</li></ul>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -11080,12 +11034,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Parity Command: Sets the parity value in the reserved variable IOPAR. Legal values are shown below. A negative value means the calculator does not check parity on bytes received during Kermit transfers or with SRECV. Parity is still used during data transmission, however.</p>
-    <pre class="cmd-mono">                  n-Value                           Meaning
-                          0                    no parity (the default value)
-                          1                             odd parity
-                          2                            even parity
-                          3                               mark
-                          4                               space</pre>
+    <table class="cmd-tbl"><thead><tr><th>n-Value</th><th>Meaning</th></tr></thead><tbody><tr><td>0</td><td>no parity (the default value)</td></tr><tr><td>1</td><td>odd parity</td></tr><tr><td>2</td><td>even parity</td></tr><tr><td>3</td><td>mark</td></tr><tr><td>4</td><td>space</td></tr></tbody></table>
     <p>For more information, refer to the reserved variable IOPAR in appendix D, “Reserved Variables”.</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
@@ -11715,11 +11664,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
-    <pre class="cmd-mono">              Find the minimal polynomial of              :
-    Command:      PMINI([[0,1][1,0]])
-    
-                   1 0 0 1   1
-                   0 1 1 0   X</pre>
+    <table class="cmd-tbl"><thead><tr><th>Find the minimal polynomial of</th><th>:</th></tr></thead><tbody><tr><td>Command:</td><td>PMINI([[0,1][1,0]])</td></tr><tr><td>1 0 0 1</td><td>1</td></tr><tr><td>0 1 1 0</td><td>X</td></tr></tbody></table>
     <p>2 0 0 0 0 X –1</p>
     <pre class="cmd-mono">Result:                        So, the minimal polynomial is X2-1, as it is in the first row to contain entirely</pre>
     <p>zeros, except for the result.</p>
@@ -11878,8 +11823,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
     <p>Exact mode must be set (flag –105 clear). Numeric mode must not be set (flag –3 clear).</p>
-    <pre class="cmd-mono">Example:      Expand (X+1)3.
-    Command:      POWEXPAND((X+1)^3)</pre>
+    <table class="cmd-kv"><tbody><tr class="cmd-kv-section"><th colspan="2">Example: Expand (X+1)3.</th></tr><tr><th>Command</th><td>POWEXPAND((X+1)^3)</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-result">Result</dt>
   <dd class="cmd-field cmd-field-result">
@@ -12638,7 +12582,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>Level 1/Argument 1</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b*̟&#x60;</td></tr><tr><td>x</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b&#x60;</td></tr><tr><td>&#x60;symb1&#x60;</td><td class="cmd-io-arrow">→</td><td>&#x60;symb2&#x60;</td></tr><tr><td>(x,y)</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b*̟ + c/d*̟*i&#x60;</td></tr><tr><td>(x,y)</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b + c/d*i&#x60;</td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>Level 1/Argument 1</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b*π&#x60;</td></tr><tr><td>x</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b&#x60;</td></tr><tr><td>&#x60;symb1&#x60;</td><td class="cmd-io-arrow">→</td><td>&#x60;symb2&#x60;</td></tr><tr><td>(x,y)</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b*π + c/d*π*i&#x60;</td></tr><tr><td>(x,y)</td><td class="cmd-io-arrow">→</td><td>&#x60;a/b + c/d*i&#x60;</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
@@ -13173,8 +13117,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>Level 2/Argument 1</th><th>Level 1/Argument 2</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>[ vector ]1</td><td>{ nelements }</td><td class="cmd-io-arrow">→</td><td>[ vector ]2</td></tr><tr><td>[ vector ]</td><td>{ nrows, mcols }</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]</td></tr><tr><td>[[ matrix ]]</td><td>{ nelements }</td><td class="cmd-io-arrow">→</td><td>[ vector ]</td></tr><tr><td>[[ matrix ]]1</td><td>{ nrows, mcols }</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]2</td></tr><tr><td>&#x60;global&#x60;</td><td>{ nelements }</td><td class="cmd-io-arrow">→</td><td></td></tr><tr class="cmd-io-span"><td colspan="4">&#x60;global&#x60;  { nrows, mcols } →</td></tr><tr class="cmd-io-span"><td colspan="4"><pre class="cmd-mono">Example 1:      [ 2 4 6 8 ] { 2 2 } RDM returns [[ 2 4 ][ 6 8 ]].
-    Example 2:      [[ 2 3 4][ 1 6 9 ]] 8 RDM returns [ 2 3 4 1 6 9 0 0 ].</pre></td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>Level 2/Argument 1</th><th>Level 1/Argument 2</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>[ vector ]1</td><td>{ nelements }</td><td class="cmd-io-arrow">→</td><td>[ vector ]2</td></tr><tr><td>[ vector ]</td><td>{ nrows, mcols }</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]</td></tr><tr><td>[[ matrix ]]</td><td>{ nelements }</td><td class="cmd-io-arrow">→</td><td>[ vector ]</td></tr><tr><td>[[ matrix ]]1</td><td>{ nrows, mcols }</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]2</td></tr><tr><td>&#x60;global&#x60;</td><td>{ nelements }</td><td class="cmd-io-arrow">→</td><td></td></tr><tr class="cmd-io-span"><td colspan="4">&#x60;global&#x60;  { nrows, mcols } →</td></tr><tr class="cmd-io-span"><td colspan="4"><table class="cmd-tbl"><thead><tr><th>Example 1:</th><th>[ 2 4 6 8 ] { 2 2 } RDM returns [[ 2 4 ][ 6 8 ]].</th></tr></thead><tbody><tr><td>Example 2:</td><td>[[ 2 3 4][ 1 6 9 ]] 8 RDM returns [ 2 3 4 1 6 9 0 0 ].</td></tr></tbody></table></td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -13437,8 +13380,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>Level 3/Argument 1</th><th>Level 2/Argument 2</th><th>Level 1/Argument 3</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>[[ matrix ]]1</td><td>nposition</td><td>[[ matrix ]]2</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]3</td></tr><tr><td>[[ matrix ]]1</td><td>{ nrow, ncolumn }</td><td>[[ matrix ]]2</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]3</td></tr><tr><td>[ vector ]1</td><td>nposition</td><td>[ vector ]2</td><td class="cmd-io-arrow">→</td><td>[ vector ]3</td></tr><tr><td>{ listtarget }</td><td>nposition</td><td>{ list1 }</td><td class="cmd-io-arrow">→</td><td>{ listresult }</td></tr><tr><td>“stringtarget”</td><td>nposition</td><td>“string1”</td><td class="cmd-io-arrow">→</td><td>“stringresult”</td></tr><tr><td>grobtarget</td><td>(#n, #m)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td>grobresult</td></tr><tr><td>grobtarget</td><td>(x,y)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td>grobresult</td></tr><tr><td>PICT</td><td>(#n, #m)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td></td></tr><tr><td>PICT</td><td>(x,y)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td></td></tr><tr class="cmd-io-span"><td colspan="5">Example 1: [[ 1 1 1 1 ][ 1 1 1 1 ][ 1 1 1 1 ]] 6 [[ 2 2 ][ 2 2 ]]</td></tr><tr class="cmd-io-span"><td colspan="5">REPL returns [[ 1 1 1 1 ][ 1 2 2 1 ][ 1 2 2 1 ]].</td></tr><tr class="cmd-io-span"><td colspan="5"><pre class="cmd-mono">Example 2:      { A B C D E } 2 { F G } REPL returns { A F G D E }.
-    Example 3:      ERASE PICT (0,0) # 5d # 5d BLANK NEG REPL replaces a portion of</pre></td></tr><tr class="cmd-io-span"><td colspan="5">PICT with a 5 x 5 graphics object, each of whose pixels is on (dark), and whose upper left corner is positioned at (0,0) in PICT.</td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>Level 3/Argument 1</th><th>Level 2/Argument 2</th><th>Level 1/Argument 3</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>[[ matrix ]]1</td><td>nposition</td><td>[[ matrix ]]2</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]3</td></tr><tr><td>[[ matrix ]]1</td><td>{ nrow, ncolumn }</td><td>[[ matrix ]]2</td><td class="cmd-io-arrow">→</td><td>[[ matrix ]]3</td></tr><tr><td>[ vector ]1</td><td>nposition</td><td>[ vector ]2</td><td class="cmd-io-arrow">→</td><td>[ vector ]3</td></tr><tr><td>{ listtarget }</td><td>nposition</td><td>{ list1 }</td><td class="cmd-io-arrow">→</td><td>{ listresult }</td></tr><tr><td>“stringtarget”</td><td>nposition</td><td>“string1”</td><td class="cmd-io-arrow">→</td><td>“stringresult”</td></tr><tr><td>grobtarget</td><td>(#n, #m)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td>grobresult</td></tr><tr><td>grobtarget</td><td>(x,y)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td>grobresult</td></tr><tr><td>PICT</td><td>(#n, #m)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td></td></tr><tr><td>PICT</td><td>(x,y)</td><td>grob1</td><td class="cmd-io-arrow">→</td><td></td></tr><tr class="cmd-io-span"><td colspan="5">Example 1: [[ 1 1 1 1 ][ 1 1 1 1 ][ 1 1 1 1 ]] 6 [[ 2 2 ][ 2 2 ]]</td></tr><tr class="cmd-io-span"><td colspan="5">REPL returns [[ 1 1 1 1 ][ 1 2 2 1 ][ 1 2 2 1 ]].</td></tr><tr class="cmd-io-span"><td colspan="5"><table class="cmd-tbl"><thead><tr><th>Example 2:</th><th>{ A B C D E } 2 { F G } REPL returns { A F G D E }.</th></tr></thead><tbody><tr><td>Example 3:</td><td>ERASE PICT (0,0) # 5d # 5d BLANK NEG REPL replaces a portion of</td></tr></tbody></table></td></tr><tr class="cmd-io-span"><td colspan="5">PICT with a 5 x 5 graphics object, each of whose pixels is on (dark), and whose upper left corner is positioned at (0,0) in PICT.</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -13455,31 +13397,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Resolution Command: Specifies the resolution of mathematical and statistical plots, where the resolution is the interval between values of the independent variable used to generate the plot. A real number ninterval specifies the interval in user units. A binary integer #ninterval specifies the interval in pixels. The resolution is stored as the fourth item in PPAR, with default value 0. The interpretation of the default value is summarized in the following table.</p>
-    <pre class="cmd-mono">                Plot Type                                   Default Interval
-    
-           BAR                              10 pixels (bar width = 10 pixel columns)
-           DIFFEQ                           unlimited: step size is not constrained
-           FUNCTION                         2 pixels (plots a point in every other column of pixels)
-           CONIC                            2 pixels (plots a point in every other column of pixels)
-           TRUTH                            2 pixels (plots a point in every other column of pixels)
-           GRIDMAP                          RES does not apply
-           HISTOGRAM                        10 pixels (bin width = 10 pixel columns)
-           PARAMETRIC                       [independent variable range in user units]/130
-           PARSURFACE                       RES does not apply
-    
-    
-    
-    
-    
-    
-                 Plot Type                                  Default Interval
-    
-           PCONTOUR                      RES does not apply
-           POLAR                         2°, 2 grads, or π/90 radians
-           SCATTER                       RES does not apply
-           SLOPEFIELD                    RES does not apply
-           WIREFRAME                     RES does not apply
-           YSLICE                        2 pixels (plots a point in every other column of pixels)</pre>
+    <table class="cmd-tbl"><thead><tr><th>Plot Type</th><th>Default Interval</th></tr></thead><tbody><tr><td>BAR</td><td>10 pixels (bar width = 10 pixel columns)</td></tr><tr><td>DIFFEQ</td><td>unlimited: step size is not constrained</td></tr><tr><td>FUNCTION</td><td>2 pixels (plots a point in every other column of pixels)</td></tr><tr><td>CONIC</td><td>2 pixels (plots a point in every other column of pixels)</td></tr><tr><td>TRUTH</td><td>2 pixels (plots a point in every other column of pixels)</td></tr><tr><td>GRIDMAP</td><td>RES does not apply</td></tr><tr><td>HISTOGRAM</td><td>10 pixels (bin width = 10 pixel columns)</td></tr><tr><td>PARAMETRIC</td><td>[independent variable range in user units]/130</td></tr><tr><td>PARSURFACE</td><td>RES does not apply</td></tr><tr><td>Plot Type</td><td>Default Interval</td></tr><tr><td>PCONTOUR</td><td>RES does not apply</td></tr><tr><td>POLAR</td><td>2°, 2 grads, or π/90 radians</td></tr><tr><td>SCATTER</td><td>RES does not apply</td></tr><tr><td>SLOPEFIELD</td><td>RES does not apply</td></tr><tr><td>WIREFRAME</td><td>RES does not apply</td></tr><tr><td>YSLICE</td><td>2 pixels (plots a point in every other column of pixels)</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
@@ -13744,13 +13662,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Round Function: Rounds an object to a specified number of decimal places or significant digits, or to fit the current display format. nround (or symbround if flag –3 is set) controls how the level 2 argument is rounded, as follows:</p>
-    <pre class="cmd-mono">         nround or symbround                Effect on Level 2 Argument
-    
-               0 through 11              Rounded to n decimal places.
-    
-              –1 through –11             Rounded to n significant digits.
-    
-                     12                  Rounded to the current display format.</pre>
+    <table class="cmd-tbl"><thead><tr><th>nround or symbround</th><th>Effect on Level 2 Argument</th></tr></thead><tbody><tr><td>0 through 11</td><td>Rounded to n decimal places.</td></tr><tr><td>–1 through –11</td><td>Rounded to n significant digits.</td></tr><tr><td>12</td><td>Rounded to the current display format.</td></tr></tbody></table>
     <p>For complex numbers and arrays, each real number element is rounded. For unit objects, the numerical part of the object is rounded.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -14310,7 +14222,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>Level 1/Argument 1</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x</td><td class="cmd-io-arrow">→</td><td>(180/̟)x</td></tr><tr><td>&#x60;symb&#x60;</td><td class="cmd-io-arrow">→</td><td>&#x60;R→D(symb)&#x60;</td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>Level 1/Argument 1</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x</td><td class="cmd-io-arrow">→</td><td>(180/π)x</td></tr><tr><td>&#x60;symb&#x60;</td><td class="cmd-io-arrow">→</td><td>&#x60;R→D(symb)&#x60;</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -14920,8 +14832,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>Level 1/Argument 1</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>z1</td><td class="cmd-io-arrow">→</td><td>z2</td></tr><tr><td>x_unit</td><td class="cmd-io-arrow">→</td><td>xsign</td></tr><tr><td>&#x60;symb&#x60;</td><td class="cmd-io-arrow">→</td><td></td></tr><tr class="cmd-io-span"><td colspan="3">&#x60;SIGN(symb)&#x60;</td></tr><tr class="cmd-io-span"><td colspan="3"><pre class="cmd-mono">Example 1:      32_ft SIGN returns 1.
-    Example 2:      (1,1) SIGN returns (.707106781187,.707106781187).</pre></td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>Level 1/Argument 1</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>z1</td><td class="cmd-io-arrow">→</td><td>z2</td></tr><tr><td>x_unit</td><td class="cmd-io-arrow">→</td><td>xsign</td></tr><tr><td>&#x60;symb&#x60;</td><td class="cmd-io-arrow">→</td><td></td></tr><tr class="cmd-io-span"><td colspan="3">&#x60;SIGN(symb)&#x60;</td></tr><tr class="cmd-io-span"><td colspan="3"><table class="cmd-tbl"><thead><tr><th>Example 1:</th><th>32_ft SIGN returns 1.</th></tr></thead><tbody><tr><td>Example 2:</td><td>(1,1) SIGN returns (.707106781187,.707106781187).</td></tr></tbody></table></td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -15457,7 +15368,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dd class="cmd-field cmd-field-description">
     <p>Square Root Analytic Function: Returns the (positive) square root of the argument. For a complex number (x1, y1), the square root is this complex number:</p>
     <pre class="cmd-mono">                                                         θ          θ</pre>
-    <p>( x 2, y 2 ) =  r cos -- , r sin --</p>
+    <p>( x 2, y 2 ) = -- r cos -- , r sin ----</p>
     <pre class="cmd-mono">                                                         2          2</pre>
     <p>where r = ABS (x1, y1), and θ = ARG (x1, y1). If (x1, y1) = (0,0), then the square root is (0, 0). The inverse of SQ is a relation, not a function, since SQ sends more than one argument to the same result. The inverse relation for SQ is expressed by ISOL as this general solution: &#x60;s1*√Z&#x60; The function √ is the inverse of a part of SQ, a part defined by restricting the domain of SQ such that: 1. each argument is sent to a distinct result, and 2. each possible result is achieved. The points in this restricted domain of SQ are called the principal values of the inverse relation. The √ function in its entirety is called the principal branch of the inverse relation, and the points sent by √ to the boundary of the restricted domain of SQ form the branch cuts of √.</p>
     <p>The principal branch used by the calculator for √ was chosen because it is analytic in the regions where the arguments of the real-valued inverse function are defined. The branch cut for the complex-valued square root function occurs where the corresponding real-valued function is undefined. The principal branch also preserves most of the important symmetries. The graphs below show the domain and range of √. The graph of the domain shows where the branch cut occurs: the heavy solid line marks one side of the cut, while the feathered lines mark the other side of the cut. The graph of the range shows where each side of the cut is mapped under the function.</p>
@@ -15675,15 +15586,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     <p>Representable With</p>
     <pre class="cmd-mono">             Number              Displayed As</pre>
     <p>12 Digits?</p>
-    <pre class="cmd-mono">      1011                  100000000000                Yes (integer)
-    
-          1012                  1.E12                       No
-    
-          10-11                 .000000000001               Yes
-    
-          1.2 x 10-11           1.23E-11                    No
-    
-          12.345                12.345                      Yes</pre>
+    <table class="cmd-tbl"><thead><tr><th>1011</th><th>100000000000</th><th>Yes (integer)</th></tr></thead><tbody><tr><td>1012</td><td>1.E12</td><td>No</td></tr><tr><td>10-11</td><td>.000000000001</td><td>Yes</td></tr><tr><td>1.2 x 10-11</td><td>1.23E-11</td><td>No</td></tr><tr><td>12.345</td><td>12.345</td><td>Yes</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -17182,12 +17085,9 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>I/O Translation Command: Specifies the character translation option. These translations affect only ASCII Kermit transfers and files printed to the serial port. Legal values for n are as follows:</p>
-    <pre class="cmd-mono">       n                                              Effect
-           0                                         No translation
-           1       Translate character 10 (line feed only) to /from characters 10 and 13 (line feed</pre>
+    <table class="cmd-tbl"><thead><tr><th>n</th><th>Effect</th></tr></thead><tbody><tr><td>0</td><td>No translation</td></tr><tr><td>1</td><td>Translate character 10 (line feed only) to /from characters 10 and 13 (line feed</td></tr></tbody></table>
     <p>with carriage return, the Kermit protocol) (the default value)</p>
-    <pre class="cmd-mono">       2             Translate characters 128 through 159 (80 through 9F hexadecimal)
-           3                            Translate all characters (128 through 255)</pre>
+    <table class="cmd-tbl"><thead><tr><th>2</th><th>Translate characters 128 through 159 (80 through 9F hexadecimal)</th></tr></thead><tbody><tr><td>3</td><td>Translate all characters (128 through 255)</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
@@ -17226,15 +17126,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-example">Example</dt>
   <dd class="cmd-field cmd-field-example">
     <p>Express the following in trigonometric terms: ln ( x + i )</p>
-    <pre class="cmd-mono">Command:      TRIG(LN(X+i))
-    
-    
-    
-    
-    
-    
-                                 2                                                         1</pre>
-    <p>L N( X + 1 ) + 2 × i × A TA N --  x ------------------------------------------------------------------------------ 2 Result:</p>
+    <table class="cmd-tbl"><thead><tr><th>Command:</th><th>TRIG(LN(X+i))</th></tr></thead><tbody><tr><td>2</td><td>1</td></tr></tbody></table>
+    <p>L N( X + 1 ) + 2 × i × A TA N- --- - x- ------------------------------------------------------------------------------ 2 Result:</p>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -17392,8 +17285,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Truncate Function: Truncates an object to a specified number of decimal places or significant digits, or to fit the current display format. ntruncate (or symbtruncate if flag –3 is set) controls how the level 2 argument is truncated, as follows:</p>
-    <pre class="cmd-mono">               ntruncate                     Effect on Level 2 Argument
-              0 through 11           truncated to n decimal places</pre>
+    <table class="cmd-tbl"><thead><tr><th>ntruncate</th><th>Effect on Level 2 Argument</th></tr></thead><tbody><tr><td>0 through 11</td><td>truncated to n decimal places</td></tr></tbody></table>
     <p>–1 through –11 truncated to n significant digits</p>
     <pre class="cmd-mono">          12                     truncated to the current display format</pre>
     <p>For complex numbers and arrays, each real number element is truncated. For unit objects, the number part of the object is truncated.</p>
@@ -17954,10 +17846,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     <p>- t --2 – 1 ⋅ e– --2 dt utpc ( n, x ) = --------------- n</p>
     <pre class="cmd-mono">                                                                  --           ∫</pre>
     <p>2 2 Γ ( n--2 ) x</p><ul class="cmd-bullets"><li>For x &lt; 0: utpc ( n, x ) ) = 1</li></ul>
-    <p>Γ  -- =  -- – 1 !</p>
-    <pre class="cmd-mono">                        z         z
-                            2         2
-    For any value z,                               , where ! is the factorial command.</pre>
+    <p>Γ -- ---- = -- -- – 1-- !</p>
+    <table class="cmd-tbl"><thead><tr><th>z</th><th>z</th></tr></thead><tbody><tr><td>2</td><td>2</td></tr><tr><td>For any value z,</td><td>, where ! is the factorial command.</td></tr></tbody></table>
     <p>The value n is rounded to the nearest integer and, when rounded, must be positive.</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
@@ -17979,22 +17869,20 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Upper Snedecor’s F Distribution Command: Returns the probability utpf(n1, n2, x) that a Snedecor’s F random variable is greater than x, where n1 and n2 are the numerator and denominator degrees of freedom of the F distribution. The defining equations for utpf(n1, n2, x) are these:</p><ul class="cmd-bullets"><li>For x ≥ 0:</li></ul>
-    <pre class="cmd-mono">                                                          n 1 + n 2                                           ( n1 + n2 )</pre>
-    <p>----- Γ  ---------------- n1</p>
+    <pre class="cmd-mono">                                                          n 1 + n 2-                                           ( n1 + n2 )</pre>
+    <p>----- Γ - ---------------- n1</p>
     <pre class="cmd-mono">                                                                             ∞ n1 – 2                        – ----------------------</pre>
-    <p>- n  -----1 2</p>
-    <pre class="cmd-mono">                                                        2                       --------------      n1                2</pre>
-    <p></p>
+    <p>- n - -----1- 2</p>
+    <pre class="cmd-mono">                                                       - 2 -                      --------------      n1 -               2</pre>
+    <p>-</p>
     <pre class="cmd-mono">                                                                             ∫x t       2
-                                        n  ------------------------------                          1 + ----- t                          dt
-                                            2               n            n                              n </pre>
-    <p>Γ  ----1 Γ  ----2 2</p>
+                                       - n - ------------------------------                          1 + ----- t                          dt
+                                            2               n            n                              -n -</pre>
+    <p>Γ -- ----1-- Γ -- ----2-- 2</p>
     <pre class="cmd-mono">                                                         2            2</pre>
     <ul class="cmd-bullets"><li>For x &lt; 0: utp f ( n 1, n 2, x ) = 1</li></ul>
-    <p>Γ  -- =  -- – 1 !</p>
-    <pre class="cmd-mono">                        z         z
-                            2         2
-    For any value z,                                , where ! is the calculator’s factorial command.</pre>
+    <p>Γ -- ---- = -- -- – 1-- !</p>
+    <table class="cmd-tbl"><thead><tr><th>z</th><th>z</th></tr></thead><tbody><tr><td>2</td><td>2</td></tr><tr><td>For any value z,</td><td>, where ! is the calculator’s factorial command.</td></tr></tbody></table>
     <p>The values n1 and n2 are rounded to the nearest integers and, when rounded, must be positive.</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
@@ -18037,18 +17925,15 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Upper Student’s t Distribution Command: Returns the probability utpt(n, x) that a Student’s t random variable is greater than x, where n is the number of degrees of freedom of the distribution. The following is the defining equation for all x: n+1 Γ  -----------  ∞</p>
-    <pre class="cmd-mono">                                                n+1                             – -----------
-                                                                               2           2</pre>
-    <p>utpt ( n, x ) = ----------------------- ∫  1 + --- </p>
+    <p>Upper Student’s t Distribution Command: Returns the probability utpt(n, x) that a Student’s t random variable is greater than x, where n is the number of degrees of freedom of the distribution. The following is the defining equation for all x: n+1 Γ -- ----------- -- ∞</p>
+    <table class="cmd-tbl"><thead><tr><th>n+1</th><th>– -----------</th></tr></thead><tbody><tr><td>2</td><td>2</td></tr></tbody></table>
+    <p>utpt ( n, x ) = ----------------------- ∫ -- 1 + --- --</p>
     <pre class="cmd-mono">                                                    2                    t</pre>
-    <p>dt n Γ  -- nπ</p>
+    <p>dt n Γ -- ---- nπ</p>
     <pre class="cmd-mono">                                               n                x</pre>
     <p>2</p>
-    <p>Γ  -- =  -- – 1 !</p>
-    <pre class="cmd-mono">                        z         z
-                            2         2
-    For any value z,                               , where ! is the factorial command.</pre>
+    <p>Γ -- ---- = -- -- – 1-- !</p>
+    <table class="cmd-tbl"><thead><tr><th>z</th><th>z</th></tr></thead><tbody><tr><td>2</td><td>2</td></tr><tr><td>For any value z,</td><td>, where ! is the factorial command.</td></tr></tbody></table>
     <p>The value n is rounded to the nearest integer and, when rounded, must be positive.</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
@@ -18101,8 +17986,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>L1/A1</th><th class="cmd-io-arrow"></th><th>Ln/I1 ... L3/In–2</th><th>L2/In–1</th><th>L1/In</th></tr></thead><tbody><tr><td>[xy]</td><td class="cmd-io-arrow">→</td><td>x</td><td>y</td><td></td></tr><tr><td>[ xr, ytheta ]</td><td class="cmd-io-arrow">→</td><td>xr</td><td>ytheta</td><td></td></tr><tr><td>[ x1 , x2 , x3 ]</td><td class="cmd-io-arrow">→</td><td>x1</td><td>x2</td><td>x3</td></tr><tr><td>[ x1, xtheta, xz ]</td><td class="cmd-io-arrow">→</td><td>x1</td><td>xtheta</td><td>xz</td></tr><tr><td>[ x1, xtheta, xphi ]</td><td class="cmd-io-arrow">→</td><td>x1</td><td>xtheta</td><td>xphi</td></tr><tr><td>[ x1, x2, ..., xn ]</td><td class="cmd-io-arrow">→</td><td>x1 ... xn–2</td><td>xn–1</td><td>xn</td></tr><tr><td>(x, y)</td><td class="cmd-io-arrow">→</td><td>x</td><td>y</td><td></td></tr><tr><td>(xr, ytheta)</td><td class="cmd-io-arrow">→</td><td>xr</td><td>ytheta</td><td></td></tr><tr class="cmd-io-span"><td colspan="5">L = Level; A = Argument; I = item</td></tr><tr class="cmd-io-span"><td colspan="5"><pre class="cmd-mono">Example 1:      With flag –16 clear (Rectangular mode), (2,3) V→ returns 2 to level 2 and 1 to level 1.
-    Example 2:      With flag –15 clear and –16 set (Polar/Cylindrical mode), [ 2 7 4 ] V→ returns 2 to</pre></td></tr><tr class="cmd-io-span"><td colspan="5">level 3, 7 to level 2, and 4 to level 1.</td></tr><tr class="cmd-io-span"><td colspan="5"><pre class="cmd-mono">Example 3:      [ 9 7 5 3 ] V→ returns 9 to level 4, 7 to level 3, 5 to level 2, and 3 to level 1,</pre></td></tr><tr class="cmd-io-span"><td colspan="5">independent of the state of flags –15 and –16.</td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>L1/A1</th><th class="cmd-io-arrow"></th><th>Ln/I1 ... L3/In–2</th><th>L2/In–1</th><th>L1/In</th></tr></thead><tbody><tr><td>[xy]</td><td class="cmd-io-arrow">→</td><td>x</td><td>y</td><td></td></tr><tr><td>[ xr, ytheta ]</td><td class="cmd-io-arrow">→</td><td>xr</td><td>ytheta</td><td></td></tr><tr><td>[ x1 , x2 , x3 ]</td><td class="cmd-io-arrow">→</td><td>x1</td><td>x2</td><td>x3</td></tr><tr><td>[ x1, xtheta, xz ]</td><td class="cmd-io-arrow">→</td><td>x1</td><td>xtheta</td><td>xz</td></tr><tr><td>[ x1, xtheta, xphi ]</td><td class="cmd-io-arrow">→</td><td>x1</td><td>xtheta</td><td>xphi</td></tr><tr><td>[ x1, x2, ..., xn ]</td><td class="cmd-io-arrow">→</td><td>x1 ... xn–2</td><td>xn–1</td><td>xn</td></tr><tr><td>(x, y)</td><td class="cmd-io-arrow">→</td><td>x</td><td>y</td><td></td></tr><tr><td>(xr, ytheta)</td><td class="cmd-io-arrow">→</td><td>xr</td><td>ytheta</td><td></td></tr><tr class="cmd-io-span"><td colspan="5">L = Level; A = Argument; I = item</td></tr><tr class="cmd-io-span"><td colspan="5"><pre class="cmd-mono">Example 1:      With flag –16 clear (Rectangular mode), (2,3) V→ returns 2 to level 2 and 1 to level 1.
+    Example 2:      With flag –15 clear and –16 set (Polar/Cylindrical mode), [ 2 7 4 ] V→ returns 2 to</pre></td></tr><tr class="cmd-io-span"><td colspan="5">level 3, 7 to level 2, and 4 to level 1.</td></tr><tr class="cmd-io-span"><td colspan="5"><pre class="cmd-mono">Example 3:      [ 9 7 5 3 ] V→ returns 9 to level 4, 7 to level 3, 5 to level 2, and 3 to level 1,</pre></td></tr><tr class="cmd-io-span"><td colspan="5">independent of the state of flags –15 and –16.</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -18123,7 +18008,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     
        Flag –16 clear (Rectangular mode)                       [xy]               (x, y)
     
-       Flag –16 set (Polar mode)                              [xy]                (x,  y)</pre>
+       Flag –16 set (Polar mode)                              [xy]                (x,  y)</pre>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
@@ -18131,7 +18016,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>Level 2/Argument 1</th><th>Level 1/Argument 2</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>[xy]</td></tr><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>[xy]</td></tr><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>(x, y)</td></tr><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>(x,  y)</td></tr><tr class="cmd-io-span"><td colspan="4">Example 1: With flags –19 and –16 clear, 2 3 →V2 returns [ 2 3 ].</td></tr><tr class="cmd-io-span"><td colspan="4">Example 2: With flags –19 and –16 set (Polar/Spherical mode), 2 3 →V2 returns (2,3).</td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>Level 2/Argument 1</th><th>Level 1/Argument 2</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>[xy]</td></tr><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>[xy]</td></tr><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>(x, y)</td></tr><tr><td>x</td><td>y</td><td class="cmd-io-arrow">→</td><td>(x,  y)</td></tr><tr class="cmd-io-span"><td colspan="4">Example 1: With flags –19 and –16 clear, 2 3 →V2 returns [ 2 3 ].</td></tr><tr class="cmd-io-span"><td colspan="4">Example 2: With flags –19 and –16 set (Polar/Spherical mode), 2 3 →V2 returns (2,3).</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -18148,14 +18033,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Stack to 3-Element Vector Command: Converts three numbers into a 3-element vector. The result returned depends on the coordinate mode used, as shown in the following table:</p>
-    <pre class="cmd-mono">                             Mode                                                 Result
-    
-    
-      Rectangular (flag –16 clear)                                [ x1 x2 x3 ]
-    
-      Polar/Cylindrical (flag –15 clear and –16 set)              [ x1 xtheta xz ]
-    
-      Polar/Spherical (flag –15 and –16 set)                      [ x1 xtheta xphi ]</pre>
+    <table class="cmd-tbl"><thead><tr><th>Mode</th><th>Result</th></tr></thead><tbody><tr><td>Rectangular (flag –16 clear)</td><td>[ x1 x2 x3 ]</td></tr><tr><td>Polar/Cylindrical (flag –15 clear and –16 set)</td><td>[ x1 xtheta xz ]</td></tr><tr><td>Polar/Spherical (flag –15 and –16 set)</td><td>[ x1 xtheta xphi ]</td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
@@ -18163,7 +18041,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th>Level 3/Argument 1</th><th>Level 2/Argument 2</th><th>Level 1/Argument 3</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x1</td><td>x2</td><td>x3</td><td class="cmd-io-arrow">→</td><td>[ x1 x2 x3 ]</td></tr><tr><td>x1</td><td>xtheta</td><td>xz</td><td class="cmd-io-arrow">→</td><td>[ x1 xtheta xz ]</td></tr><tr><td>x1</td><td>xtheta</td><td>xphi</td><td class="cmd-io-arrow">→</td><td>[ x1 xtheta xphi ]</td></tr><tr class="cmd-io-span"><td colspan="5">Example 1: With flag –16 clear (Rectangular mode), 1 2 3 →V3 returns [ 1 2 3 ].</td></tr><tr class="cmd-io-span"><td colspan="5">Example 2: With flag –15 clear and –16 set (Polar/Cylindrical mode), 1 2 3 →V3 returns</td></tr><tr class="cmd-io-span"><td colspan="5">[ 1 2 3 ].</td></tr><tr class="cmd-io-span"><td colspan="5"><pre class="cmd-mono">Example 3:       With flags –15 and –16 set (Polar/Spherical mode), 1 2 3 →V3 returns [ 1 2 3 ].</pre></td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th>Level 3/Argument 1</th><th>Level 2/Argument 2</th><th>Level 1/Argument 3</th><th class="cmd-io-arrow"></th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td>x1</td><td>x2</td><td>x3</td><td class="cmd-io-arrow">→</td><td>[ x1 x2 x3 ]</td></tr><tr><td>x1</td><td>xtheta</td><td>xz</td><td class="cmd-io-arrow">→</td><td>[ x1 xtheta xz ]</td></tr><tr><td>x1</td><td>xtheta</td><td>xphi</td><td class="cmd-io-arrow">→</td><td>[ x1 xtheta xphi ]</td></tr><tr class="cmd-io-span"><td colspan="5">Example 1: With flag –16 clear (Rectangular mode), 1 2 3 →V3 returns [ 1 2 3 ].</td></tr><tr class="cmd-io-span"><td colspan="5">Example 2: With flag –15 clear and –16 set (Polar/Cylindrical mode), 1 2 3 →V3 returns</td></tr><tr class="cmd-io-span"><td colspan="5">[ 1 2 3 ].</td></tr><tr class="cmd-io-span"><td colspan="5"><pre class="cmd-mono">Example 3:       With flags –15 and –16 set (Polar/Spherical mode), 1 2 3 →V3 returns [ 1 2 3 ].</pre></td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -18470,31 +18348,11 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Warmstart Log Command: Returns four strings recording the date, time, and cause of the four most recent warmstart events. Each string &quot;logn&quot; has the form &quot;code–date time&quot;. The following table summarizes the legal values of code and their meanings.</p>
-    <pre class="cmd-mono"> Code                                          Description
-    
-    0          The warmstart log was cleared.
-    1          The interrupt system detected a very low battery condition at the battery contacts</pre>
+    <table class="cmd-tbl"><thead><tr><th>Code</th><th>Description</th></tr></thead><tbody><tr><td>0</td><td>The warmstart log was cleared.</td></tr><tr><td>1</td><td>The interrupt system detected a very low battery condition at the battery contacts</td></tr></tbody></table>
     <p>(not the same as a low system voltage), and put the calculator in “Deep Sleep mode” (with the system clock running). When $ is pressed after the battery voltage is restored, the system warmstarts and puts a 1 in the log.</p>
-    <pre class="cmd-mono">2          Hardware failed during transmission (timeout).
-    
-    3          Run through address 0.
-    4          System time is corrupt
-    
-    
-    
-    
-     Code                                          Description
-    
-     5         A Deep Sleep wakeup (for example, $, Alarm).
-     6         Not used
-     7         A 5-nibble word (CMOS test word) in RAM was corrupt. (This word is checked</pre>
+    <table class="cmd-tbl"><thead><tr><th>2</th><th>Hardware failed during transmission (timeout).</th></tr></thead><tbody><tr><td>3</td><td>Run through address 0.</td></tr><tr><td>4</td><td>System time is corrupt</td></tr><tr><td>Code</td><td>Description</td></tr><tr><td>5</td><td>A Deep Sleep wakeup (for example, $, Alarm).</td></tr><tr><td>6</td><td>Not used</td></tr><tr><td>7</td><td>A 5-nibble word (CMOS test word) in RAM was corrupt. (This word is checked</td></tr></tbody></table>
     <p>on every interrupt, but it is used only as an indicator of potentially corrupt RAM.)</p>
-    <pre class="cmd-mono"> 8         Not used
-     9         The alarm list is corrupt.
-     A         System RPL jump to #0.
-     B         The card module was removed (or card bounce).
-     C         Hardware reset occurred (for example, an electrostatic discharge or user reset)
-     D          An expected System (RPL) error handler was not found in runstream.</pre>
+    <table class="cmd-tbl"><thead><tr><th>8</th><th>Not used</th></tr></thead><tbody><tr><td>9</td><td>The alarm list is corrupt.</td></tr><tr><td>A</td><td>System RPL jump to #0.</td></tr><tr><td>B</td><td>The card module was removed (or card bounce).</td></tr><tr><td>C</td><td>Hardware reset occurred (for example, an electrostatic discharge or user reset)</td></tr><tr><td>D</td><td>An expected System (RPL) error handler was not found in runstream.</td></tr></tbody></table>
     <p>The date and time stamp (date time) part of the log may be displayed as 00…0000 for one of three reasons:</p><ul class="cmd-bullets"><li>The system time was corrupt when the stamp was recorded.</li><li>The date and time stamp itself is corrupt (bad checksum).</li><li>Fewer than four warmstarts have occurred since the log was last cleared.</li></ul>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -18663,11 +18521,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Exclusive OR Function: Returns the logical exclusive OR of two arguments. When the arguments are binary integers or strings, XOR does a bit-by-bit (base 2) logical comparison:</p><ul class="cmd-bullets"><li>Binary integer arguments are treated as sequences of bits with length equal to the current wordsize. Each bit in the result is determined by comparing the corresponding bits (bit1 and bit2) in the two arguments, as shown in the following table:</li></ul>
-    <pre class="cmd-mono">                     bit1             bit2            bit1 XOR bit2
-                            0               0                0
-                            0               1                1
-                            1               0                1
-                            1               1                0</pre>
+    <table class="cmd-tbl"><thead><tr><th>bit1</th><th>bit2</th><th>bit1 XOR bit2</th></tr></thead><tbody><tr><td>0</td><td>0</td><td>0</td></tr><tr><td>0</td><td>1</td><td>1</td></tr><tr><td>1</td><td>0</td><td>1</td></tr><tr><td>1</td><td>1</td><td>0</td></tr></tbody></table>
     <ul class="cmd-bullets"><li>String arguments are treated as sequences of bits, using 8 bits per character (that is, using the binary version of the character code). The two string arguments must be the same length. When the arguments are real numbers or symbolics, XOR simply does a true/false test. The result is 1 (true) if either, but not both, arguments are nonzero; it is 0 (false) if both arguments are nonzero or zero. This test is usually done to compare two test results. If either or both of the arguments are algebraic objects, then the result is an algebraic of the form symb1 XOR symb2. Execute →NUM (or set flag –3 before executing XOR) to produce a numeric result from the algebraic result.</li></ul>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
@@ -19222,7 +19076,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
     <p>APPLY, QUOTE</p>
   </dd>
 </dl>
-<h2 id="cmd-integral-Integrate">∫(Integrate) <span class="not-in-app">not in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
+<h2 id="cmd-integral-Integrate">∫(Integrate) <span class="in-app">in app</span> <span class="back"><a href="#top">↑ top</a></span></h2>
 <div class="meta">PDF page 408 · printed page 3-288</div>
 <dl class="cmd-body">
   <dt class="cmd-label cmd-label-type">Type</dt>
@@ -19371,7 +19225,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
-    <table class="cmd-io"><thead><tr><th class="cmd-io-arrow"></th><th>Level 1/Argument 1</th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td class="cmd-io-arrow">→</td><td>&#x60;̟&#x60;</td><td></td></tr><tr><td class="cmd-io-arrow">→</td><td>3.14159265359…</td><td></td></tr></tbody></table>
+    <table class="cmd-io"><thead><tr><th class="cmd-io-arrow"></th><th>Level 1/Argument 1</th><th>Level 1/Item 1</th></tr></thead><tbody><tr><td class="cmd-io-arrow">→</td><td>&#x60;π&#x60;</td><td></td></tr><tr><td class="cmd-io-arrow">→</td><td>3.14159265359…</td><td></td></tr></tbody></table>
   </dd>
   <dt class="cmd-label cmd-label-see-also">See also</dt>
   <dd class="cmd-field cmd-field-see-also">
@@ -19441,7 +19295,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Percent Function: Returns x percent of y. Common usage is ambiguous about some units of temperature. When ºC or ºF represents a thermometer reading, then the temperature is a unit with an additive constant: 0 ºC=273.15 K, and 0 ºF=459.67 ºR. But when ºC or ºF represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1 ºC=1 K and 1 ºF=1 ºR. The arithmetic operators +, –, %, %CH, and %T treat temperatures as differences, without any additive constant. However, +, –, %CH, and %T require both arguments to be either absolute (K and ºR), both ºC, or both ºF. No other combinations are allowed. For more information on using temperature units with arithmetic functions, see the entry for +.</p>
+    <p>Percent Function: Returns x percent of y. Common usage is ambiguous about some units of temperature. When °C or °F represents a thermometer reading, then the temperature is a unit with an additive constant: 0 °C=273.15 K, and 0 °F=459.67 °R. But when °C or °F represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1 °C=1 K and 1 °F=1 °R. The arithmetic operators +, –, %, %CH, and %T treat temperatures as differences, without any additive constant. However, +, –, %CH, and %T require both arguments to be either absolute (K and °R), both °C, or both °F. No other combinations are allowed. For more information on using temperature units with arithmetic functions, see the entry for +.</p>
   </dd>
   <dt class="cmd-label cmd-label-input-output">Input/Output</dt>
   <dd class="cmd-field cmd-field-input-output">
@@ -19647,8 +19501,8 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   </dd>
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
-    <p>Add Analytic Function: Returns the sum of the arguments. The sum of a real number a and a complex number (x, y) is the complex number (x+a, y). The sum of two complex numbers (x1, y1) and (x2, y2) is the complex number (x1+x2, y1+y2). The sum of a real array and a complex array is a complex array, where each element x of the real array is treated as a complex element (x, 0). The arrays must have the same dimensions. The sum of a binary integer and a real number is a binary integer that is the sum of the two arguments, truncated to the current wordsize. (The real number is converted to a binary integer before the addition.) The sum of two binary integers is truncated to the current binary integer wordsize. The sum of two unit objects is a unit object with the same dimensions as the second argument. The units of the two arguments must be consistent. The sum of two graphics objects is the same as the result of performing a logical OR, except that the two graphics objects must have the same dimensions. Common usage is ambiguous about some units of temperature. When ºC or ºF represents a thermometer reading, then the temperature is a unit with an additive constant: 0 ºC = 273.15 K, and 0ºF = 459.67ºR. But when ºC or ºF represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1 ºC=1 K and 1 ºF =1 ºR. The calculator assumes that the simple temperature units x_ºC and x_ºF represent thermometer temperatures when used as arguments to the functions &lt;, &gt;, ≤, ≥, ==, and ≠. This means that, in order to do the calculation, the calculator will first convert any Celsius temperature to Kelvin and any Fahrenheit temperature to Rankine. (For other functions or compound temperature units, such as x_ºC/min, the calculator assumes temperature units represent temperature differences, so there is no additive constant involved, and hence no conversion.) The arithmetic operators +, –, %CH,</p>
-    <p>and %T treat temperatures as differences, without any additive constant, but require both arguments to be either absolute (K and ºR), both ºC, or both ºF. No other combinations are allowed.</p>
+    <p>Add Analytic Function: Returns the sum of the arguments. The sum of a real number a and a complex number (x, y) is the complex number (x+a, y). The sum of two complex numbers (x1, y1) and (x2, y2) is the complex number (x1+x2, y1+y2). The sum of a real array and a complex array is a complex array, where each element x of the real array is treated as a complex element (x, 0). The arrays must have the same dimensions. The sum of a binary integer and a real number is a binary integer that is the sum of the two arguments, truncated to the current wordsize. (The real number is converted to a binary integer before the addition.) The sum of two binary integers is truncated to the current binary integer wordsize. The sum of two unit objects is a unit object with the same dimensions as the second argument. The units of the two arguments must be consistent. The sum of two graphics objects is the same as the result of performing a logical OR, except that the two graphics objects must have the same dimensions. Common usage is ambiguous about some units of temperature. When °C or °F represents a thermometer reading, then the temperature is a unit with an additive constant: 0 °C = 273.15 K, and 0°F = 459.67°R. But when °C or °F represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1 °C=1 K and 1 °F =1 °R. The calculator assumes that the simple temperature units x_°C and x_°F represent thermometer temperatures when used as arguments to the functions &lt;, &gt;, ≤, ≥, ==, and ≠. This means that, in order to do the calculation, the calculator will first convert any Celsius temperature to Kelvin and any Fahrenheit temperature to Rankine. (For other functions or compound temperature units, such as x_°C/min, the calculator assumes temperature units represent temperature differences, so there is no additive constant involved, and hence no conversion.) The arithmetic operators +, –, %CH,</p>
+    <p>and %T treat temperatures as differences, without any additive constant, but require both arguments to be either absolute (K and °R), both °C, or both °F. No other combinations are allowed.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
@@ -19673,7 +19527,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Subtract Analytic Function: Returns the difference of the arguments. The difference of a real number a and a complex number (x, y) is (x–a, y) or (a–x, –y). The difference of two complex numbers (x1, y1) and (x2, y2) is (x1 – x2, y1 – y2). The difference of a real array and a complex array is a complex array, where each element x of the real array is treated as a complex element (x, 0). The two array arguments must have the same dimensions. The difference of a binary integer and a real number is a binary integer that is the sum of the first argument and the two’s complement of the second argument. (The real number is converted to a binary integer before the subtraction.)</p>
-    <p>The difference of two binary integers is a binary integer that is the sum of the first argument and the two’s complement of the second argument. The difference of two unit objects is a unit object with the same dimensions as the second argument. The units of the two arguments must be consistent. Common usage is ambiguous about some units of temperature. When ºC or ºF represents a thermometer reading, then the temperature is a unit with an additive constant: 0 ºC = 273.15 K, and 0 ºF = 459.67 ºR. But when ºC or ºF represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1 ºC = 1 K and 1 ºF = 1 ºR. The calculator assumes that the simple temperature units x_ºC and x_ºF represent thermometer temperatures when used as arguments to the functions &lt;, &gt;, ≤, ≥, ==, and ≠. This means that, in order to do the calculation, the calculator will first convert any Celsius temperature to Kelvin and any Fahrenheit temperature to Rankine. (For other functions or compound temperature units, such as x_ºC/min, the calculator assumes temperature units represent temperature differences, so there is no additive constant involved, and hence no conversion.) The arithmetic operators +, –, %, %CH, and %T treat temperatures as differences, without any additive constant, but require both arguments to be either absolute (K and ºR), both ºC, or both ºF. No other combinations are allowed.</p>
+    <p>The difference of two binary integers is a binary integer that is the sum of the first argument and the two’s complement of the second argument. The difference of two unit objects is a unit object with the same dimensions as the second argument. The units of the two arguments must be consistent. Common usage is ambiguous about some units of temperature. When °C or °F represents a thermometer reading, then the temperature is a unit with an additive constant: 0 °C = 273.15 K, and 0 °F = 459.67 °R. But when °C or °F represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1 °C = 1 K and 1 °F = 1 °R. The calculator assumes that the simple temperature units x_°C and x_°F represent thermometer temperatures when used as arguments to the functions &lt;, &gt;, ≤, ≥, ==, and ≠. This means that, in order to do the calculation, the calculator will first convert any Celsius temperature to Kelvin and any Fahrenheit temperature to Rankine. (For other functions or compound temperature units, such as x_°C/min, the calculator assumes temperature units represent temperature differences, so there is no additive constant involved, and hence no conversion.) The arithmetic operators +, –, %, %CH, and %T treat temperatures as differences, without any additive constant, but require both arguments to be either absolute (K and °R), both °C, or both °F. No other combinations are allowed.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">
@@ -19698,12 +19552,12 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Divide Analytic Function: Returns the quotient of the arguments: the first argument is divided by the second argument. A real number a divided by a complex number (x, y) returns:</p>
-    <p> ---------------- ax , ---------------- ay</p>
-    <pre class="cmd-mono">                                           2              2 2                2</pre>
+    <p>- ---------------- ax , ------------------ ay</p>
+    <pre class="cmd-mono">                                          - 2              2 2                2</pre>
     <p>x +y x +y</p>
-    <p>A complex number (x, y) divided by a real number a returns the complex number (x/a, y/a). A complex number (x1, y1) divided by another complex number (x2, y2) returns this complex quotient:  x 1 x 2 + y 1 y 2 y 1 x 2 – x 1 y 2  --------------------------- , ---------------------------</p>
-    <pre class="cmd-mono">                                 x2 + y2                               2</pre>
-    <p>x +y  2</p>
+    <p>A complex number (x, y) divided by a real number a returns the complex number (x/a, y/a). A complex number (x1, y1) divided by another complex number (x2, y2) returns this complex quotient: - x 1 x 2 + y 1 y 2 y 1 x 2 – x 1 y 2- - --------------------------- , ----------------------------</p>
+    <pre class="cmd-mono">                                - x2 + y2                               2</pre>
+    <p>x +y - 2</p>
     <pre class="cmd-mono">                                          2          2                 2            2</pre>
     <p>An array B divided by a matrix A solves the system of equations AX=B for X; that is, X = A–1 B. This operation uses 15-digit internal precision, providing a more precise result than the calculation INV(A)*B. The matrix must be square, and must have the same number of columns as the array has rows (or elements, if the array is a vector). A binary integer divided by a real or binary number returns a binary integer that is the integral part of the quotient. (The real number is converted to a binary integer before the division.) A divisor of zero returns # 0. When dividing two unit objects, the scalar parts and the unit parts are divided separately.</p>
   </dd>
@@ -19730,7 +19584,7 @@ input[type=text] { width: 100%; padding: 0.5em; font-size: 1em; border: 1px soli
   <dt class="cmd-label cmd-label-description">Description</dt>
   <dd class="cmd-field cmd-field-description">
     <p>Equals Analytic Function: Returns an equation formed from the two arguments. The equals sign equates two expressions such that the difference between them is zero. In Symbolic Results mode, the result is an algebraic equation. In Numerical Results mode, the result is the difference of the two arguments because = acts equivalent to –. This allows expressions and equations to be used interchangeably as arguments for symbolic and numerical rootfinders.</p>
-    <p>Common usage is ambiguous about some units of temperature. When ºC or ºF represents a thermometer reading, then the temperature is a unit with an additive constant: 0 ºC = 273.15 K, and 0ºF = 459.67ºR. But when ºC or ºF represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1ºC=1 K and 1ºF = 1ºR. The arithmetic operators +, –, %, %CH, and %T treat temperatures as differences, without any additive constant. However, +, –, %CH, and %T require both arguments to be either absolute (K and ºR), both ºC, or both ºF. No other combinations are allowed.</p>
+    <p>Common usage is ambiguous about some units of temperature. When °C or °F represents a thermometer reading, then the temperature is a unit with an additive constant: 0 °C = 273.15 K, and 0°F = 459.67°R. But when °C or °F represents a difference in thermometer readings, then the temperature is a unit with no additive constant: 1°C=1 K and 1°F = 1°R. The arithmetic operators +, –, %, %CH, and %T treat temperatures as differences, without any additive constant. However, +, –, %CH, and %T require both arguments to be either absolute (K and °R), both °C, or both °F. No other combinations are allowed.</p>
   </dd>
   <dt class="cmd-label cmd-label-flags">Flags</dt>
   <dd class="cmd-field cmd-field-flags">

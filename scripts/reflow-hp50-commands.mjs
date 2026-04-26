@@ -209,6 +209,8 @@ function renderGroup(group, label) {
     }
     const kv = buildKVTable(group.lines.join('\n'));
     if (kv) return kv;
+    const tbl = buildGenericTable(group.lines.join('\n'));
+    if (tbl) return tbl;
     return `<pre class="cmd-mono">${group.lines.join('\n')}</pre>`;
   }
   return renderProseGroup(group.lines);
@@ -278,7 +280,7 @@ function buildIOTable(text) {
 /* Many Example bodies are a stack of `Label:  value` pairs (Example N,
    Command, Result, …).  Render those as a small two-column table rather
    than a wall of preformatted text. */
-const KV_LABEL_RE = /^\s*(Example \d+|Command|Result|Results|Output|Input):\s*(.*)$/;
+const KV_LABEL_RE = /^\s*(Example \d+|Example|Command|Result|Results|Output|Input):\s*(.*)$/;
 function buildKVTable(text) {
   const lines = text.split('\n').map(l => l.replace(/\s+$/, ''));
   const items = [];
@@ -297,16 +299,38 @@ function buildKVTable(text) {
   }
   if (cur) items.push(cur);
   if (items.length < 2) return null;
-  if (items.every(it => /^Example /.test(it.label))) return null;
+  if (items.every(it => /^Example/.test(it.label))) return null;
   let out = '<table class="cmd-kv"><tbody>';
   for (const it of items) {
-    if (/^Example /.test(it.label)) {
+    if (/^Example/.test(it.label)) {
       out += `<tr class="cmd-kv-section"><th colspan="2">${it.label}${it.value ? ': ' + it.value : ''}</th></tr>`;
     } else {
       out += `<tr><th>${it.label}</th><td>${it.value}</td></tr>`;
     }
   }
   return out + '</tbody></table>';
+}
+
+/* ---------------- Generic multi-column tables -------------------- */
+/* Catches PDF-extracted multi-column blocks that aren't I/O stack
+   diagrams (no `→`) and aren't code listings (no `«»` / backtick).
+   Cells separated by 3+ spaces; first row becomes <thead>.  Rejects
+   anything where rows disagree on cell count (likely formula
+   fragments, not a table). */
+function buildGenericTable(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length);
+  if (lines.length < 2) return null;
+  if (text.includes('→') || /[«»]/.test(text) || text.includes('&#x60;')) return null;
+  const rows = lines.map(l => l.split(/ {3,}/).map(c => c.trim()).filter(Boolean));
+  const ncols = rows[0].length;
+  if (ncols < 2 || ncols > 6) return null;
+  if (!rows.every(r => r.length === ncols)) return null;
+  const thead = '<thead><tr>' + rows[0].map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+  const tbody = '<tbody>'
+              + rows.slice(1).map(r =>
+                  '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('')
+              + '</tbody>';
+  return `<table class="cmd-tbl">${thead}${tbody}</table>`;
 }
 
 /* When the line classifier splits an I/O section into multiple groups
