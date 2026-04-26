@@ -120,11 +120,26 @@ async function generate({ id, messages, maxTokens = 256 }) {
 
   _aborted = false;
 
+  // Tally input size up front — used both for the diagnostic log and
+  // for the per-turn stats payload posted back at end-of-generate.
+  let inputChars = 0;
   try {
-    const total = messages.reduce((n, m) => n + (m.content?.length ?? 0), 0);
+    inputChars = messages.reduce((n, m) => n + (m.content?.length ?? 0), 0);
     // eslint-disable-next-line no-console
-    console.log(`[llm-worker] generate: ${messages.length} messages, ${total} chars total`);
+    console.log(`[llm-worker] generate: ${messages.length} messages, ${inputChars} chars total`);
   } catch { /* swallow — diagnostic only */ }
+
+  // High-resolution wall-clock anchor for the per-turn stats.  We
+  // measure end-to-end latency (postMessage delivery → first token
+  // → done) since that's what the user actually waits for; the
+  // engine's own runtimeStatsText() (queried below) gives the
+  // narrower prefill / decode timings if WebLLM exposes them.
+  const t0 = (typeof performance !== 'undefined' && performance.now)
+    ? performance.now()
+    : Date.now();
+  let firstTokenAt = null;
+  let outputChars  = 0;
+  let outputTokens = 0;
 
   // Reset the engine's cached chat state before every generate.
   //
@@ -192,7 +207,6 @@ async function generate({ id, messages, maxTokens = 256 }) {
     console.log('[llm-worker] generate id=', id, '— stream created, entering for-await loop');
 
     let chunkCount = 0;
-    let tokenCharCount = 0;
     let finishReason = null;
     for await (const chunk of stream) {
       chunkCount++;
@@ -203,7 +217,12 @@ async function generate({ id, messages, maxTokens = 256 }) {
       }
       const text = chunk.choices?.[0]?.delta?.content;
       if (typeof text === 'string' && text.length > 0) {
-        tokenCharCount += text.length;
+        if (firstTokenAt === null) {
+          firstTokenAt = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : Date.now();
+        }
+        outputChars += text.length;
+        outputTokens++;          // 1 chunk ≈ 1 token in WebLLM's stream
         self.postMessage({ type: 'token', id, text });
       }
       const fr = chunk.choices?.[0]?.finish_reason;
@@ -212,10 +231,58 @@ async function generate({ id, messages, maxTokens = 256 }) {
         break;
       }
     }
-    // eslint-disable-next-line no-console
-    console.log('[llm-worker] generate id=', id, '— stream complete (chunks=', chunkCount,
-                'chars=', tokenCharCount, 'finish_reason=', finishReason, 'aborted=', _aborted, ')');
+    const t1 = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    const totalMs   = t1 - t0;
+    const ttftMs    = firstTokenAt !== null ? firstTokenAt - t0 : null;
+    const decodeMs  = firstTokenAt !== null ? t1 - firstTokenAt : null;
+    const decodeTps = (decodeMs && decodeMs > 0)
+      ? (outputTokens / (decodeMs / 1000))
+      : null;
 
+    // Some WebLLM builds expose runtimeStatsText() with engine-side
+    // prefill/decode TPS (more accurate than our wall-clock estimate
+    // since it excludes JS overhead).  Best-effort — guard against
+    // builds that don't have it.
+    let runtimeStats = null;
+    try {
+      if (typeof engine.runtimeStatsText === 'function') {
+        runtimeStats = await engine.runtimeStatsText();
+      }
+    } catch { /* swallow — diagnostic only */ }
+
+    // eslint-disable-next-line no-console
+    console.log('[llm-worker] generate id=', id, '— stream complete:',
+                'chunks=', chunkCount,
+                'outputTokens=', outputTokens,
+                'outputChars=', outputChars,
+                'totalMs=', Math.round(totalMs),
+                'ttftMs=', ttftMs !== null ? Math.round(ttftMs) : null,
+                'decodeTPS=', decodeTps !== null ? decodeTps.toFixed(1) : null,
+                'finish_reason=', finishReason,
+                'aborted=', _aborted);
+    if (runtimeStats) {
+      // eslint-disable-next-line no-console
+      console.log('[llm-worker] runtimeStats:', runtimeStats);
+    }
+
+    // Post the structured stats packet BEFORE done so the main
+    // thread can update its UI display before _genResolve runs and
+    // the next phase fires.
+    self.postMessage({
+      type: 'stats',
+      id,
+      inputChars,
+      inputMessages: messages.length,
+      outputTokens,
+      outputChars,
+      totalMs,
+      ttftMs,
+      decodeTps,
+      finishReason,
+      aborted: _aborted,
+      runtimeStats,
+    });
     self.postMessage({ type: 'done', id });
   } catch (err) {
     if (_aborted) {

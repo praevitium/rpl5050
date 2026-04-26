@@ -747,6 +747,39 @@ class App {
    *  (Backspace → DROP, etc.) until the user explicitly re-engages
    *  the editor. */
   commitEntry() {
+    // `?<text>` escape prefix — route the rest of the buffer to the
+    // chatbot as if the user had typed it into the chat input.  This
+    // turns the entry line into a quick "ask the assistant" affordance
+    // without forcing the user to switch tabs first.  The `?` itself
+    // is consumed; everything after is the message text.  Whitespace
+    // after the `?` is also stripped so `? how do I…` works the same
+    // as `?how do I…`.
+    //
+    // Empty body (just `?`) does nothing useful — clear the buffer so
+    // the user isn't left with a stale `?` and silently no-op, since
+    // there's nothing meaningful to send.
+    if (this.entry.buffer.startsWith('?')) {
+      const prompt = this.entry.buffer.slice(1).trim();
+      this._pendingEditValue = null;
+      this.entry.buffer = '';
+      this.entry.cursor = 0;
+      this.entry.error  = '';
+      this.entry._emit();
+      this.entry.blur();
+      if (prompt) {
+        // Make sure the AI panel is open and on the right tab so the
+        // user actually sees the conversation they just kicked off.
+        // Best-effort — both calls are no-ops if the panel isn't
+        // ready or doesn't exist.
+        try { this.sidePanel?.open?.('ai'); } catch { /* ignore */ }
+        try { this.chatBot?.sendUserMessage?.(prompt); } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[app] commitEntry: chat send failed:', err);
+        }
+      }
+      return;
+    }
+
     this._pendingEditValue = null;
     this.entry.enter();
     // On a failed commit (parse error, undefined op, type error, …) the

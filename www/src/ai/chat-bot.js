@@ -83,12 +83,17 @@ const STALL_TIMEOUT_MS = 45000;
 // the last.  Capping the prompt keeps turn latency stable.
 //
 // Why this number: ~4 chars/token is the rule of thumb for Latin-
-// script English, so 16000 chars ≈ 4000 tokens.  The combined
-// system prompt is ~7500 chars, leaving ~8500 chars (~2000 tokens)
-// for history — comfortably enough for ~5–10 turns of context, way
-// more than small chat-tuned models effectively use.  The newest
-// turn is always kept even if it would exceed the budget on its own.
-const HISTORY_BUDGET_CHARS = 16000;
+// script English, so 22000 chars ≈ 5500 tokens.  The combined
+// system prompt has grown to ~12000 chars (catalog + behaviour
+// rules + examples for stack-first / multi-push / multi-call
+// patterns), leaving ~10000 chars (~2500 tokens) for history —
+// comfortably enough for ~5–10 turns of context, more than small
+// chat-tuned models effectively use.  The newest turn is always
+// kept even if it would exceed the budget on its own.  Update this
+// constant if the system prompt grows further (the dlog at the
+// _trimHistoryForBudget call site reports the post-prompt budget
+// remaining each turn — handy for tuning).
+const HISTORY_BUDGET_CHARS = 22000;
 
 /* ---- Simple markdown → DOM renderer --------------------------------
    Handles the subset the assistant actually uses: headers, bold,
@@ -505,6 +510,7 @@ export class ChatBot {
 
     this._llm.onStatus((status, msg) => this._onStatus(status, msg));
     this._llm.onProgress((info) => this._onProgress(info));
+    this._llm.onStats((stats) => this._onStats(stats));
   }
 
   /* ---- Tool registry ---- */
@@ -786,6 +792,14 @@ export class ChatBot {
     this._messagesEl = document.createElement('div');
     this._messagesEl.className = 'cb-messages';
 
+    // — Stats line.  Hidden until the first turn lands a stats packet
+    // (see _onStats); shows last-turn timing/token counts on top and
+    // cumulative session totals on the bottom.  Sits above the input
+    // row so the user sees performance feedback without scrolling.
+    this._statsEl = document.createElement('div');
+    this._statsEl.className = 'cb-stats hidden';
+    this._statsEl.title = 'Inference stats — most recent turn and cumulative session totals.';
+
     // — Input row
     const inputRow = document.createElement('div');
     inputRow.className = 'cb-input-row';
@@ -835,6 +849,7 @@ export class ChatBot {
     root.appendChild(this._switchModelBtn);
     root.appendChild(this._pickerEl);
     root.appendChild(this._messagesEl);
+    root.appendChild(this._statsEl);
     root.appendChild(this._stopBtn);
     root.appendChild(inputRow);
 
@@ -975,6 +990,13 @@ export class ChatBot {
     // a "new chat" reset wipes pending work alongside the current turn.
     this._queue = [];
     this._history = [];
+    // Reset cumulative session counters; the stats line goes back
+    // to hidden until the first new-turn stats packet lands.
+    this._sessionTotals = null;
+    if (this._statsEl) {
+      this._statsEl.textContent = '';
+      this._statsEl.classList.add('hidden');
+    }
     this._removeActiveChips();
     if (this._messagesEl) this._messagesEl.innerHTML = '';
     if (this._inputEl) {
@@ -1059,7 +1081,94 @@ export class ChatBot {
     this._progressLabel.textContent = name ? `${name} — ${pct}%` : `${pct}%`;
   }
 
+  /** Per-turn stats handler.  Called once per successful generate
+   *  (the stats packet arrives just before `done` from the worker).
+   *  Writes a one-line console summary and updates the inline stats
+   *  element in the UI so the user sees the numbers without opening
+   *  DevTools.  No state mutation — the cumulative session totals
+   *  live on this._sessionTotals, updated here. */
+  _onStats(stats) {
+    if (!stats) return;
+    // Cumulative session totals — handy for "how much have I used
+    // this conversation".  Reset by _newChat() alongside history.
+    if (!this._sessionTotals) {
+      this._sessionTotals = { turns: 0, inputChars: 0, outputTokens: 0, totalMs: 0 };
+    }
+    const t = this._sessionTotals;
+    t.turns        += 1;
+    t.inputChars   += stats.inputChars   ?? 0;
+    t.outputTokens += stats.outputTokens ?? 0;
+    t.totalMs      += stats.totalMs      ?? 0;
+
+    dlog('turn stats:',
+         'in=', stats.inputChars, 'chars (' + stats.inputMessages + ' msgs, ~' +
+         Math.round((stats.inputChars ?? 0) / 4) + ' tok)',
+         '· out=', stats.outputTokens, 'tok (' + stats.outputChars + ' chars)',
+         '· latency=', Math.round(stats.totalMs ?? 0) + 'ms',
+         '(ttft=', stats.ttftMs !== null ? Math.round(stats.ttftMs) + 'ms' : '-',
+         'decode=', stats.decodeTps?.toFixed(1) + ' tok/s' ?? '-) ',
+         '· session=', t.turns, 'turns,', t.outputTokens, 'out tok');
+
+    this._renderStats(stats);
+  }
+
+  /** Update the inline stats element with the latest turn's numbers
+   *  plus session totals.  Element is built lazily on first stats
+   *  arrival; if the element doesn't exist yet (rare race during
+   *  initialisation), this just no-ops. */
+  _renderStats(stats) {
+    if (!this._statsEl) return;
+    const inTok  = Math.round((stats.inputChars ?? 0) / 4);
+    const outTok = stats.outputTokens ?? 0;
+    const ms     = Math.round(stats.totalMs ?? 0);
+    const tps    = stats.decodeTps !== null && stats.decodeTps !== undefined
+      ? stats.decodeTps.toFixed(1) + ' tok/s'
+      : '—';
+    const t      = this._sessionTotals ?? { turns: 0, outputTokens: 0 };
+    // Two-line layout — last turn (most actionable for "is the model
+    // alive / fast enough?") on top, session totals (cumulative cost
+    // since last new chat) on the bottom.  Compact format because
+    // the panel is narrow.
+    this._statsEl.textContent =
+      `last turn: ~${inTok} in / ${outTok} out tok · ${ms}ms · ${tps}` +
+      `\n` +
+      `session: ${t.turns} turn${t.turns === 1 ? '' : 's'}, ${t.outputTokens} out tok`;
+    this._statsEl.classList.remove('hidden');
+  }
+
   /* ---- Submit / tool-call loop ---- */
+
+  /** Public entry point — submit a message to the chat as if the user
+   *  had typed it into the chatbot's textarea and pressed Send.
+   *  Used by the calculator's `?<text>` escape-prefix routing in
+   *  commitEntry: typing `?how do I factor X^2-1` into the entry
+   *  line and pressing ENTER fires `chatBot.sendUserMessage(...)`
+   *  with everything after the `?`.
+   *
+   *  Behaviour matches Send-button submit exactly: blank text and
+   *  not-ready model both no-op; mid-turn submissions queue; the
+   *  user-bubble lands in the chat in submission order.  No-ops
+   *  silently if consent hasn't been granted yet (the caller has
+   *  no way to honour the gate from outside, so we just refuse). */
+  async sendUserMessage(text) {
+    const t = (text ?? '').trim();
+    if (!t) {
+      dlog('sendUserMessage: empty text, ignored');
+      return;
+    }
+    if (!hasConsented()) {
+      dlog('sendUserMessage: consent not given, ignored');
+      return;
+    }
+    // Stuff into the input element so the existing _submit code path
+    // does the work — that way queueing, send-button gating, scroll-
+    // to-bottom, history push, etc. all behave identically to a
+    // user-driven send.  We bypass the focus event (no UI change
+    // needed for the textarea on this path) but keep everything
+    // else.
+    if (this._inputEl) this._inputEl.value = t;
+    return this._submit();
+  }
 
   async _submit() {
     const text = this._inputEl.value.trim();

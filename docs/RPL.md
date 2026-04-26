@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 249)
+## Current implementation status (as of session 254)
 
 
 ### Program value — parser & round-trip
@@ -2937,7 +2937,32 @@ RPL programming substrate undisturbed; all RPL-bucket REVIEW.md
 findings remain fully closed; no source or test change; status stamp
 bumped from "as of session 213" to "as of session 217");
 log file is `logs/session-217.md`.
-Session 241 is this run (post-ship verification pass — confirmed
+Session 254 is this run (post-ship verification pass — confirmed
+5591 / 0 clean baseline; Δ+50 from session 241 entirely from sibling
+lanes 242–253 (data-type / command-support / unit-tests /
+code-review passes; see individual lane logs for detail); RPL
+programming substrate undisturbed; all RPL-bucket REVIEW.md findings
+remain fully closed; no source or test change; status stamp bumped
+from "as of session 249" to "as of session 254");
+log file is `logs/session-254.md`.
+Session 249 was this lane (post-ship verification pass — confirmed
+5568 / 0 clean baseline; Δ+8 from session 245 entirely from sibling
+lane 248-data-type-support (UTPC/UTPT List+Tagged widening via
+`_utpcScalar` / `_utptScalar` + `_withTaggedBinary` /
+`_withListBinary` wrappers; +8 assertions); RPL programming substrate
+undisturbed; all RPL-bucket REVIEW.md findings remain fully closed;
+no source or test change; status stamp bumped from "as of session
+245" to "as of session 249");
+log file is `logs/session-249.md`.
+Session 245 was this lane (post-ship verification pass — confirmed
+5560 / 0 clean baseline; Δ+19 from session 241 entirely from sibling
+lane 244-data-type-support (ERF/ERFC/BETA/UTPC/UTPF/UTPT Z+L/V/M
+cell audit; +19 pin assertions); RPL programming substrate
+undisturbed; all RPL-bucket REVIEW.md findings remain fully closed;
+no source or test change; status stamp bumped from "as of session
+241" to "as of session 245");
+log file is `logs/session-245.md`.
+Session 241 was this lane (post-ship verification pass — confirmed
 5541 / 0 clean baseline; Δ+16 from session 237 entirely from sibling
 lane 240-data-type-support (240 added 16 test assertions: Q-cell
 audit for stat-dist family GAMMA/LNGAMMA/ERF/ERFC/BETA/UTPC/UTPF/
@@ -3013,9 +3038,10 @@ bundled into session 217; demotion of session 217's own
 bundled into session 222; demotion of session 222's own
 `(this run)` wording in the Session log pointer prose was
 bundled into session 227.  Sessions 172 / 180 / 184 / 188 /
-192 never carried a `(this run)` marker in the Session log pointer
-prose — they were verification-only or audit-only runs that did
-not extend this prose section.  This is the recurring R-005 drift
-pattern — every substantive rpl-programming-lane run that adds a
-new `(this run)` marker must also demote its predecessor; the
-recurrence is by design, the demote is the ship-discipline check.)
+192 / 241 / 245 / 249 never carried a `(this run)` marker in the
+Session log pointer prose — they were verification-only or
+audit-only runs that did not extend this prose section.  This is
+the recurring R-005 drift pattern — every substantive
+rpl-programming-lane run that adds a new `(this run)` marker must
+also demote its predecessor; the recurrence is by design, the
+demote is the ship-discipline check.)

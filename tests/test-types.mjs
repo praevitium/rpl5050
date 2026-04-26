@@ -1,7 +1,7 @@
 import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import {
-  Real, Integer, Rational, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged,
+  Real, Integer, Rational, BinaryInteger, Complex, Name, Str, Directory, Program, Tagged, Unit,
   RList, Vector, Matrix, Symbolic,
   isReal, isInteger, isRational, isBinaryInteger, isComplex, isDirectory, isProgram, isName,
   isString, isNumber, isTagged, isList, isVector, isMatrix, isSymbolic, promoteNumericPair, Decimal,
@@ -10903,6 +10903,56 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(Vector([Real(1)]));
     assertThrows(() => lookup('UTPT').fn(s), /Bad argument type/i,
       `session248: UTPT Integer(3) Vector([Real(1)]) → 'Bad argument type' (no _withVMBinary; V=✗)`);
+  }
+}
+
+// ── session253: Ordered comparators < > ≤ ≥ — L/V/M/T/U rejection pins ──────
+// comparePair() accepts: BinaryInteger (promoted), Symbolic-lift, String lex,
+// and isNumber (Real/Integer/Rational/Complex).  Everything else — List, Vector,
+// Matrix, Tagged, Unit — falls through to `!isNumber` throw.  All 20 cells
+// (4 ops × 5 types) verified ✗ by probe (utils/@probe-comparator-types.mjs).
+{
+  const ops = ['<', '>', '≤', '≥'];
+  // L=✗ — List is not isNumber; both operands must be scalar numeric.
+  for (const op of ops) {
+    const s = new Stack();
+    s.push(RList([Real(1), Real(2)]));
+    s.push(RList([Real(3), Real(4)]));
+    assertThrows(() => lookup(op).fn(s), /Bad argument type/i,
+      `session253: {R(1) R(2)} {R(3) R(4)} ${op} → 'Bad argument type' (L=✗; comparePair is scalar-only)`);
+  }
+  // V=✗ — Vector is not isNumber.
+  for (const op of ops) {
+    const s = new Stack();
+    s.push(Vector([Real(1), Real(2)]));
+    s.push(Vector([Real(3), Real(4)]));
+    assertThrows(() => lookup(op).fn(s), /Bad argument type/i,
+      `session253: V[R(1),R(2)] V[R(3),R(4)] ${op} → 'Bad argument type' (V=✗; comparePair is scalar-only)`);
+  }
+  // M=✗ — Matrix is not isNumber.
+  for (const op of ops) {
+    const s = new Stack();
+    s.push(Matrix([[Real(1)]]));
+    s.push(Matrix([[Real(2)]]));
+    assertThrows(() => lookup(op).fn(s), /Bad argument type/i,
+      `session253: M[[R(1)]] M[[R(2)]] ${op} → 'Bad argument type' (M=✗; comparePair is scalar-only)`);
+  }
+  // T=✗ — Tagged is not isNumber and not a sym-operand; tag is NOT transparently unwrapped
+  // on the ordered-compare surface (contrast with the unary T-transparency pattern).
+  for (const op of ops) {
+    const s = new Stack();
+    s.push(Tagged('x', Real(1)));
+    s.push(Real(2));
+    assertThrows(() => lookup(op).fn(s), /Bad argument type/i,
+      `session253: :x:R(1) R(2) ${op} → 'Bad argument type' (T=✗; Tagged not unwrapped by comparePair)`);
+  }
+  // U=✗ — Unit is not isNumber; dimensional compare is not supported on < > ≤ ≥.
+  for (const op of ops) {
+    const s = new Stack();
+    s.push(Unit(1, [['m', 1]]));
+    s.push(Unit(2, [['m', 1]]));
+    assertThrows(() => lookup(op).fn(s), /Bad argument type/i,
+      `session253: 1_m 2_m ${op} → 'Bad argument type' (U=✗; Unit not handled by comparePair)`);
   }
 }
 

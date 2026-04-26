@@ -1523,6 +1523,22 @@ body.mode-minimal .keypad {
   border-color: #22d3ee;
 }
 
+/* ---- Inference stats line ------------------------------------------
+   Two-line discreet readout above the input area.  Hidden until the
+   first turn completes; updated in place per turn by _renderStats. */
+.cb-stats {
+  flex: 0 0 auto;
+  padding: 4px 10px 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #6b7280;
+  white-space: pre-line;        /* honour the \n between last-turn and session lines */
+  border-top: 1px solid rgba(255,255,255,.04);
+  background: transparent;
+}
+.cb-stats.hidden { display: none; }
+
 /* ---- Status bar ---- */
 /* Header: status text on the left, "New chat" reset button on the
    right.  Single-row flex strip; the status text grows, the button

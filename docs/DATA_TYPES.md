@@ -5,7 +5,15 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 248 (2026-04-26, UTPC/UTPT List+Tagged widening;
+**Last updated.** Session 253 (2026-04-26, ordered-comparator L/V/M/T/U rejection pins;
+lane name **`session253-data-type-support`**) — doc-only matrix update + 20 new rejection pins (5571 → 5591):
+`<` / `>` / `≤` / `≥` L/V/M/T/U all `·`→`✗` — `comparePair()` is scalar-only; `isNumber` (Real/Integer/Rational/Complex)
+is the accepted numeric type beyond BinInt-coerce and String-lex; List/Vector/Matrix/Tagged/Unit all throw `Bad argument type`.
+No source changes (ops.js not modified — the rejection was already the correct behavior, just untested).
+Verification gates at exit: `node tests/test-all.mjs` 5591/0, `node tests/test-persist.mjs` passed,
+`node tests/sanity.mjs` 22/0. See "Resolved this session (253)" below.
+
+**Last updated (prior — session 248).** Session 248 (2026-04-26, UTPC/UTPT List+Tagged widening;
 lane name **`session248-data-type-support`**) — two source changes + 8 net new assertions (5560 → 5568):
 UTPC L `✗`→`✓` / T `·`→`✓` (extracted `_utpcScalar`, wrapped with `_withTaggedBinary(_withListBinary(…))`);
 UTPT L `✗`→`✓` / T `·`→`✓` (extracted `_utptScalar`, same wrapper shape);
@@ -1074,10 +1082,10 @@ lexicographic) is supported — session 179 pinned the contract.
 
 | Op   | R | Z | Q | B | C* | N | Sy | L | V | M | T | U | S | Notes |
 |------|---|---|---|---|----|---|----|---|---|---|---|---|---|-------|
-| `<`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). Session 130 pinned BinInt × Rational composition (B → Integer mask + Integer × Rational → rational kind cross-multiply): `#10h < Rational(33,2)` → 1 (16*2=32 < 33*1=33); ws=8 mask edge `#1FFh < Rational(300,1)` → 1 (#1FFh masks to 255 < 300, NOT 511 > 300 — mask BEFORE compare); negative Q boundary `Rational(-3,4) < #0h` → 1 (cross-multiply -3 < 0). Session 135 pinned BinInt cross-base ordered compare `#5h < #6d` → 1 (`comparePair` ignores the formatter `.base` field — both operands are still type `'binaryInteger'`, mask + value compare). Session 179 pinned String lex path: `"abc"<"abd"` → 1, `"abd"<"abc"` → 0, `"abc"<"abc"` → 0 (strict), `""<"a"` → 1 (empty lex-less). Cross-type rejection pinned: `Str<Integer` → Bad argument type. |
-| `>`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned operand-order on B × Q: `Rational(33,2) > #10h` → 1 (symmetric to <); ws=8 mask preserved on in-range value `#FFh > Rational(254,1)` → 1 (#FFh stays 255 > 254). Session 179 pinned String lex path: `"b">"a"` → 1, `"a">"b"` → 0. |
-| `≤`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned Q × B: `Rational(7,3) ≤ #3h` → 1 (cross-multiply 7 ≤ 9). Session 179 pinned String lex path: `"abc"≤"abc"` → 1 (equality boundary), `"abc"≤"abd"` → 1. |
-| `≥`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned the rational-branch equality boundary `Rational(2,1) ≥ #2h` → 1 (Rational(2,1) does not auto-collapse to Integer at the constructor — collapse is op-result-level — but the rational-kind compare still fires correctly). Session 179 pinned String lex path: `"abc"≥"abc"` → 1 (equality boundary), `"abd"≥"abc"` → 1. |
+| `<`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). Session 130 pinned BinInt × Rational composition (B → Integer mask + Integer × Rational → rational kind cross-multiply): `#10h < Rational(33,2)` → 1 (16*2=32 < 33*1=33); ws=8 mask edge `#1FFh < Rational(300,1)` → 1 (#1FFh masks to 255 < 300, NOT 511 > 300 — mask BEFORE compare); negative Q boundary `Rational(-3,4) < #0h` → 1 (cross-multiply -3 < 0). Session 135 pinned BinInt cross-base ordered compare `#5h < #6d` → 1 (`comparePair` ignores the formatter `.base` field — both operands are still type `'binaryInteger'`, mask + value compare). Session 179 pinned String lex path: `"abc"<"abd"` → 1, `"abd"<"abc"` → 0, `"abc"<"abc"` → 0 (strict), `""<"a"` → 1 (empty lex-less). Cross-type rejection pinned: `Str<Integer` → Bad argument type. **Session 253:** L/V/M/T/U all `·`→`✗` — `comparePair` is scalar-only; `isNumber` (Real/Integer/Rational/Complex) is the only accepted numeric type beyond BinInt-coerce and String-lex; List/Vector/Matrix/Tagged/Unit all reach the `!isNumber` guard and throw. 20 rejection pins (4 ops × 5 types). |
+| `>`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | Same. Session 130 pinned operand-order on B × Q: `Rational(33,2) > #10h` → 1 (symmetric to <); ws=8 mask preserved on in-range value `#FFh > Rational(254,1)` → 1 (#FFh stays 255 > 254). Session 179 pinned String lex path: `"b">"a"` → 1, `"a">"b"` → 0. **Session 253:** L/V/M/T/U `·`→`✗` — see `<` row. |
+| `≤`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | Same. Session 130 pinned Q × B: `Rational(7,3) ≤ #3h` → 1 (cross-multiply 7 ≤ 9). Session 179 pinned String lex path: `"abc"≤"abc"` → 1 (equality boundary), `"abc"≤"abd"` → 1. **Session 253:** L/V/M/T/U `·`→`✗` — see `<` row. |
+| `≥`  | ✓ | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | Same. Session 130 pinned the rational-branch equality boundary `Rational(2,1) ≥ #2h` → 1 (Rational(2,1) does not auto-collapse to Integer at the constructor — collapse is op-result-level — but the rational-kind compare still fires correctly). Session 179 pinned String lex path: `"abc"≥"abc"` → 1 (equality boundary), `"abd"≥"abc"` → 1. **Session 253:** L/V/M/T/U `·`→`✗` — see `<` row. |
 
 *`~` on Complex = accepted only when both `im === 0`; otherwise `Bad argument type`.
 
@@ -1128,6 +1136,26 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    now pinned by hard tests in `tests/test-types.mjs`.  Fractional
    rational exponent (`Rational(2,1) ^ Rational(1,3)`) correctly lifts
    to Symbolic in EXACT mode (pinned separately).
+
+### Resolved this session (253)
+
+- **Ordered comparators `<` / `>` / `≤` / `≥` — L/V/M/T/U rejection pins — 20 new assertions (5571→5591).**
+  No source changes — the rejection was already correct behavior, just untested.
+  `comparePair()` is scalar-only: after BinInt-coerce and Symbolic-lift, it accepts `isString` (lex)
+  and `isNumber` (Real/Integer/Rational/Complex) only.  List, Vector, Matrix, Tagged, and Unit all
+  reach the `!isNumber` guard and throw `'Bad argument type'`.
+
+  **Matrix cells updated:** `<` / `>` / `≤` / `≥` L/V/M/T/U all `·`→`✗` (4 ops × 5 types = 20 cells).
+
+  **Rejection pins (5 per op, 20 total, all in `tests/test-types.mjs`):**
+  — L=✗: `{R(1) R(2)} {R(3) R(4)} </>/ ≤/≥` → `Bad argument type` (List is not isNumber).
+  — V=✗: `V[R(1),R(2)] V[R(3),R(4)] </>/ ≤/≥` → `Bad argument type` (Vector is not isNumber).
+  — M=✗: `M[[R(1)]] M[[R(2)]] </>/ ≤/≥` → `Bad argument type` (Matrix is not isNumber).
+  — T=✗: `:x:R(1) R(2) </>/ ≤/≥` → `Bad argument type` (Tagged is NOT transparently unwrapped
+    on the ordered-compare surface — distinct from the unary `_withTaggedUnary` transparency pattern).
+  — U=✗: `1_m 2_m </>/ ≤/≥` → `Bad argument type` (Unit is not isNumber; no dimensional-compare).
+
+  Probe file: `utils/@probe-comparator-types.mjs` (all 20 confirmed ✗ before pinning).
 
 ### Resolved this session (248)
 

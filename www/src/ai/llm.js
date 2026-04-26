@@ -23,6 +23,11 @@ export class LLM {
     this._statusMsg     = '';
     this._statusListeners   = new Set();
     this._progressListeners = new Set();
+    this._statsListeners    = new Set();
+    // Most recent per-turn stats packet from the worker — kept so a
+    // late subscriber (or a re-render after status flip) can show
+    // the last turn's numbers without waiting for the next call.
+    this._lastStats         = null;
 
     // In-flight load/generate bookkeeping.
     this._loadPromise   = null;
@@ -61,6 +66,22 @@ export class LLM {
     return () => this._progressListeners.delete(fn);
   }
 
+  /** Subscribe to per-turn inference stats.  Callback fires once per
+   *  successful generate(), with a packet shaped:
+   *    { id, inputChars, inputMessages, outputTokens, outputChars,
+   *      totalMs, ttftMs, decodeTps, finishReason, aborted,
+   *      runtimeStats }
+   *  Returns an unsubscribe function.  See `lastStats` for the most
+   *  recent packet (useful for late subscribers and UI re-renders). */
+  onStats(fn) {
+    this._statsListeners.add(fn);
+    return () => this._statsListeners.delete(fn);
+  }
+
+  /** The most recent stats packet, or null if no generate has
+   *  completed yet this session. */
+  get lastStats() { return this._lastStats; }
+
   /** Load (or switch to) a model.  Calling with the same id while
    *  ready resolves immediately; calling with a different id while
    *  ready re-loads.  Calling concurrently returns the same
@@ -83,7 +104,7 @@ export class LLM {
       // WORKER_VERSION below is the surest way to force a fresh
       // fetch on the next full page reload.  Bump this any time
       // llm-worker.js changes in a way users need to see.
-      const WORKER_VERSION = '9';
+      const WORKER_VERSION = '11';
       const workerUrl = new URL('./llm-worker.js', import.meta.url);
       workerUrl.searchParams.set('v', WORKER_VERSION);
       this._worker = new Worker(workerUrl, { type: 'module' });
@@ -195,6 +216,27 @@ export class LLM {
 
     if (type === 'token') {
       this._genOnToken?.(rest.text);
+      return;
+    }
+
+    if (type === 'stats') {
+      // Worker posts this just before `done`.  Cache it on the
+      // instance so chat-bot can read `lastStats` synchronously
+      // when finalising the turn, and fan out to subscribers so
+      // the UI status line updates without polling.
+      this._lastStats = rest;
+      // eslint-disable-next-line no-console
+      console.log('[LLM] stats id=', rest.id,
+                  'in=', rest.inputChars, 'chars (' + rest.inputMessages + ' msgs)',
+                  'out=', rest.outputTokens, 'tok',
+                  'totalMs=', Math.round(rest.totalMs ?? 0),
+                  'decodeTPS=', rest.decodeTps?.toFixed(1) ?? '-');
+      for (const fn of this._statsListeners) {
+        try { fn(rest); } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[LLM] stats listener threw:', err);
+        }
+      }
       return;
     }
 
