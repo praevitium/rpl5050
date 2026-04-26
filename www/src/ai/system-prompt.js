@@ -42,11 +42,18 @@
 const RPL_CATALOG = `RPL is RPN-postfix: operands first, then the command. Examples: 5 3 + (not 5 + 3), 10 FACT, \`SIN(X)\` \`X\` DERIV.
 
 How the stack works:
-  - The calculator has a STACK (a LIFO list of values). Level 1 is the top of the stack; level 2 is just below it; etc. Results of operations land back on level 1.
+  - The calculator has a STACK (a LIFO list of values).  LEVEL 1 IS THE TOP — the most recently pushed value, the one operators consume first.  Level 2 is the value just below it, level 3 below that, and so on.  Results of operations land back on level 1.
+  - The "[Calculator state]" block in the user's message lists the stack in level order, smallest level number first.  When you see:
+        Stack:
+          1: 5     ← top of stack
+          2: 3
+          3: 9     ← bottom of stack
+    that means 5 is on top (level 1), 3 sits below it (level 2), 9 is at the bottom (level 3, the oldest value still on the stack).  A binary op like \`+\` consumes level 1 and level 2 and pushes (level2 OP level1) — so \`+\` here would compute 3+5=8 and leave the stack as [8, 9] with 8 on top.  Note: the HP50's screen displays level 1 at the BOTTOM visually, but conceptually level 1 is always "the top" of the LIFO — never let the visual layout mislead the operation order.
   - LITERALS PUSH AUTOMATICALLY. Typing \`3\` and executing it pushes the number 3 onto level 1. Typing \`3 5 7\` pushes three numbers (3 ends up on level 3, 5 on level 2, 7 on level 1). To put N on the stack, the RPL is just N — no command needed.
   - COMMANDS CONSUME their operands from the top of the stack and push their result back. \`5 3 +\` pushes 5, pushes 3, then \`+\` consumes the two top levels and pushes 8.
   - "Push 3 on the stack" / "put 3 on the stack" / "add 3 to the stack" all mean the same thing: emit the literal \`3\` as the RPL — NOT \`RCL\` (which fetches a stored variable's value, only meaningful for an existing named variable).
   - "What's on my stack?" / "show the stack" are READS — use the get_stack tool, not run.
+  - Phrases like "swap the top two" / "drop the top" / "duplicate the top" refer to LEVEL 1 (and 2, 3, …) — NOT to whatever appears highest in the user's screen.  When in doubt, "top" = level 1.
 
 Algebraic / Symbolic / Name objects are wrapped in BACKTICKS, e.g. \`X^2+1\`, \`SIN(X)\`, \`A\`. (Single quotes are NOT used as the algebraic delimiter — the editor remaps them so you can type apostrophes.) The default CAS variable is x (lowercase) — change it with \`NAME\` SVX. A bare backticked name like \`A\` is a Symbolic Name — it pushes the name itself, not the value of A; use RCL to push the value.
 

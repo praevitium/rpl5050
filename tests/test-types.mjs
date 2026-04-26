@@ -11041,7 +11041,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    dispatch through handlers that require `isReal`, `isInteger`,
    `isRational`, or `isComplex` — none of which match BinaryInteger.
    BinaryInteger is accepted on the binary arithmetic surface
-   (+/-/*// via the BinInt fast path) and by the rounding family
+   (add/sub/mul/div via the BinInt fast path) and by the rounding family
    (FLOOR/CEIL/IP/FP — B=✓ already pinned in session 087), but
    NOT by the general numeric-math surface.
 

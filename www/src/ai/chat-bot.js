@@ -1937,16 +1937,41 @@ export class ChatBot {
 
   _formatContext(ctx) {
     if (!ctx) return '';
-    const lines = [];
+    const lines = ['[Calculator state]'];
+    // Stack is rendered multi-line with an explicit "1: = top"
+    // annotation.  Two reasons for this format:
+    //
+    //   1. RPN convention: level 1 is the TOP of the stack (the most
+    //      recently pushed value, the one the next binary op consumes
+    //      first).  But visually on the HP50 display, level 1 sits at
+    //      the BOTTOM of the screen with deeper levels above it — a
+    //      classic "stacks are upside-down" gotcha.  Telling the
+    //      model "1: = top, deeper levels are below" up front
+    //      prevents it from guessing the wrong direction when a user
+    //      says "swap the top two" or "the bottom of the stack".
+    //
+    //   2. Multi-line layout puts each level on its own row so the
+    //      model can match levels to operations more easily than a
+    //      space-separated single line where the levels visually run
+    //      together.  Costs a few extra tokens per turn for a much
+    //      clearer mental model — worth it.
     if (ctx.stack?.length > 0) {
-      lines.push('Stack: ' + ctx.stack.map((v, i) => `${i + 1}: ${v}`).join('  '));
+      lines.push('Stack (level 1 is the TOP of stack — operators consume from level 1 first; higher numbers are deeper):');
+      for (let i = 0; i < ctx.stack.length; i++) {
+        const marker =
+          i === 0                       ? '   ← top of stack' :
+          i === ctx.stack.length - 1    ? '   ← bottom of stack' : '';
+        lines.push(`  ${i + 1}: ${ctx.stack[i]}${marker}`);
+      }
     } else {
       lines.push('Stack: (empty)');
     }
-    if (ctx.angleMode)   lines.push(`Angle: ${ctx.angleMode}`);
-    if (ctx.displayMode) lines.push(`Display: ${ctx.displayMode}`);
-    if (ctx.dir)         lines.push(`Dir: ${ctx.dir}`);
-    return `[Calculator state — ${lines.join('  ')}]`;
+    const flags = [];
+    if (ctx.angleMode)   flags.push(`Angle: ${ctx.angleMode}`);
+    if (ctx.displayMode) flags.push(`Display: ${ctx.displayMode}`);
+    if (ctx.dir)         flags.push(`Dir: ${ctx.dir}`);
+    if (flags.length) lines.push(flags.join('  '));
+    return lines.join('\n');
   }
 
   /* ---- Bubble helpers ---- */

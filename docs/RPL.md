@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 254)
+## Current implementation status (as of session 259)
 
 
 ### Program value — parser & round-trip
@@ -2937,7 +2937,15 @@ RPL programming substrate undisturbed; all RPL-bucket REVIEW.md
 findings remain fully closed; no source or test change; status stamp
 bumped from "as of session 213" to "as of session 217");
 log file is `logs/session-217.md`.
-Session 254 is this run (post-ship verification pass — confirmed
+Session 259 is this run (post-ship verification pass — confirmed
+5621 / 0 clean baseline; Δ+30 from session 254 entirely from sibling
+lanes 255–258 (code-review / unit-tests / command-support /
+data-type-support passes; see individual lane logs for detail); RPL
+programming substrate undisturbed; all RPL-bucket REVIEW.md findings
+remain fully closed; no source or test change; status stamp bumped
+from "as of session 254" to "as of session 259");
+log file is `logs/session-259.md`.
+Session 254 was this lane (post-ship verification pass — confirmed
 5591 / 0 clean baseline; Δ+50 from session 241 entirely from sibling
 lanes 242–253 (data-type / command-support / unit-tests /
 code-review passes; see individual lane logs for detail); RPL
