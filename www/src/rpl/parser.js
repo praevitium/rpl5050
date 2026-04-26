@@ -445,10 +445,21 @@ export function parseEntry(src) {
     // can hold Names, Symbolics, etc.) — we only treat the input as
     // polar when *every* slot is either a plain numeric literal or
     // an `∠`-prefixed angle.
+    // Track nested `[` so a matrix literal `[[1 2][3 4]]` doesn't
+    // latch the outer vector's terminator onto the inner row's `]`.
     const start = idx;
     const collected = [];
-    while (idx < toks.length && !(toks[idx].kind === 'delim' && toks[idx].text === ']')) {
-      collected.push(toks[idx]);
+    let depth = 1;
+    while (idx < toks.length) {
+      const tk = toks[idx];
+      if (tk.kind === 'delim') {
+        if (tk.text === '[') depth++;
+        else if (tk.text === ']') {
+          depth--;
+          if (depth === 0) break;
+        }
+      }
+      collected.push(tk);
       idx++;
     }
     if (idx < toks.length) idx++;                      // consume `]`

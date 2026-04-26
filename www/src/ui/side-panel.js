@@ -362,7 +362,7 @@ export class SidePanel {
       <div class="side-panel-head">
         <div class="side-panel-tabs" role="tablist">
           <button type="button" class="sp-tab" data-tab="ai"       role="tab"
-                  title="AI Assistant" aria-label="AI Assistant">✦</button>
+                  title="AI Assistant (BETA)" aria-label="AI Assistant (BETA)">✦</button>
           <button type="button" class="sp-tab" data-tab="commands" role="tab"
                   title="Commands" aria-label="Commands">📖</button>
           <button type="button" class="sp-tab" data-tab="chars"    role="tab"
@@ -414,12 +414,14 @@ export class SidePanel {
       this._toggleAllSections();
     });
 
-    // Delegated click for body items.
+    // Delegated click for body items.  Pass the clicked button through
+    // to _handleAction so handlers that need to navigate to the parent
+    // row (e.g. in-place rename) can do so via btn.closest(...).
     panel.querySelector('.side-panel-body').addEventListener('click', (ev) => {
       const btn = ev.target.closest?.('button[data-action]');
       if (!btn) return;
       const { action, value } = btn.dataset;
-      this._handleAction(action, value);
+      this._handleAction(action, value, btn);
     });
 
     // Right-click on a Commands-tab op button → show the command-
@@ -1040,7 +1042,7 @@ export class SidePanel {
     return wrap;
   }
 
-  _handleAction(action, value) {
+  _handleAction(action, value, btn) {
     const { entry, stack } = this.app;
     if (action === 'op') {
       const op = lookup(value);
@@ -1159,24 +1161,15 @@ export class SidePanel {
       return;
     }
     if (action === 'rename-var') {
-      // Files: per-row Rename.  Prompt for a new name, validate it as
-      // a legal HP identifier, then delegate to renameCurrentEntry
-      // which preserves insertion order and emits a state event.
-      const newName = (typeof window !== 'undefined' && typeof window.prompt === 'function')
-        ? window.prompt(`Rename "${value}" to:`, value)
-        : null;
-      if (newName === null) return;                    // user cancelled
-      const trimmed = String(newName).trim();
-      if (trimmed === value) return;                   // no-op
-      if (!isStorableHpName(trimmed)) {
-        entry.flashError({ message: `Rename: invalid name: ${trimmed}` });
-        return;
-      }
-      try {
-        renameCurrentEntry(value, trimmed);
-      } catch (e) {
-        entry.flashError({ message: `Rename: ${e.message}` });
-      }
+      // Files: per-row Rename.  Swap the row's name span for an
+      // editable input in-place — committing on Enter / blur, cancel
+      // on Escape.  Validation + the actual move through
+      // renameCurrentEntry happens at commit time; the state-change
+      // subscriber re-renders the list so we don't have to patch
+      // nameEl back ourselves on success.
+      const row = btn?.closest?.('.sp-file-row');
+      if (!row) return;
+      this._beginRenameInPlace(row, value);
       return;
     }
     if (action === 'purge-var') {
@@ -1238,6 +1231,68 @@ export class SidePanel {
       picker.click();
       return;
     }
+  }
+
+  /** Replace the variable name in `row` with an editable input.
+   *  Commits on Enter or blur, cancels on Escape.  On commit we
+   *  validate the new name as a legal HP identifier and call
+   *  renameCurrentEntry; the resulting state event triggers
+   *  _render() which rebuilds the file list (so we don't manually
+   *  patch nameEl back).  On cancel or no-op, restore the original
+   *  text and leave the row alone. */
+  _beginRenameInPlace(row, oldName) {
+    const nameEl = row.querySelector('.sp-file-name');
+    if (!nameEl) return;
+    // Already editing → just refocus.
+    if (row.classList.contains('sp-file-editing')) {
+      nameEl.querySelector('input')?.focus();
+      return;
+    }
+    row.classList.add('sp-file-editing');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'sp-file-name-input';
+    input.value = oldName;
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+
+    nameEl.textContent = '';
+    nameEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    let finalised = false;
+    const finalise = (commit) => {
+      if (finalised) return;
+      finalised = true;
+      const newName = input.value.trim();
+      // Restore the displayed text first; if rename succeeds the
+      // state-change subscriber will rebuild the list anyway.
+      row.classList.remove('sp-file-editing');
+      nameEl.textContent = oldName;
+
+      if (!commit)                          return;
+      if (newName === '' || newName === oldName) return;
+      if (!isStorableHpName(newName)) {
+        this.app.entry.flashError({ message: `Rename: invalid name: ${newName}` });
+        return;
+      }
+      try {
+        renameCurrentEntry(oldName, newName);
+      } catch (e) {
+        this.app.entry.flashError({ message: `Rename: ${e.message}` });
+      }
+    };
+
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter')      { ev.preventDefault(); finalise(true); }
+      else if (ev.key === 'Escape'){ ev.preventDefault(); finalise(false); }
+      // Stop bubbling so the side panel's global keydown shortcuts
+      // (if any) don't intercept characters being typed.
+      ev.stopPropagation();
+    });
+    input.addEventListener('blur', () => finalise(true));
   }
 
   /* ---- UI persistence: open/tab/sort/width survive a page reload. ----

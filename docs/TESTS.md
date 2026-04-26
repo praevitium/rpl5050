@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 198 (2026-04-26).  Unit-tests lane run
-(post-ship snapshot refresh — Sunday 2026-04-26; 12th release-window
+**Last updated.** Session 210 (2026-04-26).  Unit-tests lane run
+(post-ship snapshot refresh — Sunday 2026-04-26; 15th release-window
 run in this lane after sessions 156, 160, 164, 160-unit-tests,
-168, 173, 177, 181, 185, 189, 193).
+168, 173, 177, 181, 185, 189, 193, 198, 202, 206).
 
 Sibling deltas absorbed since the session-168 snapshot
 (5246 → 5306, **+60** over four sibling sessions):
@@ -828,7 +828,108 @@ Session 117 unit-tests deltas:
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
 
-## Coverage snapshot (session 193)
+## Coverage snapshot (session 210)
+
+Sibling deltas absorbed since session-206 snapshot
+(5492 → 5493, **+1** over sessions 207–209):
+- **Session 207** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 203→207 + session-log
+  back-fill for sessions 203-code-review / 204 / 205 / 206; no
+  source or test edits.
+- **Session 208** (data-type-support) — **+1** assertion in
+  `tests/test-types.mjs` (1044 → 1045; `session208:` label) —
+  erf M-cell pin promotion: one stale dot-cell in
+  `docs/DATA_TYPES.md` promoted to `✓`; one corresponding pin
+  assertion added.  No source change — wrapper already live.
+- **Session 209** (rpl-programming) — doc-only run; **0** assertion
+  deltas.  `docs/RPL.md` status stamp advanced to "as of session
+  209"; session-log pointer prose extended.  No source or test edits.
+
+Session 210 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-210 entry: **5493 / 0** (fully green).
+Final: **5493 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | **1045** | 0 | +1 s208 erf M-cell pin (`session208:` label). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5493** | **0** | Session 210 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 206 (retained for context)
+
+## Coverage snapshot (session 206)
+
+Sibling deltas absorbed since session-202 snapshot
+(5485 → 5492, **+7** over sessions 203–205):
+- **Session 203** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp and session-log
+  back-fill for sessions 199–202; no source or test edits.
+- **Session 204** (data-type-support) — **+7** assertions in
+  `tests/test-types.mjs` (1037 → 1044; `session204:` labels) —
+  erfc L/V/M/T+L stale-`·`-cell promotion: five stale dot-cells
+  in `docs/DATA_TYPES.md` promoted to `✓`; seven corresponding
+  pin assertions added.  No source change — wrappers were already
+  live.
+- **Session 205** (rpl-programming) — doc-only run; **0** assertion
+  deltas.  `docs/RPL.md` status stamp advanced to "as of session
+  205"; session-log pointer prose extended.  No source or test
+  edits.
+
+Session 206 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-206 entry: **5492 / 0** (fully green).
+Final: **5492 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | **1044** | 0 | +7 s204 erfc L/V/M/T+L verification pins (`session204:` labels). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5492** | **0** | Session 206 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 202 (retained for context)
+
+## Coverage snapshot (session 202)
 
 Sibling deltas absorbed since session-189 snapshot
 (5448 → 5464, **+16** over sessions 190–192):
@@ -872,6 +973,56 @@ Sibling deltas absorbed since session-193 snapshot
   deltas.  `docs/RPL.md` session-log pointer prose backfilled for
   sessions 172 / 180 / 184 / 188 / 192; status stamp advanced to
   session 197.  No source or test edits.
+
+Session 202 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Sibling deltas absorbed since session-198 snapshot
+(5472 → 5485, **+13** over sessions 199–201):
+- **Session 199** (command-support) — doc-only run; **0** assertion
+  deltas.  C-014 close: `docs/COMMANDS.md` session-log block
+  back-filled for sessions 187–198; `docs/REVIEW.md` C-014 promoted
+  to resolved.  No source or test edits.
+- **Session 200** (data-type-support) — **+13** assertions in
+  `tests/test-types.mjs` (1024 → 1037; `session200:` labels) —
+  GAMMA (×6), LNGAMMA (×4), erf (×2), erfc (×1) L/V/M/T
+  verification pins; corresponding `docs/DATA_TYPES.md` matrix
+  promotions (stale `·` cells → `✓` for GAMMA/LNGAMMA/erf on
+  L/V/M).  No source change — wrappers were already live.
+- **Session 201** (rpl-programming) — doc-only run; **0** assertion
+  deltas.  `docs/RPL.md` status stamp advanced to "as of session
+  201"; session-log pointer prose backfilled for sessions 192–201.
+  No source or test edits.
+
+Baseline at session-202 entry: **5485 / 0** (fully green).
+Final: **5485 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~9 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | **1037** | 0 | +13 s200 GAMMA/LNGAMMA/erf/erfc L/V/M/T verification pins (`session200:` labels). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5485** | **0** | Session 202 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~9 ms smoke suite.                       |
+
+### Prior snapshot — Session 198 (retained for context)
 
 Baseline at session-198 entry: **5472 / 0** (fully green).
 Final: **5472 / 0** — fully green (0 new this run).
@@ -1905,7 +2056,46 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 198 (2026-04-26) — this run.  Unit-tests lane (post-ship
+- Session 210 (2026-04-26) — this run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5493 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-210; added session-210 coverage snapshot (absorbed
+  sibling deltas 5492 → 5493: s207 command-support doc-only,
+  s208 +1 erf M-cell pin, s209 rpl-programming doc-only); wrote
+  `logs/session-210.md`.
+  Lock: `utils/@locks/session210-unit-tests.json`.
+
+- Session 206 (2026-04-26) — prior run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5492 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-206; added session-206 coverage snapshot (absorbed
+  sibling deltas 5485 → 5492: s203 command-support doc-only,
+  s204 +7 erfc L/V/M/T+L pins, s205 rpl-programming doc-only);
+  wrote `logs/session-206.md`.
+  Lock: `utils/@locks/session206-unit-tests.json`.
+
+- Session 202 (2026-04-26) — prior run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5485 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-202; added session-202 coverage snapshot (absorbed
+  sibling deltas 5472 → 5485: s199 command-support doc-only C-014
+  close, s200 +13 GAMMA/LNGAMMA/erf/erfc L/V/M/T pins,
+  s201 rpl-programming doc-only); wrote `logs/session-202.md`.
+  Lock: `utils/@locks/session202-unit-tests.json`.
+
+- Session 198 (2026-04-26) — prior run.  Unit-tests lane (post-ship
   snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
   snapshot-only run).  Gates at entry: test-all **5472 / 0**,
   test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001

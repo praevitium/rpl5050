@@ -9952,3 +9952,89 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+/* ================================================================
+   session204: erfc L/V/M/T+L stale-dot-cell promotion.
+   erfc is registered as _withTaggedUnary(_withListUnary(bespoke-V/M handler)).
+   _erfcScalar(Integer(0)) = Real(1)  (zero special-case, no series).
+   _erfcScalar(Integer(1)) = Real(_regGammaQ(0.5, 1)) ≈ Real(0.1573) — distinct
+   from _erfcScalar(Integer(0)), giving heterogeneous output on a 2-element list.
+   Session 200 pinned the T scalar path only; this cluster pins the three
+   remaining collection axes: bare-List (n=0, n=1, n=2 heterogeneous),
+   Tagged-of-List (n=0 T+L, n=1 T+L), Vector, Matrix.
+   ================================================================ */
+{
+  // n=0 empty-List bare: { } erfc → { }
+  {
+    const v = runOp('erfc', RList([]));
+    assert(isList(v) && v.items.length === 0,
+      `session204: { } erfc → { } (bare empty-List passthrough; got ${v?.type})`);
+  }
+
+  // n=0 Tagged-of-List: :e:{ } erfc → :e:{ }
+  {
+    const v = runOp('erfc', Tagged('e', RList([])));
+    assert(isTagged(v) && v.tag === 'e' && isList(v.value) && v.value.items.length === 0,
+      `session204: :e:{ } erfc → :e:{ } (T+L empty; got tag=${v?.tag} inner=${v?.value?.type})`);
+  }
+
+  // n=1 bare-List: { Integer(0) } erfc → { Real(1) }  (zero special-case through wrapper)
+  {
+    const v = runOp('erfc', RList([Integer(0n)]));
+    assert(isList(v) && v.items.length === 1 && isReal(v.items[0]) && v.items[0].value.toNumber() === 1,
+      `session204: { Integer(0) } erfc → { Real(1) } (bare-List n=1; got ${v?.items?.[0]?.value?.toNumber()})`);
+  }
+
+  // n=1 Tagged-of-List: :e:{ Integer(0) } erfc → :e:{ Real(1) }
+  {
+    const v = runOp('erfc', Tagged('e', RList([Integer(0n)])));
+    assert(isTagged(v) && v.tag === 'e' && isList(v.value) &&
+           v.value.items.length === 1 && isReal(v.value.items[0]) &&
+           v.value.items[0].value.toNumber() === 1,
+      `session204: :e:{ Integer(0) } erfc → :e:{ Real(1) } (T+L n=1; got tag=${v?.tag} val=${v?.value?.items?.[0]?.value?.toNumber()})`);
+  }
+
+  // n=2 bare-List heterogeneous output: { Integer(0) Integer(1) } erfc → { Real(1) Real(≈0.1573) }
+  // erfc(0)=1, erfc(1)≈0.1573 — distinct values confirm element-wise dispatch
+  {
+    const v = runOp('erfc', RList([Integer(0n), Integer(1n)]));
+    const a = v?.items?.[0], b = v?.items?.[1];
+    assert(isList(v) && v.items.length === 2 &&
+           isReal(a) && a.value.toNumber() === 1 &&
+           isReal(b) && b.value.toNumber() > 0.15 && b.value.toNumber() < 0.16,
+      `session204: { Integer(0) Integer(1) } erfc → { Real(1) Real(≈0.1573) } (bare-List n=2 heterogeneous; got [${a?.value?.toNumber()}, ${b?.value?.toNumber()}])`);
+  }
+
+  // Vector axis: [ Integer(0) ] erfc → [ Real(1) ]
+  {
+    const v = runOp('erfc', Vector([Integer(0n)]));
+    assert(isVector(v) && v.items.length === 1 && isReal(v.items[0]) && v.items[0].value.toNumber() === 1,
+      `session204: [ Integer(0) ] erfc → [ Real(1) ] (V; erfc(0)=1; got ${v?.items?.[0]?.value?.toNumber()})`);
+  }
+
+  // Matrix axis: [[ Integer(0) ]] erfc → [[ Real(1) ]]
+  {
+    const v = runOp('erfc', Matrix([[Integer(0n)]]));
+    const cell = v?.rows?.[0]?.[0];
+    assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1 &&
+           isReal(cell) && cell.value.toNumber() === 1,
+      `session204: [[ Integer(0) ]] erfc → [[ Real(1) ]] (M; erfc(0)=1; got ${cell?.value?.toNumber()})`);
+  }
+
+  // ----------------------------------------------------------------
+  // session208: erf M-cell promotion (documentation lag same as erfc/session204).
+  // erf is registered as _withTaggedUnary(_withListUnary(bespoke-V/M handler)).
+  // The M branch (rows.map(r => r.map(_erfScalar))) has been in the handler
+  // since the op was first wrapped; session200 only pinned L and V.
+  // _erfScalar(Integer(0)) = Real(0)  (erf(0) = 0, zero special-case).
+  // ----------------------------------------------------------------
+
+  // Matrix axis: [[ Integer(0) ]] erf → [[ Real(0) ]]
+  {
+    const v = runOp('erf', Matrix([[Integer(0n)]]));
+    const cell = v?.rows?.[0]?.[0];
+    assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1 &&
+           isReal(cell) && cell.value.toNumber() === 0,
+      `session208: [[ Integer(0) ]] erf → [[ Real(0) ]] (M; erf(0)=0; got ${cell?.value?.toNumber()})`);
+  }
+}
+

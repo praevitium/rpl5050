@@ -5,7 +5,30 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 200 (2026-04-26, post-ship GAMMA/LNGAMMA/erf/erfc L/V/M
+**Last updated.** Session 208 (2026-04-26, post-ship erf M stale-`·`-cell
+promotion; lane name **`session208-data-type-support`**) — no source changes; erf
+is registered as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))` — the M branch
+`rows.map(r => r.map(_erfScalar))` has been in place since the op was first wrapped.
+Session 200's partial pass added L and V pins but left M as `·`.  +1 hard assertion in
+`tests/test-types.mjs` (5492 → 5493): Matrix `[[Integer(0)]]`→`[[Real(0)]]`
+(erf(0)=0 zero special-case).  ERF matrix row: M `·`→`✓`.
+Verification gates at exit: `node tests/test-all.mjs` 5493/0/0,
+`node tests/test-persist.mjs` passed, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (208)" below.
+
+**Last updated (prior — session 204).** Session 204 (2026-04-26, post-ship erfc L/V/M/T+L stale-`·`-cell
+promotion; lane name **`session204-data-type-support`**) — no source changes; erfc
+was already wrapped in `_withTaggedUnary(_withListUnary(bespoke-V/M handler))` identical
+to erf, but the DATA_TYPES.md matrix carried `·` for its L/V/M cells as a documentation
+lag from session 200's partial pass (session 200 pinned T scalar only).  +7 hard assertions
+in `tests/test-types.mjs` (5485 → 5492): bare-List n=0 passthrough; T+L n=0; bare-List n=1
+value-precise (erfc(0)=1); T+L n=1; bare-List n=2 heterogeneous-output (erfc(0)=1,
+erfc(1)≈0.1573); Vector (erfc(0)=1); Matrix (erfc(0)=1).  ERFC matrix row: L/V/M `·`→`✓`.
+Verification gates at exit: `node tests/test-all.mjs` 5492/0/0,
+`node tests/test-persist.mjs` passed, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (204)" below.
+
+**Last updated (prior — session 200).** Session 200 (2026-04-26, post-ship GAMMA/LNGAMMA/erf/erfc L/V/M
 stale-`·`-cell promotion; lane name **`session200-data-type-support`**) — no source
 changes; these ops were already wrapped in `_withTaggedUnary(_withListUnary(bespoke-V/M
 handler))` — the DATA_TYPES.md matrix carried `·` (not-applicable) for their L/V/M
@@ -888,8 +911,8 @@ step / impulse — so the simplify-time fold stays conservative.
 | DIRAC     | ✓ | ✓ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Impulse δ(x).  At non-zero real, folds to 0; at x=0 leaves symbolic (distribution).  Session 105 pinned `DIRAC(X-1)` round-trip + `DIRAC(3)=0`, `DIRAC(0)` → null. **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — bare handler.  **Session 191:** wrapped `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` — L/V/M/T promoted to ✓.  +8 pins in `tests/test-types.mjs`: n=0 bare+T+L, n=1 bare {Real(0)}→{Symbolic(DIRAC(0))} (at-zero path through wrapper), n=2 bare+T+L non-zero, Vector, Matrix, scalar Tagged :x:Real(5)→:x:Real(0). |
 | GAMMA     | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Γ(x).  Integer fold only (GAMMA(n) = (n-1)! for n ≥ 1, n ≤ 171); non-integer / non-positive / overflow → null (leave symbolic).  Session 105 pinned Sy round-trip + GAMMA(5)=24, GAMMA(0)→null, GAMMA(0.5)→null, GAMMA(180)→null.  **Session 200:** L/V/M cells promoted `·`→`✓` — already wrapped as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`; matrix was stale.  +6 integer-exact pins: n=0 bare-List `{}`→`{}`; n=0 T+L `:g:{}`→`:g:{}`; n=2 bare-List `{Integer(1) Integer(5)}`→`{Integer(1) Integer(24)}`; n=2 T+L tag-preserved; V `[Integer(1) Integer(5)]`→`[Integer(1) Integer(24)]`; M `[[Integer(2) Integer(3)]]`→`[[Integer(1) Integer(2)]]`. |
 | LNGAMMA   | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ln Γ(x).  No fold (Lanczos lives on the stack).  Session 105 pinned Sy round-trip + null fold.  **Session 200:** L/V/M cells promoted `·`→`✓` — same wrapper shape as GAMMA; matrix was stale.  +4 pins using lngamma(2)=0 exact-fp identity: n=0 bare-List `{}`→`{}`; M `[[Integer(2)]]`→`[[Real(0)]]`; T scalar `:h:Integer(2)`→`:h:Real(0)`; V `[Integer(2)]`→`[Real(0)]`. |
-| ERF       | ✓ | · | · | ✓ | ✓  | ✓ | ✓ | · | ✓ | Error function (registered as `erf`).  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** L/V cells promoted `·`→`✓` — already wrapped as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`; matrix was stale.  +2 pins using erf(0)=Real(0) zero special-case: bare-List `{Integer(0)}`→`{Real(0)}`; V `[Integer(0)]`→`[Real(0)]`.  M remains `·` — bespoke V/M branch is in the handler but no hard assertion added for M this session. |
-| ERFC      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Complementary erf (registered as `erfc`).  Same as ERF.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** +1 T re-verification pin `:e:Integer(0) erfc`→`:e:Real(1)` (erfc(0)=1 zero special-case; T was already ✓).  L/V/M remain `·` — wrapped same as erf but no bare-collection assertions added this session. |
+| ERF       | ✓ | · | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Error function (registered as `erf`).  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** L/V cells promoted `·`→`✓` — already wrapped as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`; matrix was stale.  +2 pins using erf(0)=Real(0) zero special-case: bare-List `{Integer(0)}`→`{Real(0)}`; V `[Integer(0)]`→`[Real(0)]`.  **Session 208:** M `·`→`✓` — same documentation lag; bespoke `rows.map(r => r.map(_erfScalar))` branch confirmed in handler.  +1 pin: `[[Integer(0)]]`→`[[Real(0)]]` (erf(0)=0 zero special-case; Matrix kind preserved). |
+| ERFC      | ✓ | · | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Complementary erf (registered as `erfc`).  Same as ERF.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** +1 T re-verification pin `:e:Integer(0) erfc`→`:e:Real(1)` (erfc(0)=1 zero special-case; T was already ✓).  **Session 204:** L/V/M `·`→`✓` — erfc handler has same bespoke V/M branches + `_withListUnary` wrapper as erf; pins added for bare-List n=0/n=1/n=2-heterogeneous, T+L n=0/n=1, Vector, Matrix (all via `_erfcScalar(Integer(0))=Real(1)` zero special-case). |
 | BETA      | ✓ | ✓ | · | ✓ | ✓  | · | · | · | ✓ | Arity 2 — B(a, b).  No simplify-time fold (needs log-gamma).  Session 105 pinned Sy round-trip + null fold. |
 | UTPC      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Upper-tail χ² CDF.  Arity 2 — UTPC(ν, x).  No simplify-time fold (needs incomplete gamma).  Session 105 pinned Sy round-trip + null fold. |
 | UTPF      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Upper-tail F CDF.  Arity 3 — UTPF(ν₁, ν₂, x).  No simplify-time fold (needs incomplete beta).  Session 105 pinned Sy round-trip + null fold. |
@@ -983,6 +1006,37 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (208)
+
+- **erf M stale-`·`-cell promotion — documentation-only fix (pin addition only).**
+  `erf` is registered as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`.
+  The bespoke handler contains `else if (isMatrix(v)) s.push(Matrix(v.rows.map(r => r.map(_erfScalar))))`,
+  identical in structure to the `erfc` handler.  Session 200 pinned only L and V for erf;
+  the M cell remained `·` as a documentation lag.  No source changes.
+  +1 `session208:` pin in `tests/test-types.mjs` (5492 → 5493):
+  Matrix `[[Integer(0)]]`→`[[Real(0)]]` (erf(0)=0 zero special-case; Matrix kind preserved
+  across element-wise `_erfScalar` dispatch).
+  ERF matrix row: M `·`→`✓`.
+  Verification gates: `node tests/test-all.mjs` 5493/0/0,
+  `node tests/test-persist.mjs` passed, `node tests/sanity.mjs` 22/0.
+
+### Resolved this session (204)
+
+- **erfc L/V/M/T+L stale-`·`-cell promotion — documentation-only fix (pin additions only).**
+  erfc is registered as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`,
+  identical in structure to erf (which had its L/V cells promoted in session 200).
+  Session 200's partial pass pinned only the T scalar path for erfc; the L/V/M cells
+  remained `·` as a documentation lag.  No source changes.
+  +7 `session204:` pins in `tests/test-types.mjs` (5485 → 5492):
+  bare-List n=0 passthrough `{}`→`{}`; T+L n=0 `:e:{}`→`:e:{}`;
+  bare-List n=1 value-precise `{Integer(0)}`→`{Real(1)}` (erfc(0)=1 zero special-case);
+  T+L n=1 `:e:{Integer(0)}`→`:e:{Real(1)}`;
+  bare-List n=2 heterogeneous-output `{Integer(0) Integer(1)}`→`{Real(1) Real(≈0.1573)}`;
+  Vector `[Integer(0)]`→`[Real(1)]`; Matrix `[[Integer(0)]]`→`[[Real(1)]]`.
+  ERFC matrix row: L/V/M `·`→`✓`.
+  Verification gates: `node tests/test-all.mjs` 5492/0/0,
+  `node tests/test-persist.mjs` passed, `node tests/sanity.mjs` 22/0.
 
 ### Resolved this session (200)
 
