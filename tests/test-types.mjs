@@ -10758,55 +10758,151 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       `session244: Beta(Matrix, Integer) → 'Bad argument type' (no _withVMBinary; M=✗)`);
   }
 
-  // ---- UTPC L=✗ / V=✗ (bare handler; asReal rejects non-scalar x arg) ----
+  // ---- UTPC L=✓ / V=✗ (session248: _withTaggedBinary(_withListBinary) lift) ----
+  // n=0 empty-list passthrough.
   {
     const s = new Stack();
-    s.push(Integer(2n));
-    s.push(RList([Real(1)]));
-    assertThrows(() => lookup('UTPC').fn(s), /Bad argument type/i,
-      `session244: UTPC Integer(2) List({Real(1)}) → 'Bad argument type' (asReal rejects List; L=✗)`);
+    s.push(RList([]));
+    s.push(RList([]));
+    lookup('UTPC').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 0,
+      `session248: UTPC {} {} → {} (n=0 empty-list passthrough; got ${JSON.stringify(v)})`);
   }
+  // n=1 bare-list: X≤0 short-circuit → Real(1).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(2n)]));
+    s.push(RList([Integer(0n)]));
+    lookup('UTPC').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 1 &&
+           v.items[0].type === 'real' && Number(v.items[0].value) === 1,
+      `session248: UTPC {Integer(2)} {Integer(0)} → {Real(1)} (n=1 bare-list; X≤0 branch; got ${JSON.stringify(v)})`);
+  }
+  // n=2 pairwise bare-list: {nu=2,nu=5} {x=0,x=2} → {Real(1), Real(UTPC(5,2))}.
+  // UTPC(2,0)=1 (X≤0); UTPC(5,2)=_regGammaQ(2.5,1)≈0.8491 (tol 1e-6).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(2n), Integer(5n)]));
+    s.push(RList([Integer(0n), Integer(2n)]));
+    lookup('UTPC').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 2 &&
+           Number(v.items[0].value) === 1 &&
+           Math.abs(Number(v.items[1].value) - 0.8491450360846099) < 1e-6,
+      `session248: UTPC {Z(2) Z(5)} {Z(0) Z(2)} → {R(1) R(≈0.849)} (n=2 pairwise; got ${JSON.stringify(v)})`);
+  }
+  // Tagged-of-List (binary tag-drop: both unwrapped, tag NOT re-applied).
+  {
+    const s = new Stack();
+    s.push(Tagged('nu', RList([Integer(2n)])));
+    s.push(Tagged('x', RList([Integer(0n)])));
+    lookup('UTPC').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 1 &&
+           Number(v.items[0].value) === 1,
+      `session248: UTPC :nu:{Z(2)} :x:{Z(0)} → {R(1)} (T+L; tag dropped; got ${JSON.stringify(v)})`);
+  }
+  // Scalar Tagged (both Tagged, result untagged — binary tag-drop convention).
+  {
+    const s = new Stack();
+    s.push(Tagged('n', Integer(2n)));
+    s.push(Tagged('x', Integer(0n)));
+    lookup('UTPC').fn(s);
+    const v = s.pop();
+    assert(v.type === 'real' && Number(v.value) === 1,
+      `session248: UTPC :n:Z(2) :x:Z(0) → R(1) (Tagged scalar; tag dropped; got ${JSON.stringify(v)})`);
+  }
+  // V=✗ — _withVMBinary not applied; Vector reaches _utpcScalar as the x arg → Bad argument type.
   {
     const s = new Stack();
     s.push(Integer(2n));
     s.push(Vector([Real(1)]));
     assertThrows(() => lookup('UTPC').fn(s), /Bad argument type/i,
-      `session244: UTPC Integer(2) Vector([Real(1)]) → 'Bad argument type' (asReal rejects Vector; V=✗)`);
+      `session248: UTPC Integer(2) Vector([Real(1)]) → 'Bad argument type' (no _withVMBinary; V=✗)`);
   }
 
-  // ---- UTPF L=✗ (bare handler; asReal rejects List on F arg) ----
+  // ---- UTPF L=✗ / V=✗ (bare 3-arg handler; no _withListBinary shape) ----
   {
     const s = new Stack();
     s.push(Integer(2n));
     s.push(Integer(2n));
     s.push(RList([Real(1)]));
     assertThrows(() => lookup('UTPF').fn(s), /Bad argument type/i,
-      `session244: UTPF Integer(2) Integer(2) List({Real(1)}) → 'Bad argument type' (asReal rejects List; L=✗)`);
+      `session244: UTPF Integer(2) Integer(2) List({Real(1)}) → 'Bad argument type' (3-arg bare handler; L=✗)`);
   }
-  // UTPF V=✗
   {
     const s = new Stack();
     s.push(Integer(2n));
     s.push(Integer(2n));
     s.push(Vector([Real(1)]));
     assertThrows(() => lookup('UTPF').fn(s), /Bad argument type/i,
-      `session244: UTPF Integer(2) Integer(2) Vector([Real(1)]) → 'Bad argument type' (asReal rejects Vector; V=✗)`);
+      `session244: UTPF Integer(2) Integer(2) Vector([Real(1)]) → 'Bad argument type' (3-arg bare handler; V=✗)`);
   }
 
-  // ---- UTPT L=✗ / V=✗ (bare handler; asReal rejects non-scalar t arg) ----
+  // ---- UTPT L=✓ / V=✗ (session248: _withTaggedBinary(_withListBinary) lift) ----
+  // n=0 empty-list passthrough.
   {
     const s = new Stack();
-    s.push(Integer(3n));
-    s.push(RList([Real(1)]));
-    assertThrows(() => lookup('UTPT').fn(s), /Bad argument type/i,
-      `session244: UTPT Integer(3) List({Real(1)}) → 'Bad argument type' (asReal rejects List; L=✗)`);
+    s.push(RList([]));
+    s.push(RList([]));
+    lookup('UTPT').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 0,
+      `session248: UTPT {} {} → {} (n=0 empty-list passthrough; got ${JSON.stringify(v)})`);
   }
+  // n=1 bare-list: t=0 short-circuit → Real(0.5).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(5n)]));
+    s.push(RList([Integer(0n)]));
+    lookup('UTPT').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 1 &&
+           Number(v.items[0].value) === 0.5,
+      `session248: UTPT {Z(5)} {Z(0)} → {R(0.5)} (n=1 bare-list; t=0 exact branch; got ${JSON.stringify(v)})`);
+  }
+  // n=2 pairwise bare-list: both t=0 → both Real(0.5).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(5n), Integer(10n)]));
+    s.push(RList([Integer(0n), Integer(0n)]));
+    lookup('UTPT').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 2 &&
+           Number(v.items[0].value) === 0.5 &&
+           Number(v.items[1].value) === 0.5,
+      `session248: UTPT {Z(5) Z(10)} {Z(0) Z(0)} → {R(0.5) R(0.5)} (n=2 pairwise; t=0 exact; got ${JSON.stringify(v)})`);
+  }
+  // Tagged-of-List (binary tag-drop).
+  {
+    const s = new Stack();
+    s.push(Tagged('nu', RList([Integer(5n)])));
+    s.push(Tagged('t', RList([Integer(0n)])));
+    lookup('UTPT').fn(s);
+    const v = s.pop();
+    assert(v.type === 'list' && v.items.length === 1 &&
+           Number(v.items[0].value) === 0.5,
+      `session248: UTPT :nu:{Z(5)} :t:{Z(0)} → {R(0.5)} (T+L; tag dropped; got ${JSON.stringify(v)})`);
+  }
+  // Scalar Tagged (both Tagged, result untagged).
+  {
+    const s = new Stack();
+    s.push(Tagged('n', Integer(5n)));
+    s.push(Tagged('t', Integer(0n)));
+    lookup('UTPT').fn(s);
+    const v = s.pop();
+    assert(v.type === 'real' && Number(v.value) === 0.5,
+      `session248: UTPT :n:Z(5) :t:Z(0) → R(0.5) (Tagged scalar; tag dropped; got ${JSON.stringify(v)})`);
+  }
+  // V=✗ — Vector reaches _utptScalar as the t arg → Bad argument type.
   {
     const s = new Stack();
     s.push(Integer(3n));
     s.push(Vector([Real(1)]));
     assertThrows(() => lookup('UTPT').fn(s), /Bad argument type/i,
-      `session244: UTPT Integer(3) Vector([Real(1)]) → 'Bad argument type' (asReal rejects Vector; V=✗)`);
+      `session248: UTPT Integer(3) Vector([Real(1)]) → 'Bad argument type' (no _withVMBinary; V=✗)`);
   }
 }
 

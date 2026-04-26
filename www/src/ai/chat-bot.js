@@ -33,15 +33,43 @@
    ================================================================= */
 
 import { LLM } from './llm.js';
-import {
-  SYSTEM_PROMPT_REPLY,
-  SYSTEM_PROMPT_TOOL,
-  SYSTEM_PROMPT_SUGGEST,
-} from './system-prompt.js';
+import { SYSTEM_PROMPT_COMBINED } from './system-prompt.js';
+
+// Diagnostic logging — every flow-control transition in this module
+// goes through these helpers so the console transcript reads as a
+// single chronological narrative.  Filter the DevTools console by
+// `[ChatBot]` to see the entire chat lifecycle for a session.
+//
+// The prefix is intentional: `[ChatBot]` for orchestration code in
+// this file, `[LLM]` for the main-thread worker bridge in llm.js,
+// `[llm-worker]` for the worker itself.  Together those three tags
+// cover every JS-level transition between "user typed" and "tokens
+// rendered" — useful when a turn appears to hang and you need to
+// localise where in the chain it stopped.
+function dlog(...args)  { /* eslint-disable-next-line no-console */ console.log('[ChatBot]', ...args); }
+function dwarn(...args) { /* eslint-disable-next-line no-console */ console.warn('[ChatBot]', ...args); }
+function dgroup(label)  { /* eslint-disable-next-line no-console */ console.groupCollapsed('[ChatBot]', label); }
+function dgroupEnd()    { /* eslint-disable-next-line no-console */ console.groupEnd(); }
 
 // (Previously: MAX_ITER capped a multi-iteration tool loop.  Removed —
-// the new linear pipeline runs Phase 1 / 2 / 3 exactly once per user
-// turn, so there's no loop to bound.)
+// the new pipeline runs exactly one LLM call per user turn, no
+// iteration to bound.)
+
+// Stall timeout (ms) for the single combined LLM call.  WebLLM 0.2.x
+// has a known failure mode where chat.completions.create can wedge
+// in its prefill path with no tokens, no error, no done — the main-
+// thread promise hangs and the user sees a forever-streaming bubble.
+//
+// This is a *stall* timeout, not a wall-clock cap: the timer resets
+// on every streamed token, so a model that's just slow but producing
+// output runs to completion.  Only true silence triggers the abort.
+//
+// On stall: _llm.abort() is fired, which makes the worker break out
+// of its for-await loop and post `done`.  _runLoop's fullText-handling
+// code then degrades gracefully — finalises whatever prose streamed
+// (with a "(reply stalled)" hint), and skips tool dispatch since an
+// empty/partial fullText doesn't yield a parseable JSON brace block.
+const STALL_TIMEOUT_MS = 45000;
 
 /* ---- Simple markdown → DOM renderer --------------------------------
    Handles the subset the assistant actually uses: headers, bold,
@@ -174,71 +202,55 @@ function appendSpans(parent, text) {
 
 /* ---- Model-output parsing ----------------------------------------- */
 
-/** Extract a tool call from a Phase 2 response string.  The model is
- *  told to output a single bare-JSON object `{"name":"…","arguments":…}`
- *  or the literal `NO_TOOL`.  We find the first `{…}` whose first key
- *  is `"name"`, walking braces manually so nested objects in
- *  `arguments` don't confuse the matcher.  Returns `{name, arguments}`
- *  or null. */
-function parseToolCall(text) {
-  const start = text.search(/\{\s*"name"/);
-  if (start < 0) return null;
-  let depth = 0;
-  let end   = -1;
-  for (let i = start; i < text.length; i++) {
-    const c = text[i];
-    if (c === '{') depth++;
-    else if (c === '}') {
-      depth--;
-      if (depth === 0) { end = i; break; }
+/** Walk `text` and return every `{"name":"…","arguments":…}` block in
+ *  document order.  The model is told to emit one bare-JSON tool call
+ *  per action; when it wants to chain steps it just lists them one
+ *  per line.  Each call is found by anchoring on the `{<ws>"name"` shape
+ *  and walking braces manually so nested objects inside `arguments`
+ *  don't confuse the matcher.  Malformed candidates (unbalanced braces,
+ *  invalid JSON, missing string `name`) are skipped silently — better
+ *  than throwing, since the model occasionally emits half-formed JSON
+ *  on the way to the real ones.
+ *
+ *  Returns an array of `{name, arguments}` objects (possibly empty).
+ *  The same regex shape is used by _runLoop's streaming detector to
+ *  know when to start hiding tokens from the user-facing bubble — the
+ *  detector only needs the FIRST occurrence; the parser needs all. */
+function parseAllToolCalls(text) {
+  const calls = [];
+  const anchor = /\{\s*"name"\s*:/g;
+  let m;
+  while ((m = anchor.exec(text)) !== null) {
+    const start = m.index;
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < text.length; i++) {
+      const c = text[i];
+      if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
     }
+    if (end < 0) break;   // unclosed brace, give up — partial stream
+    try {
+      const obj = JSON.parse(text.slice(start, end + 1));
+      if (obj && typeof obj.name === 'string') {
+        calls.push({ name: obj.name, arguments: obj.arguments ?? {} });
+      }
+    } catch { /* malformed — skip */ }
+    // Advance past this object before re-running the anchor regex so
+    // we don't re-match the same `{"name":` if JSON.parse rejected it.
+    anchor.lastIndex = end + 1;
   }
-  if (end < 0) return null;
-  try {
-    const obj = JSON.parse(text.slice(start, end + 1));
-    if (typeof obj.name === 'string') {
-      return { name: obj.name, arguments: obj.arguments ?? {} };
-    }
-  } catch { /* fall through */ }
-  return null;
+  return calls;
 }
 
-/** Lenient JSON-array parser for Phase 3 (chips).  The model is told
- *  to output only a JSON array of three strings, but tiny models drift
- *  — they sometimes wrap in code fences, add prose, or only emit the
- *  quoted strings.  We try, in order: direct parse, the first
- *  `[…]` window, and finally pulling every double-quoted token.
- *  Returns up to 3 non-empty trimmed strings, or null. */
-function parseSuggestionsArray(text) {
-  if (!text) return null;
-  const s = text.trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/i, '');
-  const tryParse = (raw) => {
-    try {
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return null;
-      const out = arr
-        .map(v => (typeof v === 'string' ? v.trim() : ''))
-        .filter(Boolean)
-        .slice(0, 3);
-      return out.length ? out : null;
-    } catch { return null; }
-  };
-  let items = tryParse(s);
-  if (items) return items;
-  const lo = s.indexOf('[');
-  const hi = s.lastIndexOf(']');
-  if (lo >= 0 && hi > lo) {
-    items = tryParse(s.slice(lo, hi + 1));
-    if (items) return items;
-  }
-  const quoted = [...s.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)]
-    .map(m => m[1].trim())
-    .filter(Boolean)
-    .slice(0, 3);
-  return quoted.length ? quoted : null;
-}
+// (Previously: parseSuggestionsArray() — lenient JSON-array parser for
+// the per-turn follow-up chips Phase 3 used to generate.  Removed when
+// the three-phase pipeline collapsed into a single combined call;
+// chips are now starter-only.  STARTER_CHIPS still uses the chip
+// rendering machinery below.)
 
 /* ---- Starter chips ------------------------------------------------- */
 
@@ -246,9 +258,9 @@ function parseSuggestionsArray(text) {
  *  model is ready.  Kept short and concrete so the user sees what kinds
  *  of things the assistant can actually do. */
 const STARTER_CHIPS = [
-  'Add 3 to 5',
-  'Expand (x-1)^6',
-  'Solve for x: x^2-5*x+6=0',
+  'Put 3 and 5 on the stack',
+  'Add the top two stack items',
+  'Factor the top stack item',
 ];
 
 /* ---- Model catalog ------------------------------------------------
@@ -274,7 +286,7 @@ const MODELS = [
   { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',       label: 'TinyLlama 1.1B',         size: '~700 MB',  note: 'Classic small chat model' },
 
   // ---- 0.9-1.5 GB — small / sweet spot ----
-  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 1B',           size: '~880 MB',  note: 'Recommended default — solid balance', isDefault: true },
+  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 1B',           size: '~880 MB',  note: 'Smaller fallback — fast but weaker reasoning' },
   { id: 'stablelm-2-zephyr-1_6b-q4f16_1-MLC',         label: 'StableLM 2 Zephyr 1.6B', size: '~1.0 GB',  note: 'Stability AI chat-tuned' },
   { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC',          label: 'SmolLM2 1.7B',           size: '~1.0 GB',  note: 'Larger SmolLM2 — better follow-through than 360M' },
   { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  note: 'Code-tuned 1.5B — strong at structured output' },
@@ -283,7 +295,7 @@ const MODELS = [
 
   // ---- 1.9-2.4 GB — mid-tier ----
   { id: 'gemma-2-2b-it-q4f16_1-MLC',                  label: 'Gemma 2 2B',             size: '~1.9 GB',  note: 'Google instruction-tuned 2B' },
-  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 3B',           size: '~2.3 GB',  note: 'Much smarter than 1B — needs ~3 GB VRAM' },
+  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 3B',           size: '~2.3 GB',  note: 'Recommended default — much smarter than 1B, stable in browser WebGPU (unlike 7B+)', isDefault: true },
   { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC',          label: 'Hermes 3 (Llama 3.2 3B)', size: '~2.3 GB', note: 'NousResearch fine-tune of Llama 3.2 3B — strong tool calling' },
   { id: 'Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC',      label: 'Qwen2.5 Coder 3B',       size: '~2.4 GB',  note: 'Code-tuned 3B' },
   { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',          label: 'Phi 3.5 mini',           size: '~2.4 GB',  note: 'Microsoft — strong on tool / structured output' },
@@ -298,8 +310,39 @@ const MODELS = [
 const DEFAULT_MODEL_ID  = MODELS.find((m) => m.isDefault)?.id ?? MODELS[0].id;
 const MODEL_STORAGE_KEY = 'rpl5050.chatbot.modelId';
 
+// One-shot migration key.  Premium-tier models (≥7B) consistently
+// stall in the WebLLM 0.2.x runtime — see the worker comment around
+// resetChat() — so we drop any previously-saved selection in that
+// tier exactly once and fall back to DEFAULT_MODEL_ID.  After this
+// runs, the user's explicit re-pick of a premium model from the
+// picker sticks (we don't re-migrate); the migration flag's purpose
+// is solely to break the "stall → reload → still 7B → stall again"
+// loop for users who picked a too-large model before we knew better.
+const PREMIUM_DROP_MIGRATION_KEY = 'rpl5050.chatbot.migrated.dropPremium.v1';
+const STALL_RISK_MODEL_IDS = [
+  'Qwen2.5-7B-Instruct-q4f16_1-MLC',
+  'Mistral-7B-Instruct-v0.3-q4f16_1-MLC',
+  'Llama-3.1-8B-Instruct-q4f16_1-MLC',
+];
+
 function loadSavedModelId() {
-  try { return localStorage.getItem(MODEL_STORAGE_KEY); } catch { return null; }
+  try {
+    if (!localStorage.getItem(PREMIUM_DROP_MIGRATION_KEY)) {
+      const saved = localStorage.getItem(MODEL_STORAGE_KEY);
+      if (saved && STALL_RISK_MODEL_IDS.includes(saved)) {
+        localStorage.removeItem(MODEL_STORAGE_KEY);
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[ChatBot] migration: dropped saved model', saved,
+          '— premium-tier (≥7B) models stall on browser WebGPU.',
+          'Falling back to', DEFAULT_MODEL_ID + '.',
+          'Re-pick from the picker if you really want this model.',
+        );
+      }
+      localStorage.setItem(PREMIUM_DROP_MIGRATION_KEY, '1');
+    }
+    return localStorage.getItem(MODEL_STORAGE_KEY);
+  } catch { return null; }
 }
 function saveModelId(id) {
   try { localStorage.setItem(MODEL_STORAGE_KEY, id); } catch { /* private mode */ }
@@ -337,6 +380,11 @@ export class ChatBot {
     this._progressEl = null;
     this._generating = false;
     this._pendingConfirm = null; // { resolve } | null — awaiting user confirmation
+    // Queue of user messages submitted while a turn is in progress.
+    // Drained one-at-a-time by the active _submit() after its
+    // _runLoop finishes; cleared by _newChat / _abort to discard
+    // pending work alongside the current turn.
+    this._queue = [];
     // Monotonic counter incremented every time we start (or kill) a
     // _runLoop turn.  Each loop captures its own turnId locally and
     // bails out silently if it discovers _runId has moved past it —
@@ -405,6 +453,22 @@ export class ChatBot {
         summary: ({ text } = {}) => ({ label: '▶ Run RPL', code: String(text ?? '') }),
         handler: ({ text } = {}) => {
           tools.run(String(text ?? ''));
+          const c = ctx();
+          return { success: true, stack: c.stack };
+        },
+      },
+      // Friendly alias for `run` when the user just wants to push
+      // literals (numbers, lists, vectors, Symbolics) onto the stack.
+      // The implementation is identical to `run` — small chat-tuned
+      // models reliably misroute "put 3 on the stack" to recall_var,
+      // so naming the action explicitly steers the picker.  `value`
+      // is whatever RPL literal text the user wants pushed; spaces
+      // separate multiple pushes ("3 5" pushes two numbers).
+      push_to_stack: {
+        confirm: true,
+        summary: ({ value } = {}) => ({ label: '▲ Push to stack', code: String(value ?? '') }),
+        handler: ({ value } = {}) => {
+          tools.run(String(value ?? ''));
           const c = ctx();
           return { success: true, stack: c.stack };
         },
@@ -710,6 +774,8 @@ export class ChatBot {
    *  the starter chips.  The model itself stays loaded — this is purely
    *  a conversation reset, not a model reset. */
   _newChat() {
+    dlog('newChat: reset (was generating=', this._generating,
+         'history len=', this._history.length, ')');
     // Bump the turn id so an in-flight _runLoop detects the reset and
     // unwinds without writing back into the freshly-cleared history.
     this._runId++;
@@ -720,6 +786,9 @@ export class ChatBot {
         this._pendingConfirm = null;
       }
     }
+    // Discard any messages the user queued during the in-flight turn —
+    // a "new chat" reset wipes pending work alongside the current turn.
+    this._queue = [];
     this._history = [];
     this._removeActiveChips();
     if (this._messagesEl) this._messagesEl.innerHTML = '';
@@ -809,37 +878,86 @@ export class ChatBot {
 
   async _submit() {
     const text = this._inputEl.value.trim();
-    if (!text || this._generating) return;
-    if (this._llm.status !== 'ready') return;
+    if (!text) {
+      dlog('submit: empty text, ignored');
+      return;
+    }
+    if (this._llm.status !== 'ready') {
+      dlog('submit: model not ready (status=', this._llm.status, '), ignored');
+      return;
+    }
 
     this._inputEl.value = '';
     this._inputEl.style.height = '';            // collapse auto-grown height
     this._addUserBubble(text);
-    this._setUIState('generating');
 
+    if (this._generating) {
+      // A turn is already in flight — queue this message.  The bubble
+      // is rendered now (so the user sees their message at the bottom
+      // of the chat in submission order); the actual _runLoop call
+      // happens when the originating _submit drains the queue in its
+      // finally block below.
+      this._queue.push(text);
+      dlog('submit: queued (queue depth=', this._queue.length, '):', text);
+      return;
+    }
+
+    dlog('submit: starting turn:', text);
+    this._setUIState('generating');
     try {
       await this._runLoop(text);
+      // Drain any messages that were queued while we were running.
+      // We process them one-at-a-time so each turn sees the
+      // calculator state left by the previous turn (and history
+      // built up by it), exactly as if the user had waited for each
+      // response before sending the next.
+      while (this._queue.length > 0) {
+        const next = this._queue.shift();
+        dlog('submit: draining queued turn (remaining=', this._queue.length, '):', next);
+        await this._runLoop(next);
+      }
     } finally {
+      dlog('submit: returning to idle (history len=', this._history.length, ')');
       this._setUIState('idle');
     }
   }
 
-  /* ---- Linear three-phase pipeline --------------------------------
-     One user turn = one LLM reply + one tool decision + (one optional
-     tool execution) + one chip generation.  No iteration, no nested
-     tool conversations — that level of agency requires a much larger
-     model than 135M parameters can muster.
+  /* ---- Single-pass pipeline ---------------------------------------
+     One user turn = ONE LLM call.  The model emits prose AND a JSON
+     tool call in a single streamed response; the orchestrator
+     extracts each part by string-matching the JSON brace-block.
 
-     Each phase has its own focused system prompt and runs as a
-     separate generate() call so the model only juggles one task at a
-     time.  Phase 2's tool decision result is rendered as a confirm
-     widget under Phase 1's reply; on confirm we execute the tool and
-     append a natural-language summary ("Ran X — stack is now …") to
-     history so the next user turn's Phase 1 sees coherent prose
-     rather than raw JSON. */
+     History (this used to be three calls):
+       v1: REPLY → TOOL → SUGGEST.  Each call rebuilt the full system-
+       prompt + history KV cache from scratch.  In browser WebGPU
+       small/mid models (1B-3B), the second create() reliably wedged
+       in WebLLM's incremental-prefill path, surfacing as "Phase 2
+       silent for minutes, zero GPU usage" — see the worker comment
+       around resetChat().  Tripling the LLM-call count tripled the
+       stall surface area while only marginally improving response
+       quality (the model isn't actually leveraging the separation).
+       v2 (this): one streaming call that does both jobs at once.
+       Three-times less prefill cost, three-times less stall surface,
+       and the model sees its own prose alongside its tool call so
+       the two stay coherent (Phase 1 saying "computing factorial"
+       while Phase 2 picks recall_var was a real symptom of the split).
+
+     Format the model emits (enforced by SYSTEM_PROMPT_COMBINED):
+         <one short prose sentence>
+         {"name":"<tool>","arguments":{...}}
+     For conceptual questions ("what does SWAP do?"), the JSON is
+     omitted entirely and we skip dispatch.
+
+     Display: the streaming bubble shows prose live, but the JSON
+     portion is hidden as soon as the parser sees `{"name"` so the
+     user never sees raw JSON in their chat.  Full text (incl. JSON)
+     is what gets pushed into history — keeping the JSON in history
+     reinforces the format on subsequent turns and gives the next-
+     turn model a literal example of what it's expected to produce. */
   async _runLoop(userText) {
     const turnId = ++this._runId;
     const stale  = () => this._runId !== turnId;
+    dlog('runLoop: enter turnId=', turnId, 'userText=', userText);
 
     // Inject current calculator state into the user message so every
     // turn starts with fresh stack/dir context.
@@ -848,193 +966,126 @@ export class ChatBot {
     const content = ctxNote ? `${ctxNote}\n\n${userText}` : userText;
     this._history.push({ role: 'user', content });
 
-    // ── Phase 1: reply ─────────────────────────────────────────────
-    const reply = await this._phaseReply(turnId, 0);
-    if (stale() || reply === null) return;
-    const lastBubble = reply.bubble;
-
-    // ── Phase 2: tool decision (silent) ────────────────────────────
-    const toolCall = await this._phaseTool(turnId, 0, lastBubble);
-    if (stale()) return;
-
-    // ── Tool execution + history note (only if Phase 2 said yes) ───
-    if (toolCall) {
-      await this._dispatchTool(toolCall);
-      if (stale()) return;
-    }
-
-    // ── Phase 3: suggestion chips ──────────────────────────────────
-    await this._phaseSuggest(turnId, lastBubble);
-  }
-
-  /** Phase 1 — streamed natural-language reply.
-   *  Returns { bubble, fullText } on success, or null if the user
-   *  aborted / errored out (the bubble is finalised in either case). */
-  async _phaseReply(turnId, iter) {
-    const stale = () => this._runId !== turnId;
     const messages = [
-      { role: 'system', content: SYSTEM_PROMPT_REPLY },
+      { role: 'system', content: SYSTEM_PROMPT_COMBINED },
       ...this._history,
     ];
-    this._logPhase(`reply (iter ${iter})`, messages);
+    this._logPhase('combined', messages);
 
     const { bubble, textEl } = this._addStreamingBubble();
     let fullText = '';
+    let jsonStart = -1;     // byte offset where the JSON block begins, or -1
+    const watchdog = this._makeStallWatchdog();
 
     try {
       await this._llm.generate(messages, {
         onToken: (t) => {
           if (typeof t !== 'string' || !t) return;
+          watchdog.onToken();
           fullText += t;
-          // Phase-1 output is pure prose — no markup to strip, no
-          // partial tags to hide.  Just show what the model has so far.
-          textEl.textContent = fullText.trim() || '…';
+          // Detect JSON start exactly once.  Once found, the bubble
+          // freezes its visible text at that offset — the rest of the
+          // streamed tokens are still accumulated (we need the full
+          // JSON object at end-of-stream) but they don't appear in the
+          // user-facing prose.  parseToolCall later locates the same
+          // brace-block via the same regex shape, keeping detection
+          // and parsing in sync.
+          if (jsonStart < 0) {
+            const m = fullText.match(/\{\s*"name"\s*:/);
+            if (m) jsonStart = m.index;
+          }
+          const visible = jsonStart >= 0
+            ? fullText.slice(0, jsonStart).trim()
+            : fullText.trim();
+          textEl.textContent = visible || '…';
         },
       });
     } catch (err) {
+      watchdog.stop();
       const display = err.message === 'AbortError' ? fullText.trim() : `⚠ ${err.message}`;
       this._finaliseStreamBubble(bubble, textEl, display, null);
       if (fullText) this._history.push({ role: 'assistant', content: fullText.trim() });
-      return null;
-    }
-
-    if (stale()) return null;
-    // eslint-disable-next-line no-console
-    console.log(`[ChatBot] ← Phase 1 (${fullText.length} chars):\n${fullText}`);
-
-    const trimmed = fullText.trim();
-    const display = trimmed || '_(model returned no output — try rephrasing.)_';
-    this._finaliseStreamBubble(bubble, textEl, display, null);
-    this._history.push({ role: 'assistant', content: trimmed });
-    return { bubble, fullText: trimmed };
-  }
-
-  /** Phase 2 — silent tool decision.  Returns the parsed tool call or
-   *  null (NO_TOOL / unparseable / aborted).  No streaming bubble; a
-   *  small inline pill below the last reply tells the user we're
-   *  thinking.
-   *
-   *  WebLLM enforces OpenAI's "last message must be user/tool" rule
-   *  (MessageOrderError otherwise), so we append a trailing user
-   *  message that asks for the tool decision.  This trailing message
-   *  also doubles as the action prompt — pulling "now emit the tool
-   *  call" out of the system message and into a user turn makes
-   *  small chat-tuned models more reliably follow the instruction. */
-  async _phaseTool(turnId, iter, lastBubble) {
-    const stale = () => this._runId !== turnId;
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT_TOOL },
-      ...this._history,
-      { role: 'user', content:
-        'Now output ONE LINE — either the JSON tool call that fulfils my request above, '
-        + 'or the literal word NO_TOOL if my request is purely conceptual. '
-        + 'No prose, no code fences.' },
-    ];
-    this._logPhase(`tool (iter ${iter})`, messages);
-
-    const pill = this._renderInlinePill(lastBubble, '⚙ deciding next step…');
-    let fullText = '';
-    // eslint-disable-next-line no-console
-    console.groupCollapsed('[ChatBot] Phase 2 stream');
-    try {
-      // Phase 2 outputs at most one line of JSON or the literal
-      // NO_TOOL — 80 tokens is plenty.  Capping low keeps the
-      // worst-case latency bounded if the model loops.
-      await this._llm.generate(messages, {
-        maxTokens: 80,
-        onToken: (t) => {
-          if (typeof t === 'string') {
-            fullText += t;
-            // Live per-token visibility — so a stuck-looking Phase 2
-            // is debuggable in real time without having to wait for
-            // the final summary log.
-            // eslint-disable-next-line no-console
-            console.log('  tok:', JSON.stringify(t));
-          }
-        },
-      });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.groupEnd();
-      pill?.remove?.();
-      return null;
-    }
-    // eslint-disable-next-line no-console
-    console.groupEnd();
-    pill?.remove?.();
-    if (stale()) return null;
-
-    // eslint-disable-next-line no-console
-    console.log(`[ChatBot] ← Phase 2 (${fullText.length} chars):\n${fullText}`);
-
-    if (/\bNO_TOOL\b/.test(fullText)) return null;
-    return parseToolCall(fullText);
-  }
-
-  /** Phase 3 — silent follow-up chip generation.  Renders a placeholder
-   *  beneath the last reply that gets replaced by chips when ready, or
-   *  removed silently on failure.
-   *
-   *  Same trailing-user-message trick as Phase 2 — WebLLM rejects
-   *  message arrays whose last entry isn't user/tool, and the
-   *  trailing instruction keeps small models on-task. */
-  async _phaseSuggest(turnId, lastBubble) {
-    const stale = () => this._runId !== turnId;
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT_SUGGEST },
-      ...this._history,
-      { role: 'user', content:
-        'Now suggest three short follow-up questions I might ask next, '
-        + 'as a JSON array of three strings. Output only the array.' },
-    ];
-    this._logPhase('suggest', messages);
-
-    const placeholder = this._renderInlinePill(lastBubble, '⏳ thinking of follow-ups…');
-    let fullText = '';
-    // eslint-disable-next-line no-console
-    console.groupCollapsed('[ChatBot] Phase 3 stream');
-    try {
-      // Phase 3 outputs a 3-element JSON array of short strings;
-      // 120 tokens is more than enough.
-      await this._llm.generate(messages, {
-        maxTokens: 120,
-        onToken: (t) => {
-          if (typeof t === 'string') {
-            fullText += t;
-            // eslint-disable-next-line no-console
-            console.log('  tok:', JSON.stringify(t));
-          }
-        },
-      });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.groupEnd();
-      placeholder?.remove?.();
+      dwarn('runLoop: generate threw:', err.message);
       return;
     }
-    // eslint-disable-next-line no-console
-    console.groupEnd();
-    placeholder?.remove?.();
-    if (stale()) return;
+    watchdog.stop();
 
-    // eslint-disable-next-line no-console
-    console.log(`[ChatBot] ← Phase 3 (${fullText.length} chars):\n${fullText}`);
+    // Stale = user hit Stop (or _newChat) mid-stream.  Show whatever
+    // prose made it through plus a "(stopped)" hint, then return
+    // without dispatching the tool.  History push is intentionally
+    // skipped on this path — the turn was cancelled, the conversation
+    // log shouldn't carry a half-formed reply.  (For _newChat, the
+    // messages container gets wiped right after this anyway.)
+    if (stale()) {
+      const visiblePart = jsonStart >= 0
+        ? fullText.slice(0, jsonStart).trim()
+        : fullText.trim();
+      const display = visiblePart
+        ? `${visiblePart}\n\n_(stopped — partial output shown.)_`
+        : '_(stopped.)_';
+      this._finaliseStreamBubble(bubble, textEl, display, null);
+      dlog('runLoop: stale after generate, finalised stopped bubble');
+      return;
+    }
 
-    const items = parseSuggestionsArray(fullText);
-    if (items?.length) this._renderChips(items, lastBubble);
+    const trimmed = fullText.trim();
+    dlog(`runLoop: model returned ${trimmed.length} chars (stalled=${watchdog.isStalled()}), jsonStart=${jsonStart}`);
+
+    // Split prose vs JSON.  jsonStart is computed from the unstripped
+    // fullText, so we use the same offset on `trimmed` only after
+    // confirming both are aligned — easier to slice fullText first
+    // and trim the prose portion.
+    const proseRaw   = jsonStart >= 0 ? fullText.slice(0, jsonStart) : fullText;
+    const prose      = proseRaw.trim();
+    const toolCall   = jsonStart >= 0 ? parseToolCall(fullText.slice(jsonStart)) : null;
+
+    let display;
+    if (watchdog.isStalled()) {
+      display = prose
+        ? `${prose}\n\n_(reply stalled — partial output shown.)_`
+        : '_(reply stalled with no output — model may be overloaded; try a smaller model.)_';
+    } else if (prose) {
+      display = prose;
+    } else if (toolCall) {
+      // Defensive: model emitted JSON without a prose preamble.  Show
+      // a generic placeholder so the bubble isn't empty above the
+      // tool widget.
+      display = `Running ${toolCall.name}.`;
+    } else {
+      display = '_(model returned no output — try rephrasing.)_';
+    }
+    this._finaliseStreamBubble(bubble, textEl, display, null);
+    // Push the FULL response (incl. JSON) to history.  Keeping the
+    // JSON in the assistant turn reinforces the format on subsequent
+    // turns — the next turn's model sees its own previous tool call
+    // as a literal example of the expected shape.
+    this._history.push({ role: 'assistant', content: trimmed });
+
+    if (toolCall) {
+      dlog('runLoop: dispatching tool from inline JSON:', toolCall.name);
+      await this._dispatchTool(toolCall);
+      if (stale()) { dlog('runLoop: stale after tool dispatch, exit'); return; }
+    } else {
+      dlog('runLoop: no tool call in response (conceptual question or model omitted JSON)');
+    }
+    dlog('runLoop: turnId=', turnId, 'complete');
   }
 
   /** Dispatch a parsed tool call through the registry.  Renders a
    *  confirm widget for mutating tools, executes, then appends a
    *  natural-language summary of what happened to history (so the
-   *  *next* user turn's Phase 1 model sees coherent prose, not raw
-   *  JSON).  No return value — single-pass pipeline doesn't need to
-   *  signal continuation. */
+   *  *next* user turn's model sees coherent prose alongside its
+   *  previous JSON tool call, not just raw structured output).  No
+   *  return value — single-pass pipeline doesn't need to signal
+   *  continuation. */
   async _dispatchTool(toolCall) {
     const tool = this._registry[toolCall.name];
     const args = toolCall.arguments ?? {};
+    dlog('dispatchTool: name=', toolCall.name, 'args=', args,
+         'confirm=', !!tool?.confirm, 'known=', !!tool);
 
     if (!tool) {
+      dwarn('dispatchTool: unknown tool', toolCall.name);
       this._addAssistantBubble(`_(unknown tool: \`${toolCall.name}\`.)_`);
       this._pushHistoryNote(`(Tried to use unknown tool "${toolCall.name}".)`);
       return;
@@ -1050,31 +1101,41 @@ export class ChatBot {
       // before resolve(false)), so we only call complete() on the
       // run path.
       const { complete } = this._addToolWidgetBubble({ name: toolCall.name, ...summary });
+      dlog('dispatchTool: awaiting user confirmation for', toolCall.name);
       const confirmed = await new Promise((resolve) => {
         this._pendingConfirm = { resolve };
       });
       this._pendingConfirm = null;
       if (!confirmed) {
+        dlog('dispatchTool: user cancelled', toolCall.name);
         this._pushHistoryNote(`(User cancelled the proposed ${toolCall.name} action.)`);
         return;
       }
+      dlog('dispatchTool: user confirmed, executing', toolCall.name);
       try {
         const result = await tool.handler(args);
         complete(true, '✓ Done');
-        this._pushHistoryNote(this._summariseToolResult(toolCall.name, args, result));
+        const note = this._summariseToolResult(toolCall.name, args, result);
+        this._pushHistoryNote(note);
+        dlog('dispatchTool: success', toolCall.name, 'note=', note);
       } catch (err) {
         complete(false, `✗ ${err.message ?? 'Failed'}`);
         this._pushHistoryNote(`(Running ${toolCall.name} failed: ${err.message}.)`);
+        dwarn('dispatchTool: handler threw for', toolCall.name, err);
       }
       return;
     }
 
     // Read-only — execute silently.
+    dlog('dispatchTool: read-only auto-exec', toolCall.name);
     try {
       const result = await tool.handler(args);
-      this._pushHistoryNote(this._summariseToolResult(toolCall.name, args, result));
+      const note = this._summariseToolResult(toolCall.name, args, result);
+      this._pushHistoryNote(note);
+      dlog('dispatchTool: read-only success', toolCall.name, 'note=', note);
     } catch (err) {
       this._pushHistoryNote(`(Reading ${toolCall.name} failed: ${err.message}.)`);
+      dwarn('dispatchTool: read-only handler threw for', toolCall.name, err);
     }
   }
 
@@ -1098,6 +1159,13 @@ export class ChatBot {
       return stack.length
         ? `(Ran \`${args.text}\`. Stack now: ${head}${stack.length > 3 ? ', …' : ''}.)`
         : `(Ran \`${args.text}\`. Stack is empty.)`;
+    }
+    if (name === 'push_to_stack' && r.success) {
+      const stack = Array.isArray(r.stack) ? r.stack : [];
+      const head  = stack.slice(0, 3).map((v, i) => `${i + 1}: ${v}`).join(', ');
+      return stack.length
+        ? `(Pushed \`${args.value}\`. Stack now: ${head}${stack.length > 3 ? ', …' : ''}.)`
+        : `(Pushed \`${args.value}\`. Stack is empty.)`;
     }
     if (name === 'append_to_editor' && r.success) {
       return `(Editor now contains: \`${r.buffer}\`.)`;
@@ -1139,12 +1207,70 @@ export class ChatBot {
     console.groupEnd();
   }
 
+  /** Build a stall watchdog for the active generate() call.
+   *
+   *  Returns { onToken, stop, isStalled } — the caller should:
+   *   - call onToken() from inside their generate()'s onToken cb to
+   *     reset the silence timer on each streamed token,
+   *   - call stop() in their finally block to clear the timer,
+   *   - check isStalled() after generate() resolves to know whether
+   *     the phase ran to completion or was aborted by the watchdog.
+   *
+   *  When `stallMs` of silence elapses with no tokens, the watchdog
+   *  fires _llm.abort() to break the worker's for-await stream.
+   *  That makes the worker post `done`, which resolves the generate
+   *  promise normally — so phases don't need a separate catch path
+   *  for stall, just a post-resolve isStalled() check if they want
+   *  to surface "stalled" in the UI.
+   */
+  _makeStallWatchdog(stallMs = STALL_TIMEOUT_MS) {
+    dlog('watchdog: armed (stallMs=', stallMs, ')');
+    const state = { stalled: false, timer: null };
+    const reset = () => {
+      clearTimeout(state.timer);
+      state.timer = setTimeout(() => {
+        state.stalled = true;
+        dwarn(`watchdog: FIRED after ${stallMs}ms of silence — calling _llm.abort()`);
+        this._llm.abort();
+      }, stallMs);
+    };
+    reset();   // start the clock; counts the prefill window too
+    return {
+      onToken:   reset,
+      stop:      () => {
+        clearTimeout(state.timer);
+        dlog('watchdog: stopped (stalled=', state.stalled, ')');
+      },
+      isStalled: () => state.stalled,
+    };
+  }
+
   _abort() {
+    dwarn('abort: stop pressed (generating=', this._generating,
+          'pendingConfirm=', !!this._pendingConfirm,
+          'queueDepth=', this._queue.length, ')');
+    // Bump _runId BEFORE we abort the in-flight generate.  Each phase
+    // captures its own turnId locally; bumping the canonical _runId
+    // makes every subsequent `stale()` check inside _runLoop and the
+    // active phase fire and unwind early — without this, abort only
+    // cancels the *current* generate() call, the phase's post-resolve
+    // code still runs, and _runLoop happily proceeds to the next
+    // phase as if nothing happened.  With the bump, the chain is:
+    //   abort → worker breaks stream → main resolves generate →
+    //   phase's stale() check returns true → phase returns null →
+    //   _runLoop's stale() check returns → _submit's finally runs →
+    //   UI back to idle.
+    this._runId++;
     this._llm.abort();
     // Also resolve any pending confirmation as cancelled.
     if (this._pendingConfirm) {
       this._pendingConfirm.resolve(false);
+      this._pendingConfirm = null;
     }
+    // Stop = halt EVERYTHING — drop any queued messages too, so the
+    // user isn't surprised by them being processed after they hit
+    // stop on the visibly-active turn.
+    this._queue = [];
   }
 
   /* ---- Context formatting ---- */
@@ -1185,26 +1311,19 @@ export class ChatBot {
     return el;
   }
 
-  /** Render a small status pill below `after` (a bubble) — used while
-   *  phase 2 / phase 3 are running to show silent progress without
-   *  dropping a full streaming bubble.  Returns the pill element so
-   *  callers can `.remove()` it when their phase completes. */
-  _renderInlinePill(after, text) {
-    const pill = document.createElement('div');
-    pill.className = 'cb-inline-pill';
-    pill.textContent = text;
-    if (after && after.parentNode === this._messagesEl) {
-      this._messagesEl.insertBefore(pill, after.nextSibling);
-    } else {
-      this._messagesEl.appendChild(pill);
-    }
-    this._scrollBottom();
-    return pill;
-  }
+  // (Previously: _renderInlinePill — animated status pill with a live
+  // token counter, used while Phase 2 / Phase 3 ran silently.  Removed
+  // along with the three-phase pipeline; the single combined call
+  // streams its output into a regular bubble, so the live token feedback
+  // is the bubble's own text update.  CSS for .cb-inline-pill* in
+  // calc.css is left in place in case the pill machinery is needed
+  // again — it has no callers and is harmless until then.)
 
   /** A bubble that contains only a tool-call confirmation widget — no
-   *  prose.  Used in the three-phase loop where the prose lives in its
-   *  own preceding bubble and the proposed action gets its own card.
+   *  prose.  The prose lives in the streaming reply bubble that
+   *  preceded this one; the proposed action gets its own card so the
+   *  Run / Cancel buttons are visually distinct from the model's
+   *  natural-language explanation.
    *  Returns `{ bubble, complete }` — `complete(ok, label)` flips the
    *  widget out of its in-flight "Running…" state once the handler
    *  finishes; see `_buildToolCallWidget`'s docstring for the
@@ -1303,7 +1422,10 @@ export class ChatBot {
   }
 
   _sendChip(text) {
-    if (this._generating || this._llm.status !== 'ready') return;
+    if (this._llm.status !== 'ready') return;
+    // No _generating guard — _submit() handles re-entry by queueing,
+    // so a chip click during an active turn now enqueues like any
+    // other user message instead of being dropped.
     this._removeActiveChips();
     this._inputEl.value = text;
     this._submit();
@@ -1396,9 +1518,14 @@ export class ChatBot {
 
   _setUIState(state) {
     this._generating = (state === 'generating');
-    if (this._sendBtn) this._sendBtn.disabled = this._generating || this._llm.status !== 'ready';
+    // Send button is gated only on model readiness — NOT on
+    // _generating — so the user can submit additional messages while
+    // a turn is in flight.  _submit() routes those into _queue, and
+    // the active _submit drains the queue when its current turn
+    // finishes.  Input stays enabled for the same reason.
+    if (this._sendBtn) this._sendBtn.disabled = this._llm.status !== 'ready';
     if (this._stopBtn) this._stopBtn.classList.toggle('hidden', !this._generating);
-    if (this._inputEl) this._inputEl.disabled = this._generating;
+    if (this._inputEl) this._inputEl.disabled = false;
   }
 
   _scrollBottom() {

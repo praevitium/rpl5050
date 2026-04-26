@@ -6,20 +6,19 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 246-code-review (thirty-fourth review-lane
-run, 2026-04-26).  Prior code-review baseline = session 242-code-review
-(thirty-third review-lane run, 2026-04-26).
-This run folds in four sibling-lane sessions since session 242-code-review:
-243 (command-support — COMMANDS.md Counts stamp 239 → 243; session-log
-back-fill for sessions 239–242-code-review/242; O-013 audit closed
-(RPL_CATALOG verified against live register() calls — no drift); doc-only;
-5541/0);
-244 (data-type-support — Z/L/V/M cell audit: ERF/ERFC Z `·`→`✓`;
-BETA L `·`→`✓`, V/M `·`→`✗`; UTPC/UTPF/UTPT Z `·`→`✓`, L/V/M `·`→`✗`;
-+19 pins; 5541 → 5560/0);
-245 (rpl-programming — RPL.md stamp 241 → 245; verification pass; 5560/0);
-246 (unit-tests — TESTS.md stamp 242 → 246; snapshot absorbing sessions
-243–245 (+19 assertions); snapshot-only; 5560/0).
+**Last updated.** Session 251-code-review (thirty-fifth review-lane
+run, 2026-04-26).  Prior code-review baseline = session 246-code-review
+(thirty-fourth review-lane run, 2026-04-26).
+This run folds in four sibling-lane sessions since session 246-code-review:
+247 (command-support — COMMANDS.md Counts stamp 243 → 247; session-log
+back-fill for sessions 244/245/246/246-code-review; doc-only; 5560/0);
+248 (data-type-support — UTPC/UTPT List+Tagged widening via `_utpcScalar`/
+`_utptScalar` + `_withTaggedBinary(_withListBinary(…))` wrappers; +8 pins;
+5560 → 5568/0);
+249 (rpl-programming — RPL.md stamp 245 → 249; verification pass; 5568/0);
+250 (unit-tests — TESTS.md stamp 246 → 250; snapshot absorbing sessions
+247–249 + unlogged algebra edit (+11 total, 3 from unlogged); CRASH:
+lock released: false, no session log written; 5568 → 5571/0).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -42,38 +41,45 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 246-code-review).** No sibling lock conflict at
-acquisition; all four sibling sessions (243/244/245/246-unit-tests) released
-before this run (246-unit-tests lock body present without releaseReason —
-O-011 +1; session-246.md log confirmed written).
+**Baseline (session 251-code-review).** Stale sibling lock at
+acquisition: `session250-unit-tests` has `released: false` —
+session-250 crash (TESTS.md updated, no log written); see new
+finding **O-014** filed this run.  Sessions 247/248/249 all released
+gracefully and carry `releaseReason` fields — positive O-011
+development (see O-011 aging below).
 At code-review-lane *entry*:
-`node tests/test-all.mjs` = **5560 passing / 0 failing**
-(fully green; +19 from session-244 Z/L/V/M cell audit;
+`node tests/test-all.mjs` = **5571 passing / 0 failing**
+(fully green; +11 from sessions 247–250: +8 from session-248
+UTPC/UTPT widening in test-types.mjs + 3 from unlogged algebra
+edit absorbed by session-250 snapshot;
 T-003 remains **fully resolved** since session 185);
 `node tests/test-persist.mjs` = **66 passing / 0 failing**
 (stable, unchanged); `node tests/sanity.mjs` = **22 passing
-/ 0 failing in ~5 ms** (stable).
+/ 0 failing in ~6 ms** (stable).
 `grep -c "register(" www/src/rpl/ops.js` = **480**
 (`grep -cE "^register\(" www/src/rpl/ops.js` = **461** —
-unchanged from session-242-code-review; sessions 243–246 added no
+unchanged from session-246-code-review; sessions 247–250 added no
 new register calls).
 
 **This run's own edits.** Two edits this run — pure
 doc/hygiene, no source changes:
   1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 246-code-review (thirty-fourth review-lane run);
-     preamble rewritten to fold in sibling sessions 243–246;
-     baseline block updated to session 246-code-review;
-     **O-011** aged 24 → 25 runs (+4 new occurrences:
-     session243-command-support, session244-data-type-support,
-     session245-rpl-programming, session246-unit-tests all released
-     without releaseReason; net this run: +4 + 1 for this run's
-     own lock = running count now **one hundred one** since
-     session 106); **O-012** re-verified present, aged to 14
-     code-review-lane runs; **O-013** resolved session 243 — no
-     further aging; session-log entries for 244/245/246/246-code-review
+     session 251-code-review (thirty-fifth review-lane run);
+     preamble rewritten to fold in sibling sessions 247–250;
+     baseline block updated to session 251-code-review;
+     **O-011** aged 25 → 26 runs (+3 new occurrences:
+     session247-command-support, session248-data-type-support,
+     session249-rpl-programming all released WITH releaseReason
+     (first time this field has appeared — partial fix progress);
+     session250-unit-tests released: false — no releaseReason
+     and no log; net this run's own lock adds +1 without
+     releaseReason; running count now **one hundred five**
+     since session 106); **O-012** re-verified present, aged to
+     15 code-review-lane runs; **O-014** filed (session-250
+     crash — unreleased lock, no session log, unlogged algebra
+     edit); session-log entries for 247/248/249/250/251-code-review
      added.
-  2. **`logs/session-246-code-review.md`** — this run's session log.
+  2. **`logs/meta-2026-04-26-code-review.md`** — this run's session log.
 
 **Lock.** Held `utils/@locks/session246-code-review.json`,
 scope = `[docs/REVIEW.md, logs/]`.
@@ -3933,6 +3939,55 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   and ops.js `register()` calls; no drift found; "last audited —
   session 243 (2026-04-26)" comment added to `system-prompt.js`
   above the `RPL_CATALOG` constant.
+
+### O-014  Session-250 crash — unreleased lock, missing session log, unlogged source edit
+
+- **Classification.** Other (process / audit-trail hygiene).
+- **Where.** `utils/@locks/session250-unit-tests.json` (`released:
+  false`); `logs/` (no `session-250.md` written); `tests/test-
+  algebra.mjs` (+3 assertions added ~160 s after session-249.md
+  with no lock or log coverage).
+- **What.** Four related anomalies in the session-250 unit-tests
+  run: (1) the lock body shows `released: false` — the run
+  updated `docs/TESTS.md` but exited before calling `release()`;
+  (2) no `logs/session-250.md` was written; (3) `tests/test-
+  algebra.mjs` was modified (+3 assertions, 1061 → 1064) in the
+  ~160 s window between session-249's close and session-250's
+  acquisition, with no session lock or log covering the edit;
+  (4) `www/src/ai/chat-bot.js` (68 KB, 1617 lines) was modified
+  at mtime 21:00:53 — after session-249 closed (20:45) and
+  after session-250 started (20:48) — with no session labels and
+  no lock/log coverage.  The chat-bot.js change was not inspected
+  in detail this run (scope cap); a behavior audit is warranted.
+  Session-250's own TESTS.md snapshot absorbed the +3 algebra
+  assertions and documented the gap ("Unlogged post-249 edit ...
+  the next command-support lane run should back-fill a session
+  log entry").  No session labels beyond `session160` appear in
+  the added assertions.  All 3 new assertions pass (`test-
+  algebra.mjs` 1064 / 0 at this run's entry).
+- **Why.** Two audit-trail gaps: (a) the stale lock
+  (`session250-unit-tests`, `released: false`) will appear as a
+  potential live-lock to future `acquire()` callers and to the
+  review-lane's conflict check; (b) the unlogged algebra edit has
+  no traceability — if those 3 assertions regress in a future
+  session, there is no log to blame.
+- **Fix.**
+  - Prune the stale `session250-unit-tests` lock (any lane in
+    an interactive session can delete or update it to
+    `released: true, releasedAt: <ts>`).
+  - Back-fill a `logs/session-250.md` note (one paragraph
+    describing the snapshot work done and the unlogged algebra
+    edit, with a label like "partial — crash before log write").
+    The `rpl5050-command-support` lane is the best fit per the
+    session-250 snapshot's own suggestion.
+  - The algebra edit itself needs no fix — all assertions pass
+    and the coverage is valid; the gap is purely in traceability.
+- **Confidence.** high — lock body, TESTS.md snapshot text, and
+  file mtimes all verified in situ this run.
+- **Age.** new (filed session 251-code-review).
+- **Status.** `[ship-stretch]` — back-fill and lock-prune are
+  low-risk hygiene; no behavior impact.  Lane = `rpl5050-command-
+  support` (back-fill) + any interactive session (lock prune).
 
 ---
 
@@ -8005,3 +8060,146 @@ end of run.
 Zero release-blocker findings.
 
 Log pointer: `logs/session-246-code-review.md`.
+
+---
+
+### Session 247 — what shipped (command-support, doc-reconciliation)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-command-support`.
+**Lock.** `utils/@locks/session247-command-support.json`, released
+gracefully (releaseReason: "graceful — doc-reconciliation pass complete").
+
+**Work done.**
+- COMMANDS.md Counts stamp advanced from session 243 → 247.
+- Session-log back-fill for sessions 244 / 245 / 246 / 246-code-review.
+- No source or test changes.
+
+**Findings delta.**
+- **O-011** — lock session247-command-support released WITH
+  releaseReason field (`"graceful — doc-reconciliation pass complete"`).
+  First occurrence of the releaseReason field appearing in a sibling
+  lock body.  Partial O-011 improvement.  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 25 runs, count ~102.
+- **O-012** `[deferred - post-ship]` (stray file).
+
+Log pointer: `logs/session-247.md`.
+
+---
+
+### Session 248 — what shipped (data-type-support, UTPC/UTPT widening)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-data-type-support`.
+**Lock.** `utils/@locks/session248-data-type-support.json`, released
+gracefully (releaseReason: "graceful — UTPC/UTPT list+tagged widening complete").
+
+**Work done.**
+- Extracted `_utpcScalar` / `_utptScalar` from inline UTPC/UTPT handlers.
+- Wrapped both ops with `_withTaggedBinary(_withListBinary(…))`.
+- `docs/DATA_TYPES.md` stamp 244 → 248; UTPC/UTPT L/T cells updated.
+- +8 net assertions in `tests/test-types.mjs` (5560 → 5568).
+
+**Findings delta.**
+- **O-011** — lock session248-data-type-support released WITH
+  releaseReason field.  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+
+Log pointer: `logs/session-248.md`.
+
+---
+
+### Session 249 — what shipped (rpl-programming, verification pass)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-rpl-programming`.
+**Lock.** `utils/@locks/session249-rpl-programming.json`, released
+gracefully (releaseReason: "graceful — verification pass complete").
+
+**Work done.**
+- Post-ship verification pass; confirmed 5568 / 0 clean baseline.
+- `docs/RPL.md` stamp advanced from "as of session 245" to "as of
+  session 249".  No source or test changes.
+
+**Findings delta.**
+- **O-011** — lock session249-rpl-programming released WITH
+  releaseReason field.  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+
+Log pointer: `logs/session-249.md`.
+
+---
+
+### Session 250 — what shipped (unit-tests, snapshot refresh — CRASHED)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-unit-tests`.
+**Lock.** `utils/@locks/session250-unit-tests.json`, `released: false`
+— lock was never released; no session log written.
+
+**Work done (partial — crash before log write).**
+- `docs/TESTS.md` stamp advanced from session 246 → 250.
+- Coverage snapshot (session 250) written absorbing sessions 247–249
+  + unlogged algebra edit (+11 total: +8 from session-248, +3 from
+  unlogged `tests/test-algebra.mjs` edit; 5560 → 5571).
+- No new test assertions this run.
+
+**Note.** `tests/test-algebra.mjs` was modified ~160 s after
+session-249.md was written (mtime 20:48 vs session-249 mtime 20:45)
+with +3 assertions (1061 → 1064).  No session lock or log covers this
+change; no new session labels beyond session160 in the file.  Absorbed
+by session-250 TESTS.md snapshot.  **Filed as O-014** (unlogged source
+edit + session-250 crash).
+
+**Findings delta.**
+- **O-011** — session250-unit-tests lock body has `released: false`
+  and no releaseReason.  (+1 → running count ~105).
+  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — filed this entry (session-250 crash / unlogged algebra
+  edit).
+
+Log pointer: none (session-250 crashed without writing a log).
+
+---
+
+### Session 251-code-review — what shipped (thirty-fifth review-lane run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-code-review`.
+**Lock.** `utils/@locks/session251-code-review.json`, released at
+end of run.
+
+**Work done.**
+- Folded in sibling sessions 247 (command-support), 248 (data-type-
+  support), 249 (rpl-programming), 250 (unit-tests — crash).
+- Baseline verified at entry: 5571 / 66 / 22 — fully green.
+- Register count verified: 480 / 461 — unchanged.
+- Spot checks: DATA_TYPES.md stamp session 248 ✓; RPL.md stamp
+  session 249 ✓; COMMANDS.md stamp session 247 ✓; TESTS.md stamp
+  session 250 ✓.
+- Noted positive O-011 development: sessions 247/248/249 all include
+  `releaseReason` fields in their lock bodies — the per-site addition
+  is happening in practice even without lock.mjs enforcement.
+- Filed **O-014** (session-250 crash: unreleased lock, missing log,
+  unlogged algebra edit).
+
+**Findings delta.**
+- **O-011** — 25 → 26 runs.  +3 releaseReason-bearing occurrences
+  (247/248/249) — positive development; session-250 released: false,
+  no releaseReason (+1 ambiguous); this run's own lock releases
+  without releaseReason (+1).  Running count now **one hundred five**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still in tree, mtime 2026-04-25).  Aged to 15 code-review-lane
+  runs.  `[deferred - post-ship]`.
+- **O-014** — filed this run.  `[ship-stretch]` — command-support
+  or unit-tests lane should back-fill a session log for the unlogged
+  algebra edit; session-250 unreleased lock should be pruned.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 26 runs, count 105.
+- **O-012** `[deferred - post-ship]` (stray file) — 15 code-review-lane runs.
+- **O-014** `[ship-stretch]` (session-250 crash / unlogged algebra edit) — new.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/meta-2026-04-26-code-review.md`.

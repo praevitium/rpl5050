@@ -1225,6 +1225,7 @@ body.mode-minimal .keypad {
   padding: 14px 22px 22px;
   font-size: 16px;
   line-height: 1.45;
+  user-select: text;
 }
 .cmd-help-inner h2 {
   margin: 0 0 6px;
@@ -1919,6 +1920,40 @@ body.mode-minimal .keypad {
   background: rgba(255,255,255,.03);
   border: 1px solid rgba(255,255,255,.06);
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Pulsing dot — visual "alive" cue.  Pure-CSS animation keeps
+   pulsing even if the JS thread is busy, so on its own it can't
+   distinguish thinking from hung; pair it with the counter. */
+.cb-inline-pill-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #67e8f9;
+  box-shadow: 0 0 0 0 rgba(103, 232, 249, .5);
+  animation: cb-inline-pill-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cb-inline-pill-pulse {
+  0%, 100% { opacity: .35; transform: scale(.85); }
+  50%      { opacity: 1;   transform: scale(1.15); }
+}
+
+.cb-inline-pill-label {
+  /* nothing special — exists so the counter span can sit beside it */
+}
+
+/* Live token counter — ticking up means tokens are arriving.  A
+   counter that *stops* incrementing for more than a few seconds is
+   the unambiguous "model is hung" signal. */
+.cb-inline-pill-counter {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: #6b7280;
+  font-size: 11px;
 }
 
 /* Suggestion chips — wrap below the most recent assistant bubble.

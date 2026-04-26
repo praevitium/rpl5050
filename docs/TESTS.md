@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 246 (2026-04-26).  Unit-tests lane run
-(post-ship snapshot refresh — Sunday 2026-04-26; 23rd release-window
+**Last updated.** Session 250 (2026-04-26).  Unit-tests lane run
+(post-ship snapshot refresh — Sunday 2026-04-26; 24th release-window
 run in this lane after sessions 156, 160, 164, 160-unit-tests,
-168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246).
+168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246, 250).
 Note: session-233-unit-tests lock was pruned as crashed (header-only
 update; no session log written) — absorbed into a prior run's snapshot.
 Note: session 238 log index claims a coverage snapshot was added but
@@ -833,6 +833,65 @@ Session 117 unit-tests deltas:
   `cowork_allow_file_delete` permission prompt is blocked in
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
+
+## Coverage snapshot (session 250)
+
+Sibling deltas absorbed since session-246 snapshot
+(5560 → 5571, **+11** over sessions 247–249 + one unlogged algebra edit):
+- **Session 247** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 243 → 247; session-log
+  back-fill for sessions 244 / 245 / 246 / 246-code-review.
+  No source or test edits.
+- **Session 248** (data-type-support) — **+8** assertions in
+  `tests/test-types.mjs` (1112 → 1120; `session248:` labels) —
+  UTPC/UTPT List+Tagged widening via `_utpcScalar` / `_utptScalar`
+  extraction + `_withTaggedBinary(_withListBinary(…))` wrappers.
+  Replaced 2 session-244 rejection pins with 10 acceptance pins
+  (net +8).
+- **Session 249** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 249".  No source or test edits.
+- **Unlogged post-249 edit** — `tests/test-algebra.mjs` was modified
+  ~160 s after session-249.md was written (mtime 20:48 vs session-249
+  mtime 20:45) with **+3** assertions (1061 → 1064).  No session lock
+  or log covers this change; no new session labels beyond session160
+  appear in the file.  All 3 new assertions pass.  Absorbed into this
+  snapshot; the next command-support lane run should back-fill a
+  session log entry.
+
+Session 250 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-250 entry: **5571 / 0** (fully green).
+Final: **5571 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable; D-001 closed ship-prep 2026-04-25).
+`sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1064 | 0    | +3 unlogged post-s249 edit (see delta note above). |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1120 | 0    | +8 s248 UTPC/UTPT List+Tagged widening.  |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5571** | **0** | Session 250 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable; D-001 closed ship-prep 2026-04-25. |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 246 (retained for context)
 
 ## Coverage snapshot (session 246)
 

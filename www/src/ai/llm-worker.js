@@ -126,6 +126,34 @@ async function generate({ id, messages, maxTokens = 256 }) {
     console.log(`[llm-worker] generate: ${messages.length} messages, ${total} chars total`);
   } catch { /* swallow — diagnostic only */ }
 
+  // Reset the engine's cached chat state before every generate.
+  //
+  // We pass the full messages array (incl. system prompt) on every
+  // call — there's no notion of "continue the conversation" at this
+  // layer; each phase is its own independent stateless inference.
+  // WebLLM, however, retains internal conversation state between
+  // chat.completions.create() calls and tries to do an incremental
+  // prefill against the previous KV cache.  That worked on Phase 1
+  // (cache was empty) but on Phase 2 — different system prompt,
+  // longer messages array, consecutive user/assistant turns — the
+  // engine wedges in some "compute the increment" path that never
+  // emits a first token.  Symptom: zero GPU usage, no `tok` events,
+  // no `done`, no error.  resetChat() flushes the cached state so
+  // each generate starts from clean slate.
+  try {
+    if (typeof engine.resetChat === 'function') {
+      await engine.resetChat();
+      // eslint-disable-next-line no-console
+      console.log('[llm-worker] resetChat: ok (engine state cleared)');
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn('[llm-worker] resetChat: not exposed by this WebLLM build — state may bleed between calls');
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[llm-worker] resetChat failed (continuing):', err);
+  }
+
   try {
     // Sampling tuned for *near-deterministic + accurate* output
     // across all three pipeline phases (Phase 1 prose, Phase 2 JSON
@@ -149,6 +177,8 @@ async function generate({ id, messages, maxTokens = 256 }) {
     //
     // top_p / top_k are ignored when temperature is very low but we
     // set them explicitly for clarity.
+    // eslint-disable-next-line no-console
+    console.log('[llm-worker] generate id=', id, '— calling chat.completions.create…');
     const stream = await engine.chat.completions.create({
       messages,
       stream: true,
@@ -158,24 +188,43 @@ async function generate({ id, messages, maxTokens = 256 }) {
       frequency_penalty: 0.5,
       presence_penalty: 0,
     });
+    // eslint-disable-next-line no-console
+    console.log('[llm-worker] generate id=', id, '— stream created, entering for-await loop');
 
+    let chunkCount = 0;
+    let tokenCharCount = 0;
+    let finishReason = null;
     for await (const chunk of stream) {
-      if (_aborted) break;
+      chunkCount++;
+      if (_aborted) {
+        // eslint-disable-next-line no-console
+        console.log('[llm-worker] generate id=', id, '— _aborted=true at chunk', chunkCount, ', breaking');
+        break;
+      }
       const text = chunk.choices?.[0]?.delta?.content;
       if (typeof text === 'string' && text.length > 0) {
+        tokenCharCount += text.length;
         self.postMessage({ type: 'token', id, text });
       }
-      const finishReason = chunk.choices?.[0]?.finish_reason;
-      if (finishReason) break;
+      const fr = chunk.choices?.[0]?.finish_reason;
+      if (fr) {
+        finishReason = fr;
+        break;
+      }
     }
+    // eslint-disable-next-line no-console
+    console.log('[llm-worker] generate id=', id, '— stream complete (chunks=', chunkCount,
+                'chars=', tokenCharCount, 'finish_reason=', finishReason, 'aborted=', _aborted, ')');
 
     self.postMessage({ type: 'done', id });
   } catch (err) {
     if (_aborted) {
+      // eslint-disable-next-line no-console
+      console.log('[llm-worker] generate id=', id, '— threw during abort (expected), posting done');
       self.postMessage({ type: 'done', id });
     } else {
       // eslint-disable-next-line no-console
-      console.error('[llm-worker] generate error:', err);
+      console.error('[llm-worker] generate id=', id, '— ERROR:', err);
       self.postMessage({ type: 'error', id, message: err.message ?? String(err) });
     }
   }
@@ -194,8 +243,17 @@ self.onmessage = async (e) => {
       await generate(data);
       break;
     case 'abort':
+      // eslint-disable-next-line no-console
+      console.log('[llm-worker] abort received — setting _aborted=true and calling interruptGenerate');
       _aborted = true;
-      try { engine?.interruptGenerate?.(); } catch { /* ignore */ }
+      try {
+        engine?.interruptGenerate?.();
+        // eslint-disable-next-line no-console
+        console.log('[llm-worker] interruptGenerate returned (no throw)');
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[llm-worker] interruptGenerate threw:', err);
+      }
       break;
     default:
       // eslint-disable-next-line no-console

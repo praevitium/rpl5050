@@ -1015,6 +1015,37 @@ import { assert, assertThrows } from './helpers.mjs';
          `giacToAst error includes raw string: ${caught && caught.message}`);
 }
 
+// --- giacToAst: unicode √ normalisation ----------------------------
+// The Xcas/Pyiodide wasm build emits the unicode prefix-form radical
+// for sqrt in pretty-print mode (e.g. `1/2*(√x)^-1` for the
+// derivative of √x).  parseAlgebra's lexer is ASCII-only, so without
+// the √-rewrite step in giacToAst the entire DERIV result fails with
+// `Unexpected character '√' at pos 5`.  Cover the three observed
+// shapes: `√<ident>`, `√(<expr>)`, `√<number>`.
+{
+  const { giacToAst } = await import('../www/src/rpl/cas/giac-convert.mjs');
+  const { formatAlgebra } = await import('../www/src/rpl/algebra.js');
+  // √<ident> — the in-the-wild case: derivative of SQRT(X) prints as
+  // `1/2*(√x)^-1`.  Round-trip verifies the rewrite produced parseable
+  // output AND that the resulting AST formats back through SQRT.
+  // (Variable case is preserved through Giac, so `x` stays `x`; the
+  // canonicalisation to uppercase happens elsewhere in the op layer.)
+  const ast1 = giacToAst('1/2*(√x)^-1');
+  const out1 = formatAlgebra(ast1);
+  assert(/SQRT\(x\)/i.test(out1),
+         `√<ident> normalises to SQRT in AST: got ${out1}`);
+  // √(<expr>) — paren-wrapped argument
+  const ast2 = giacToAst('√(x+1)');
+  const out2 = formatAlgebra(ast2);
+  assert(/SQRT\(x\s*\+\s*1\)/i.test(out2),
+         `√(<expr>) normalises to SQRT in AST: got ${out2}`);
+  // √<number> — bare numeric radicand
+  const ast3 = giacToAst('√2');
+  const out3 = formatAlgebra(ast3);
+  assert(/SQRT\(2\)/.test(out3),
+         `√<number> normalises to SQRT in AST: got ${out3}`);
+}
+
 // --- FACTOR end-to-end: nested-quote fixture doesn't leak to parser -
 // Simulate the real-Giac shape where caseval returns a doubly-wrapped
 // string `"\"X-1\""`.  With the iterative strip, FACTOR yields

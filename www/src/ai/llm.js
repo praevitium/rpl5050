@@ -83,7 +83,7 @@ export class LLM {
       // WORKER_VERSION below is the surest way to force a fresh
       // fetch on the next full page reload.  Bump this any time
       // llm-worker.js changes in a way users need to see.
-      const WORKER_VERSION = '7';
+      const WORKER_VERSION = '9';
       const workerUrl = new URL('./llm-worker.js', import.meta.url);
       workerUrl.searchParams.set('v', WORKER_VERSION);
       this._worker = new Worker(workerUrl, { type: 'module' });
@@ -123,11 +123,16 @@ export class LLM {
    *  temperature:0).  Defaults to the worker's own default (256). */
   generate(messages, { onToken, maxTokens } = {}) {
     if (this._status !== 'ready') {
+      // eslint-disable-next-line no-console
+      console.warn('[LLM] generate rejected: status=', this._status);
       return Promise.reject(new Error('Model not ready'));
     }
 
     const id = ++this._genId;
     this._genOnToken = onToken ?? null;
+    // eslint-disable-next-line no-console
+    console.log('[LLM] generate: posting id=', id, 'messages=', messages.length,
+                'maxTokens=', maxTokens ?? 'default');
 
     return new Promise((resolve, reject) => {
       this._genResolve = resolve;
@@ -139,6 +144,8 @@ export class LLM {
   /** Signal the current generation to stop.  Safe to call even when
    *  no generation is in progress. */
   abort() {
+    // eslint-disable-next-line no-console
+    console.log('[LLM] abort: posting to worker (genResolve set=', !!this._genResolve, ')');
     this._worker?.postMessage({ type: 'abort' });
   }
 
@@ -154,6 +161,8 @@ export class LLM {
     const { type, ...rest } = data;
 
     if (type === 'status') {
+      // eslint-disable-next-line no-console
+      console.log('[LLM] worker status →', rest.status, rest.message ? `(${rest.message})` : '');
       // CRITICAL ORDERING: update _loadedModelId BEFORE firing the
       // status listeners.  chat-bot.js's _onStatus reads
       // this.loadedModelId synchronously during the 'ready' fan-out
@@ -190,12 +199,16 @@ export class LLM {
     }
 
     if (type === 'done') {
+      // eslint-disable-next-line no-console
+      console.log('[LLM] worker done id=', rest.id, '— resolving generate promise');
       this._genResolve?.();
       this._genResolve = this._genReject = this._genOnToken = null;
       return;
     }
 
     if (type === 'error') {
+      // eslint-disable-next-line no-console
+      console.warn('[LLM] worker error id=', rest.id, 'message=', rest.message);
       this._genReject?.(new Error(rest.message ?? 'Generation error'));
       this._genResolve = this._genReject = this._genOnToken = null;
     }

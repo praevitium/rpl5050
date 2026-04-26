@@ -428,6 +428,25 @@ export function giacToAst(giacStr) {
     throw new GiacResultError(s, "runtime-error");
   }
 
+  // Normalise unicode prefix-form operators that the Xcas/Pyiodide
+  // wasm build emits in pretty-print mode, before the function-name
+  // remap below sees them.  parseAlgebra's lexer is ASCII-only and
+  // chokes on any unicode token that didn't get rewritten here.
+  //
+  // Observed cases:
+  //   √x      → sqrt(x)        (DERIV(SQRT(X)) = 1/(2*√x))
+  //   √(...)  → sqrt(...)
+  //   √123    → sqrt(123)
+  //
+  // We do NOT try to be exhaustive — only patterns Giac has actually
+  // been seen producing.  Add cases here as they surface (likely
+  // ∛ for cube root, ∞ for infinity if those start leaking through;
+  // π / ⅈ are typically already returned in ASCII as `pi` / `i`).
+  const unicodeNormalised = s
+    .replace(/√\(/g, "sqrt(")
+    .replace(/√([A-Za-z_][A-Za-z0-9_]*)/g, "sqrt($1)")
+    .replace(/√(\d+(?:\.\d+)?)/g, "sqrt($1)");
+
   // Remap lowercase Giac names -> HP uppercase. The algebra parser's
   // isKnownFunction check is case-insensitive but we want canonical
   // uppercase in the AST, matching the rest of the codebase. We only
@@ -436,7 +455,7 @@ export function giacToAst(giacStr) {
   //
   // The substitution is regex-based; it's enough for Giac's output
   // which is always well-formed syntactically.
-  const mapped = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\s*\(/g, (match, name) => {
+  const mapped = unicodeNormalised.replace(/([A-Za-z_][A-Za-z0-9_]*)\s*\(/g, (match, name) => {
     const hp = GIAC_TO_HP[name];
     if (hp) return `${hp}(`;
     // Unknown name — leave as-is; parseAlgebra will reject if truly

@@ -2595,9 +2595,12 @@ function _regGammaQ(a, x) {
   return h * Math.exp(-x + a * Math.log(x) - _lngamma(a));
 }
 
-register('UTPC', (s) => {
-  if (s.depth < 2) throw new RPLError('Too few arguments');
-  const [nu, x] = s.popN(2);
+/** Scalar dispatcher for UTPC.
+ *  Accepts Integer or Real for both ν (degrees of freedom, must be a
+ *  strictly positive integer value) and x (chi-square variate, must be
+ *  finite).  Returns Real.  Throws RPLError on type or value errors so
+ *  it composes cleanly through _withListBinary / _withTaggedBinary. */
+function _utpcScalar(nu, x) {
   const asReal = (v) => {
     if (isInteger(v)) return Number(v.value);
     if (isReal(v))    return v.value.toNumber();
@@ -2614,9 +2617,14 @@ register('UTPC', (s) => {
   // accept it cleanly (matches how UTPN accepts any real x); only
   // non-finite x is rejected.
   if (!Number.isFinite(X)) throw new RPLError('Bad argument value');
-  if (X <= 0) { s.push(Real(1)); return; }
-  s.push(Real(_regGammaQ(n / 2, X / 2)));
-});
+  if (X <= 0) return Real(1);
+  return Real(_regGammaQ(n / 2, X / 2));
+}
+
+register('UTPC', _withTaggedBinary(_withListBinary((s) => {
+  const [nu, x] = s.popN(2);
+  s.push(_utpcScalar(nu, x));
+})));
 
 /* ============================================================
    Beta-family special functions + STAT-DIST UTPF / UTPT + erf /
@@ -2637,6 +2645,8 @@ register('UTPC', (s) => {
      - `_regBetaI(a, b, x)` — public regularised beta entry point.
      - `_betaScalar(a, b)` — scalar dispatcher for the Beta op.
      - `_erfScalar(v)` / `_erfcScalar(v)` — scalar dispatchers.
+     - `_utpcScalar(nu, x)` / `_utptScalar(nu, t)` — scalar dispatchers
+       for UTPC and UTPT; enable _withListBinary / _withTaggedBinary lift.
 
    New HP50 ops:
      - `Beta`   — Β(a, b) = Γ(a)Γ(b)/Γ(a+b).  Exact factorial path
@@ -2646,8 +2656,9 @@ register('UTPC', (s) => {
                   + V/M + Sym lift.
      - `erfc`   — 1 − erf(x) via Q(1/2, x²) for |x| > 0 (no
                   cancellation).  Tagged + List + V/M + Sym lift.
-     - `UTPF(n, d, F)` — F-distribution upper tail.
-     - `UTPT(ν, t)`    — Student-t upper tail.
+     - `UTPF(n, d, F)` — F-distribution upper tail (bare handler;
+                  L/V/M not supported — 3-arg; no _withListBinary shape).
+     - `UTPT(ν, t)`    — Student-t upper tail. Tagged + List lift.
    ============================================================ */
 
 /** Regularised lower incomplete gamma P(a, x) = γ(a, x) / Γ(a).
@@ -2817,20 +2828,21 @@ register('UTPF', (s) => {
   s.push(Real(_regBetaI(dv / 2, nv / 2, w)));
 });
 
-/** UTPT(ν, t) — Student-t upper tail P(T > t).  Closed-form via
- *  incomplete beta (A&S 26.7.3):
+/** Scalar dispatcher for UTPT.
+ *  Accepts Integer or Real for both ν (degrees of freedom, must be a
+ *  strictly positive integer value) and t (t-statistic, must be finite).
+ *  Returns Real.  Throws RPLError on type or value errors so it composes
+ *  cleanly through _withListBinary / _withTaggedBinary.
  *
+ *  Closed-form via incomplete beta (A&S 26.7.3):
  *      P(|T| > |t|) = I_{ν/(ν+t²)}(ν/2, 1/2)
- *
  *  so P(T > t) = 1/2 · I_{ν/(ν+t²)}(ν/2, 1/2)           for t ≥ 0,
  *     P(T > t) = 1 − 1/2 · I_{ν/(ν+t²)}(ν/2, 1/2)       for t < 0.
  *  At t = 0 the tail is exactly 0.5 (the t distribution is symmetric
  *  about 0); we return Real(0.5) without going through the CF.
  *  HP50 requires ν a strictly positive integer — non-integer "degrees
  *  of freedom" don't match any standard Student-t table.  */
-register('UTPT', (s) => {
-  if (s.depth < 2) throw new RPLError('Too few arguments');
-  const [nu, t] = s.popN(2);
+function _utptScalar(nu, t) {
   const asReal = (v) => {
     if (isInteger(v)) return Number(v.value);
     if (isReal(v))    return v.value.toNumber();
@@ -2841,11 +2853,16 @@ register('UTPT', (s) => {
     throw new RPLError('Bad argument value');
   }
   if (!Number.isFinite(tv)) throw new RPLError('Bad argument value');
-  if (tv === 0) { s.push(Real(0.5)); return; }
+  if (tv === 0) return Real(0.5);
   const w = nv / (nv + tv * tv);
   const I = _regBetaI(nv / 2, 0.5, w);
-  s.push(Real(tv > 0 ? 0.5 * I : 1 - 0.5 * I));
-});
+  return Real(tv > 0 ? 0.5 * I : 1 - 0.5 * I);
+}
+
+register('UTPT', _withTaggedBinary(_withListBinary((s) => {
+  const [nu, t] = s.popN(2);
+  s.push(_utptScalar(nu, t));
+})));
 
 /* ------------------- angle-mode commands ------------------- */
 register('DEG', () => setAngle('DEG'));

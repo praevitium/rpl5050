@@ -5,7 +5,17 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 244 (2026-04-26, Z-cell doc-lag audit ERF/ERFC/UTPC/UTPF/UTPT + BETA L/V/M + UTPC/UTPF/UTPT L/V/M;
+**Last updated.** Session 248 (2026-04-26, UTPC/UTPT List+Tagged widening;
+lane name **`session248-data-type-support`**) — two source changes + 8 net new assertions (5560 → 5568):
+UTPC L `✗`→`✓` / T `·`→`✓` (extracted `_utpcScalar`, wrapped with `_withTaggedBinary(_withListBinary(…))`);
+UTPT L `✗`→`✓` / T `·`→`✓` (extracted `_utptScalar`, same wrapper shape);
+V `·`→`✗` / M `·`→`✗` for both (no `_withVMBinary`; mirrors BETA policy);
+UTPF stays bare (3-arg; no `_withListBinary` shape).
++10 new acceptance pins − 2 removed session-244 List rejection pins = +8 net.
+Verification gates at exit: `node tests/test-all.mjs` 5568/0/0, `node tests/test-persist.mjs` passed,
+`node tests/sanity.mjs` 22/0. See "Resolved this session (248)" below.
+
+**Last updated (prior — session 244).** Session 244 (2026-04-26, Z-cell doc-lag audit ERF/ERFC/UTPC/UTPF/UTPT + BETA L/V/M + UTPC/UTPF/UTPT L/V/M;
 lane name **`session244-data-type-support`**) — sixteen cells resolved across stat-dist family:
 ERF/ERFC Z `·`→`✓` (documentation lag — `_erfScalar`/`_erfcScalar` have `isInteger` branch);
 UTPC/UTPF/UTPT Z `·`→`✓` (documentation lag — shared `asReal` helper accepts Integer);
@@ -1030,9 +1040,9 @@ step / impulse — so the simplify-time fold stays conservative.
 | ERF       | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Error function (registered as `erf`).  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** L/V cells promoted `·`→`✓` — already wrapped as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`; matrix was stale.  +2 pins using erf(0)=Real(0) zero special-case: bare-List `{Integer(0)}`→`{Real(0)}`; V `[Integer(0)]`→`[Real(0)]`.  **Session 208:** M `·`→`✓` — same documentation lag; bespoke `rows.map(r => r.map(_erfScalar))` branch confirmed in handler.  +1 pin: `[[Integer(0)]]`→`[[Real(0)]]` (erf(0)=0 zero special-case; Matrix kind preserved). **Session 240:** Q `·`→`✗` — `_erfScalar`: `x = isInteger ? … : isReal ? … : null`; Rational → null → Bad argument type. **Session 244:** Z `·`→`✓` — documentation lag; `_erfScalar` has `const x = isInteger(v) ? Number(v.value) : …` branch; `erf(Integer(0))` → `Real(0)` (zero special-case); `erf(Integer(1))` → `Real(erf(1))` ≈ 0.8427 (non-zero integer path). |
 | ERFC      | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Complementary erf (registered as `erfc`).  Same as ERF.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** +1 T re-verification pin `:e:Integer(0) erfc`→`:e:Real(1)` (erfc(0)=1 zero special-case; T was already ✓).  **Session 204:** L/V/M `·`→`✓` — erfc handler has same bespoke V/M branches + `_withListUnary` wrapper as erf; pins added for bare-List n=0/n=1/n=2-heterogeneous, T+L n=0/n=1, Vector, Matrix (all via `_erfcScalar(Integer(0))=Real(1)` zero special-case). **Session 240:** Q `·`→`✗` — `_erfcScalar`: same isInteger/isReal/null pattern; Rational → Bad argument type. **Session 244:** Z `·`→`✓` — documentation lag; `_erfcScalar` has same `isInteger` branch; `erfc(Integer(0))` → `Real(1)` (zero special-case); `erfc(Integer(2))` → `Real(erfc(2))` ≈ 0.00468 (positive-x integer path via `_regGammaQ(0.5, 4)`). |
 | BETA      | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | Arity 2 — B(a, b).  No simplify-time fold (needs log-gamma).  Session 105 pinned Sy round-trip + null fold. **Session 240:** Q `·`→`✗` — `_betaScalar`: `aNum = isInteger ? … : isReal ? … : null`; Rational a-arg → null → Bad argument type (b-arg not reached). **Session 244:** L `·`→`✓` — documentation lag; registered as `_withTaggedBinary(_withListBinary(handler))`; `{Integer(1) Integer(2)} {Integer(1) Integer(3)} Beta` → `{Real(B(1,1)) Real(B(2,3))}` = `{Real(≈1) Real(≈1/12)}`; pairwise list dispatch confirmed. V `·`→`✗` / M `·`→`✗` — no `_withVMBinary` wrapper; `_betaScalar` receives Vector/Matrix as the `a` arg → `aNum = null` → Bad argument type. |
-| UTPC      | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✗ | ✗ | ✗ | ✓ | Upper-tail χ² CDF.  Arity 2 — UTPC(ν, x).  No simplify-time fold (needs incomplete gamma).  Session 105 pinned Sy round-trip + null fold. **Session 240:** Q `·`→`✗` — local `asReal` helper only accepts Integer and Real; Rational → Bad argument type. **Session 244:** Z `·`→`✓` — documentation lag; `asReal` has `if (isInteger(v)) return Number(v.value)` branch; `UTPC(Integer(3), Integer(0))` → `Real(1)` (X≤0 exact branch); `UTPC(Integer(2), Integer(2))` → `Real(≈exp(−1))` (tol 1e-10). L `·`→`✗` / V `·`→`✗` / M `·`→`✗` — bare handler (no list/vector/matrix wrappers); List/Vector input reaches `asReal` → Bad argument type. |
+| UTPC      | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | Upper-tail χ² CDF.  Arity 2 — UTPC(ν, x).  No simplify-time fold (needs incomplete gamma).  Session 105 pinned Sy round-trip + null fold. **Session 240:** Q `·`→`✗` — local `asReal` helper only accepts Integer and Real; Rational → Bad argument type. **Session 244:** Z `·`→`✓` — documentation lag; `asReal` has `if (isInteger(v)) return Number(v.value)` branch; `UTPC(Integer(3), Integer(0))` → `Real(1)` (X≤0 exact branch); `UTPC(Integer(2), Integer(2))` → `Real(≈exp(−1))` (tol 1e-10). **Session 248:** L `✗`→`✓` / T (scalar) `·`→`✓` — extracted `_utpcScalar(nu, x)` helper and wrapped with `_withTaggedBinary(_withListBinary(…))`; V `·`→`✗` / M `·`→`✗` — no `_withVMBinary`; mirrors BETA policy. Pins: n=0 empty-list passthrough; n=1 `{Z(2)} {Z(0)}` → `{R(1)}` (X≤0 branch); n=2 pairwise `{Z(2) Z(5)} {Z(0) Z(2)}` → `{R(1) R(≈0.849)}` (tol 1e-6); T+L `:nu:{Z(2)} :x:{Z(0)}` → `{R(1)}` (tag dropped); scalar Tagged `:n:Z(2) :x:Z(0)` → `R(1)` (tag dropped). |
 | UTPF      | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✗ | ✗ | ✗ | ✓ | Upper-tail F CDF.  Arity 3 — UTPF(ν₁, ν₂, x).  No simplify-time fold (needs incomplete beta).  Session 105 pinned Sy round-trip + null fold. **Session 240:** Q `·`→`✗` — same `asReal` helper (shared with UTPC/UTPT); Rational → Bad argument type. **Session 244:** Z `·`→`✓` — same `asReal` accepts Integer; `UTPF(Integer(2), Integer(2), Integer(1))` → `Real(0.5)` (w=d/(d+nF)=0.5; I₀.₅(1,1)=0.5; tol 1e-12). L `·`→`✗` / V `·`→`✗` / M `·`→`✗` — bare handler; List/Vector rejection confirmed. |
-| UTPT      | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✗ | ✗ | ✗ | ✓ | Upper-tail Student-t CDF.  Arity 2 — UTPT(ν, x).  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold. **Session 240:** Q `·`→`✗` — same `asReal` helper; Rational → Bad argument type. **Session 244:** Z `·`→`✓` — same `asReal` accepts Integer; `UTPT(Integer(5), Integer(0))` → `Real(0.5)` (t=0 exact branch). L `·`→`✗` / V `·`→`✗` / M `·`→`✗` — bare handler; List/Vector rejection confirmed. |
+| UTPT      | ✓ | ✓ | ✗ | · | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | Upper-tail Student-t CDF.  Arity 2 — UTPT(ν, x).  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold. **Session 240:** Q `·`→`✗` — same `asReal` helper; Rational → Bad argument type. **Session 244:** Z `·`→`✓` — same `asReal` accepts Integer; `UTPT(Integer(5), Integer(0))` → `Real(0.5)` (t=0 exact branch). **Session 248:** L `✗`→`✓` / T (scalar) `·`→`✓` — extracted `_utptScalar(nu, t)` helper and wrapped with `_withTaggedBinary(_withListBinary(…))`; V `·`→`✗` / M `·`→`✗` — no `_withVMBinary`. Pins: n=0 empty-list passthrough; n=1 `{Z(5)} {Z(0)}` → `{R(0.5)}` (t=0 exact branch); n=2 pairwise `{Z(5) Z(10)} {Z(0) Z(0)}` → `{R(0.5) R(0.5)}`; T+L `:nu:{Z(5)} :t:{Z(0)}` → `{R(0.5)}` (tag dropped); scalar Tagged `:n:Z(5) :t:Z(0)` → `R(0.5)` (tag dropped). |
 
 ### Combinatorial / integer-divmod family (COMB / PERM / IQUOT / IREMAINDER / XROOT)
 
@@ -1118,6 +1128,41 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    now pinned by hard tests in `tests/test-types.mjs`.  Fractional
    rational exponent (`Rational(2,1) ^ Rational(1,3)`) correctly lifts
    to Symbolic in EXACT mode (pinned separately).
+
+### Resolved this session (248)
+
+- **UTPC / UTPT List + Tagged widening — source change + 8 net new assertions (5560→5568).**
+  Extracted scalar dispatcher functions and wrapped both 2-arg stat-dist ops with
+  `_withTaggedBinary(_withListBinary(…))`.  UTPF (3-arg) stays as a bare handler
+  (no `_withListBinary` shape for 3-arg ops).
+
+  **`_utpcScalar(nu, x)` / `_utptScalar(nu, t)`** — extracted from the former inline
+  stack handlers in `www/src/rpl/ops.js`.  Each validates types via the shared `asReal`
+  helper pattern (isInteger / isReal → number; anything else → 'Bad argument type') and
+  validates values (ν must be a strictly positive integer; x/t must be finite).  Returns
+  a `Real(…)` value rather than pushing to the stack, so it composes through the wrappers.
+
+  **UTPC acceptance pins (5 new):**
+  — n=0 empty-list passthrough: `{} {} UTPC` → `{}`.
+  — n=1 bare-list: `{Integer(2)} {Integer(0)} UTPC` → `{Real(1)}` (X≤0 exact branch).
+  — n=2 pairwise: `{Integer(2) Integer(5)} {Integer(0) Integer(2)} UTPC` → `{Real(1) Real(≈0.849)}` (tol 1e-6).
+  — T+L: `:nu:{Integer(2)} :x:{Integer(0)} UTPC` → `{Real(1)}` (binary tag-drop, tag NOT re-applied).
+  — Scalar Tagged: `:n:Integer(2) :x:Integer(0) UTPC` → `Real(1)` (tag dropped).
+
+  **UTPT acceptance pins (5 new):**
+  — n=0 empty-list passthrough: `{} {} UTPT` → `{}`.
+  — n=1 bare-list: `{Integer(5)} {Integer(0)} UTPT` → `{Real(0.5)}` (t=0 exact branch).
+  — n=2 pairwise: `{Integer(5) Integer(10)} {Integer(0) Integer(0)} UTPT` → `{Real(0.5) Real(0.5)}`.
+  — T+L: `:nu:{Integer(5)} :t:{Integer(0)} UTPT` → `{Real(0.5)}` (binary tag-drop).
+  — Scalar Tagged: `:n:Integer(5) :t:Integer(0) UTPT` → `Real(0.5)` (tag dropped).
+
+  **2 session-244 List rejection pins removed** (UTPC and UTPT List=✗ pins, which are
+  now superseded by the acceptance pins above).
+
+  V=✗ / M=✗ for both ops (no `_withVMBinary`; mirrors BETA policy — binary ops with
+  numeric-domain constraints don't get VM support).  V rejection pins retained.
+
+  Matrix cells updated: UTPC L `✗`→`✓` / T `·`→`✓`; UTPT L `✗`→`✓` / T `·`→`✓`.
 
 ### Resolved this session (244)
 
