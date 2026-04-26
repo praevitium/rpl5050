@@ -2642,6 +2642,166 @@ function _roundTripProgram(prog) {
 }
 
 /* ================================================================
+   Session 172 — NEWOB freeze-parity sweep across every enumerated
+   shape.
+
+   Audit-driven asymmetry close, sibling to session 167's Rational
+   distinct-object widening.  Pre-172, `_newObCopy`'s Program branch
+   constructed an inline object literal:
+
+     return { type: 'program', tokens: Object.freeze([...v.tokens]) };
+
+   The inner tokens array was frozen but the *outer* object wrapper
+   was NOT — `Object.isFrozen(result)` returned `false`.  Every other
+   enumerated shape goes through its factory (`Program` / `RList` /
+   `Vector` / `Matrix` / `Tagged` / `Unit` / `Real` / `Integer` /
+   `BinaryInteger` / `Rational` / `Complex` / `Str` / `Name` /
+   `Symbolic`), each of which `Object.freeze`s the outer wrapper.
+   Program alone violated `Object.isFrozen(copy) === true`.
+
+   Session 146 / 167 / 168's NEWOB pin sets covered distinct-object
+   identity and inner-content shape but did not assert
+   `Object.isFrozen()` on the OUTER NEWOB result.  The session-167
+   Rational and session-168 follow-up pins did include
+   `Object.isFrozen(copy)` for the Rational atom (line 2268) but
+   only for that one shape — every other shape's outer-freeze
+   property was implicitly trusted via the factory path, while the
+   Program branch silently bypassed it.
+
+   The s172 fix replaces the inline literal with `Program(v.tokens)`,
+   bringing the Program branch into the same factory-mediated freeze
+   contract as every sibling shape.  The pin set below exercises
+   `Object.isFrozen(copy) === true` on every NEWOB-handled shape so
+   any future inline-literal bypass (or a shape factory that drops
+   the outer freeze) surfaces as a hard test failure rather than a
+   silent identity-decoupling regression.
+   ================================================================ */
+
+/* ---- NEWOB on a Program returns a frozen outer wrapper ---- */
+{
+  // Direct pin of the s172 fix: Program's outer Object.isFrozen()
+  // contract.  Pre-fix this assertion failed; the inner tokens array
+  // freeze (already pinned at session146:2120) was not enough to make
+  // the *outer* wrapper frozen.
+  const s = new Stack();
+  const orig = Program([Integer(3n), Integer(4n), Name('+')]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isProgram(copy) && copy !== orig,
+    'session172: NEWOB on Program returns a distinct Program (precondition for freeze pin)');
+  assert(Object.isFrozen(copy),
+    'session172: NEWOB on Program returns a FROZEN outer wrapper (closes the audit-driven asymmetry vs. every other shape\'s factory-mediated freeze; pre-172 the inline `{ type: \'program\', tokens: ... }` literal was unfrozen)');
+}
+
+/* ---- NEWOB on an empty Program returns a frozen outer wrapper ---- */
+{
+  // Boundary case — empty token array.  Pre-fix this also produced an
+  // unfrozen outer wrapper since the bypass was unconditional.
+  const s = new Stack();
+  const orig = Program([]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  assert(isProgram(copy) && copy !== orig && copy.tokens.length === 0,
+    'session172: NEWOB on empty Program returns distinct empty Program (precondition)');
+  assert(Object.isFrozen(copy),
+    'session172: NEWOB on empty Program returns a FROZEN outer wrapper (the s172 fix is shape-uniform — empty body does not skip the factory path)');
+}
+
+/* ---- NEWOB freeze parity across every enumerated shape ----
+   Composite containers (List / Vector / Matrix), every numeric-
+   scalar shape (Real / Integer / BinaryInteger / Rational /
+   Complex), and the Tagged / Unit / String / Name / Symbolic
+   wrappers all produce a frozen outer wrapper.  Defensive sweep:
+   any future shape factory that drops the outer freeze, or any
+   future _newObCopy branch that bypasses the factory, surfaces
+   here as a hard failure. */
+{
+  const cases = [
+    ['Real',     Real(3.14)],
+    ['Integer',  Integer(42n)],
+    ['BinInt',   BinaryInteger(0x15n, 'h')],
+    ['Rational', Rational(7n, 2n)],
+    ['Complex',  Complex(1, 2)],
+    ['String',   Str('hello')],
+    ['Name',     Name('X')],
+    ['Symbolic', Symbolic({ kind: 'Var', name: 'X' })],
+    ['List',     RList([Real(1), Real(2)])],
+    ['Vector',   Vector([Real(1), Real(2)])],
+    ['Matrix',   Matrix([[Real(1), Real(2)], [Real(3), Real(4)]])],
+    ['Tagged',   Tagged('x', Real(7))],
+    ['Unit',     Unit(2.5, [['m', 1]])],
+  ];
+  for (const [name, orig] of cases) {
+    const s = new Stack();
+    s.push(orig);
+    lookup('NEWOB').fn(s);
+    const copy = s.peek();
+    assert(copy !== orig,
+      `session172: NEWOB on ${name} returns a distinct outer object (sweep precondition)`);
+    assert(Object.isFrozen(copy),
+      `session172: NEWOB on ${name} returns a FROZEN outer wrapper (factory-mediated freeze contract — closes any future inline-literal bypass like the pre-172 Program branch)`);
+  }
+}
+
+/* ---- Programs constructed via NEWOB resist outer-property mutation
+        (sentinel that `Object.isFrozen()` is enforced by the JS
+        runtime, not just claimed by the type system) ---- */
+{
+  // Hard sentinel: writing to a frozen outer property in non-strict
+  // mode is silently ignored; in strict mode it throws.  Either way,
+  // a successful mutation would leave a different value visible on
+  // the field.  Test that NEWOB's Program output rejects an attempted
+  // outer-field overwrite.  (The test file's modules are ESM, which
+  // run in implicit-strict mode, so the assignment will throw and the
+  // try/catch confirms the freeze.)
+  const s = new Stack();
+  const orig = Program([Integer(1n), Integer(2n)]);
+  s.push(orig);
+  lookup('NEWOB').fn(s);
+  const copy = s.peek();
+  let threwOnMutation = false;
+  try {
+    copy.tokens = ['mutated'];
+  } catch (_e) {
+    threwOnMutation = true;
+  }
+  assert(threwOnMutation,
+    'session172: NEWOB on Program produces an outer wrapper that rejects field reassignment under strict-mode (Object.isFrozen contract is RUNTIME-enforced; pre-172 this assignment silently succeeded because the outer literal was unfrozen)');
+  // Even if the strict-mode throw didn't fire, the field must still
+  // hold the original tokens array — a belt-and-suspenders pin.
+  assert(Array.isArray(copy.tokens) && copy.tokens.length === 2,
+    'session172: NEWOB Program outer field still holds the original tokens array after the failed mutation attempt');
+}
+
+/* ---- NEWOB-then-DECOMP-then-STR→ round-trip on a Program is
+        invariant after the freeze fix (smoke test that the factory
+        switch did not change observable Program semantics) ---- */
+{
+  // The session-146 NEWOB-then-EVAL pin already covered behavioural
+  // equivalence; this pin closes the formatter side — DECOMP on a
+  // NEWOB-copied Program produces the same source string as DECOMP
+  // on the original.  Any divergence here would indicate the factory
+  // path produced a Program with a different internal shape.
+  const orig = Program([Integer(6n), Integer(7n), Name('*')]);
+
+  const sA = new Stack();
+  sA.push(orig);
+  lookup('DECOMP').fn(sA);
+  const decompOrig = sA.peek().value;
+
+  const sB = new Stack();
+  sB.push(orig);
+  lookup('NEWOB').fn(sB);
+  lookup('DECOMP').fn(sB);
+  const decompCopy = sB.peek().value;
+
+  assert(decompOrig === decompCopy,
+    'session172: NEWOB-then-DECOMP on Program produces the same source-form string as DECOMP on the original (factory switch preserves observable Program shape end-to-end)');
+}
+
+/* ================================================================
    DECOMP → STR→ round-trip for the structural-keyword family
    (CASE, IFERR, IF, WHILE, DO, START, FOR + auto-close variants).
    Pins that the formatter's canonical keyword form parses back

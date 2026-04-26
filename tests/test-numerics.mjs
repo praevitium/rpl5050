@@ -177,12 +177,12 @@ import { assert, assertThrows } from './helpers.mjs';
   assert(calcState.angle === 'RAD', 'RAD op sets angle back to RAD');
 }
 
-// cycleAngle: DEG -> RAD -> GRD -> DEG
+// cycleAngle: RAD -> DEG -> GRD -> RAD
 {
-  setAngle('DEG');
-  cycleAngle(); assert(calcState.angle === 'RAD', 'cycle DEG -> RAD');
-  cycleAngle(); assert(calcState.angle === 'GRD', 'cycle RAD -> GRD');
-  cycleAngle(); assert(calcState.angle === 'DEG', 'cycle GRD -> DEG');
+  setAngle('RAD');
+  cycleAngle(); assert(calcState.angle === 'DEG', 'cycle RAD -> DEG');
+  cycleAngle(); assert(calcState.angle === 'GRD', 'cycle DEG -> GRD');
+  cycleAngle(); assert(calcState.angle === 'RAD', 'cycle GRD -> RAD');
 }
 
 // toRadians / fromRadians honor current state

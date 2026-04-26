@@ -21,19 +21,20 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 165 — 2026-04-25)
+## Counts (as of session 170 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
-  161 / 162 / 163 / 164 / 165 are all contract-tightening, coverage,
-  and doc-hygiene runs; no ✗ → ✓ transitions in any of them.  Session
-  153's ship-prep run closed `C-011` (`_combPermArgs` Rational
-  `TypeError` leak — guard tightened to mirror `_intQuotientArg`) and
-  retired the stale INVMOD `TODO`.  Session 155 closed ship-target
-  `R-008` (HP50 AUR §3-149 fidelity audit of `OBJ→`'s Real / Integer
-  + Tagged branches) — Real / Integer no longer mantissa/exponent-
-  split; Tagged tag emitted as String (AUR-verified, with a comment
-  guard at `ops.js:6640-6644` against a future Name "fix").  Session
+  161 / 162 / 163 / 164 / 165 / 166 / 167 / 168 / 169 / 170 are all
+  contract-tightening, coverage, and doc-hygiene runs; no ✗ → ✓
+  transitions in any of them.  Session 153's ship-prep run closed
+  `C-011` (`_combPermArgs` Rational `TypeError` leak — guard
+  tightened to mirror `_intQuotientArg`) and retired the stale
+  INVMOD `TODO`.  Session 155 closed ship-target `R-008` (HP50 AUR
+  §3-149 fidelity audit of `OBJ→`'s Real / Integer + Tagged
+  branches) — Real / Integer no longer mantissa/exponent-split;
+  Tagged tag emitted as String (AUR-verified, with a comment guard
+  at `ops.js:6640-6644` against a future Name "fix").  Session
   159 closed ship-target `R-012` (the third row of the AUR §3-149
   OBJ→ Input/Output table): the missing `isUnit` branch was added
   to OBJ→'s dispatch at `ops.js:6740-6752`, matching the AUR
@@ -62,10 +63,34 @@ touched the row, and any known caveats worth carrying forward.
   (+11 release-mode pin coverage assertions, primarily lifting the
   session 162 / 163 deltas onto explicit `tests/test-reflection.mjs`
   / `tests/test-types.mjs` assertions; `tests/test-all.mjs` 5156 →
-  5167).  Session 165 (this run) is a doc-reconciliation pass —
-  Counts stamp refresh, OBJ→ row Notes amendment for the session-
-  163 BinInt / Rational widening, and session-log back-fill
-  (sessions 162 / 163 / 164 entries enumerated below).)
+  5167).  Session 165 was a doc-reconciliation pass — Counts stamp
+  refresh, OBJ→ row Notes amendment for the session-163 BinInt /
+  Rational widening, and session-log back-fill (sessions 162 / 163 /
+  164 entries enumerated below).  Session 166
+  (`rpl5050-data-type-support`) added two more hard-assertion
+  pinning clusters in `tests/test-types.mjs` lifting the n=0/n=1
+  boundary axis onto the LOG / EXP / ALOG L+T+L composition trio and
+  the ACOSH / ATANH inverse-hyperbolic axis (+19 assertions; no
+  source-side change; `tests/test-all.mjs` 5167 → 5186).  Session
+  167 (`rpl5050-rpl-programming`) extended the AUR-fidelity audit
+  axis to **NEWOB** — sibling to session 163's OBJ→ widening on the
+  same shape.  `_newObCopy` at `www/src/rpl/ops.js:9309-9339` was
+  widened with `if (isRational(v)) return Rational(v.n, v.d);`,
+  closing the lone numeric-scalar asymmetry where every other shape
+  (Real / Integer / BinaryInteger / Complex) was already enumerated
+  but Rational fell through the identity tail; pre-fix
+  `3/4 DUP NEWOB` left both stack levels sharing the same frozen
+  instance, post-fix returns a fresh frozen Rational with the same
+  payload (+20 `session167:` pins in `tests/test-reflection.mjs`).
+  Session 168 (`rpl5050-unit-tests`) closed coverage gaps for the
+  165 / 166 / 167 deltas (+40 hard assertions; `tests/test-all.mjs`
+  5206 → 5246).  Session 169 was the eighteenth review-lane run —
+  doc-only REVIEW.md ledger refresh folding sibling closures since
+  session 164; no source / no test edits.  Session 170 (this run,
+  ship-day Sunday afternoon) is a doc-reconciliation pass — Counts
+  stamp refresh through session 170, NEWOB row Notes amendment for
+  the session-167 widening, and session-log back-fill (sessions
+  165 / 166 / 167 / 168 / 169 entries enumerated below).)
 - Partially shipped (~): 0
 - Not yet implemented (✗): 1 (only the `JORDAN` / `SCHUR`
   matrix-decomp row remains — the entire MODULO-family is ✓.)
@@ -73,13 +98,16 @@ touched the row, and any known caveats worth carrying forward.
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
 `grep -c "register(" www/src/rpl/ops.js` = **476** at the end of session
-165 (unchanged from session 149 — no new registrations across sessions
-150 → 165; was 471 at the end of session 144, was 466 at the end of
+170 (unchanged from session 149 — no new registrations across sessions
+150 → 170; was 471 at the end of session 144, was 466 at the end of
 session 139, was 463 at the end of session 134, was 458 at the end of
 session 129, was 455 at the end of session 124, was 448 at the end of
 session 119).  The actual top-level `register()` *call* count
 (`grep -cE '^register\(' www/src/rpl/ops.js`) is **455** (unchanged
-from session 149).
+from session 149).  Session 167's `_newObCopy` Rational widening was
+an in-body predicate edit on the existing `register('NEWOB', ...)`
+call site, not a new registration — same shape as session 163's
+OBJ→ guard widening.
 
 Session-153 row transitions:
 - **0 ops newly shipped** (no ✗ → ✓).  Release-mode wrap-up run.
@@ -443,7 +471,7 @@ DERIV, etc. via Giac).
 | `→TAG` `DTAG` | ✓ | |
 | `→UNIT` `UVAL` `UBASE` `CONVERT` | ✓ | |
 | `OBJ→` `→STR` `STR→` | ✓ | **Session 067** — OBJ→ on Program + →PRG composer.  **Session 155** — R-008 close: HP50 AUR §3-149 fidelity audit of the Real / Integer and Tagged branches.  Real / Integer now push back unchanged (1-in / 1-out) — AUR §3-149 lists no numeric-scalar Input/Output row, and the prior depth-2 mantissa/exponent split was an HP50-divergence; users wanting the split now reach for `MANT` / `XPON` (AUR p.3-6 / p.3-9), unchanged.  Tagged push order verified against AUR §3-149 (`:tag:obj → obj "tag"`): the tag is a String, not a Name — see the dispatch comment at `ops.js:6640-6644` warning future readers off the `Str(v.tag) → Name(v.tag)` "fix".  **Session 156** — follow-up pin coverage in `tests/test-reflection.mjs` for the boundary cells the audit didn't enumerate: empty Vector → `{0}`, empty List / empty Program → Integer(0), negative Real unchanged, Tagged-of-Tagged peels only the outer layer (preserves the inner Tagged on level 2, outer tag as String on level 1).  **Session 159** — R-012 close: missing `isUnit` branch added at `ops.js:6740-6752` per AUR §3-149's `x_unit → x  1_unit` row.  The bare numeric value lands on level 2 as a Real; the unit prototype `Unit(1, v.uexpr)` lands on level 1 — `*`-fold on the pair reconstructs the original Unit because `_unitBinary` on Real×Unit folds the scalar into `b.value` (1·x = x) while preserving the uexpr.  Header block at `:6605-6655` extended with a Unit-row entry (and a sibling note explaining why the bare `Unit(1, v.uexpr)` constructor is used instead of `_makeUnit` — preserves the AUR's shape-preserving "1_unit" output even for a theoretically-empty uexpr).  Closes the AUR §3-149 audit trail end-to-end: every Input/Output table row (Complex / Tagged / List / Vector / Matrix / String / Program / Symbolic / Real / Integer / Unit) now has a matching branch in `register('OBJ→', ...)`.  Pinned by 15 `session159:` assertions in `tests/test-reflection.mjs` plus 6 `session160:` boundary-edge follow-ups (zero-value `0_m`, fractional `2.5_m`, exponent-≠-±1 `3_m^2`, multi-symbol round-trip `5_m/s`, higher-power round-trip `3_m^2`).  **Session 163** — AUR-fidelity audit extension to the remaining numeric-scalar shapes: BinaryInteger and Rational.  One-predicate widening at `ops.js:6746` (the existing Real/Integer guard now reads `isReal(v) || isInteger(v) || isBinaryInteger(v) || isRational(v)`), so all four numeric-scalar shapes share the same `s.push(v); return;` body.  Pre-fix `#15h OBJ→` and `3/4 OBJ→` both rejected `Bad argument type`; post-fix both push the value back unchanged — symmetric with the session-155 Real/Integer choice (AUR §3-149 lists no numeric-scalar entry, so push-back is the consistent fidelity choice).  Header / inline body comments at `ops.js:6625-6643` and `:6747-6760` extended to enumerate the BinInt and Rational rows alongside Real / Integer.  Pinned by 8 `session163:` assertions in `tests/test-reflection.mjs`. |
-| `NEWOB` | ✓ | Deep copy. |
+| `NEWOB` | ✓ | Deep copy.  **Session 167** — AUR §3-130 fidelity audit extension to Rational (sibling to session 163's OBJ→ widening on the same shape).  `_newObCopy` at `www/src/rpl/ops.js:9309-9339` now enumerates every numeric-scalar shape (Real / Integer / BinaryInteger / Rational / Complex) explicitly; pre-fix `3/4 NEWOB` returned the same frozen instance (`===` identity preserved through the unenumerated tail), post-fix returns a fresh frozen Rational with the same `n` / `d` payload — observably distinct only through identity, which is the contract AUR §3-130 ("force a new copy") requires.  Directory and Grob remain at the deliberate identity fall-through (Directory is a live mutable container, Grob flows through its own value-copy path).  Pinned by 20 `session167:` assertions in `tests/test-reflection.mjs` covering distinct-object identity, sign convention on `Rational(-7n, 2n)`, n/1 type stability (no collapse to Integer), zero canonicalisation, and shallow-copy composition through List / Tagged / OBJ→. |
 | `BYTES` | ✓ | |
 | `APPROX` `EXACT` `→NUM` `→Q` `→Qπ` | ✓ | |
 | `XNUM` `XQ` | ✓ | **Session 086** — ASCII aliases for `→NUM` / `→Q`.  Thin wrappers that delegate via `OPS.get('→NUM').fn` / `OPS.get('→Q').fn` so they pick up any future refinement automatically. |
@@ -459,6 +487,7 @@ DERIV, etc. via Giac).
 | `SUB` `POS` `REVLIST` `SORT` | ✓ | |
 | `SEQ` `DOLIST` `DOSUBS` `NSUB` `ENDSUB` `STREAM` | ✓ | |
 | `ΣLIST` `ΔLIST` `ΠLIST` `SLIST` `DLIST` `PLIST` (ASCII) | ✓ | |
+| `+` (on Lists) | ✓ | HP50 AUR §3-7 list addition is **concatenation**, not element-wise: `{1 2 3} {4 5 6} +` → `{1 2 3 4 5 6}`; `{1 2 3} 4 +` → `{1 2 3 4}` (append); `4 {1 2 3} +` → `{4 1 2 3}` (prepend); empty lists obey the same rule (`{} 5 +` → `{5}`).  Mismatched-length pairs concatenate (no "Invalid dimension").  List operands take precedence over the String-coerce branch — `{1 2} "hi" +` → `{1 2 "hi"}`, not `"{1, 2}hi"`.  `*`, `-`, `/`, `^` continue to distribute element-wise into Lists; element-wise list addition is reserved for ADD / DOLIST. |
 
 ## Strings
 

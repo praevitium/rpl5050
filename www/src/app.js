@@ -288,7 +288,7 @@ class App {
      soft-menu version gives the user keypad access to the flags
      that matter most for day-to-day use.
 
-     F1  ANGL    cycle DEG → RAD → GRD (label shows the active mode)
+     F1  ANGL    cycle RAD → DEG → GRD (label shows the active mode)
      F2  TXT     toggle textbookMode (label shows '→TXT' in flat mode,
                  '→FLT' in textbook mode — user reads "press to switch")
      F3  HEX     set binary display base to hex

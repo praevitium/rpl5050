@@ -5,7 +5,63 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 166 (2026-04-25, release-mode wrap-up
+**Last updated.** Session 171 (2026-04-25, release-mode wrap-up
+on T-1 day; lane name **`session171-data-types`**) — two pinning
+clusters lifting session 166's n=0/n=1 boundary structure and
+session 168's heterogeneous-output mixed-input value-pin pattern
+onto the forward-hyperbolic family (SINH / COSH / TANH / ASINH).
+No source-side changes; lane held only `tests/test-types.mjs`,
+`docs/DATA_TYPES.md`, `logs/session-171.md`.
+(1) **SINH / COSH / TANH / ASINH n=0 empty-List + n=1
+single-element boundary closures on bare-List + Tagged-of-List
+composition** — session 120 pinned bare-List + (SINH-only)
+Tagged-of-List dispatch on n=2 for the forward-hyperbolic family,
+and sessions 130/140/150 lifted the wrapper-VM composition onto
+the same family under Tagged-of-Vector / Tagged-of-Matrix.  But
+the n=0 empty-List and n=1 single-element shoulders on the
+bare-List + T+L axes — the boundary axis that session 160 closed
+on LN, session 162 closed on LNP1/EXPM, session 166 closed on
+LOG/EXP/ALOG and ACOSH/ATANH — were never pinned on the
+forward-hyperbolic four-op family.  This cluster mirrors session
+166 Cluster 1's structure on the SINH/COSH/TANH/ASINH family,
+which routes through the same 3-deep wrapper composition
+`_withTaggedUnary(_withListUnary(_withVMUnary(handler)))` (via
+`_unaryCx`) as the LN/LOG/EXP/ALOG quartet.  Per-op n=1 input is
+Real(0) since every forward-hyperbolic op has a clean numeric
+fold at zero — sinh(0)=0, cosh(0)=1, tanh(0)=0, asinh(0)=0 — so
+the n=1 pin produces a value-precise output exercising both the
+wrapper dispatch and the inner numeric primitive ran for the
+singleton.  Pins: `{ } SINH/COSH/TANH/ASINH → { }` and
+`:l:{ } SINH/COSH/TANH/ASINH → :l:{ }` (n=0 bare + T+L per op);
+`{ Real(0) } SINH/TANH/ASINH → { Real(0) }`,
+`{ Real(0) } COSH → { Real(1) }` (n=1 bare per op);
+`:h:{ Real(0) } SINH/TANH/ASINH → :h:{ Real(0) }`,
+`:h:{ Real(0) } COSH → :h:{ Real(1) }` (n=1 T+L per op).
+(2) **COSH / TANH / ASINH heterogeneous-output mixed-input
+value pins on bare-List + Tagged-of-List composition** —
+session 120 pinned SINH bare-List + Tagged-of-List
+heterogeneous-output values directly (`SINH({0 1}) → {0 sinh(1)}`
+and `:lbl:{0 1} SINH → :lbl:{0 sinh(1)}` with both values
+asserted); for COSH/TANH/ASINH the s120 sweep only pinned
+type+length (both items Real, list-length 2) and did NOT pin the
+distinct output values per List position.  The sibling
+LOG/EXP/ALOG quartet got the heterogeneous-output value-pin
+treatment in session 168; the dual LNP1/EXPM got it in session
+162/164.  This cluster lifts the same heterogeneous-output
+value-pin pattern onto COSH/TANH/ASINH on both bare-List and
+T+L, completing the forward-hyperbolic four-op family on this
+axis.  Per-op identity-then-non-identity input pair `{0 1}`:
+`COSH({0 1}) → {1 cosh(1)≈1.5430}`, `TANH({0 1}) → {0
+tanh(1)≈0.7615}`, `ASINH({0 1}) → {0 asinh(1)≈0.8813}`; T+L
+counterparts use outer tag `:h:`.
++22 hard assertions in `tests/test-types.mjs` (895 → 917).
+Verification gates at exit: `node tests/test-all.mjs` 5273/0/0
+(includes a sibling-lane +5 in test-lists.mjs absorbed at gate-
+recheck; only the +22 test-types delta is owned by this lane),
+`node tests/test-persist.mjs` 66/0, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (171)" below.
+
+**Last updated (prior — session 166).** Session 166 (2026-04-25, release-mode wrap-up
 on T-1 day) — two pinning clusters closing the n=0 empty-List + n=1
 single-element boundary axes on already-widened transcendental ops
 in the same family that session 162 closed for LNP1/EXPM.  No
@@ -839,7 +895,102 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
 
-### Resolved this session (166)
+### Resolved this session (171)
+
+- **Cluster 1 — SINH / COSH / TANH / ASINH n=0 empty-List + n=1
+  single-element boundary closures on the bare-List + Tagged-of-List
+  wrapper composition.**  Session 120 pinned bare-List + (SINH-only)
+  Tagged-of-List dispatch on n=2 for the forward-hyperbolic
+  four-op family.  Sessions 130/140/150 lifted the wrapper-VM
+  composition onto the same family under Tagged-of-Vector /
+  Tagged-of-Matrix.  But the n=0 empty-List and n=1 single-element
+  shoulders on the bare-List + T+L axes — the boundary axis that
+  session 160 closed on LN, session 162 closed on LNP1/EXPM, and
+  session 166 closed on LOG/EXP/ALOG and ACOSH/ATANH — were never
+  pinned on SINH/COSH/TANH/ASINH.  This cluster mirrors session
+  166 Cluster 1's structure (which closed the n=0 / n=1 boundary
+  axes on LOG/EXP/ALOG) onto the forward-hyperbolic family.  The
+  forward-hyperbolic family routes through the same 3-deep wrapper
+  composition `_withTaggedUnary(_withListUnary(_withVMUnary(
+  handler)))` (via `_unaryCx`) as the LN/LOG/EXP/ALOG quartet, so
+  the n=0 / n=1 boundary code path is structurally identical;
+  this cluster pins it explicitly.  Per-op n=1 input is Real(0)
+  since every forward-hyperbolic op has a clean numeric fold at
+  zero — sinh(0)=0, cosh(0)=1, tanh(0)=0, asinh(0)=0.  16 hard
+  assertions:
+  - **n=0 bare-List, four ops:** `{ } SINH/COSH/TANH/ASINH → { }`
+    — wrapper preserves empty shell unchanged.  Mirror of session
+    166 LOG/EXP/ALOG bare n=0 pins lifted onto the forward-
+    hyperbolic family.
+  - **n=0 Tagged-of-List, four ops:** `:l:{ } SINH/COSH/TANH/ASINH
+    → :l:{ }` — outer tag preserved across empty inner List
+    dispatch through 3-deep wrapper.  Mirror of session 166
+    LOG/EXP/ALOG T+L n=0 pins lifted onto the forward-hyperbolic
+    family.
+  - **n=1 bare-List, four ops:** `{ Real(0) } SINH/TANH/ASINH →
+    { Real(0) }` (clean zero fold for the trio); `{ Real(0) } COSH
+    → { Real(1) }` (cosh(0)=1, the only non-identity fold in the
+    family at the chosen input).  Pins per-element fold runs
+    through the wrapper for n=1 — guards against a refactor that
+    special-cases n=1 to bare-scalar dispatch and bypasses
+    `_withListUnary`.
+  - **n=1 Tagged-of-List, four ops:** `:h:{ Real(0) }
+    SINH/TANH/ASINH → :h:{ Real(0) }` and `:h:{ Real(0) } COSH →
+    :h:{ Real(1) }` — outer tag preserved + per-element fold for
+    the singleton.  Closes the SINH/COSH/TANH/ASINH four-op
+    forward-hyperbolic family on the T+L n=1 boundary.
+
+- **Cluster 2 — COSH / TANH / ASINH heterogeneous-output
+  mixed-input value pins on bare-List + Tagged-of-List
+  composition.**  Session 120 pinned SINH bare-List +
+  Tagged-of-List heterogeneous-output values directly (`SINH({0 1
+  }) → {0 sinh(1)}` and `:lbl:{0 1} SINH → :lbl:{0 sinh(1)}` with
+  both values asserted in `tests/test-types.mjs:3164-3190`).  For
+  COSH/TANH/ASINH the s120 sweep only pinned type+length (both
+  items Real, list-length 2) and did NOT pin the distinct output
+  values per List position — it iterated the four ops with a
+  type+length check loop, then dropped down to a SINH-only
+  value-precise pin.  The sibling LOG/EXP/ALOG quartet got the
+  heterogeneous-output value-pin treatment in session 168; the
+  dual LNP1/EXPM got it in session 162/164 (bare-List axis) and
+  session 164 (T+L axis).  This cluster lifts the same
+  heterogeneous-output value-pin pattern onto COSH/TANH/ASINH on
+  both bare-List and Tagged-of-List, completing the forward-
+  hyperbolic four-op family on this axis.  Per-op identity-then-
+  non-identity input pair `{0 1}` matches s120's input shape so
+  the sibling-pin lineage is direct.  6 hard assertions:
+  - **COSH bare/T+L pair:** `{ Real(0) Real(1) } COSH → { Real(1)
+    Real(cosh(1)≈1.5430806348152437) }`; `:h:{ Real(0) Real(1) }
+    COSH → :h:{ Real(1) Real(cosh(1)) }`.  Distinct values per
+    List position — both items have non-zero, non-equal real
+    output values, pinning per-element wrapper dispatch on COSH.
+  - **TANH bare/T+L pair:** `{ Real(0) Real(1) } TANH → { Real(0)
+    Real(tanh(1)≈0.7615941559557649) }`; `:h:{ Real(0) Real(1) }
+    TANH → :h:{ Real(0) Real(tanh(1)) }`.
+  - **ASINH bare/T+L pair:** `{ Real(0) Real(1) } ASINH → { Real(
+    0) Real(asinh(1)≈0.881373587019543) }`; `:h:{ Real(0) Real(1)
+    } ASINH → :h:{ Real(0) Real(asinh(1)) }`.  Closes the
+    forward-hyperbolic SINH/COSH/TANH/ASINH four-op family on the
+    T+L heterogeneous-output value-pin axis (s120 already covered
+    SINH on both axes).
+
+- **Verification at exit.**  `node tests/test-all.mjs` 5273 / 0
+  (includes +5 in test-lists.mjs from a sibling-lane delta
+  absorbed at gate-recheck between session 168's close and this
+  run; only the +22 test-types delta is owned by this lane),
+  `node tests/test-persist.mjs` 66 / 0, `node tests/sanity.mjs`
+  22 / 0; `node tests/test-types.mjs` 917 ok lines (was 895 at
+  session 171 entry — +22 hard assertions exactly matches the
+  16 cluster-1 + 6 cluster-2 pins).  Probe used to verify the
+  candidate paths before adding tests:
+  `utils/@probe-fwdhyp-boundary.mjs`.
+
+- **No source-side changes.**  Both clusters are pure pinning of
+  already-live behavior; no `www/src/rpl/ops.js` or
+  `www/src/rpl/algebra.js` edits.  Lane held: `tests/test-types
+  .mjs`, `docs/DATA_TYPES.md`, `logs/session-171.md`.
+
+### Resolved prior session (166)
 
 - **Cluster 1 — LOG / EXP / ALOG n=0 empty-List + n=1
   single-element boundary closures on the bare-List + Tagged-of-List

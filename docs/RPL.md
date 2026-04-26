@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 167)
+## Current implementation status (as of session 172)
 
 
 ### Program value — parser & round-trip
@@ -271,19 +271,30 @@ open, and the next-session queue.
   canonical-form idempotence check.
 - `NEWOB` — supports every numeric-scalar shape (Real / Integer /
   BinaryInteger / Rational / Complex), every composite container
-  (List / Vector / Matrix / Program — frozen tokens array copied),
-  and Tagged / Unit / String / Name / Symbolic via the
-  `_newObCopy` switch.  **Session 167:** Rational branch added —
-  closes the audit-driven asymmetry vs. the other numeric-scalar
-  shapes (Real / Integer / BinInt were already enumerated; a
-  Rational reaching the unenumerated tail returned identity, the
-  lone outlier vs. the session-163 OBJ→ widening that brought
-  BinInt and Rational into the OBJ→ push-back branch).
-  Reconstruction is `Rational(v.n, v.d)`; the constructor's
-  sign-on-numerator + GCD-reduce pass is observably idempotent
-  on already-canonicalised inputs.  Directory and Grob fall
-  through to identity on purpose — Directories are live mutable
-  containers and Grobs flow through their own value-copy path.
+  (List / Vector / Matrix / Program), and Tagged / Unit / String /
+  Name / Symbolic via the `_newObCopy` switch.  Every enumerated
+  shape now produces a fresh `Object.freeze`d outer wrapper; the
+  shallow-copy contract preserves inner-element identity for the
+  composites.  **Session 167:** Rational branch added — closed the
+  audit-driven asymmetry vs. the other numeric-scalar shapes
+  (Real / Integer / BinInt were already enumerated; a Rational
+  reaching the unenumerated tail returned identity, the lone
+  outlier vs. the session-163 OBJ→ widening that brought BinInt
+  and Rational into the OBJ→ push-back branch).  Reconstruction
+  is `Rational(v.n, v.d)`; the constructor's sign-on-numerator +
+  GCD-reduce pass is observably idempotent on already-canonicalised
+  inputs.  **Session 172:** Program branch's outer-freeze parity
+  fix.  Pre-172, the Program branch constructed an inline object
+  literal `{ type: 'program', tokens: Object.freeze([...v.tokens]) }`
+  with the inner tokens array frozen but the outer wrapper not —
+  `Object.isFrozen(copy)` returned `false`, the lone outlier vs.
+  every other shape's factory-mediated outer freeze.  The fix
+  replaces the inline literal with `Program(v.tokens)`; the
+  factory's matched outer + inner freeze pair brings Program into
+  the same invariant every sibling shape already met.  Directory
+  and Grob fall through to identity on purpose — Directories are
+  live mutable containers and Grobs flow through their own
+  value-copy path.
 
 ### Error-machinery
 - `ERRM` / `ERRN` / `ERR0` / `DOERR` — registered and tested.
@@ -298,7 +309,131 @@ open, and the next-session queue.
 
 ---
 
-## Session 167 (this run) — what shipped
+## Session 172 (this run) — what shipped
+
+Final RPL-lane run on Sunday 2026-04-26, the ship day itself.
+Hour 17 Pacific (odd, outside the 06–08 window) — both run guards
+passed.  Fourth rpl-programming-lane run since ship-prep
+(sessions 155 / 159 / 163 / 167 closed the OBJ→ + NEWOB AUR-
+fidelity audits one shape at a time; this run closes another
+audit-driven asymmetry on the same NEWOB op).  The R-bucket of
+`docs/REVIEW.md` remained fully closed at run-entry (R-001 —
+R-012 all resolved; the open queue at session-169-code-review's
+close was O-009 + O-011 only, both `[deferred - post-ship]`).
+This run was the same kind of audit-driven fidelity edit as
+session 167 — caught by examining the `_newObCopy` enumeration
+for additional asymmetries the s167 Rational close did not
+address.
+
+1. **Program-branch outer-freeze fix in `_newObCopy`**
+   (`www/src/rpl/ops.js:9341`).  Pre-172 the Program branch
+   constructed an inline object literal:
+   ```js
+   if (isProgram(v)) return { type: 'program', tokens: Object.freeze([...v.tokens]) };
+   ```
+   The inner tokens array was frozen (already pinned at session-
+   146:2120 — `assert(Object.isFrozen(copy.tokens), ...)`) but the
+   *outer* wrapper was NOT frozen.  Every other enumerated shape
+   in `_newObCopy` goes through its factory (`RList` / `Vector` /
+   `Matrix` / `Tagged` / `Unit` / scalar atom factories), each of
+   which `Object.freeze`s the outer wrapper.  Program alone
+   violated the invariant `Object.isFrozen(copy) === true`.  The
+   fix is one line: switch the inline literal to `Program(v.tokens)`,
+   so the Program factory's `Object.freeze({ type, tokens:
+   Object.freeze([...]) })` pair gives matched outer + inner
+   freezing.  No behavioural change for any program — every reader
+   of the Program shape (DECOMP, EVAL, formatter, persistence)
+   already treats the value as immutable; the bypass was a latent
+   correctness hazard for any future mutation-attempt path that a
+   refactor might introduce.  Probed via
+   `utils/@probe-newob-program-frozen.mjs` and the broader
+   `utils/@probe-newob-frozen-all.mjs` sweep — pre-fix Program
+   was the lone shape with `output frozen=false`; post-fix every
+   one of the 14 enumerated shapes is `output frozen=true`.
+   Header doc-comment at `:9281-9320` rewritten to enumerate
+   the freeze contract and to call out the s172 audit-close
+   inline.  Footer comment in `_newObCopy`'s fall-through block
+   extended with the session-172 audit rationale and the link
+   back to session 167's parallel sibling close.
+2. **33 session172 hard assertions added to
+   `tests/test-reflection.mjs`**, inserted between the session-
+   168 NEWOB follow-up cluster and the DECOMP→STR→ round-trip
+   block.  Coverage breakdown:
+   - **2 direct Program freeze pins** — non-empty Program
+     (3-token body) and empty Program (`« »` boundary).  Both
+     would have failed pre-fix.
+   - **26 freeze-parity sweep pins** (13 shapes × 2 asserts):
+     distinct-object precondition + `Object.isFrozen(copy)` for
+     every NEWOB-handled shape (Real / Integer / BinInt / Rational
+     / Complex / String / Name / Symbolic / List / Vector / Matrix
+     / Tagged / Unit).  Defensive sweep so any future shape
+     factory that drops the outer freeze, or any future inline-
+     literal bypass like the pre-172 Program branch, surfaces as
+     a hard test failure rather than silently regressing
+     identity-decoupling.
+   - **2 strict-mode mutation-rejection sentinels** — confirm
+     the freeze is RUNTIME-enforced (`copy.tokens = ['mutated']`
+     throws under ESM strict mode rather than silently succeeding,
+     and the field still holds the original tokens array after
+     the failed attempt).  Pre-fix the assignment silently
+     succeeded.
+   - **1 NEWOB→DECOMP→STR equivalence pin** — DECOMP on a NEWOB-
+     copied Program produces the same source-form string as
+     DECOMP on the original (smoke test that the factory switch
+     did not change observable Program shape end-to-end).
+   - **2 sweep precondition pins** for the `!== orig` check on
+     Program (covered by the 13-shape sweep but inserted
+     separately for the dedicated Program-freeze block above).
+
+   The s172 pin set explicitly closes any future inline-literal
+   bypass (the failure mode that this fix addresses) and any
+   future shape-factory regression that drops the outer freeze
+   (a defensive widening — no factory currently has this hazard,
+   but the sweep now catches it if one is introduced).
+
+3. **`docs/RPL.md` reconciled**.  Implementation-status NEWOB
+   bullet rewritten to cite the s172 freeze fix explicitly and
+   to fold the freeze-parity invariant into the bullet's prose.
+   Status heading bumped from "as of session 167" to "as of
+   session 172".  Session-172 (this run) chapter added at the
+   top of the Session-log block.
+
+### User-reachable demo
+
+A real user can demonstrate the freeze fix from the calculator
+keypad with the following sequence:
+
+1. Type a program literal:  press `«`, then `1`, `SPC`, `2`, `SPC`,
+   `+`, then `»` ENTER.  Stack level 1 now holds `« 1 2 + »`.
+2. Press the soft-key `NEWOB` (or type `NEWOB` ENTER) — the program
+   is replaced on level 1 by a freshly constructed copy.
+3. Press the soft-key `EVAL` (or type `EVAL` ENTER) — the copy
+   evaluates to `3` exactly as the original program would.
+
+The freeze fix itself is a JS-runtime invariant not directly
+visible from the keypad, but the user can verify the
+distinct-object contract by running the same program through
+`NEWOB EVAL` versus `EVAL`: both produce `3`, confirming the
+factory-rebuilt Program preserves observable semantics.
+
+### Verification
+
+| Gate                                | Result        |
+|-------------------------------------|---------------|
+| `node --check www/src/rpl/ops.js`   | clean         |
+| `node --check tests/test-reflection.mjs` | clean    |
+| `node tests/test-reflection.mjs`    | 382 / 0       |
+| `node tests/test-all.mjs`           | 5306 / 0      |
+| `node tests/test-persist.mjs`       | 66 / 0        |
+| `node tests/sanity.mjs`             | 22 / 0 (~5 ms)|
+
+Δ from session-171 close (5273 / 0):  test-all **+33** from
+this run's freeze-parity sweep.  test-persist unchanged at 66.
+sanity unchanged at 22.
+
+---
+
+## Session 167 — what shipped
 
 Final RPL-lane run on Saturday 2026-04-25 ahead of the Sunday
 2026-04-26 ship — the third rpl-programming-lane run since

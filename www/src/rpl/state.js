@@ -11,7 +11,12 @@
 
 import { Directory, TYPES, BIN_BASES } from './types.js';
 
-export const ANGLE_MODES = Object.freeze(['DEG', 'RAD', 'GRD']);
+// Cycle order is RAD → DEG → GRD → RAD.  RAD is the rpl5050 boot
+// default (deliberate deviation from the HP50 factory DEG default —
+// see `state.angle` below), so cycling starts there.  `setAngle`
+// validates against this list, `cycleAngle` indexes through it, and
+// the F1 ANGL annunciator follows the same order.
+export const ANGLE_MODES = Object.freeze(['RAD', 'DEG', 'GRD']);
 export const COORD_MODES = Object.freeze(['RECT', 'CYLIN', 'SPHERE']);
 
 const _listeners = new Set();
@@ -27,7 +32,12 @@ export const WORDSIZE_MAX = 64;
 export const WORDSIZE_DEFAULT = 64;
 
 export const state = {
-  angle:   'RAD',            // 'DEG' | 'RAD' | 'GRD'  (HP50 default via flag -17)
+  // 'DEG' | 'RAD' | 'GRD'.  rpl5050 boots in RAD — a deliberate
+  // deviation from the HP50 factory default (DEG, flag -17 clear).
+  // The CAS (Giac) angle is synced from this slot at every caseval
+  // (see www/src/rpl/cas/giac-engine.mjs `_syncAngleMode`), so Symbolic
+  // ops like SUBST honour RAD/DEG without each call having to opt in.
+  angle:   'RAD',
   // Coordinate display mode for Complex / Vector values.  'RECT' is the
   // HP50 default (flag -15/-16 both clear) and renders (1,1) as
   // `(1, 1)`; 'CYLIN' renders the same as `(SQRT(2), π/4)`; 'SPHERE'
@@ -213,7 +223,7 @@ export function setAngle(mode) {
   _emit();
 }
 
-/** Cycle DEG -> RAD -> GRD -> DEG. */
+/** Cycle RAD -> DEG -> GRD -> RAD. */
 export function cycleAngle() {
   const i = ANGLE_MODES.indexOf(state.angle);
   setAngle(ANGLE_MODES[(i + 1) % ANGLE_MODES.length]);

@@ -44,6 +44,7 @@
 //     giac.toLatex(expr)     // shortcut: caseval(`latex(${expr})`)
 
 import { stripGiacQuotes } from "./giac-convert.mjs";
+import { state as calcState } from "../state.js";
 
 const isBrowser =
   typeof globalThis !== "undefined" &&
@@ -71,12 +72,59 @@ class BrowserGiacEngine {
     this._ready = null;      // Promise<void> | null
     this._resolved = false;
     this._caseval = null;    // sync string -> string, once ready
+    // Last `angle_radian` value pushed to Giac.  null means "never set,
+    // re-sync on the next caseval".  Tracked here so we don't pay a
+    // round-trip on every caseval — only when the calculator's mode
+    // actually changed.
+    this._angleSent = null;
+  }
+
+  // Map rpl5050's state.angle to the integer Giac expects for
+  // `angle_radian`: 1 for RAD, 0 for DEG/GRD.  Giac has no native
+  // gradian mode — GRD numerics still flow through rpl5050's own
+  // `toRadians` / `fromRadians` helpers, so for symbolic Giac calls
+  // we collapse GRD onto DEG (closest match).
+  _angleFlagForMode(mode) {
+    return mode === "RAD" ? 1 : 0;
+  }
+
+  // Push `angle_radian:=N;` into Giac if (and only if) the rpl5050
+  // angle mode has changed since we last synced.  Cheap no-op on the
+  // hot path — set once per mode transition, not once per caseval.
+  // Runs *before* the user's command so subsequent trig evaluations
+  // honour the active mode.
+  _syncAngleMode() {
+    const want = this._angleFlagForMode(calcState.angle);
+    if (this._angleSent === want) return;
+    // Single underscore-prefixed call — bypass the public caseval so
+    // we don't recurse and so the command logged for debugging is
+    // exactly the user's command, not the angle preamble.
+    this._caseval(`angle_radian:=${want}`);
+    this._angleSent = want;
   }
 
   init() {
     if (this._ready) return this._ready;
     this._ready = new Promise((resolve, reject) => {
       try {
+        // The vendored giacwasm.js was compiled out of the Xcas/Pyiodide
+        // build that assumes a host-provided `window.UI` object — at
+        // runtime Giac touches `UI.Datestart` (for `_emscripten_get_now`-
+        // style timing) and `UI.warnpy` (Python-warning gate).  When
+        // `UI` is missing every code path that hits either property
+        // throws a JS `ReferenceError`, which Giac surfaces back through
+        // `caseval` as `<func>: UI is not defined` — observed on
+        // `factor(x^3+3*x^2+3*x+1)` and `solve(...,x)`.  Install a minimal
+        // shim before the wasm script attaches so those lookups resolve.
+        // Idempotent: don't clobber if a richer UI object is already
+        // present (e.g. embedded inside a larger Xcas page).
+        if (!window.UI) {
+          window.UI = {
+            warnpy: false,            // suppress Python-warning channel
+            Datestart: Date.now(),    // baseline for emscripten timing
+          };
+        }
+
         // Emscripten reads window.Module before giacwasm.js attaches.
         window.Module = {
           noExitRuntime: true,
@@ -122,6 +170,11 @@ class BrowserGiacEngine {
     if (typeof cmd !== "string") {
       throw new TypeError(`giac.caseval: expected string, got ${typeof cmd}`);
     }
+    // Sync the active angle mode to Giac before every caseval so trig
+    // / inverse-trig in Symbolic ops (SUBST, EVAL, DERIV evaluating to
+    // a numeric leaf, etc.) honour the rpl5050 RAD/DEG/GRD setting.
+    // Cheap: the helper short-circuits when the mode hasn't changed.
+    this._syncAngleMode();
     // Giac wraps many results in literal double-quotes (expression-level
     // strings, semicolon-sequence outputs, etc.).  Normalise at the
     // engine boundary so every downstream consumer — giacToAst,

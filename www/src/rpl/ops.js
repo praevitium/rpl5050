@@ -480,10 +480,16 @@ function _isScalarOperand(v) {
    Most scalar-domain commands distribute element-wise when given a
    List.  Rules:
      Unary:          {1 4 9} SQRT            → {1 2 3}
-     List ∘ scalar:  {1 2 3} 2 +             → {3 4 5}
+     List ∘ scalar:  {1 2 3} 2 *             → {2 4 6}
      Scalar ∘ list:  2 {1 2 3} *             → {2 4 6}
-     List ∘ list:    {1 2 3} {10 20 30} +    → {11 22 33}  (same len)
+     List ∘ list:    {1 2 3} {10 20 30} *    → {10 40 90}  (same len)
      Nested:         {1 {2 3}} SIN           → {SIN(1) {SIN(2) SIN(3)}}
+
+   `+` is the canonical exception: HP50 AUR §3-7 specifies *concatenation*
+   semantics for list addition — `{1 2 3} 4 +` → `{1 2 3 4}`, `{1 2}
+   {3 4} +` → `{1 2 3 4}` — and the bare `+` registration short-circuits
+   list operands to that path before the generic `binaryMath` distributor
+   ever runs.  Element-wise list addition is reserved for ADD / DOLIST.
 
    Wrapping a handler with `_withListUnary` / `_withListBinary` is the
    one integration point — at the leaves, the original handler sees a
@@ -9007,11 +9013,25 @@ function _binaryMathMixed(op) {
    Binary ops drop the tag (there is no single obvious tag to keep).
    */
 register('+', _withTaggedBinary((s) => {
-  // String + anything coerces to concatenation; then handle
-  // BinInt + Real/Integer promotion; then fall through to the generic
-  // numeric/vector/matrix/unit binaryMath.
+  // List ∘ anything (or anything ∘ List) → HP50 AUR §3-7 list addition:
+  //   { a … } { b … } +   → { a … b … }   (concatenate)
+  //   { a … }      x  +   → { a … x }     (append)
+  //        x  { a … } +   → { x a … }     (prepend)
+  // Lists take precedence over String concatenation and over the
+  // generic numeric / element-wise binaryMath fallback — element-wise
+  // list arithmetic is reserved for ADD / DOLIST.  Tagged operands are
+  // unwrapped by `_withTaggedBinary` before this handler sees them, so
+  // a Tagged-wrapped list still hits this branch.
   if (s.depth >= 2) {
     const a = s.peek(2), b = s.peek(1);
+    const aL = isList(a), bL = isList(b);
+    if (aL || bL) {
+      s.popN(2);
+      if (aL && bL)  s.push(RList([...a.items, ...b.items]));
+      else if (aL)   s.push(RList([...a.items, b]));
+      else           s.push(RList([a, ...b.items]));
+      return;
+    }
     if (isString(a) || isString(b)) {
       const [x, y] = s.popN(2);
       const l = _stringCoerce(x), r = _stringCoerce(y);
@@ -9274,14 +9294,22 @@ register('ORDER', (s) => {
               with our frozen immutable RPL values this is effectively
               an identity, but we return a freshly-constructed clone so
               reference-equality (`===`) with the pre-op value is false.
-              Composite containers (List / Vector / Matrix) are rebuilt
-              shallowly; scalar atoms (Real / Integer / BinaryInteger /
-              Rational / Complex) are re-wrapped via their constructor
-              to produce a new object.  Directory and Grob fall through
-              the enumerated branches and return identity — Directories
-              are live mutable containers (NEWOB has no useful semantics
-              there) and Grobs flow through their dedicated value-copy
-              ops, not the generic NEWOB path.
+              Composite containers (List / Vector / Matrix / Program) are
+              rebuilt shallowly via their factories — outer object is a
+              fresh `Object.freeze`d wrapper, inner-element identities
+              are preserved (the session-146 nested-Program pin and the
+              session-167 List-of-Rational pin both codify this contract).
+              Scalar atoms (Real / Integer / BinaryInteger / Rational /
+              Complex) are re-wrapped via their constructor to produce a
+              new frozen object.  Tagged / Unit / String / Name / Symbolic
+              go through the same single-arg constructor path.  Every
+              enumerated branch produces an `Object.isFrozen() === true`
+              result — pinned by the session-172 freeze-parity sweep.
+              Directory and Grob fall through the enumerated branches
+              and return identity — Directories are live mutable
+              containers (NEWOB has no useful semantics there) and Grobs
+              flow through their dedicated value-copy ops, not the
+              generic NEWOB path.
      MEM    ( → mem-free )
             — available memory.  HP50 reports the free Port 0 / Port 1
               bytes.  Our sentinel: Real(Number.MAX_SAFE_INTEGER) — big
@@ -9318,7 +9346,7 @@ function _newObCopy(v) {
   if (isList(v))    return RList(v.items.slice());
   if (isVector(v))  return Vector(v.items.slice());
   if (isMatrix(v))  return Matrix(v.rows.map(r => r.slice()));
-  if (isProgram(v)) return { type: 'program', tokens: Object.freeze([...v.tokens]) };
+  if (isProgram(v)) return Program(v.tokens);
   if (isTagged(v))  return Tagged(v.tag, v.value);
   if (isUnit(v))    return Unit(v.value, v.uexpr);
   // Directory or anything unknown: return as-is.  NEWOB on a Directory
@@ -9335,6 +9363,21 @@ function _newObCopy(v) {
   // is "force a new copy"; for an immutable frozen Rational this is
   // observable only through `===` identity, which is what the test
   // suite pins below.
+  //
+  // Session-172 audit-driven asymmetry close (sibling to session 167):
+  // the Program branch above used to construct an inline object literal
+  // — `{ type: 'program', tokens: Object.freeze([...v.tokens]) }` —
+  // with the inner tokens array frozen but the *outer* wrapper NOT
+  // frozen.  Every other composite (List / Vector / Matrix) and every
+  // other shape goes through its factory (`RList` / `Vector` / `Matrix`
+  // / etc.), each of which `Object.freeze`s the outer wrapper.  Program
+  // alone violated `Object.isFrozen(copy) === true`.  The fix is the
+  // one-line switch to `Program(v.tokens)`; the factory's
+  // `Object.freeze({ type, tokens: Object.freeze([...]) })` pair gives
+  // matched outer + inner freezing, so a NEWOB'd Program now satisfies
+  // the same invariant every other enumerated shape already met.
+  // Pinned by the freeze-parity assertions in
+  // `tests/test-reflection.mjs` covering every NEWOB-handled shape.
   return v;
 }
 

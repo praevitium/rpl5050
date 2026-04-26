@@ -4,12 +4,91 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 168 (2026-04-25).  Unit-tests lane run
-(release wrap-up — last full day before the 2026-04-26 ship; 5th
+**Last updated.** Session 173 (2026-04-26).  Unit-tests lane run
+(ship-day wrap-up — Sunday 2026-04-26 afternoon slot, 6th
 release-window run in this lane after sessions 156, 160, 164,
-160-unit-tests).
+160-unit-tests, 168).
 
-Sibling deltas absorbed since the session-164 snapshot
+Sibling deltas absorbed since the session-168 snapshot
+(5246 → 5306, **+60** over four sibling sessions):
+- Session 170 (command-support) — doc-only run; **0** assertion
+  deltas (`docs/COMMANDS.md` Counts heading bump from "as of
+  session 165" → "as of session 170" + paragraph extension folding
+  in the s167 NEWOB-Rational widening + s168 NEWOB follow-up
+  pin counts; NEWOB row Notes amendment citing the s167 source
+  edit at `_newObCopy:9313`; session-log back-fill of sessions
+  166 / 167 / 168 / 169-code-review).  No source / test edits.
+- Session 171 (data-type-support) shipped **+22** assertions in
+  `tests/test-types.mjs` (895 → 917) across two pinning clusters
+  lifting session 166's n=0/n=1 boundary pattern + session 168's
+  heterogeneous-output mixed-input pattern onto the forward-
+  hyperbolic family that session 120 only pinned at n=2.
+  Cluster 1 (+16): SINH/COSH/TANH/ASINH n=0 empty-List + n=1
+  single-element boundary closures on bare-List + Tagged-of-List
+  (4 ops × 4 cases).  COSH is the n=1 outlier (cosh(0)=1 vs.
+  identity sinh/tanh/asinh(0)=0).  Cluster 2 (+6): COSH/TANH/
+  ASINH heterogeneous-output mixed-input value pins on bare-List
+  + T+L (3 ops × 2 axes; SINH already covered by s120's value-
+  precise pin).  No source change — wrappers were live since
+  session 120.
+- Session 172 (rpl-programming) shipped **+33** assertions in
+  `tests/test-reflection.mjs` (349 → 382) for the **NEWOB-on-
+  Program outer-freeze parity fix** (sibling to session 167's
+  NEWOB widening, but on the freeze-invariant axis rather than
+  the AUR-table-row coverage axis).  Source edit at
+  `www/src/rpl/ops.js:9341`: replaced the inline literal
+  `{ type: 'program', tokens: Object.freeze([...v.tokens]) }`
+  with `Program(v.tokens)` so the Program factory's matched
+  outer + inner freeze pair fires (Program was the lone shape
+  whose `_newObCopy` output silently violated the
+  `Object.isFrozen(copy)` invariant every sibling shape met).
+  33 pins: 2 direct Program freeze pins + 26 freeze-parity
+  sweep pins (13 shapes × distinct + frozen) + 2 strict-mode
+  mutation-rejection sentinels + 1 NEWOB→DECOMP equivalence
+  smoke + 2 sweep precondition pins on Program.
+
+Session 173 unit-tests deltas:
+- **+12 SIN/COS/TAN bare-List + Tagged-of-List n=0/n=1 boundary
+  pins** in `tests/test-types.mjs` (917 → 929) lifting session
+  171 Cluster 1's forward-hyperbolic n=0/n=1 boundary pattern
+  onto the forward-trig family (3 ops × 4 cases = bare-n=0 +
+  T+L-n=0 + bare-n=1 + T+L-n=1).  Closes the explicit gap session
+  171's "Open queue items" block flagged: "Forward-trig family
+  (SIN / COS / TAN) bare-List + T+L axes — only the wrapper-V/M
+  composition (s145) and Tagged-of-Vector (s130) pins exist on
+  this family; the bare-List + T+L axes are unpinned even on n=2."
+  n=1 input Real(0) is angle-mode-independent across all three ops
+  (sin(0)=0, cos(0)=1, tan(0)=0 in RAD/DEG/GRD), so no
+  setAngle/restore guard is required — the COS n=1 outlier
+  (cos(0)=1) mirrors session 171's COSH outlier.  No source
+  change — wrappers were live since session 145.
+- **+18 ASIN/ACOS/ATAN bare-List + Tagged-of-List n=0/n=1
+  boundary pins** in `tests/test-types.mjs` (929 → 947) lifting
+  the same boundary pattern onto the inverse-trig family.
+  Closes the second open-queue gap session 171 flagged ("Inverse-
+  trig family (ASIN / ACOS / ATAN) bare-List + T+L axes — same
+  gap as SIN/COS/TAN").  3 ops × 6 asserts (bare-n=0 + T+L-n=0
+  one assert each + bare-n=1 + T+L-n=1 with both shape-and-value
+  asserts because ACOS(0) = π/2 is angle-mode-DEPENDENT).  Uses
+  the canonical RAD set / try / restore guard (mirror of the
+  session 140/142 ASIN/ACOS Tagged-of-V pin pattern at
+  `tests/test-types.mjs:5350-5400`).  ACOS is the inverse-trig
+  n=1 outlier (acos(0) = π/2; matches Math.PI/2 to 1e-12),
+  paralleling Cluster 1's COS outlier and session 171's COSH
+  outlier.  No source change — wrappers were live since
+  session 145.
+
+The forward-trig and inverse-trig families are now fully pinned
+across the bare-List + Tagged-of-List axes (n=0 / n=1 boundary;
+n=2 was pinned by s120/s130/s145).  The two remaining post-ship
+candidates from session 171's queue are the matrix-axis under
+Tagged composition for COSH/TANH/ASINH non-identity outputs
+(forward-hyperbolic continuation) and the heterogeneous-output
+mixed-input value pins for SIN/COS/TAN and ASIN/ACOS/ATAN
+(direct mirror of session 168 LOG/EXP/ALOG and session 171
+COSH/TANH/ASINH heterogeneous patterns onto the trig families).
+
+Sibling deltas absorbed in the session-168 snapshot
 (5167 → 5206, **+39** over three sibling sessions):
 - Session 165 (command-support) — doc-only run; **0** assertion
   deltas (`docs/COMMANDS.md` OBJ→ row Notes amendment folding in
@@ -749,7 +828,60 @@ Session 117 unit-tests deltas:
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
 
-## Coverage snapshot (session 168)
+## Coverage snapshot (session 173)
+
+Baseline at session start: `node tests/test-all.mjs` = **5306
+passing / 0 failing** (session-172 close, fully green; sibling
+deltas absorbed in the prelude above — +0 s170 doc-only, +22
+s171 test-types forward-hyperbolic n=0/n=1 boundary +
+heterogeneous-output, +33 s172 test-reflection NEWOB Program
+freeze-parity fix + 13-shape sweep).
+`test-persist.mjs` 66 / 0 (unchanged since ship-prep — D-001
+fully closed at ship-prep 2026-04-25).
+`sanity.mjs` 22 / 0.
+
+Final: **5336 passing / 0 failing** — fully green.  The +30
+session-173 deltas land in one file across two substantive
+clusters:
+- `test-types.mjs` 917 → 947 (**+30**) — forward-trig
+  SIN/COS/TAN n=0/n=1 boundary closures on bare-List + Tagged-
+  of-List (Cluster 1, +12: 3 ops × 4 cases) + inverse-trig
+  ASIN/ACOS/ATAN n=0/n=1 boundary closures (Cluster 2, +18:
+  3 ops × 6 asserts because ACOS(0)=π/2 RAD requires both
+  shape-and-value asserts).  Closes the two open-queue gaps
+  session 171's log explicitly flagged.  COS / ACOS are the
+  n=1 outliers with non-identity folds (cos(0)=1; acos(0)=π/2),
+  paralleling session 171's COSH outlier.  No source change —
+  wrappers were live since session 145.
+
+`test-persist.mjs` 66 / 0 (unchanged this run).  `sanity.mjs`
+22 / 0 (unchanged).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    | +25 s119, +25 s124, +9 s127, +13 s139, +29 s144, +30 s149, +10 s156, +3 s160 (MODULO ARITH follow-up).  Sessions 164–172 did not touch this file. |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  775 | 0    | s151 fully closed (CASE / fully-closed START/NEXT and START/STEP / DO/UNTIL / FOR/STEP).  Sessions 164–172 did not touch this file. |
+| test-entry.mjs              |   90 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    | +14 ship-prep-r4 (List EVAL HP50 §3-77 fix; R-010); +5 absorbed between session-168 close and session-171 entry (sibling-lane delta noted in s171 log). |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  701 | 0    | +27 s109 + s112 + s153 + s156 retained.  Sessions 164–172 did not touch this file. |
+| test-reflection.mjs         |  **382** | 0    | +50 s146, +5 net + 2 flipped s155, +7 s156, +15 s159, +6 s160, +8 s163, +8 s164, +20 s167, +34 s168, **+33 session-172** (NEWOB-on-Program outer-freeze parity fix: 2 direct Program freeze pins + 26 freeze-parity sweep pins (13 shapes × distinct + frozen) + 2 strict-mode mutation-rejection sentinels + 1 NEWOB→DECOMP equivalence smoke + 2 sweep precondition pins on Program — pins the s172 source-edit at `_newObCopy:9341`). |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              |  **947** | 0    | +50 s115, +2 s117, +68 s120, +43 s125, +35 s130, +31 s135, +36 s140, +23 s142, +41 s145, +26 s150, +19 s158, +4 s160, +15 s162, +3 s164, +19 s166, +6 s168 (LOG/EXP/ALOG heterogeneous-output mixed-input under bare-List + Tagged-of-List), +22 s171 (forward-hyperbolic SINH/COSH/TANH/ASINH n=0/n=1 boundary + COSH/TANH/ASINH heterogeneous-output value pins), **+30 session-173** (forward-trig SIN/COS/TAN n=0/n=1 boundary closures +12, inverse-trig ASIN/ACOS/ATAN n=0/n=1 boundary closures +18 — closes the two open-queue gaps s171 flagged: forward-trig and inverse-trig families' bare-List + T+L boundary axes). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5336** | **0** | Session 173 close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
+| test-persist.mjs (separate) |   66 | 0    | Unchanged this run; ship-prep baseline retained. |
+| sanity.mjs (standalone)     |   22 | 0    | <5 ms smoke suite (~5 ms).               |
+
+### Prior snapshot — Session 168 (retained for context)
 
 Baseline at session start: `node tests/test-all.mjs` = **5206
 passing / 0 failing** (session-167 close, fully green; sibling
@@ -761,7 +893,7 @@ pin set).
 fully closed at ship-prep 2026-04-25).
 `sanity.mjs` 22 / 0.
 
-Final: **5246 passing / 0 failing** — fully green.  The +40
+Final at session-168 close: **5246 passing / 0 failing** — fully green.  The +40
 session-168 deltas land in two files across two substantive
 clusters:
 - `test-reflection.mjs` 315 → 349 (**+34**) — NEWOB session-167
@@ -1482,7 +1614,64 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 164 (2026-04-25) — this run.  Unit-tests lane (release
+- Session 173 (2026-04-26) — this run.  Unit-tests lane (ship-day
+  wrap-up — Sunday 2026-04-26 afternoon, **ship day**).  **+30
+  assertions across 2 substantive clusters** (meets the 2-item
+  release-mode floor) — pinning-only run; no source edits, no
+  REVIEW.md findings filed:
+  - **Cluster 1 (12)** — `test-types.mjs` 917 → 929.  Forward-
+    trig SIN/COS/TAN n=0 empty-List + n=1 single-element boundary
+    closures on bare-List + Tagged-of-List composition.  Lifts
+    session 171 Cluster 1's forward-hyperbolic n=0/n=1 boundary
+    pin shape onto the SIN/COS/TAN trio that routes through the
+    same 3-deep `_withTaggedUnary(_withListUnary(_withVMUnary(
+    handler)))` wrapper composition.  3 ops × 4 cases = bare-
+    n=0 + T+L-n=0 + bare-n=1 + T+L-n=1.  n=1 input Real(0) is
+    angle-mode-independent (sin(0)=0, cos(0)=1, tan(0)=0 in any
+    mode); COS is the n=1 outlier paralleling s171's COSH.
+    Closes the gap session 171's "Open queue items" block flagged:
+    "Forward-trig family bare-List + T+L axes — only the wrapper-
+    V/M composition (s145) and Tagged-of-Vector (s130) pins exist
+    on this family; the bare-List + T+L axes are unpinned even on
+    n=2."  No source change.
+  - **Cluster 2 (18)** — `test-types.mjs` 929 → 947.  Inverse-
+    trig ASIN/ACOS/ATAN n=0 empty-List + n=1 single-element
+    boundary closures on bare-List + Tagged-of-List composition.
+    Lifts the same boundary pattern onto the inverse-trig trio.
+    3 ops × 6 asserts (bare-n=0 + T+L-n=0 one assert each + bare-
+    n=1 + T+L-n=1 with both shape-and-value asserts because
+    ACOS(0) = π/2 RAD is angle-mode-DEPENDENT).  Uses the
+    canonical RAD set / try / restore guard (mirror of the
+    s140/s142 ASIN/ACOS Tagged-of-V pin pattern at
+    `tests/test-types.mjs:5350-5400`).  ACOS is the inverse-trig
+    n=1 outlier (acos(0) = π/2; matches Math.PI/2 to 1e-12),
+    paralleling Cluster 1's COS outlier and s171's COSH outlier.
+    Closes the second gap s171's queue flagged: "Inverse-trig
+    family bare-List + T+L axes — same gap as SIN/COS/TAN."
+    No source change — wrappers were live since session 145.
+  - **REVIEW.md findings.**  No new findings filed.  Open queue
+    at run-entry was `O-009` + `O-011` only, both `[deferred -
+    post-ship]` per the session-156 meta-log triage; both
+    re-verified open at run-exit (no behavior change required;
+    ship-blockers neither).  D-001 remains `[resolved - ship-
+    prep 2026-04-25]` with persist gate green at 66 / 0.
+  - **Off-scope user requests.**  Two user messages arrived
+    mid-run, both outside the unit-tests lane charter and both
+    requiring UI / documentation edits the lane rules forbid:
+    (1) "organize command panel — ensure all commands are properly
+    categorized" — routes to `rpl5050-ui-development` for the
+    side-panel UI and `rpl5050-command-support` for
+    `docs/COMMANDS.md` categorization (per the project memory
+    entry `feedback_categorize_commands.md`); (2) "make the tool
+    button say 'CST', the panel button 'TOOLS'" — routes to
+    `rpl5050-ui-development` (keypad button labels live in
+    `www/src/ui/keyboard.js`; HP50 fidelity question per
+    `docs/@!MY_NOTES.md` standing-lesson §4 about real-unit
+    "TOOL" / "CST" key labels).  No edits made from this lane;
+    full routing notes in `logs/session-173.md` "Off-scope user
+    requests" section.
+
+- Session 164 (2026-04-25) — earlier run.  Unit-tests lane (release
   wrap-up — last full day before the 2026-04-26 ship).  **+11
   assertions across 2 substantive clusters** (meets the 2-item
   release-mode floor) — pinning-only run; no source edits, no

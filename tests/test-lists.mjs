@@ -1488,18 +1488,37 @@ import { assert, assertThrows } from './helpers.mjs';
     'list-distribute: {0 1 2} NEG → {0 -1 -2}');
 }
 
-// ---- Binary list ∘ scalar: {1 2 3} 2 + → {3 4 5} ----
+// ---- `+` on a list is HP50 concatenation, NOT element-wise (AUR §3-7) ----
+//      {1 2 3} 2 +    → {1 2 3 2}        (append)
+//      2 {1 2 3} +    → {2 1 2 3}        (prepend)
+//      {1 2 3} {10 20 30} + → {1 2 3 10 20 30}  (concatenate)
+//      Mismatched-length lists STILL concatenate — there is no
+//      "Invalid dimension" branch for `+` over lists; element-wise
+//      list arithmetic is reserved for ADD / DOLIST.
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(2n), Integer(3n)]));
   s.push(Integer(2n));
   lookup('+').fn(s);
   const out = s.peek();
-  assert(out.items.map(v => Number(v.value)).join(',') === '3,4,5',
-    'list-distribute: {1 2 3} 2 + → {3 4 5}');
+  assert(isList(out)
+      && out.items.map(v => Number(v.value)).join(',') === '1,2,3,2',
+    'list +: {1 2 3} 2 + → {1 2 3 2}  (append)');
 }
 
-// ---- Binary scalar ∘ list: 10 {1 2 3} * → {10 20 30} ----
+{
+  const s = new Stack();
+  s.push(Integer(2n));
+  s.push(RList([Integer(1n), Integer(2n), Integer(3n)]));
+  lookup('+').fn(s);
+  const out = s.peek();
+  assert(isList(out)
+      && out.items.map(v => Number(v.value)).join(',') === '2,1,2,3',
+    'list +: 2 {1 2 3} + → {2 1 2 3}  (prepend)');
+}
+
+// `*` and the rest of the binary family STILL distribute element-wise —
+// the HP50 carve-out is only for `+`.  Keep this assertion to lock that.
 {
   const s = new Stack();
   s.push(Integer(10n));
@@ -1507,27 +1526,64 @@ import { assert, assertThrows } from './helpers.mjs';
   lookup('*').fn(s);
   const out = s.peek();
   assert(out.items.map(v => Number(v.value)).join(',') === '10,20,30',
-    'list-distribute: 10 {1 2 3} * → {10 20 30}');
+    'list-distribute: 10 {1 2 3} * → {10 20 30}  (`*` still distributes)');
 }
 
-// ---- Binary list ∘ list: {1 2 3} {10 20 30} + → {11 22 33} ----
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(2n), Integer(3n)]));
   s.push(RList([Integer(10n), Integer(20n), Integer(30n)]));
   lookup('+').fn(s);
   const out = s.peek();
-  assert(out.items.map(v => Number(v.value)).join(',') === '11,22,33',
-    'list-distribute: {1 2 3} {10 20 30} + → {11 22 33}');
+  assert(isList(out)
+      && out.items.map(v => Number(v.value)).join(',') === '1,2,3,10,20,30',
+    'list +: {1 2 3} {10 20 30} + → {1 2 3 10 20 30}  (concat)');
 }
 
-// ---- Binary list ∘ list length mismatch → Invalid dimension ----
+// Mismatched lengths NO LONGER throw — concatenation is length-agnostic.
 {
   const s = new Stack();
   s.push(RList([Integer(1n), Integer(2n)]));
   s.push(RList([Integer(10n), Integer(20n), Integer(30n)]));
-  assertThrows(() => lookup('+').fn(s), /Invalid dimension/,
-               'list-distribute: mismatched lengths throw Invalid dimension');
+  lookup('+').fn(s);
+  const out = s.peek();
+  assert(isList(out)
+      && out.items.map(v => Number(v.value)).join(',') === '1,2,10,20,30',
+    'list +: mismatched-length lists concatenate, no Invalid dimension');
+}
+
+// Heterogeneous: a String operand is treated as a list element, NOT
+// promoted to string-concat semantics — list precedence beats String.
+{
+  const s = new Stack();
+  s.push(RList([Integer(1n), Integer(2n)]));
+  s.push(Str('hi'));
+  lookup('+').fn(s);
+  const out = s.peek();
+  assert(isList(out)
+      && out.items.length === 3
+      && Number(out.items[0].value) === 1
+      && Number(out.items[1].value) === 2
+      && isString(out.items[2])
+      && out.items[2].value === 'hi',
+    'list +: {1 2} "hi" + → {1 2 "hi"}  (list precedence over String)');
+}
+
+// Nested list + scalar: scalar appended at the OUTER level,
+// inner list is preserved as a single element.
+{
+  const s = new Stack();
+  s.push(RList([Integer(1n), RList([Integer(2n), Integer(3n)])]));
+  s.push(Integer(9n));
+  lookup('+').fn(s);
+  const out = s.peek();
+  assert(isList(out)
+      && out.items.length === 3
+      && Number(out.items[0].value) === 1
+      && isList(out.items[1])
+      && out.items[1].items.map(v => Number(v.value)).join(',') === '2,3'
+      && Number(out.items[2].value) === 9,
+    'list +: {1 {2 3}} 9 + → {1 {2 3} 9}  (no recursive distribution)');
 }
 
 // ---- Nested lists: {1 {4 9}} SQRT → {1 {2 3}} ----
@@ -1575,14 +1631,36 @@ import { assert, assertThrows } from './helpers.mjs';
   assert(isList(out) && out.items.length === 0, 'list-distribute: {} SQRT → {}');
 }
 
-// ---- Empty list binary ∘ scalar = empty list ----
+// ---- Empty list `+` scalar = single-element list (HP50 append) ----
+//      {} 5 +  → {5}     (append into the empty list)
+//      5 {} +  → {5}     (prepend into the empty list)
+//      {} {} + → {}      (concat of two empties)
 {
   const s = new Stack();
   s.push(RList([]));
   s.push(Integer(5n));
   lookup('+').fn(s);
   const out = s.peek();
-  assert(isList(out) && out.items.length === 0, 'list-distribute: {} 5 + → {}');
+  assert(isList(out) && out.items.length === 1 && Number(out.items[0].value) === 5,
+    'list +: {} 5 + → {5}');
+}
+{
+  const s = new Stack();
+  s.push(Integer(5n));
+  s.push(RList([]));
+  lookup('+').fn(s);
+  const out = s.peek();
+  assert(isList(out) && out.items.length === 1 && Number(out.items[0].value) === 5,
+    'list +: 5 {} + → {5}');
+}
+{
+  const s = new Stack();
+  s.push(RList([]));
+  s.push(RList([]));
+  lookup('+').fn(s);
+  const out = s.peek();
+  assert(isList(out) && out.items.length === 0,
+    'list +: {} {} + → {}');
 }
 
 // ---- MIN / MAX distribute element-wise ----

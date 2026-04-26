@@ -2982,31 +2982,39 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       `session115: Real(2) * {1 2 3} → {2 4 6} (scalar × list)`);
   }
 
-  // Binary: List + List (same size) — pairwise distribution.
+  // Binary: List + List — HP50 AUR §3-7 concatenation, NOT pairwise.
+  // The original session115 pin locked element-wise distribution;
+  // we re-pin it here as concatenation now that `+` is HP50-canonical
+  // (element-wise list arithmetic is reserved for ADD / DOLIST).
   {
     const s = new Stack();
     s.push(RList([Real(1), Real(2), Real(3)]));
     s.push(RList([Real(10), Real(20), Real(30)]));
     lookup('+').fn(s);
     const v = s.peek();
-    assert(v.type === 'list' && v.items.length === 3
-        && v.items[0].value.eq(11) && v.items[1].value.eq(22) && v.items[2].value.eq(33),
-      `session115: {1 2 3} + {10 20 30} → {11 22 33} (pairwise)`);
+    assert(v.type === 'list' && v.items.length === 6
+        && v.items[0].value.eq(1)  && v.items[1].value.eq(2)  && v.items[2].value.eq(3)
+        && v.items[3].value.eq(10) && v.items[4].value.eq(20) && v.items[5].value.eq(30),
+      `session115: {1 2 3} + {10 20 30} → {1 2 3 10 20 30} (concat)`);
   }
 
-  // Binary: List + List (size mismatch) — throws Invalid dimension.
-  assertThrows(
-    () => {
-      const s = new Stack();
-      s.push(RList([Real(1), Real(2)]));
-      s.push(RList([Real(1), Real(2), Real(3)]));
-      lookup('+').fn(s);
-    },
-    /Invalid dimension/,
-    'session115: {1 2} + {1 2 3} → Invalid dimension (size mismatch rejected)'
-  );
+  // Binary: List + List (size mismatch) — concatenation is length-
+  // agnostic, so the old "Invalid dimension" gate is gone.
+  {
+    const s = new Stack();
+    s.push(RList([Real(1), Real(2)]));
+    s.push(RList([Real(1), Real(2), Real(3)]));
+    lookup('+').fn(s);
+    const v = s.peek();
+    assert(v.type === 'list' && v.items.length === 5
+        && v.items[0].value.eq(1) && v.items[1].value.eq(2)
+        && v.items[2].value.eq(1) && v.items[3].value.eq(2) && v.items[4].value.eq(3),
+      'session115: {1 2} + {1 2 3} → {1 2 1 2 3} (mismatched lengths concat)');
+  }
 
-  // Binary: nested list × scalar broadcasts to each leaf.
+  // Binary: list `+ scalar` is now an APPEND (HP50 AUR §3-7), not a
+  // recursive broadcast.  The scalar lands as a sibling element at
+  // the outer level — the inner sub-lists are preserved verbatim.
   {
     const s = new Stack();
     s.push(RList([
@@ -3016,11 +3024,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     s.push(Real(10));
     lookup('+').fn(s);
     const v = s.peek();
-    assert(v.type === 'list' && v.items.length === 2
-        && v.items[0].type === 'list' && v.items[0].items[0].value.eq(11)
-        && v.items[0].items[1].value.eq(12)
-        && v.items[1].items[0].value.eq(13) && v.items[1].items[1].value.eq(14),
-      `session115: {{1 2}{3 4}} + Real(10) → {{11 12}{13 14}} (nested broadcast)`);
+    assert(v.type === 'list' && v.items.length === 3
+        && v.items[0].type === 'list'
+        && v.items[0].items[0].value.eq(1) && v.items[0].items[1].value.eq(2)
+        && v.items[1].type === 'list'
+        && v.items[1].items[0].value.eq(3) && v.items[1].items[1].value.eq(4)
+        && v.items[2].value.eq(10),
+      `session115: {{1 2}{3 4}} + Real(10) → {{1 2} {3 4} 10} (append, no recursion)`);
   }
 
   // Deliberate rejection: List of Tagged through NEG throws Bad argument
@@ -8632,6 +8642,331 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
         && isReal(v.value.items[0]) && v.value.items[0].value.eq(1)
         && isReal(v.value.items[1]) && v.value.items[1].value.eq(10),
       `session168: :a:{ Real(0) Real(1) } ALOG → :a:{ Real(1) Real(10) } (heterogeneous-output-value pin under Tagged-of-List composition on ALOG — outer tag preserved + distinct values per List position; closes the LOG/EXP/ALOG trio on the heterogeneous T+L axis — completes the s166 cluster's deferred heterogeneous-output axis); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+  }
+
+  // ----------------------------------------------------------------
+  // session171 — Cluster 1: forward-hyperbolic family
+  //   (SINH / COSH / TANH / ASINH) n=0 empty-List + n=1 single-element
+  //   boundary closures on bare-List + Tagged-of-List composition.
+  //
+  // Session 120 pinned SINH/COSH/TANH/ASINH bare-List dispatch on n=2
+  // (`{Real(0) Real(1)} OP → 2-element Real list`), and additionally
+  // pinned the SINH-only Tagged-of-List composition on n=2.  Sessions
+  // 130/140/150 lifted the wrapper-VM composition onto the same family
+  // under Tagged-of-Vector / Tagged-of-Matrix.  But the n=0 empty-List
+  // and n=1 single-element shoulders on the bare-List + T+L axes — the
+  // boundary axis that session 160 closed on LN, session 162 closed on
+  // LNP1/EXPM, session 166 closed on LOG/EXP/ALOG and ACOSH/ATANH —
+  // were never pinned on the forward-hyperbolic four-op family.  This
+  // cluster mirrors session 166 Cluster 1's structure (LOG/EXP/ALOG
+  // n=0/n=1 closures on bare-List + T+L) onto the SINH/COSH/TANH/ASINH
+  // forward-hyperbolic family, which routes through the same 3-deep
+  // wrapper `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`
+  // composition as the LN/LOG/EXP/ALOG quartet (via `_unaryCx`).  The
+  // n=1 input Real(0) is chosen because every forward-hyperbolic op
+  // has a clean numeric fold at 0 — sinh(0)=0, cosh(0)=1, tanh(0)=0,
+  // asinh(0)=0 — so the n=1 pin produces a value-precise output that
+  // exercises both the wrapper dispatch and the inner numeric primitive
+  // ran for the singleton without any ambiguity.
+  //
+  // 16 hard assertions (4 ops × 4 boundary cases = bare-n=0 + T+L-n=0
+  // + bare-n=1 + T+L-n=1).
+
+  for (const op of ['SINH', 'COSH', 'TANH', 'ASINH']) {
+    const expectN1 = op === 'COSH' ? 1 : 0;
+
+    // n=0 bare-List: `{ } OP → { }` (empty shell preserved).
+    {
+      const s = new Stack();
+      s.push(RList([]));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isList(v) && v.items.length === 0,
+        `session171: { } ${op} → { } (n=0 empty-List boundary on bare _withListUnary on forward-hyperbolic ${op} axis — wrapper preserves empty shell unchanged; closes the n=0 corner the s120 n=2 pin does not enumerate; mirror of s166 LOG/EXP/ALOG n=0 pin lifted onto the forward-hyperbolic family); got ${v?.type} items.length=${v?.items?.length}`);
+    }
+
+    // n=0 Tagged-of-List: `:l:{ } OP → :l:{ }` (outer tag preserved
+    // across empty inner List dispatch through 3-deep wrapper).
+    {
+      const s = new Stack();
+      s.push(Tagged('l', RList([])));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'l'
+          && isList(v.value) && v.value.items.length === 0,
+        `session171: :l:{ } ${op} → :l:{ } (n=0 empty-List under Tagged-of-List composition on forward-hyperbolic ${op}: outer tag preserved across empty inner List dispatch through 3-deep wrapper; mirror of s166 LOG/EXP/ALOG T+L n=0 pin lifted onto the forward-hyperbolic family); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+    }
+
+    // n=1 bare-List: `{ Real(0) } OP → { Real(<expected>) }`
+    //   sinh(0)=0, cosh(0)=1, tanh(0)=0, asinh(0)=0
+    // Pins per-element fold runs through the wrapper for n=1 — guards
+    // against a refactor that special-cases n=1 to bare-scalar dispatch
+    // and bypasses `_withListUnary`.
+    {
+      const s = new Stack();
+      s.push(RList([Real(0)]));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isList(v) && v.items.length === 1
+          && isReal(v.items[0]) && v.items[0].value.eq(expectN1),
+        `session171: { Real(0) } ${op} → { Real(${expectN1}) } (n=1 single-element boundary on bare _withListUnary on forward-hyperbolic ${op}; pins per-element ${op.toLowerCase()}(0)=${expectN1} fold runs through the wrapper for n=1 — guards against singleton bypass refactor); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // n=1 Tagged-of-List: `:h:{ Real(0) } OP → :h:{ Real(<expected>) }`
+    {
+      const s = new Stack();
+      s.push(Tagged('h', RList([Real(0)])));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'h'
+          && isList(v.value) && v.value.items.length === 1
+          && isReal(v.value.items[0]) && v.value.items[0].value.eq(expectN1),
+        `session171: :h:{ Real(0) } ${op} → :h:{ Real(${expectN1}) } (n=1 single-element under Tagged-of-List composition on forward-hyperbolic ${op}; outer tag preserved + per-element ${op.toLowerCase()}(0)=${expectN1} fold for the singleton — closes the forward-hyperbolic SINH/COSH/TANH/ASINH four-op family on the T+L n=1 boundary); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // session171 — Cluster 2: forward-hyperbolic family (COSH / TANH /
+  //   ASINH) heterogeneous-output mixed-input value pins on bare-List
+  //   + Tagged-of-List composition.
+  //
+  // Session 120 pinned SINH bare-List heterogeneous-output values
+  // (`SINH({0 1}) → {0 sinh(1)}` with both values asserted, including
+  // the Tagged-of-List `:lbl:{0 1} SINH → :lbl:{0 sinh(1)}` shape).
+  // For COSH/TANH/ASINH the s120 sweep only pinned type+length
+  // (both items are Real, list-length is 2) but did NOT pin the
+  // distinct output values per List position.  The sibling
+  // `LOG/EXP/ALOG` quartet got the heterogeneous-output value-pin
+  // treatment in session 168; the dual `LNP1/EXPM` got it in session
+  // 162/164.  This cluster lifts that same heterogeneous-output value-
+  // pin pattern onto COSH/TANH/ASINH on both bare-List and T+L
+  // composition — the s120 pin's type+length-only structure left these
+  // three ops without a value-precise pin on the mixed-input axis.
+  //
+  // Per-op identity-then-non-identity input pair (matches s120's `{0 1}`
+  // shape so the sibling-pin lineage is direct):
+  //   COSH({0,1}) → {1, cosh(1)} where cosh(1) ≈ 1.5430806348152437
+  //   TANH({0,1}) → {0, tanh(1)} where tanh(1) ≈ 0.7615941559557649
+  //   ASINH({0,1}) → {0, asinh(1)} where asinh(1) ≈ 0.881373587019543
+  //
+  // 6 hard assertions (3 ops × 2 axes = bare-List + Tagged-of-List).
+
+  for (const op of ['COSH', 'TANH', 'ASINH']) {
+    const expect0 = op === 'COSH' ? 1 : 0;
+    const expect1 = op === 'COSH' ? Math.cosh(1)
+                  : op === 'TANH' ? Math.tanh(1)
+                  : Math.asinh(1);
+    const opLower = op.toLowerCase();
+
+    // bare-List heterogeneous-output value pin.
+    {
+      const s = new Stack();
+      s.push(RList([Real(0), Real(1)]));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isList(v) && v.items.length === 2
+          && isReal(v.items[0]) && v.items[0].value.eq(expect0)
+          && isReal(v.items[1])
+          && Math.abs(v.items[1].value.toNumber() - expect1) < 1e-12,
+        `session171: { Real(0) Real(1) } ${op} → { Real(${expect0}) Real(${opLower}(1)) } (heterogeneous-output-value pin under bare _withListUnary on forward-hyperbolic ${op} axis — distinct values per List position pin per-element wrapper dispatch; mirror of s120 SINH bare-List heterogeneous value pin lifted onto ${op}; type+length-only s120 sweep on ${op} did not pin distinct output values); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // Tagged-of-List heterogeneous-output value pin.
+    {
+      const s = new Stack();
+      s.push(Tagged('h', RList([Real(0), Real(1)])));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'h'
+          && isList(v.value) && v.value.items.length === 2
+          && isReal(v.value.items[0]) && v.value.items[0].value.eq(expect0)
+          && isReal(v.value.items[1])
+          && Math.abs(v.value.items[1].value.toNumber() - expect1) < 1e-12,
+        `session171: :h:{ Real(0) Real(1) } ${op} → :h:{ Real(${expect0}) Real(${opLower}(1)) } (heterogeneous-output-value pin under Tagged-of-List composition on forward-hyperbolic ${op} — outer tag preserved + distinct values per List position; mirror of s120 SINH Tagged-of-List heterogeneous value pin lifted onto ${op}; closes the forward-hyperbolic SINH/COSH/TANH/ASINH four-op family on the T+L heterogeneous-output value-pin axis); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // session173 — Cluster 1: forward-trig family
+  //   (SIN / COS / TAN) n=0 empty-List + n=1 single-element
+  //   boundary closures on bare-List + Tagged-of-List composition.
+  //
+  // Session 171's "Open queue items" block flagged this gap
+  // explicitly: "Forward-trig family (SIN / COS / TAN) bare-List +
+  // T+L axes — only the wrapper-V/M composition (s145) and
+  // Tagged-of-Vector (s130) pins exist on this family; the bare-
+  // List + T+L axes are unpinned even on n=2."  This release-mode
+  // wrap-up cluster lifts session 171 Cluster 1's n=0/n=1 boundary
+  // pin shape (forward-hyperbolic SINH/COSH/TANH/ASINH) onto the
+  // forward-trig SIN/COS/TAN trio that routes through the same
+  // 3-deep wrapper `_withTaggedUnary(_withListUnary(_withVMUnary(
+  // handler)))` composition via the trig dispatch path.  Closes the
+  // bare-List + T+L boundary corner the s120/s130/s145 sweeps did
+  // not enumerate.
+  //
+  // n=1 input Real(0) is angle-mode-independent for all three ops
+  // (sin(0)=0, cos(0)=1, tan(0)=0 in RAD/DEG/GRD), so no
+  // setAngle/restore guard is needed — the outputs are clean
+  // integer-clean Reals across every mode.  COSH-style outlier
+  // pattern: COS is the only forward-trig op with a non-identity
+  // fold at zero (matching session 171's COSH n=1 outlier).
+  //
+  // 12 hard assertions (3 ops × 4 boundary cases = bare-n=0 +
+  // T+L-n=0 + bare-n=1 + T+L-n=1).
+
+  for (const op of ['SIN', 'COS', 'TAN']) {
+    const expectN1 = op === 'COS' ? 1 : 0;
+
+    // n=0 bare-List: `{ } OP → { }` (empty shell preserved through
+    // bare _withListUnary on the forward-trig wrapper composition).
+    {
+      const s = new Stack();
+      s.push(RList([]));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isList(v) && v.items.length === 0,
+        `session173: { } ${op} → { } (n=0 empty-List boundary on bare _withListUnary on forward-trig ${op} axis — wrapper preserves empty shell unchanged; closes the n=0 corner the s120/s130/s145 sweeps do not enumerate; mirror of s171 SINH/COSH/TANH/ASINH n=0 pin lifted onto the forward-trig family); got ${v?.type} items.length=${v?.items?.length}`);
+    }
+
+    // n=0 Tagged-of-List: `:l:{ } OP → :l:{ }` (outer tag preserved
+    // across empty inner List dispatch through 3-deep wrapper).
+    {
+      const s = new Stack();
+      s.push(Tagged('l', RList([])));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 'l'
+          && isList(v.value) && v.value.items.length === 0,
+        `session173: :l:{ } ${op} → :l:{ } (n=0 empty-List under Tagged-of-List composition on forward-trig ${op}: outer tag preserved across empty inner List dispatch through 3-deep wrapper; mirror of s171 forward-hyperbolic T+L n=0 pin lifted onto the forward-trig family); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+    }
+
+    // n=1 bare-List: `{ Real(0) } OP → { Real(<expected>) }`
+    //   sin(0)=0, cos(0)=1, tan(0)=0  (angle-mode independent).
+    // Pins per-element fold runs through the wrapper for n=1 —
+    // guards against a refactor that special-cases n=1 to bare-
+    // scalar dispatch and bypasses `_withListUnary`.
+    {
+      const s = new Stack();
+      s.push(RList([Real(0)]));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isList(v) && v.items.length === 1
+          && isReal(v.items[0]) && v.items[0].value.eq(expectN1),
+        `session173: { Real(0) } ${op} → { Real(${expectN1}) } (n=1 single-element boundary on bare _withListUnary on forward-trig ${op}; pins per-element ${op.toLowerCase()}(0)=${expectN1} fold runs through the wrapper for n=1 — guards against singleton bypass refactor; angle-mode-independent value); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+
+    // n=1 Tagged-of-List: `:t:{ Real(0) } OP → :t:{ Real(<expected>) }`
+    {
+      const s = new Stack();
+      s.push(Tagged('t', RList([Real(0)])));
+      lookup(op).fn(s);
+      const v = s.peek();
+      assert(isTagged(v) && v.tag === 't'
+          && isList(v.value) && v.value.items.length === 1
+          && isReal(v.value.items[0]) && v.value.items[0].value.eq(expectN1),
+        `session173: :t:{ Real(0) } ${op} → :t:{ Real(${expectN1}) } (n=1 single-element under Tagged-of-List composition on forward-trig ${op}; outer tag preserved + per-element ${op.toLowerCase()}(0)=${expectN1} fold for the singleton — closes the forward-trig SIN/COS/TAN trio on the T+L n=1 boundary); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // session173 — Cluster 2: inverse-trig family
+  //   (ASIN / ACOS / ATAN) n=0 empty-List + n=1 single-element
+  //   boundary closures on bare-List + Tagged-of-List composition.
+  //
+  // Companion to Cluster 1 — session 171's "Open queue items" block
+  // flagged this gap as well: "Inverse-trig family (ASIN / ACOS /
+  // ATAN) bare-List + T+L axes — same gap as SIN/COS/TAN."  Lifts
+  // the same n=0/n=1 boundary pin shape onto the inverse-trig trio.
+  // The inverse-trig family routes through `_unaryCx` plus the
+  // `_exactUnaryLift` path, then the same 3-deep wrapper composition
+  // as the forward-trig family for List/Tagged dispatch.  s142
+  // pinned the bare-scalar Integer-stay-exact path
+  // (ASIN/ACOS/ATAN(Integer(0)) RAD = Integer(0); ASIN/ACOS/ATAN(1)
+  // DEG = 90/0/45) but the bare-List + T+L axes were unpinned.
+  //
+  // n=1 input Real(0): asin(0)=0, acos(0)=π/2, atan(0)=0.
+  // ACOS(0) = π/2 is angle-mode-DEPENDENT (RAD: ≈ 1.5707963…;
+  // DEG: 90; GRD: 100), so this cluster sets RAD explicitly inside
+  // a try/finally guard that restores the prior angle mode at
+  // close — mirror of the s140/s142 ASIN/ACOS Tagged-of-V pin
+  // pattern (see test-types.mjs:5350-5400 for the canonical guard).
+  // The Decimal precision of π/2 is matched against `Math.PI / 2`
+  // with a 1e-12 tolerance for the ACOS n=1 case; ASIN/ATAN are
+  // exact-zero so `.eq(0)` suffices.
+  //
+  // 12 hard assertions (3 ops × 4 boundary cases = bare-n=0 +
+  // T+L-n=0 + bare-n=1 + T+L-n=1).
+  {
+    const _prevAngle = calcState.angle;
+    setAngle('RAD');
+    try {
+      for (const op of ['ASIN', 'ACOS', 'ATAN']) {
+        // n=0 bare-List: empty shell preserved.
+        {
+          const s = new Stack();
+          s.push(RList([]));
+          lookup(op).fn(s);
+          const v = s.peek();
+          assert(isList(v) && v.items.length === 0,
+            `session173: { } ${op} → { } (n=0 empty-List boundary on bare _withListUnary on inverse-trig ${op} axis — wrapper preserves empty shell unchanged; closes the n=0 corner the s142 bare-scalar pin does not enumerate; mirror of s171 forward-hyperbolic n=0 pin lifted onto the inverse-trig family); got ${v?.type} items.length=${v?.items?.length}`);
+        }
+
+        // n=0 Tagged-of-List: outer tag preserved across empty inner.
+        {
+          const s = new Stack();
+          s.push(Tagged('l', RList([])));
+          lookup(op).fn(s);
+          const v = s.peek();
+          assert(isTagged(v) && v.tag === 'l'
+              && isList(v.value) && v.value.items.length === 0,
+            `session173: :l:{ } ${op} → :l:{ } (n=0 empty-List under Tagged-of-List composition on inverse-trig ${op}: outer tag preserved across empty inner List dispatch through 3-deep wrapper; mirror of s171 forward-hyperbolic T+L n=0 pin lifted onto the inverse-trig family); got tag=${v?.tag} inner=${v?.value?.type} items.length=${v?.value?.items?.length}`);
+        }
+
+        // n=1 bare-List: `{ Real(0) } OP → { Real(<expected>) }`
+        //   asin(0)=0, acos(0)=π/2 in RAD, atan(0)=0.
+        // ACOS is the only inverse-trig op with a non-identity
+        // fold at zero (matching session 171's COSH outlier and
+        // session 173 Cluster 1's COS outlier).
+        {
+          const s = new Stack();
+          s.push(RList([Real(0)]));
+          lookup(op).fn(s);
+          const v = s.peek();
+          assert(isList(v) && v.items.length === 1 && isReal(v.items[0]),
+            `session173: { Real(0) } ${op} → { Real(...) } shape (n=1 single-element boundary on bare _withListUnary on inverse-trig ${op}; pins per-element fold runs through the wrapper for n=1 — guards against singleton bypass refactor); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+          if (op === 'ACOS') {
+            // value-precise: π/2 RAD (set above).
+            assert(Math.abs(v.items[0].value.toNumber() - Math.PI / 2) < 1e-12,
+              `session173: { Real(0) } ACOS → { Real(π/2) } in RAD (n=1 single-element value-precise pin; acos(0)=π/2 — non-identity fold outlier in the inverse-trig family, mirror of session 171 COSH outlier and session 173 Cluster 1 COS outlier); got ${v.items[0].value?.toString?.()}`);
+          } else {
+            // value-precise: 0 (asin(0)=0, atan(0)=0; angle-mode-independent).
+            assert(v.items[0].value.eq(0),
+              `session173: { Real(0) } ${op} → { Real(0) } (n=1 single-element value-precise pin; ${op.toLowerCase()}(0)=0 angle-mode-independent fold); got ${v.items[0].value?.toString?.()}`);
+          }
+        }
+
+        // n=1 Tagged-of-List: outer tag preserved + per-element fold.
+        {
+          const s = new Stack();
+          s.push(Tagged('t', RList([Real(0)])));
+          lookup(op).fn(s);
+          const v = s.peek();
+          assert(isTagged(v) && v.tag === 't'
+              && isList(v.value) && v.value.items.length === 1
+              && isReal(v.value.items[0]),
+            `session173: :t:{ Real(0) } ${op} → :t:{ Real(...) } shape (n=1 single-element under Tagged-of-List composition on inverse-trig ${op}; outer tag preserved + inner per-element fold for the singleton — closes the inverse-trig ASIN/ACOS/ATAN trio on the T+L n=1 boundary); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+          if (op === 'ACOS') {
+            assert(Math.abs(v.value.items[0].value.toNumber() - Math.PI / 2) < 1e-12,
+              `session173: :t:{ Real(0) } ACOS → :t:{ Real(π/2) } in RAD (n=1 T+L value-precise pin; acos(0)=π/2 fold via per-element wrapper dispatch under Tagged peel); got ${v.value.items[0].value?.toString?.()}`);
+          } else {
+            assert(v.value.items[0].value.eq(0),
+              `session173: :t:{ Real(0) } ${op} → :t:{ Real(0) } (n=1 T+L value-precise pin; ${op.toLowerCase()}(0)=0 angle-mode-independent fold via per-element wrapper dispatch under Tagged peel); got ${v.value.items[0].value?.toString?.()}`);
+          }
+        }
+      }
+    } finally {
+      setAngle(_prevAngle);
+    }
   }
 }
 

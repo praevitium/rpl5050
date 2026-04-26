@@ -319,7 +319,7 @@ export class Display {
     if (!el) return;
     el.textContent = mode;
     el.classList.add('on');
-    el.title = `Angle mode: ${mode} — click to cycle DEG → RAD → GRD`;
+    el.title = `Angle mode: ${mode} — click to cycle RAD → DEG → GRD`;
   }
 
   /** Update the EXACT/APPROX annunciator.  HP50 flag -105: when CLEAR

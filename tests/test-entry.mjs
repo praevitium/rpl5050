@@ -804,6 +804,49 @@ import { assert, assertThrows } from './helpers.mjs';
     "parseEntry('`Y`') round-trips as Name('Y')");
 }
 
+/* ====================================================================
+   Identifier tokens stop at `(` and `)` — `SIN(x)` typed without
+   surrounding backticks must NOT mint `Name('SIN(x)')`.  The bare
+   ident-tokenizer splits at the open paren so `SIN` becomes its own
+   `Name` and the trailing `(x)` lands in the complex-literal branch,
+   which now rejects non-numeric bodies with a clean parse error
+   ("Bad complex literal: (x)") instead of silently pushing
+   `Complex(NaN, 0)`.
+
+   Algebraic form via backticks (``SIN(x)``) still parses cleanly to
+   a `Symbolic`; legitimate complex literals like `(3,4)` are
+   unaffected.  A stray `)` (e.g. user typed `xy)`) surfaces
+   "Unexpected ')'" rather than spinning the tokenizer.
+   ==================================================================== */
+{
+  // Bare `SIN(x)` no longer becomes Name('SIN(x)') — the `(x)` half
+  // is a malformed complex, so the parse rejects.
+  assertThrows(() => parseEntry('SIN(x)'), /Bad complex literal/,
+    "parseEntry('SIN(x)') without backticks rejects (no ghost Name('SIN(x)'))");
+}
+{
+  // Legitimate complex literal still parses.
+  const out = parseEntry('(3,4)');
+  const v = Array.isArray(out) ? out[0] : out;
+  assert(v && v.type === 'complex' && v.re === 3 && v.im === 4,
+    "parseEntry('(3,4)') still parses to Complex(3, 4)");
+}
+{
+  // Backticked SIN(x) still routes through parseAlgebra and becomes
+  // a Symbolic — pin the no-regression contract.
+  const out = parseEntry('`SIN(x)`');
+  const v = Array.isArray(out) ? out[0] : out;
+  assert(v && v.type === 'symbolic'
+      && v.expr.kind === 'fn' && v.expr.name === 'SIN'
+      && v.expr.args.length === 1 && v.expr.args[0].name === 'x',
+    "parseEntry('`SIN(x)`') stays Symbolic(SIN(x))");
+}
+{
+  // Stray `)` is a parse error, not a tokenizer infinite loop.
+  assertThrows(() => parseEntry('xy)'), /Unexpected '\)'/,
+    "parseEntry('xy)') rejects with \"Unexpected ')'\"");
+}
+
 // --- Cleanup shared state so later tests don't see stray bindings
 resetHome();
 setAngle('RAD');

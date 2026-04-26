@@ -161,9 +161,26 @@ export function tokenize(src) {
       continue;
     }
 
-    // Identifier / operator token — run until whitespace or delimiter
+    // A stray `)` outside the `(complex)` matching loop is a parse
+    // error — `(` always pairs with `)` via the depth-counting loop
+    // above, so a `)` reaching this point can only have come from
+    // user input like `xy)`.  Without this branch the identifier
+    // tokenizer below sees `)` (now in its delimiter stop set), reads
+    // zero characters, and spins.
+    if (c === ')') {
+      throw new RPLError("Unexpected ')'");
+    }
+
+    // Identifier / operator token — run until whitespace or a structural
+    // delimiter.  The delimiter set includes the parentheses so a typed
+    // `SIN(x)` (without surrounding backticks) splits into the ident
+    // `SIN` followed by the `(x)` complex-literal token, rather than
+    // silently minting `Name('SIN(x)')` — which would then look like a
+    // valid (but bogus) HP identifier and pollute the stack.  Algebraic
+    // expressions still go through the backtick path, which routes to
+    // `parseAlgebra` and handles function calls properly.
     let j = i;
-    while (j < n && !isSpace(src[j]) && !'{}[]"`'.includes(src[j])) j++;
+    while (j < n && !isSpace(src[j]) && !'{}[]()"`'.includes(src[j])) j++;
     tokens.push({ kind: 'ident', text: src.slice(i, j) });
     i = j;
   }
@@ -209,7 +226,18 @@ export function parseEntry(src) {
 
       case 'complex': {
         const [re, im = '0'] = t.text.split(',').map(x => x.trim());
-        return Complex(parseFloat(re), parseFloat(im));
+        const reN = parseFloat(re);
+        const imN = parseFloat(im);
+        // Validate both components — a non-numeric body (e.g. `(x)`,
+        // which is what's left after the new ident tokenizer splits
+        // `SIN(x)`) lands here as `re = 'x'` and `parseFloat` returns
+        // NaN.  Without this check we'd push `Complex(NaN, 0)` onto
+        // the stack and the user would have no idea their algebraic
+        // wasn't recognised — surface a clean parse error instead.
+        if (!Number.isFinite(reN) || !Number.isFinite(imN)) {
+          throw new RPLError(`Bad complex literal: (${t.text})`);
+        }
+        return Complex(reN, imN);
       }
 
       case 'binInt': {
