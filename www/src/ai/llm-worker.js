@@ -54,6 +54,21 @@ console.log('%c[llm-worker] BOOT — runtime:', 'color:#67e8f9;font-weight:bold'
 let engine = null;
 let _aborted = false;
 
+// Saved load config — used by the recreate-engine-between-turns
+// workaround.  Set on every successful loadModel(); cleared if a
+// load fails.  Holds the same arguments needed to call
+// CreateMLCEngine again silently (no progress UI fanout).
+let _lastLoadConfig = null;
+// Tracks whether *any* generate has completed since the current
+// engine was instantiated.  Once true, we recreate the engine
+// before the next generate to dodge the WebLLM 0.2.x stall where
+// back-to-back chat.completions.create() calls wedge after the
+// first one completes — the second await never returns, no tokens,
+// no error, no done.  Recreation flushes whatever internal state
+// is making the second call hang.  See `generate()` for the
+// recreation site and the comment block there for full context.
+let _hasRunGenerate = false;
+
 /* ---- Model loading ---- */
 
 async function loadModel({ modelId, contextTokens }) {
@@ -108,6 +123,16 @@ async function loadModel({ modelId, contextTokens }) {
     // sampling defaults), add them to the chatOpts object below.
     const chatOpts = contextTokens ? { context_window_size: contextTokens } : undefined;
     engine = await CreateMLCEngine(modelId, { initProgressCallback }, chatOpts);
+    // Save the config so the silent-recreation workaround in
+    // generate() can rebuild the engine with identical settings.
+    // initProgressCallback is intentionally NOT saved — recreations
+    // skip progress fanout so the UI doesn't see a fake "loading"
+    // pulse before each turn.
+    _lastLoadConfig = { modelId, contextTokens };
+    // Fresh engine — reset the recreate-needed flag.  The next
+    // generate runs against this newly-loaded engine without any
+    // recreation overhead.
+    _hasRunGenerate = false;
     self.postMessage({
       type: 'status',
       status: 'ready',
@@ -119,6 +144,8 @@ async function loadModel({ modelId, contextTokens }) {
     // eslint-disable-next-line no-console
     console.error('[llm-worker] load failed:', err);
     engine = null;
+    _lastLoadConfig = null;
+    _hasRunGenerate = false;
     self.postMessage({
       type: 'status',
       status: 'error',
@@ -127,12 +154,66 @@ async function loadModel({ modelId, contextTokens }) {
   }
 }
 
+/** Silent re-instantiation of the engine using the same modelId +
+ *  contextTokens that loadModel() last used.  Workaround for the
+ *  WebLLM 0.2.x stall where chat.completions.create() hangs forever
+ *  on the second back-to-back call against the same engine
+ *  instance.  Recreating from scratch sidesteps whatever internal
+ *  state is wedging — the cost is ~1s for cached weight load + GPU
+ *  shader recompile, paid before each generate after the first.
+ *
+ *  No initProgressCallback — recreations are silent so the UI
+ *  doesn't get a spurious "loading" pulse mid-conversation. */
+async function recreateEngineSilently() {
+  if (!_lastLoadConfig) return;
+  // eslint-disable-next-line no-console
+  console.log('[llm-worker] recreate: rebuilding engine to dodge back-to-back create() hang');
+  const t0 = (typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now();
+  try {
+    if (engine && typeof engine.unload === 'function') {
+      await engine.unload();
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[llm-worker] recreate: unload threw (continuing):', err);
+  }
+  const { modelId, contextTokens } = _lastLoadConfig;
+  const chatOpts = contextTokens ? { context_window_size: contextTokens } : undefined;
+  engine = await CreateMLCEngine(modelId, {}, chatOpts);
+  const ms = ((typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now()) - t0;
+  // eslint-disable-next-line no-console
+  console.log('[llm-worker] recreate: done in', Math.round(ms), 'ms');
+}
+
 /* ---- Generation ---- */
 
 async function generate({ id, messages, maxTokens = 256 }) {
   if (!engine) {
     self.postMessage({ type: 'error', id, message: 'Model not loaded' });
     return;
+  }
+
+  // Recreate the engine before any non-first generate to dodge the
+  // WebLLM 0.2.x back-to-back create() hang.  See the comment block
+  // on `_hasRunGenerate` (top of file) and `recreateEngineSilently()`
+  // for the full context.  Recreations cost ~1s of cached-weight
+  // reload; they are silent (no progress UI) so the user doesn't
+  // see a spurious "loading" pulse before each turn.
+  if (_hasRunGenerate) {
+    try {
+      await recreateEngineSilently();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[llm-worker] recreate failed:', err);
+      self.postMessage({
+        type: 'error',
+        id,
+        message: `Engine recreation failed: ${err.message ?? err}`,
+      });
+      return;
+    }
   }
 
   _aborted = false;
@@ -302,6 +383,12 @@ async function generate({ id, messages, maxTokens = 256 }) {
       console.error('[llm-worker] generate id=', id, '— ERROR:', err);
       self.postMessage({ type: 'error', id, message: err.message ?? String(err) });
     }
+  } finally {
+    // Mark this engine instance as "used".  The next generate call
+    // will recreate the engine before running, sidestepping the
+    // back-to-back create() hang.  Set in finally so it covers
+    // success, abort-mid-stream, and error paths uniformly.
+    _hasRunGenerate = true;
   }
 }
 
