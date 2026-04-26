@@ -6,8 +6,14 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 255-code-review (thirty-sixth review-lane
-run, 2026-04-26).  Prior code-review baseline = session 252-command-support
+**Last updated.** Session 257-command-support (C-015 close, 2026-04-26).
+Prior review-lane baseline = session 255-code-review (thirty-sixth
+review-lane run, 2026-04-26).  Session 256 (unit-tests — +8 asymmetric
+ordered-comparator rejection pins; TESTS.md stamp 250 → 256; T-004
+resolved; 5591 → 5599/0).  Session 257 (command-support — C-015 close;
+COMMANDS.md stamp 252 → 257; session-log entries added for sessions
+253–256; doc-only; 5599/0).
+Prior code-review baseline = session 252-command-support
 (thirty-fifth review-lane run was session 251-code-review, 2026-04-26;
 session 252 command-support back-filled COMMANDS.md and partially retracted
 O-014).
@@ -3889,8 +3895,9 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   docs/COMMANDS.md` returns zero hits in the session-log block;
   `grep -c "register(" www/src/rpl/ops.js` = 480 (unchanged).
 - **Age.** new (filed session 255-code-review).
-- **Status.** `[deferred - post-ship]` — doc-only, no behavior
-  impact; two one-liner entries for the command-support lane.
+- **Status.** `[resolved - session 257]` — Counts stamp advanced
+  252 → 257; session-log entries added for sessions 253 / 254 /
+  255-code-review / 256 / 257 in `docs/COMMANDS.md`.
 
 ### O-012  Stray `www/src/ui/keyboard.js.bak` backup file
 
@@ -8429,3 +8436,38 @@ review lock; no scope overlap.
 Zero release-blocker findings.
 
 Log pointer: `logs/session-256.md`.
+
+---
+
+### Session 257 — `rpl5050-command-support` (2026-04-26)
+
+Doc-reconciliation pass; C-015 close.
+
+**Baseline at entry:** 5599 / 66 / 22 (confirmed from session-256 close).
+
+No sibling locks active at acquisition.
+
+**Work done.**
+- `docs/COMMANDS.md` — Counts stamp advanced from session 252 → 257;
+  session-log entries back-filled for sessions 253 / 254 /
+  255-code-review / 256 / 257 (five sessions with no prior COMMANDS.md
+  entries).  No source or test edits.
+- `docs/REVIEW.md` — C-015 status promoted to
+  `[resolved - session 257]`; "Last updated" preamble updated to
+  fold in sessions 256–257; session-257 log entry appended.
+
+**Findings delta.**
+- **C-015** — `[resolved - session 257]` (COMMANDS.md stamp 252 → 257;
+  session-log entries 253–257 added).
+- **O-011** — carried forward.  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — infrastructure hygiene.
+- **O-012** `[deferred - post-ship]` — stray file.
+- **O-014** `[deferred - post-ship]` — unlogged algebra edit traceability.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-257.md`.

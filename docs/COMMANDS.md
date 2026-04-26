@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 252 — 2026-04-26)
+## Counts (as of session 257 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -808,6 +808,61 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 257** (2026-04-26) — `rpl5050-command-support` lane.
+  Doc-reconciliation pass (C-015 close).  Counts stamp advanced from
+  session 252 → 257; session-log entries back-filled for sessions
+  253 / 254 / 255-code-review / 256 (four sibling sessions with no
+  prior COMMANDS.md entries).  C-015 promoted to
+  `[resolved - session 257]` in `docs/REVIEW.md`.  No source or test
+  edits.  No ✗ → ✓ row transitions.  `register()` count unchanged at
+  480 / 461.
+  Run-entry: 5599 / 66 / 22.  Run-close: **5599 / 66 / 22**.
+  Lock = `utils/@locks/session257-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 256** (2026-04-26) — `rpl5050-unit-tests` lane.
+  +8 cross-type ordered-comparator asymmetric rejection pins in
+  `tests/test-types.mjs` (Real×List, List×Real, Real×Vector, Real×Matrix,
+  Real×Tagged, Integer×Unit, Real×String, String×Real) confirming the
+  OR-guard in `comparePair()` fires when only one operand is non-numeric.
+  TESTS.md "Last updated" stamp advanced from session 250 → 256; per-file
+  snapshot updated (`test-types.mjs` 1120 → 1148; aggregate 5591 → 5599).
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5591 / 66 / 22.  Run-close: **5599 / 66 / 22**.
+  Lock = `utils/@locks/session256-unit-tests.json`, scope
+  `[tests/, docs/TESTS.md, logs/]`, released at end of run.
+
+- **session 255-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Thirty-sixth review-lane run; post-ship audit.  REVIEW.md preamble
+  folded in sibling sessions 253–254; baseline updated to 5591 / 66 / 22;
+  C-015 filed (COMMANDS.md Counts stamp stale — session-log block stops at
+  session 252, sessions 253/254 have no entries); T-004 filed
+  (TESTS.md stamp/count drift — since resolved by concurrent session 256);
+  O-011 aged 27 → 28 runs; O-012 and O-014 carried forward.
+  No source or test changes.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5591 / 66 / 22.  Run-close: **5591 / 66 / 22**.
+  Lock = `utils/@locks/session255-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 254** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification pass; confirmed 5591 / 0 clean baseline.
+  RPL.md stamp advanced to session 254; session-log pointer back-fill
+  for sessions 241 / 245 / 249 added.  No source or test edits.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5591 / 66 / 22.  Run-close: **5591 / 66 / 22**.
+  Lock = `utils/@locks/session254-rpl-programming.json`, scope
+  `[docs/RPL.md, logs/]`, released at end of run.
+
+- **session 253** (2026-04-26) — `rpl5050-data-type-support` lane.
+  +20 ordered-comparator `<` / `>` / `≤` / `≥` homogeneous rejection pins
+  in `tests/test-types.mjs` covering L/V/M/T/U types;
+  DATA_TYPES.md stamp advanced to session 253.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5571 / 66 / 22.  Run-close: **5591 / 66 / 22**.
+  Lock = `utils/@locks/session253-data-type-support.json`, scope
+  `[tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`, released at end of run.
 
 - **session 252** (2026-04-26) — `rpl5050-command-support` lane.
   Post-ship doc-reconciliation pass.  Counts stamp advanced from
