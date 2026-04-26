@@ -437,6 +437,56 @@ const MODELS = [
   { id: 'Llama-3.1-8B-Instruct-q4f16_1-MLC',          label: 'Llama 3.1 8B',           size: '~5.4 GB',  contextTokens: 8192,  note: 'Top-tier — needs ≥6 GB VRAM; 8K cap for VRAM headroom (native max 128K)' },
 ];
 
+/** Tool-name aliases for common synonyms small models reach for.
+ *  Maps an emitted-but-unregistered name to the actual registry key.
+ *  Resolved at dispatch time before the unknown-tool retry kicks in
+ *  — saves a full LLM round-trip when the model just used a near-
+ *  synonym ("add_to_stack" → "push_to_stack").
+ *
+ *  Add entries here whenever a session shows the model emitting a
+ *  consistent variant.  Skip ambiguous synonyms (e.g. raw "add" —
+ *  could mean push, could mean the `+` operator) because resolving
+ *  those silently to the wrong tool is worse than a retry. */
+const TOOL_ALIASES = Object.freeze({
+  // push variants
+  'add_to_stack':       'push_to_stack',
+  'push':               'push_to_stack',
+  'put_on_stack':       'push_to_stack',
+  'stack_push':         'push_to_stack',
+  // read variants — get_stack
+  'show_stack':         'get_stack',
+  'read_stack':         'get_stack',
+  'list_stack':         'get_stack',
+  'view_stack':         'get_stack',
+  // read variants — get_editor
+  'show_editor':        'get_editor',
+  'read_editor':        'get_editor',
+  'view_editor':        'get_editor',
+  'get_buffer':         'get_editor',
+  // read variants — get_vars
+  'list_variables':     'get_vars',
+  'list_vars':          'get_vars',
+  'show_vars':          'get_vars',
+  'show_variables':     'get_vars',
+  // read variants — recall_var
+  'recall':             'recall_var',
+  'recall_variable':    'recall_var',
+  'get_var':            'recall_var',
+  'get_variable':       'recall_var',
+  'read_var':           'recall_var',
+  // editor write variants
+  'append_editor':      'append_to_editor',
+  'editor_append':      'append_to_editor',
+  'type_into_editor':   'append_to_editor',
+  'editor_clear':       'clear_editor',
+  'wipe_editor':        'clear_editor',
+  'reset_editor':       'clear_editor',
+  // run variants
+  'execute':            'run',
+  'execute_rpl':        'run',
+  'run_rpl':            'run',
+});
+
 /** Look up the per-model contextTokens for the currently-loaded model.
  *  Falls back to 4096 (a safe WebLLM default) when no model is loaded
  *  or the loaded id isn't in our catalog. */
@@ -1348,119 +1398,179 @@ export class ChatBot {
     const content = ctxNote ? `${ctxNote}\n\n${userText}` : userText;
     this._history.push({ role: 'user', content });
 
-    const systemMsg = { role: 'system', content: SYSTEM_PROMPT_COMBINED };
-    const keptHistory = this._trimHistoryForBudget(systemMsg);
-    const messages = [systemMsg, ...keptHistory];
-    this._logPhase('combined', messages);
+    // Generate-and-validate retry loop.
+    //
+    // Each iteration: build messages from the current history, stream
+    // a response, parse out tool calls + suggestions, alias-resolve
+    // the names, then check if any tool name is still unknown to the
+    // registry.  If all known: break out and proceed to dispatch.  If
+    // some unknown AND we have retries left: push a corrective user
+    // message into history and run another iteration so the model can
+    // fix its tool name.  After MAX_RETRY_ATTEMPTS the chain proceeds
+    // anyway and the unknown-tool path in _dispatchTool surfaces the
+    // error to the user — a graceful fallback so a permanently-
+    // confused model doesn't trap us in an infinite loop.
+    let bubble = null, textEl = null;
+    let toolCalls = [];
+    let suggestions = null;
+    let prose = '';
+    let display = '';
+    let stalled = false;
+    let trimmed = '';
+    const MAX_RETRY_ATTEMPTS = 2;     // 1 initial + 1 retry
+    let attempt = 0;
+    while (attempt < MAX_RETRY_ATTEMPTS) {
+      attempt++;
 
-    const { bubble, textEl } = this._addStreamingBubble();
-    let fullText = '';
-    let hideStart = -1;     // byte offset where the hideable section begins, or -1
-    const watchdog = this._makeStallWatchdog();
+      const systemMsg = { role: 'system', content: SYSTEM_PROMPT_COMBINED };
+      const keptHistory = this._trimHistoryForBudget(systemMsg);
+      const messages = [systemMsg, ...keptHistory];
+      this._logPhase(`combined attempt=${attempt}`, messages);
 
-    try {
-      await this._llm.generate(messages, {
-        onToken: (t) => {
-          if (typeof t !== 'string' || !t) return;
-          watchdog.onToken();
-          fullText += t;
-          // Detect the start of the machine-readable section (first
-          // `{"name":` tool-call anchor OR `SUGGEST:` marker, whichever
-          // comes first) exactly once.  Once found, the bubble freezes
-          // its visible text at that offset — the rest of the streamed
-          // tokens are still accumulated (we need the full JSON
-          // brace-blocks and SUGGEST array at end-of-stream) but they
-          // don't appear in the user-facing prose.  The orchestrator-
-          // facing parsers below operate on the full text post-stream.
-          if (hideStart < 0) {
-            const idx = findMachineSectionStart(fullText);
-            if (idx >= 0) hideStart = idx;
-          }
-          const visible = hideStart >= 0
-            ? fullText.slice(0, hideStart).trim()
-            : fullText.trim();
-          textEl.textContent = visible || '…';
-        },
-      });
-    } catch (err) {
+      // Each attempt builds its own streaming bubble — earlier
+      // attempts stay visible in the chat above the retry note so the
+      // user sees the full sequence (first reply → retry note → second
+      // reply → tool dispatch).  Bubbles from prior attempts are never
+      // mutated after their finalise.
+      const stream = this._addStreamingBubble();
+      bubble = stream.bubble;
+      textEl = stream.textEl;
+      let fullText = '';
+      let hideStart = -1;
+      const watchdog = this._makeStallWatchdog();
+
+      try {
+        await this._llm.generate(messages, {
+          onToken: (t) => {
+            if (typeof t !== 'string' || !t) return;
+            watchdog.onToken();
+            fullText += t;
+            // Detect the start of the machine-readable section (first
+            // `{"name":` tool-call anchor OR `SUGGEST:` marker,
+            // whichever comes first) exactly once.  Once found, the
+            // bubble freezes its visible text at that offset — the
+            // rest of the streamed tokens are still accumulated (we
+            // need the full JSON brace-blocks and SUGGEST array at
+            // end-of-stream) but they don't appear in the user-facing
+            // prose.  The orchestrator-facing parsers below operate on
+            // the full text post-stream.
+            if (hideStart < 0) {
+              const idx = findMachineSectionStart(fullText);
+              if (idx >= 0) hideStart = idx;
+            }
+            const visible = hideStart >= 0
+              ? fullText.slice(0, hideStart).trim()
+              : fullText.trim();
+            textEl.textContent = visible || '…';
+          },
+        });
+      } catch (err) {
+        watchdog.stop();
+        const errDisplay = err.message === 'AbortError' ? fullText.trim() : `⚠ ${err.message}`;
+        this._finaliseStreamBubble(bubble, textEl, errDisplay, null);
+        if (fullText) this._history.push({ role: 'assistant', content: fullText.trim() });
+        dwarn('runLoop: generate threw:', err.message);
+        return;
+      }
       watchdog.stop();
-      const display = err.message === 'AbortError' ? fullText.trim() : `⚠ ${err.message}`;
-      this._finaliseStreamBubble(bubble, textEl, display, null);
-      if (fullText) this._history.push({ role: 'assistant', content: fullText.trim() });
-      dwarn('runLoop: generate threw:', err.message);
-      return;
+
+      // Stale = user hit Stop (or _newChat) mid-stream.  Finalise
+      // whatever prose made it through with a "(stopped)" badge
+      // and return — no dispatch, no retry.  History push is
+      // skipped because the turn was cancelled.  (For _newChat,
+      // the messages container gets wiped right after this anyway.)
+      if (stale()) {
+        const visiblePart = hideStart >= 0
+          ? fullText.slice(0, hideStart).trim()
+          : fullText.trim();
+        this._finaliseStreamBubble(bubble, textEl, visiblePart, null,
+                                   { state: 'stopped' });
+        dlog('runLoop: stale after generate, finalised stopped bubble');
+        return;
+      }
+
+      stalled = watchdog.isStalled();
+      trimmed = fullText.trim();
+      dlog(`runLoop: attempt ${attempt} returned ${trimmed.length} chars (stalled=${stalled}), hideStart=${hideStart}`);
+
+      const proseRaw = hideStart >= 0 ? fullText.slice(0, hideStart) : fullText;
+      prose      = proseRaw.trim();
+      toolCalls  = parseAllToolCalls(fullText);
+      suggestions = parseSuggestions(fullText);
+      // Apply the alias map up front, BEFORE deciding whether to
+      // retry — saves a retry round-trip on the most frequent
+      // failure mode where the model just used a near-synonym
+      // ("add_to_stack" → "push_to_stack").  Retry only fires for
+      // names that are unknown even after alias resolution.
+      for (const tc of toolCalls) {
+        const aliased = TOOL_ALIASES[tc.name];
+        if (aliased) {
+          dlog('runLoop: alias-resolve', tc.name, '→', aliased);
+          tc.name = aliased;
+        }
+      }
+      dlog(`runLoop: attempt ${attempt} extracted ${toolCalls.length} tool call(s)`,
+           toolCalls.map(c => c.name),
+           'suggestions=', suggestions);
+
+      // Compute the body for THIS attempt's bubble (whether or not
+      // we'll retry; the bubble stays visible in the chat regardless).
+      if (stalled) {
+        display = prose
+          || (toolCalls.length > 0
+              ? `Partial response — ${toolCalls.length} tool call(s) detected before timeout.`
+              : 'Model timed out before producing any output. Consider switching to a smaller model.');
+      } else if (prose) {
+        display = prose;
+      } else if (toolCalls.length > 0) {
+        display = toolCalls.length === 1
+          ? `Running ${toolCalls[0].name}.`
+          : `Running ${toolCalls.length} actions.`;
+      } else {
+        display = '_(model returned no output — try rephrasing.)_';
+      }
+      this._finaliseStreamBubble(
+        bubble, textEl, display, null,
+        stalled ? { state: 'stalled' } : undefined,
+      );
+      // Push the FULL response (incl. all JSONs) to history every
+      // attempt — even the ones we're about to retry.  The corrective
+      // user message we'll inject below references "your previous
+      // response", so the previous response needs to actually be in
+      // the conversation log for the model to revise.
+      this._history.push({ role: 'assistant', content: trimmed });
+
+      // Validate tool names against the registry.  An empty toolCalls
+      // array (conceptual question, no tool needed) is valid.
+      const unknownNames = toolCalls
+        .filter((c) => !this._registry[c.name])
+        .map((c) => c.name);
+      if (unknownNames.length === 0) {
+        break;   // All clean — proceed to dispatch.
+      }
+      if (attempt >= MAX_RETRY_ATTEMPTS) {
+        dwarn('runLoop: retries exhausted; proceeding with',
+              unknownNames.length, 'unknown tool(s):', unknownNames);
+        break;
+      }
+      // Retry path: corrective user message + visible chip-style note
+      // so the user knows what's happening.  Loop iteration will
+      // rebuild messages from the now-augmented history.
+      const validNames = Object.keys(this._registry);
+      this._addRetryNote(
+        `Retrying — assistant proposed unknown tool${unknownNames.length === 1 ? '' : 's'}: ${unknownNames.join(', ')}`,
+      );
+      this._history.push({
+        role: 'user',
+        content:
+          `Your previous response used tool name${unknownNames.length === 1 ? '' : 's'} that don't exist: ` +
+          `${unknownNames.map((n) => `"${n}"`).join(', ')}. ` +
+          `The ONLY valid tool names are: ${validNames.join(', ')}. ` +
+          `Please regenerate the response using a valid tool name. ` +
+          `Re-emit the prose preamble + JSON tool call(s) in the same format as before.`,
+      });
+      dlog('runLoop: retrying attempt=', attempt + 1, 'after unknown:', unknownNames);
     }
-    watchdog.stop();
-
-    // Stale = user hit Stop (or _newChat) mid-stream.  Show whatever
-    // prose made it through plus a "(stopped)" hint, then return
-    // without dispatching the tool.  History push is intentionally
-    // skipped on this path — the turn was cancelled, the conversation
-    // log shouldn't carry a half-formed reply.  (For _newChat, the
-    // messages container gets wiped right after this anyway.)
-    if (stale()) {
-      const visiblePart = hideStart >= 0
-        ? fullText.slice(0, hideStart).trim()
-        : fullText.trim();
-      // Body is just the partial prose now — the "Stopped by user"
-      // line is rendered as a styled badge inside the bubble (see
-      // _finaliseStreamBubble's `opts.state` branch).
-      this._finaliseStreamBubble(bubble, textEl, visiblePart, null,
-                                 { state: 'stopped' });
-      dlog('runLoop: stale after generate, finalised stopped bubble');
-      return;
-    }
-
-    const trimmed = fullText.trim();
-    dlog(`runLoop: model returned ${trimmed.length} chars (stalled=${watchdog.isStalled()}), hideStart=${hideStart}`);
-
-    // Split prose vs machine-readable section.  Then extract every
-    // JSON tool call AND the SUGGEST array (if any).  Tool calls are
-    // dispatched as actions; SUGGEST items become clickable chips
-    // the user can use to ask follow-up questions — they are NOT
-    // executed automatically.  This separation is the contract that
-    // stops the model's "helpful" follow-up suggestions from being
-    // run as actions the user didn't ask for.
-    const proseRaw   = hideStart >= 0 ? fullText.slice(0, hideStart) : fullText;
-    const prose      = proseRaw.trim();
-    const toolCalls  = parseAllToolCalls(fullText);
-    const suggestions = parseSuggestions(fullText);
-    dlog(`runLoop: extracted ${toolCalls.length} tool call(s)`,
-         toolCalls.map(c => c.name),
-         'suggestions=', suggestions);
-
-    // Body is the prose-only portion; if the watchdog fired, the
-    // explanatory badge is added by _finaliseStreamBubble via opts.
-    // For empty-prose stalls we fall back to a one-liner so the
-    // bubble has at least something visible above the badge.
-    let display;
-    if (watchdog.isStalled()) {
-      display = prose
-        || (toolCalls.length > 0
-            ? `Partial response — ${toolCalls.length} tool call(s) detected before timeout.`
-            : 'Model timed out before producing any output. Consider switching to a smaller model.');
-    } else if (prose) {
-      display = prose;
-    } else if (toolCalls.length > 0) {
-      // Defensive: model emitted JSON without a prose preamble.  Show
-      // a generic placeholder so the bubble isn't empty above the
-      // tool widgets.
-      display = toolCalls.length === 1
-        ? `Running ${toolCalls[0].name}.`
-        : `Running ${toolCalls.length} actions.`;
-    } else {
-      display = '_(model returned no output — try rephrasing.)_';
-    }
-    this._finaliseStreamBubble(
-      bubble, textEl, display, null,
-      watchdog.isStalled() ? { state: 'stalled' } : undefined,
-    );
-    // Push the FULL response (incl. all JSONs) to history.  Keeping
-    // the structured calls in the assistant turn reinforces the
-    // format on subsequent turns — the next turn's model sees its
-    // own previous tool calls as a literal example of the expected
-    // shape, including the multi-call pattern when that was used.
-    this._history.push({ role: 'assistant', content: trimmed });
 
     if (toolCalls.length === 0) {
       dlog('runLoop: no tool calls in response (conceptual question or model omitted JSON)');
@@ -1527,6 +1637,19 @@ export class ChatBot {
    *   producing diagnostic bubbles for each malformed call.
    */
   async _dispatchTool(toolCall) {
+    // Cheap pre-pass: rewrite common synonyms to their actual
+    // registry name BEFORE looking up the tool.  Saves a full
+    // unknown-tool / retry round-trip on the most frequent failure
+    // mode where the model says e.g. `add_to_stack` instead of
+    // `push_to_stack`.  Logged when it fires so the trace shows the
+    // remap; the rewritten name is what gets dispatched and recorded
+    // in the history note.
+    const aliasedName = TOOL_ALIASES[toolCall.name];
+    if (aliasedName) {
+      dlog('dispatchTool: alias rewrite', toolCall.name, '→', aliasedName);
+      toolCall = { ...toolCall, name: aliasedName };
+    }
+
     const tool = this._registry[toolCall.name];
     const args = toolCall.arguments ?? {};
     dlog('dispatchTool: name=', toolCall.name, 'args=', args,
@@ -1843,6 +1966,19 @@ export class ChatBot {
     const el = document.createElement('div');
     el.className = 'cb-bubble cb-bubble-assistant';
     el.appendChild(renderMarkdown(markdownText));
+    this._messagesEl.appendChild(el);
+    this._scrollBottom();
+    return el;
+  }
+
+  /** Inline retry-status row, shown between the failed attempt's
+   *  bubble and the retry's bubble.  Quieter visual treatment than a
+   *  full bubble — it's a system-level indication, not part of the
+   *  user/assistant conversation flow.  Class lives in calc.css. */
+  _addRetryNote(text) {
+    const el = document.createElement('div');
+    el.className = 'cb-retry-note';
+    el.textContent = `↻ ${text}`;
     this._messagesEl.appendChild(el);
     this._scrollBottom();
     return el;

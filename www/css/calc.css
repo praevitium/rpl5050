@@ -1583,6 +1583,23 @@ body.mode-minimal .keypad {
   border: 1px solid rgba(240, 176, 72, .35);
 }
 
+/* ---- Retry note ----------------------------------------------------
+   Inline status row inserted between an attempt that emitted an
+   unknown tool name and the retry attempt.  Styled as a subdued
+   system note (italic, dim) so it reads as orchestrator metadata
+   rather than another assistant turn. */
+.cb-retry-note {
+  align-self: flex-start;
+  margin: 4px 4px 4px 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-style: italic;
+  color: #f0b048;
+  background: rgba(240, 176, 72, .08);
+  border-left: 2px solid rgba(240, 176, 72, .45);
+  border-radius: 2px;
+}
+
 /* ---- Status bar ---- */
 /* Header: status text on the left, "New chat" reset button on the
    right.  Single-row flex strip; the status text grows, the button
