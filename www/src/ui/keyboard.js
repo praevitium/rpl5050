@@ -120,24 +120,26 @@ export const NAV_KEYS = [
 //               backward.  (HP50 has no corresponding stack-edit verb on
 //               ◀ — LEFT is reserved for menu paging + cursor motion.)
 export const ARROW_KEYS = [
-  // 🔧 — HP50 "Custom menu" key.  Loads the CST reserved variable
+  // CST — HP50 "Custom menu" key.  Loads the CST reserved variable
   // (a list) as a soft menu.  Sits to the left of ▲ so the inverted-T
-  // of arrows is flanked symmetrically: [🔧][▲][📖] / [◀][▼][▶].  The
-  // wrench reads as "tools/custom" — mirrors the open-book 📖 used for
-  // the catalog so both non-arrow keys in the cluster are emoji.
-  mk('🔧', { kind: 'menu', className: 'cst-key',
+  // of arrows is flanked symmetrically: [CST][▲][TOOLS] / [◀][▼][▶].
+  // Labelled with the HP50 mnemonic "CST" rather than a wrench glyph
+  // so the function is recognisable at a glance to anyone coming from
+  // the real device.
+  mk('CST', { kind: 'menu', className: 'cst-key',
               action: (_e, _s, app) => app.showCustomMenu() }),
   mk('▲', { kind: 'arrow', className: 'arrow-up',
             action: (e, _s, app) => {
               if (e.buffer.length === 0) app.enterInteractiveStack();
               else e.cursorUp();            // editor active → cursor only
             } }),
-  // 📖 opens the side-panel (Commands tab).  Lives to the right of ▲
-  // so the catalog is a single click from the top of the keypad.  An
-  // open-book glyph reads as "browse the catalog" without needing the
-  // older "CAT▶" abbreviation.
-  mk('📖', { kind: 'cat', className: 'cat-key',
-             action: (_e, _s, app) => app.toggleSidePanel('commands') }),
+  // TOOLS opens the side-panel on its Commands tab — the searchable
+  // catalog of every registered op.  Lives to the right of ▲ so the
+  // catalog is a single click from the top of the keypad.  Labelled
+  // "TOOLS" rather than the older 📖 emoji or "CAT▶" abbreviation so
+  // the affordance reads cleanly without symbol decoding.
+  mk('TOOLS', { kind: 'cat', className: 'cat-key',
+                action: (_e, _s, app) => app.toggleSidePanel('commands') }),
   mk('◀', { kind: 'arrow', className: 'arrow-left',
             action: (e, _s, app) => {
               if (e.buffer.length > 0) e.cursorLeft();
@@ -168,13 +170,18 @@ export const MAIN_KEYS = [
   //                              reachable without a soft-menu dive.)
   //   EVAL:  —     / —          (PRG / CHARS replaced by side-panel tabs)
   //   ':     —     / —          (MTRW / EQW out of scope)
-  //   UNDO:  REDO  / —          (HP50 printed this position "SYMB"; the
+  //   UNDO:  ∠     / REDO       (HP50 printed this position "SYMB"; the
   //                              CAS entry point lives in the side-panel
   //                              Commands tab.  UNDO is the more useful
   //                              default and earns the primary slot
   //                              since it's the one-handed recovery key
-  //                              people reach for; shift-L is REDO so
-  //                              the reverse is right there too.)
+  //                              people reach for.  shift-R is REDO so
+  //                              the reverse is one shifted press away.
+  //                              shift-L inserts the polar/cylindrical
+  //                              `∠` glyph for complex / vector literals
+  //                              like `(1, ∠45)` and `[ r ∠θ ]` — the
+  //                              one symbol the keypad otherwise has no
+  //                              direct route to.)
   //   ⌫:     DEL   / CLEAR      (delete / clear stack)
   mk('LASTARG', { alpha: 'm', action: typeExecName('LASTARG') }),
   // EVAL has no shift-L/R actions — PRG keywords and the char palette
@@ -197,12 +204,17 @@ export const MAIN_KEYS = [
   // their name as a token so the user can build a program that calls
   // UNDO / REDO; on a bare line they jump straight to performUndo /
   // performRedo which walk the multi-level history cleanly.
-  mk('UNDO',  { alpha: 'p', shiftL: 'REDO',
+  mk('UNDO',  { alpha: 'p', shiftL: '∠', shiftR: 'REDO',
                 action: (e) => {
                   if (e.isEditing()) { e.type('UNDO '); return; }
                   try { e.performUndo(); } catch (err) { e.flashError(err); }
                 },
-                shiftLAction: (e) => {
+                // shift-L inserts the polar `∠` glyph at the cursor —
+                // the same character the side-panel glyph picker
+                // exposes, available without leaving the keypad so a
+                // user typing `(1, ∠45)` can stay one-handed.
+                shiftLAction: type('∠'),
+                shiftRAction: (e) => {
                   if (e.isEditing()) { e.type('REDO '); return; }
                   try { e.performRedo(); } catch (err) { e.flashError(err); }
                 } }),

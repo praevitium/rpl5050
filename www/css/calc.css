@@ -543,24 +543,16 @@ body {
 .arrow-cluster .arrow-left  { grid-area: 2 / 1 / 3 / 2; }
 .arrow-cluster .arrow-down  { grid-area: 2 / 2 / 3 / 3; }
 .arrow-cluster .arrow-right { grid-area: 2 / 3 / 3 / 4; }
-/* 📖 catalog button.  Parked to the right of ▲ in the top row of the
-   cluster (row 1, col 3).  The open-book emoji reads as "browse the
-   catalog". */
+/* TOOLS catalog button.  Parked to the right of ▲ in the top row of
+   the cluster (row 1, col 3).  Label inherits the default key font
+   size; this rule only positions the cell. */
 .arrow-cluster .cat-key {
   grid-area: 1 / 3 / 2 / 4;
 }
-.arrow-cluster .cat-key .primary {
-  font-size: 15px;
-  line-height: 1;
-}
-/* 🔧 — HP50 Custom menu key.  Fills the row-1 col-1 slot, so row 1
-   reads [🔧][▲][📖] and row 2 reads [◀][▼][▶]. */
+/* CST — HP50 Custom menu key.  Fills the row-1 col-1 slot, so row 1
+   reads [CST][▲][TOOLS] and row 2 reads [◀][▼][▶]. */
 .arrow-cluster .cst-key {
   grid-area: 1 / 1 / 2 / 2;
-}
-.arrow-cluster .cst-key .primary {
-  font-size: 15px;
-  line-height: 1;
 }
 
 .key {

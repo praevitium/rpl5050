@@ -847,6 +847,176 @@ import { assert, assertThrows } from './helpers.mjs';
     "parseEntry('xy)') rejects with \"Unexpected ')'\"");
 }
 
+/* ====================================================================
+   Polar / cylindrical / spherical input — HP50 AUR §4.4 (complex) and
+   §9 (vector).  The angle component (prefixed with U+2220 `∠`) is
+   interpreted in the active RAD / DEG / GRD mode and converted to
+   rectangular at parse time, so a vector / complex on the stack is
+   always cartesian regardless of how it was entered.
+
+   Forms covered:
+     Complex:    (r, ∠θ)
+     Vec 2D cyl: [ r ∠θ ]
+     Vec 3D cyl: [ r ∠θ z ]
+     Vec 3D sph: [ ρ ∠θ ∠φ ]   (θ azimuth, φ polar from +z)
+
+   The pins exercise each form in DEG / RAD / GRD so the active-mode
+   honouring stays wired.  We keep the asserts loose enough to absorb
+   IEEE-754 rounding (`< 1e-10`) but tight enough to catch a mode
+   switch (90° vs 90 rad) regression.
+   ==================================================================== */
+const _close = (a, b, eps = 1e-10) => Math.abs(Number(a) - Number(b)) < eps;
+
+// --- Complex: (1, ∠90) in DEG → 0 + 1i  ---
+{
+  setAngle('DEG');
+  const v = parseEntry('(1, ∠90)')[0];
+  assert(v.type === 'complex' && _close(v.re, 0) && _close(v.im, 1),
+    'polar Complex (1,∠90) in DEG → (0, 1)');
+}
+// --- Complex: (2, ∠0) in any mode → (2, 0)  ---
+{
+  setAngle('RAD');
+  const v = parseEntry('(2, ∠0)')[0];
+  assert(v.type === 'complex' && _close(v.re, 2) && _close(v.im, 0),
+    'polar Complex (2,∠0) → (2, 0)');
+}
+// --- Complex: (1, ∠π/2) in RAD literal → (0, 1)  ---
+{
+  setAngle('RAD');
+  const v = parseEntry('(1, ∠1.5707963267948966)')[0];
+  assert(v.type === 'complex' && _close(v.re, 0) && _close(v.im, 1),
+    'polar Complex (1,∠π/2) in RAD → (0, 1)');
+}
+// --- Complex: (1, ∠100) in GRD → (0, 1)  (100 grads = 90°)  ---
+{
+  setAngle('GRD');
+  const v = parseEntry('(1, ∠100)')[0];
+  assert(v.type === 'complex' && _close(v.re, 0) && _close(v.im, 1),
+    'polar Complex (1,∠100) in GRD → (0, 1)');
+}
+// --- Complex: forgiving `<` alias also routes through polar  ---
+{
+  setAngle('DEG');
+  const v = parseEntry('(1, <90)')[0];
+  assert(v.type === 'complex' && _close(v.re, 0) && _close(v.im, 1),
+    'polar Complex (1,<90) — `<` accepted as polar marker too');
+}
+
+// --- Comma is optional — space-separated rect and bare `∠`/`<` polar  ---
+//     (a b)         → rect
+//     (a ∠θ)        → polar with whitespace
+//     (a∠θ)         → polar without any separator
+//     (a)           → re-only, im defaults to 0
+{
+  setAngle('DEG');
+  const cases = [
+    { src: '(3 4)',       re: 3,                          im: 4,                           label: 'rect (3 4) — space separator' },
+    { src: '(-1.5 2.5)',  re: -1.5,                       im: 2.5,                         label: 'rect (-1.5 2.5) — signed reals, space-separated' },
+    { src: '(1 ∠90)',     re: 0,                          im: 1,                           label: 'polar (1 ∠90) — space then ∠' },
+    { src: '(1∠90)',      re: 0,                          im: 1,                           label: 'polar (1∠90) — no separator' },
+    { src: '(2<90)',      re: 0,                          im: 2,                           label: 'polar (2<90) — no separator with `<` alias' },
+    { src: '(7)',         re: 7,                          im: 0,                           label: 'single number (7) → Complex(7, 0)' },
+  ];
+  for (const tc of cases) {
+    const v = parseEntry(tc.src)[0];
+    assert(v && v.type === 'complex' && _close(v.re, tc.re) && _close(v.im, tc.im),
+      tc.label);
+  }
+}
+{
+  // Three-comma form is still rejected — comma-optional doesn't mean
+  // "anything goes".
+  assertThrows(() => parseEntry('(1,2,3)'), /Bad complex literal/,
+    'three-component complex literal still rejects');
+}
+
+// --- 2D cylindrical Vector: [ r ∠θ ]  ---
+{
+  setAngle('DEG');
+  const v = parseEntry('[ 1 ∠90 ]')[0];
+  assert(v.type === 'vector' && v.items.length === 2
+      && _close(v.items[0].value, 0) && _close(v.items[1].value, 1),
+    '[ 1 ∠90 ] in DEG → [ 0 1 ]');
+}
+{
+  setAngle('RAD');
+  const v = parseEntry('[ 2 ∠1.5707963267948966 ]')[0];
+  assert(v.type === 'vector' && v.items.length === 2
+      && _close(v.items[0].value, 0) && _close(v.items[1].value, 2),
+    '[ 2 ∠π/2 ] in RAD → [ 0 2 ]');
+}
+{
+  setAngle('GRD');
+  const v = parseEntry('[ 1 ∠200 ]')[0];
+  assert(v.type === 'vector' && v.items.length === 2
+      && _close(v.items[0].value, -1) && _close(v.items[1].value, 0),
+    '[ 1 ∠200 ] in GRD → [ -1 0 ]   (200 grads = 180°)');
+}
+
+// --- 3D cylindrical Vector: [ r ∠θ z ]  ---
+{
+  setAngle('DEG');
+  const v = parseEntry('[ 2 ∠90 5 ]')[0];
+  assert(v.type === 'vector' && v.items.length === 3
+      && _close(v.items[0].value, 0)
+      && _close(v.items[1].value, 2)
+      && _close(v.items[2].value, 5),
+    '[ 2 ∠90 5 ] in DEG → [ 0 2 5 ]');
+}
+
+// --- 3D spherical Vector: [ ρ ∠θ ∠φ ]  (θ azimuth, φ polar)  ---
+{
+  setAngle('DEG');
+  // ρ=1, θ=0, φ=0  → north pole, z = 1
+  const v0 = parseEntry('[ 1 ∠0 ∠0 ]')[0];
+  assert(v0.type === 'vector' && v0.items.length === 3
+      && _close(v0.items[0].value, 0)
+      && _close(v0.items[1].value, 0)
+      && _close(v0.items[2].value, 1),
+    '[ 1 ∠0 ∠0 ] in DEG → [ 0 0 1 ]   (north pole)');
+  // ρ=1, θ=0, φ=90  → equator at +x axis: x=1, y=0, z=0
+  const v1 = parseEntry('[ 1 ∠0 ∠90 ]')[0];
+  assert(v1.type === 'vector' && v1.items.length === 3
+      && _close(v1.items[0].value, 1)
+      && _close(v1.items[1].value, 0)
+      && _close(v1.items[2].value, 0),
+    '[ 1 ∠0 ∠90 ] in DEG → [ 1 0 0 ]   (equator on +x)');
+}
+
+// --- Whitespace between `∠` and the angle literal is allowed  ---
+{
+  setAngle('DEG');
+  const v = parseEntry('[ 2 ∠ 45 ]')[0];
+  assert(v.type === 'vector' && v.items.length === 2
+      && _close(v.items[0].value, Math.SQRT2)
+      && _close(v.items[1].value, Math.SQRT2),
+    '[ 2 ∠ 45 ] (whitespace after ∠) parses as polar 2D');
+}
+
+// --- Malformed polar input surfaces a clean parse error  ---
+{
+  // `∠` outside a vector is not a stand-alone value.
+  assertThrows(() => parseEntry('∠45'), /∠/,
+    'stray ∠45 outside a vector rejects');
+}
+{
+  // 2-component vector with the angle in the wrong slot.
+  assertThrows(() => parseEntry('[ ∠45 ∠90 ]'), /Bad polar vector literal/,
+    '[ ∠45 ∠90 ] (no leading magnitude) rejects');
+}
+{
+  // 3-component vector with `∠` only on the third slot — not a known
+  // form; we don't silently treat it as rect.
+  assertThrows(() => parseEntry('[ 1 2 ∠90 ]'), /Bad polar vector literal/,
+    '[ 1 2 ∠90 ] (∠ only on 3rd slot) rejects');
+}
+{
+  // ∠ with a non-numeric tail.
+  assertThrows(() => parseEntry('[ 1 ∠foo ]'), /angle/,
+    '[ 1 ∠foo ] rejects — non-numeric angle');
+}
+
 // --- Cleanup shared state so later tests don't see stray bindings
 resetHome();
 setAngle('RAD');

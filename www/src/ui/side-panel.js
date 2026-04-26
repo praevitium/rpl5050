@@ -61,27 +61,27 @@ export const CATEGORIES = {
   'Arithmetic': [
     '+', '-', '*', '/', '^',
     'NEG', 'INV', 'ABS', 'SQ', 'SQRT', 'XROOT',
-    'FLOOR', 'CEIL', 'IP', 'FP', 'SIGN', 'MOD', 'RND', 'TRNC',
+    'FLOOR', 'CEIL', 'IP', 'FP', 'SIGN', 'MOD', 'RND', 'TRNC', 'TRUNC',
     'MIN', 'MAX', 'MINR', 'MAXR',
     'MANT', 'XPON',
     '%', '%CH', '%T',
     'DECR', 'INCR',
-    'HMS+', 'HMS-', '→HMS', 'HMS→', '->HMS', 'HMS->',
-    'D→HMS', 'HMS→D', 'D->HMS', 'HMS->D',
+    'HMS+', 'HMS-', '→HMS', 'HMS→',
+    'D→HMS', 'HMS→D',
     'RAND', 'RDZ',
-    '→Q', 'Q→', '->Q', 'Q->', '→QΠ', '->QΠ',
+    '→Q', 'Q→', '→QΠ',
   ],
   'Trig / log / exp / hyperbolic': [
     'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN',
     'LN', 'LOG', 'EXP', 'ALOG', 'LNP1', 'EXPM',
     'SINH', 'COSH', 'TANH', 'ASINH', 'ACOSH', 'ATANH',
-    'R→D', 'D→R', 'R->D', 'D->R',
+    'R→D', 'D→R',
     'DEG', 'RAD', 'GRD', 'GRAD',
   ],
   'Complex / coordinates': [
     'RE', 'IM', 'CONJ', 'ARG',
-    'R→C', 'C→R', 'R->C', 'C->R',
-    'C→P', 'P→C', 'C->P', 'P->C',
+    'R→C', 'C→R',
+    'C→P', 'P→C',
     'RECT', 'CYLIN', 'SPHERE',
     'CMPLX', 'CMPLX?',
   ],
@@ -95,37 +95,59 @@ export const CATEGORIES = {
     'DIVIS', 'FACTORS', 'EULER',
     'ISPRIME?', 'NEXTPRIME', 'PREVPRIME',
     'IABCUV', 'IBERNOULLI', 'ICHINREM', 'IEGCD',
+    'EUCLID', 'IDIV2', 'IQUOT', 'IREMAINDER', 'PA2B2',
+    // Modular-arithmetic family — share state.casModulo via MODSTO.
+    'MODSTO', 'ADDTMOD', 'SUBTMOD', 'MULTMOD', 'POWMOD',
+    'INVMOD', 'DIVMOD', 'DIV2MOD', 'GCDMOD', 'EXPANDMOD', 'FACTORMOD',
+  ],
+  'Probability / combinatorics': [
+    'COMB', 'PERM',
+    'UTPN', 'UTPC', 'UTPF', 'UTPT',
   ],
   'Polynomials': [
     'FCOEF', 'PCOEF', 'PEVAL', 'HORNER', 'PTAYL',
     'PROOT', 'FROOTS', 'QUOT', 'REMAINDER',
+    'CYCLOTOMIC', 'DECOMP',
+    // Gröbner-basis ops: structurally polynomial-system manipulation
+    // even though they live in the CAS section of HP50 AUR.
+    'GBASIS', 'GREDUCE',
   ],
   'CAS / symbolic': [
     'DERIV', 'INTEG', 'SUBST', 'PREVAL',
-    'EXPAND', 'COLLECT', 'FACTOR', 'SOLVE', 'DISTRIB',
-    'EXPLN', 'LNCOLLECT', 'EPSX0',
-    'TEXPAND', 'TLIN', 'TCOLLECT', 'TSIMP', 'HALFTAN',
+    'EXPAND', 'COLLECT', 'FACTOR', 'SOLVE', 'ISOL', 'DISTRIB',
+    'EXPLN', 'LNCOLLECT', 'EPSX0', 'SIMPLIFY',
+    'TEXPAND', 'TLIN', 'TCOLLECT', 'TSIMP', 'HALFTAN', 'COSSIN',
     'ACOS2S', 'ASIN2C', 'ASIN2T', 'ATAN2S',
     'TAN2SC', 'TAN2SC2', 'TAN2CS2',
     'HEAVISIDE', 'DIRAC', 'LAPLACE', 'ILAP',
+    'LIM', 'LIMIT', 'LIN',
+    'PARTFRAC', 'PROPFRAC',
+    'EXLR', 'LNAME',
+    'VX', 'SVX', 'XNUM', 'XQ',
+  ],
+  'Special functions': [
+    'GAMMA', 'LNGAMMA', 'PSI', 'BETA',
+    'ERF', 'ERFC', 'EI', 'CI', 'SI',
+    'ZETA', 'LAMBERT',
   ],
   'Vectors / matrices': [
     'SIZE', 'TRN', 'DET', 'NORM', 'CNRM', 'RNRM', 'TRACE', 'COND', 'RANK',
     'DOT', 'CROSS', 'HADAMARD',
-    'IDN', 'CON', 'RANM', 'LSQ', 'REF', 'RREF', 'AUGMENT',
+    'IDN', 'CON', 'RANM', 'LSQ', 'REF', 'RREF', 'AUGMENT', 'RSD',
     'ROW+', 'ROW-', 'COL+', 'COL-',
-    'ROW→', '→ROW', 'COL→', '→COL', 'ROW->', '->ROW', 'COL->', '->COL',
+    'ROW→', '→ROW', 'COL→', '→COL',
     'RSWP', 'CSWP', 'RCI', 'RCIJ', 'RDM',
     'LU', 'QR', 'LQ', 'CHOLESKY', 'GRAMSCHMIDT',
     'HERMITE', 'LEGENDRE', 'TCHEB', 'TCHEBYCHEFF', 'VANDERMONDE', 'HILBERT',
     'AXL', 'AXM',
-    '→V2', '→V3', 'V→', '->V2', '->V3', 'V->',
-    '→ARRY', 'ARRY→', '->ARRY', 'ARRY->',
+    'PCAR', 'CHARPOL', 'EGV', 'EGVL',
+    '→V2', '→V3', 'V→',
+    '→ARRY', 'ARRY→',
   ],
   'Lists / strings': [
     'GET', 'PUT', 'GETI', 'PUTI', 'HEAD', 'TAIL', 'SUB', 'POS', 'APPEND',
-    '→LIST', 'LIST→', 'OBJ→', '->LIST', 'LIST->', 'OBJ->',
-    '→STR', 'STR→', '->STR', 'STR->', 'CHR',
+    '→LIST', 'LIST→', 'OBJ→',
+    '→STR', 'STR→', 'CHR',
     'REVLIST', 'SORT',
     'REPL', 'SREPL',
     'ΔLIST', 'ΠLIST', 'ΣLIST', 'DLIST', 'PLIST', 'SLIST', 'SUM',
@@ -143,16 +165,20 @@ export const CATEGORIES = {
     'PREDV', 'PREDX',
   ],
   'Variables / directories': [
-    'STO', 'RCL', 'PURGE', 'VARS',
+    'STO', 'RCL', 'PURGE', 'VARS', 'TVARS',
     'CRDIR', 'UPDIR', 'HOME', 'PATH', 'PGDIR', 'ORDER', 'MERGE',
     'STO+', 'STO-', 'STO*', 'STO/',
     'SNEG', 'SINV', 'SCONJ',
   ],
   'Evaluation / program': [
-    'EVAL', '→NUM', 'NUM', '->NUM',
+    'EVAL', '→NUM', 'NUM', '→PRG',
     'APPROX', 'EXACT',
     'IFT', 'IFTE',
     'ERRM', 'ERRN', 'ERR0', 'DOERR',
+  ],
+  'Control flow / debug': [
+    'ABORT', 'HALT', 'CONT', 'KILL', 'PROMPT', 'RUN',
+    'DBUG', 'SST', 'SST↓',
   ],
   'Flags': [
     'SF', 'CF', 'FS?', 'FC?', 'FS?C', 'FC?C',
@@ -162,18 +188,18 @@ export const CATEGORIES = {
     'TEXTBOOK', 'FLAT',
     'STD', 'FIX', 'SCI', 'ENG',
     'HEX', 'DEC', 'OCT', 'BIN', 'CLB',
-    'B→R', 'R→B', 'B->R', 'R->B',
+    'B→R', 'R→B',
     'STWS', 'RCWS',
     'ASR', 'SL', 'SR', 'RL', 'RR',
     'SLB', 'SRB', 'RLB', 'RRB',
   ],
   'Types & tags': [
     'TYPE', 'KIND', 'VTYPE',
-    '→TAG', '->TAG', 'DTAG',
+    '→TAG', 'DTAG',
   ],
   'Units': [
     // Commands
-    'UVAL', 'UBASE', '→UNIT', 'CONVERT', '->UNIT',
+    'UVAL', 'UBASE', '→UNIT', 'CONVERT',
     // Length
     'm', 'cm', 'mm', 'km', 'in', 'ft', 'yd', 'mi',
     // Mass
@@ -669,7 +695,14 @@ export class SidePanel {
     }
 
     // Any registered op not already covered lives under "Other".
+    // ASCII arrow aliases (`->NUM`, `HMS->`, …) are deliberately
+    // hidden — every one of them has a `→NUM` / `→HMS` Unicode form
+    // already shown in its proper category, and showing both flavours
+    // doubles the panel for no benefit (the ASCII names stay typeable
+    // from the entry buffer regardless).
+    const isAsciiArrowAlias = (n) => n.includes('->');
     const others = [...registered].filter(n => !seen.has(n))
+      .filter(n => !isAsciiArrowAlias(n))
       .filter(n => !filter || n.toLowerCase().includes(filter))
       .sort();
     if (others.length) {
@@ -934,17 +967,29 @@ export class SidePanel {
     if (action === 'op') {
       const op = lookup(value);
       if (!op) { entry.flashError({ message: `${value}: not yet implemented` }); return; }
-      // If the user is mid-entry inside a tick-quoted algebraic, insert
-      // the op name as a character sequence instead of running it.  This
-      // matches how the keypad function-keys behave (see Entry.typeOrExecFn).
-      if (entry.isAlgebraic()) {
-        entry.type(value);
-        return;
-      }
-      // Otherwise behave like a soft-menu press: commit any pending
-      // buffer first, then run the op.
-      if (entry.buffer.trim().length > 0) entry.enter();
-      entry.safeRun(() => op.fn(stack, entry), value);
+      // Mirror keypad behaviour exactly — clicks on a panel command
+      // are dispatched through `typeOrExecFn`, the same helper the
+      // SIN / COS / FACTOR / DERIV keys use.  That gives three
+      // input-mode-aware branches:
+      //
+      //   - inside an unclosed backtick (algebraic entry)
+      //       → types `<NAME>(`         so `\`SIN(...)\`` reads like
+      //                                  textbook math.
+      //   - the buffer has any other content (bare-edit RPN entry)
+      //       → types ` <NAME> `        as a whitespace-separated
+      //                                  token that parses to a Name.
+      //       The leading space is added automatically when the cursor
+      //       isn't already on whitespace, so `3 4+SIN` becomes
+      //       `3 4+ SIN` and the name stays tokenised.
+      //   - empty buffer (stack-direct mode)
+      //       → executes the op exactly like a soft-menu press.
+      //
+      // Pre-fix the panel always hard-committed the buffer + ran the
+      // op whenever the user had anything typed, which silently
+      // lost edits a user was building.  Routing through the same
+      // helper aligns "click in panel" with "press the key" so the
+      // user's mental model is one rule, not two.
+      entry.typeOrExecFn(value);
       return;
     }
     if (action === 'char') {

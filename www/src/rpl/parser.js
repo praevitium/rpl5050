@@ -23,7 +23,7 @@ import {
   Symbolic, Unit, isValidHpIdentifier,
 } from './types.js';
 import { RPLError } from './stack.js';
-import { getWordsizeMask, state as _state } from './state.js';
+import { getWordsizeMask, state as _state, toRadians } from './state.js';
 import { parseAlgebra } from './algebra.js';
 import { parseUnitExpr } from './units.js';
 
@@ -171,6 +171,27 @@ export function tokenize(src) {
       throw new RPLError("Unexpected ')'");
     }
 
+    // Angle marker `∠` (U+2220).  Used inside a vector literal to flag
+    // a cylindrical / spherical coordinate component — `[ r ∠θ ]`,
+    // `[ r ∠θ z ]`, `[ ρ ∠θ ∠φ ]` (HP50 AUR §9).  The marker emits a
+    // dedicated `angle` token whose text is the following numeric
+    // literal; whitespace between `∠` and the number is allowed
+    // (`[ 1 ∠ 45 ]` works the same as `[ 1 ∠45 ]`).  Outside a vector
+    // context the parser surfaces a clean error — `∠` is not a stand-
+    // alone value.
+    if (c === '∠') {
+      let j = i + 1;
+      while (j < n && isSpace(src[j])) j++;            // skip optional WS
+      const tail = src.slice(j);
+      const am = tail.match(/^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/);
+      if (!am || !am[0].match(/[0-9]/)) {
+        throw new RPLError("Bad angle literal after ∠");
+      }
+      tokens.push({ kind: 'angle', text: am[0] });
+      i = j + am[0].length;
+      continue;
+    }
+
     // Identifier / operator token — run until whitespace or a structural
     // delimiter.  The delimiter set includes the parentheses so a typed
     // `SIN(x)` (without surrounding backticks) splits into the ident
@@ -225,9 +246,65 @@ export function parseEntry(src) {
       }
 
       case 'complex': {
-        const [re, im = '0'] = t.text.split(',').map(x => x.trim());
-        const reN = parseFloat(re);
-        const imN = parseFloat(im);
+        // Accepted forms (HP50 AUR §4.4 — with comma made optional
+        // because the keypad has no `,` key in some entry layouts):
+        //   Rectangular:  (re, im)  /  (re im)
+        //   Polar:        (r, ∠θ)   /  (r ∠θ)   /  (r∠θ)
+        // The angle glyph is U+2220 `∠`; we also accept a stray
+        // leading `<` as a polar marker for keyboards without easy
+        // access to `∠`.  θ is interpreted in the active RAD/DEG/GRD
+        // mode and converted to radians here so the result on the
+        // stack is always rectangular.
+        //
+        // Splitter strategy, in order of preference:
+        //   1. comma-separated   — split on `,`
+        //   2. `∠`/`<` separator — peel the polar marker off and use
+        //                          everything before it as `re` and
+        //                          the marker + tail as `im`
+        //   3. whitespace        — split on the first run of spaces
+        let reText, imText;
+        const body = t.text;
+        if (body.includes(',')) {
+          const parts = body.split(',').map(x => x.trim());
+          if (parts.length > 2) {
+            throw new RPLError(`Bad complex literal: (${body})`);
+          }
+          reText = parts[0];
+          imText = parts[1] === undefined ? '0' : parts[1];
+        } else {
+          const polarMatch = body.match(/^\s*([^∠<]+?)\s*([∠<].*)$/);
+          if (polarMatch) {
+            reText = polarMatch[1].trim();
+            imText = polarMatch[2].trim();
+          } else {
+            const wsMatch = body.match(/^\s*(\S+)\s+(\S+)\s*$/);
+            if (wsMatch) {
+              reText = wsMatch[1];
+              imText = wsMatch[2];
+            } else {
+              // Single token with no separator — treat as "(re)" with
+              // a default zero imaginary, matching how `(3)` was
+              // already treated under the comma form (parts[1]
+              // defaulted to '0').
+              reText = body.trim();
+              imText = '0';
+            }
+          }
+        }
+        const m = imText.match(/^[∠<]\s*(.*)$/);
+        if (m) {
+          const r = parseFloat(reText);
+          const theta = parseFloat(m[1]);
+          if (!Number.isFinite(r) || !Number.isFinite(theta)) {
+            throw new RPLError(`Bad complex literal: (${t.text})`);
+          }
+          // Convert through the calculator's active angle mode so a
+          // user in DEG sees `(1, ∠45)` land as `(cos45°, sin45°)`.
+          const rad = toRadians(theta);
+          return Complex(r * Math.cos(rad), r * Math.sin(rad));
+        }
+        const reN = parseFloat(reText);
+        const imN = parseFloat(imText);
         // Validate both components — a non-numeric body (e.g. `(x)`,
         // which is what's left after the new ident tokenizer splits
         // `SIN(x)`) lands here as `re = 'x'` and `parseFloat` returns
@@ -334,6 +411,13 @@ export function parseEntry(src) {
         if (t.text === '<<') return parseProgram();
         throw new RPLError('Syntax error near ' + t.text);
       }
+
+      case 'angle':
+        // `∠θ` is meaningful only as a component of a vector literal.
+        // A stray angle outside `[...]` (e.g. typed at the top of the
+        // entry buffer) surfaces a clean parse error rather than
+        // silently producing a Real or Name.
+        throw new RPLError("`∠` is only valid inside a vector literal");
     }
     throw new RPLError('Unknown token');
   }
@@ -353,11 +437,79 @@ export function parseEntry(src) {
   }
 
   function parseVector() {
-    const items = [];
+    // Collect raw tokens until the closing `]` so we can inspect the
+    // shape of the vector literal — number / number / number is plain
+    // rectangular, while `number ∠number` (with an optional plain
+    // number after) is HP50's cylindrical / spherical input form
+    // (AUR §9).  Mixing arbitrary parsed values still works (a vector
+    // can hold Names, Symbolics, etc.) — we only treat the input as
+    // polar when *every* slot is either a plain numeric literal or
+    // an `∠`-prefixed angle.
+    const start = idx;
+    const collected = [];
     while (idx < toks.length && !(toks[idx].kind === 'delim' && toks[idx].text === ']')) {
-      items.push(parseOne());
+      collected.push(toks[idx]);
+      idx++;
     }
-    if (idx < toks.length) idx++;
+    if (idx < toks.length) idx++;                      // consume `]`
+
+    // Polar / cylindrical / spherical recognition.  Patterns honour
+    // the active angle mode via `toRadians`:
+    //   2D cyl: [ N  ∠N ]                   →  Vector(r·cosθ, r·sinθ)
+    //   3D cyl: [ N  ∠N  N ]                →  Vector(r·cosθ, r·sinθ, z)
+    //   3D sph: [ N  ∠N  ∠N ]               →  ρ,θ,φ → cartesian
+    // Anything else (mixed-type entries, the wrong number of items,
+    // a `∠` in the wrong slot, etc.) falls through to the rectangular
+    // path which calls `parseOne()` token-by-token.
+    const isNum   = (t) => t && t.kind === 'number';
+    const isAngle = (t) => t && t.kind === 'angle';
+    const allNumOrAngle = collected.every(t => isNum(t) || isAngle(t));
+    if (allNumOrAngle && collected.length >= 2) {
+      const num = (t) => parseFloat(t.text);
+      const len = collected.length;
+      // 2D cylindrical: r ∠θ
+      if (len === 2 && isNum(collected[0]) && isAngle(collected[1])) {
+        const r = num(collected[0]);
+        const theta = toRadians(num(collected[1]));
+        return Vector([Real(r * Math.cos(theta)), Real(r * Math.sin(theta))]);
+      }
+      // 3D cylindrical: r ∠θ z
+      if (len === 3 && isNum(collected[0]) && isAngle(collected[1]) && isNum(collected[2])) {
+        const r = num(collected[0]);
+        const theta = toRadians(num(collected[1]));
+        const z = num(collected[2]);
+        return Vector([Real(r * Math.cos(theta)), Real(r * Math.sin(theta)), Real(z)]);
+      }
+      // 3D spherical: ρ ∠θ ∠φ  (θ azimuth, φ polar from +z)
+      if (len === 3 && isNum(collected[0]) && isAngle(collected[1]) && isAngle(collected[2])) {
+        const rho = num(collected[0]);
+        const theta = toRadians(num(collected[1]));
+        const phi   = toRadians(num(collected[2]));
+        const sinPhi = Math.sin(phi);
+        return Vector([
+          Real(rho * sinPhi * Math.cos(theta)),
+          Real(rho * sinPhi * Math.sin(theta)),
+          Real(rho * Math.cos(phi)),
+        ]);
+      }
+      // Any other shape with `∠` tokens is malformed — surface it
+      // before falling through to the rectangular path (which would
+      // throw the more cryptic stand-alone-`∠` error from parseOne).
+      if (collected.some(isAngle)) {
+        throw new RPLError('Bad polar vector literal');
+      }
+    }
+
+    // Rectangular path — re-walk the collected tokens through the
+    // standard parseOne() machinery.  Mutating idx temporarily so
+    // parseOne sees the same slice keeps the existing semantics for
+    // things like vectors of Names / Symbolics.
+    const savedIdx = idx;
+    idx = start;
+    const items = [];
+    const endIdx = start + collected.length;
+    while (idx < endIdx) items.push(parseOne());
+    idx = savedIdx;
     return Vector(items);
   }
 
