@@ -5,7 +5,21 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 191 (2026-04-26, post-ship HEAVISIDE+DIRAC L/V/M/T wrapper-add;
+**Last updated.** Session 196 (2026-04-26, post-ship TRUNC L/T wrapper-add;
+lane name **`session196-data-type-support`**) — wrapping TRUNC in
+`_withTaggedBinary(_withListBinary(_truncOp()))` to close the last remaining
+ship-prep 2026-04-25 audit candidate (XPON/MANT closed session 187, HEAVISIDE/DIRAC
+closed session 191; TRUNC was the sole survivor).  +8 hard assertions in
+`tests/test-types.mjs` (5464 → 5472): n=0 bare-List passthrough; n=0 Tagged-of-List
+(binary tag drop); n=1 bare-List value-precise; n=2 bare-List heterogeneous; n=2
+Tagged-of-List tag-dropped; scalar Tagged tag-dropped; pairwise L×L; Vector
+rejection guard.  V/M remain ✗ — no `_withVMBinary`; mirrors MOD/MIN/MAX policy.
+TRUNC matrix row: L/T promoted from blank to ✓; V/M promoted from blank to ✗.
+Verification gates at exit: `node tests/test-all.mjs` 5472/0/0,
+`node tests/test-persist.mjs` 66/0, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (196)" below.
+
+**Last updated (prior — session 191).** Session 191 (2026-04-26, post-ship HEAVISIDE+DIRAC L/V/M/T wrapper-add;
 lane name **`session191-data-type-support`**) — wrapping HEAVISIDE and DIRAC in
 `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` (same 3-deep composition as XPON/MANT,
 session 187).  +16 hard assertions in `tests/test-types.mjs` (5448 → 5464): Cluster 1
@@ -836,7 +850,7 @@ handler lift".
 |---------|---|---|---|---|----|---|---|---|---|-------|
 | XPON    | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Decimal exponent.  `XPON(0) = 0` (matches HP50 AUR).  Complex ✗ (HP50 AUR real-only).  Session 100 closed Sy round-trip.  Session 120 pinned Q rejection: `XPON Rational(1,2)` → 'Bad argument type' (Q not in XPON domain; consistent with FACT/MANT). **Ship-prep 2026-04-25 audit:** L/V/M/T were carried as ✓ but `register('XPON', …)` was bare — no wrapper — and threw `Bad argument type` on List/Vector/Matrix/Tagged.  Downgraded to blank (candidate); see `utils/@probe-special-fns-vm.mjs`.  **Session 187:** wrapped in `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` — same 3-deep composition as FACT/LNP1/EXPM.  Pins: n=0 empty-List (bare + T+L), n=1 bare List `{ Real(100) } → { Real(2) }`, n=2 heterogeneous bare List + Tagged-of-List `{ Real(100) Real(10) } → { Real(2) Real(1) }`, Vector `[ Real(100) Real(1000) ] → [ Real(2) Real(3) ]`, Matrix `[[ Real(100) Real(10) ]] → [[ Real(2) Real(1) ]]`, scalar Tagged `:x:Real(250) → :x:Real(2)`.  +8 assertions. |
 | MANT    | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Mantissa in `[1,10)` (or 0 at x=0).  Pair with XPON — `x = MANT(x) · 10^XPON(x)`.  Session 100 closed Sy round-trip.  Session 120 pinned Q rejection: `MANT Rational(1,2)` → 'Bad argument type'. **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — same finding as XPON; `register('MANT', …)` was bare, throws on List/Vector/Matrix/Tagged.  **Session 187:** wrapped in `_withTaggedUnary(_withListUnary(_withVMUnary(…)))`.  Pins: n=0 empty-List (bare + T+L), n=1 bare List `{ Real(250) } → { Real(2.5) }`, n=2 heterogeneous bare List + Tagged-of-List `{ Real(250) Real(10) } → { Real(2.5) Real(1) }`, Vector `[ Real(2500) Real(100) ] → [ Real(2.5) Real(1) ]`, Matrix `[[ Real(2500) ]] → [[ Real(2.5) ]]`.  +7 assertions. |
-| TRUNC   | ✓ | ✓ | ✗ | ✓ | ✓  |   |   |   |   | 2-arg: `TRUNC(x, n)` truncates to `n` decimals.  `arity: 2` in KNOWN_FUNCTIONS — 1-arg form rejected at parse time.  `defaultFnEval` left unset (no constant fold yet — would need `toFixed`-style logic). Session 100 closed Sy round-trip for the 2-arg form.  Session 105 pinned the arity-2 rejection for both the 1-arg form `TRUNC(X)` and the 3-arg form `TRUNC(X, 3, 4)` (parseAlgebra emits "TRUNC expects 2 argument(s), got N"). **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — `_truncOp()` (`ops.js:7736`) handler dispatches scalar branches only; `TRUNC(Vector(R,R), Integer(1))` and the L/M/T variants throw `Bad argument type` (verified `utils/@probe-trunc-vm.mjs`). |
+| TRUNC   | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✗ | ✗ | ✓ | 2-arg: `TRUNC(x, n)` truncates to `n` decimals.  `arity: 2` in KNOWN_FUNCTIONS — 1-arg form rejected at parse time.  `defaultFnEval` left unset (no constant fold yet — would need `toFixed`-style logic). Session 100 closed Sy round-trip for the 2-arg form.  Session 105 pinned the arity-2 rejection for both the 1-arg form `TRUNC(X)` and the 3-arg form `TRUNC(X, 3, 4)` (parseAlgebra emits "TRUNC expects 2 argument(s), got N"). **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — `_truncOp()` handler dispatches scalar branches only; `TRUNC(Vector(R,R), Integer(1))` and the L/M/T variants threw `Bad argument type` (verified `utils/@probe-trunc-vm.mjs`). **Session 196:** Wrapped with `_withTaggedBinary(_withListBinary(_truncOp()))` — closes L and T axes.  V/M remain ✗ (no `_withVMBinary`; mirrors MOD/MIN/MAX policy).  Binary tag-drop convention: Tagged inputs are unwrapped and tag is NOT re-applied to result.  +8 `session196:` pins in `tests/test-types.mjs` (5464→5472): n=0 bare-List passthrough; n=0 Tagged-of-List (tag dropped); n=1 bare-List single-element value-precise; n=2 bare-List heterogeneous `{Real(1.567) Real(2.891)} Integer(1)` → `{Real(1.5) Real(2.8)}`; n=2 Tagged-of-List tag-dropped; scalar Tagged tag-dropped `Real(3.5)`; pairwise L×L `{Real(1.99) Real(2.345)} {Integer(0) Integer(2)}` → `{Real(1) Real(2.34)}`; Vector rejection guard. |
 | ZETA    | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Riemann ζ.  Arity 1.  No constant fold (would need CAS).  Session 100 closed Sy round-trip — stays symbolic at numeric args. |
 | LAMBERT | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Principal branch W₀.  Arity 1.  No constant fold (series/Halley in a future session).  Session 100 closed Sy round-trip. |
 | PSI     | ✓ | ✓ | · | ✓ | ✓  | · | · | · | ✓ | Digamma / polygamma.  Variadic: `PSI(x)` = ψ(x), `PSI(x, n)` = ψ⁽ⁿ⁾(x).  No `arity` key in KNOWN_FUNCTIONS — both shapes accepted.  No constant fold.  Session 100 closed Sy round-trip for both shapes.  Session 105 pinned the variadic shape via direct `defaultFnEval('PSI', [1])` and `defaultFnEval('PSI', [1, 2])` null-fold guards. |
@@ -954,6 +968,25 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (196)
+
+- **TRUNC L/T wrapper-add — closes the last ship-prep 2026-04-25 audit candidate.**
+  Wrapped `register('TRUNC', _truncOp())` →
+  `register('TRUNC', _withTaggedBinary(_withListBinary(_truncOp())))`.
+  TRUNC is a 2-arg binary op `(x n → y)`; the binary wrapper convention drops the
+  tag on output (unlike unary, which re-applies the tag).  V/M are deliberately ✗ —
+  no `_withVMBinary` exists and TRUNC element-wise on V/M has no HP50 precedent
+  (mirrors MOD/MIN/MAX policy).  Pins (+8): n=0 bare-List passthrough
+  `{ } Integer(1) TRUNC → { }`; n=0 Tagged-of-List tag-drop
+  `:t:{ } Integer(1) TRUNC → { }`; n=1 bare-List value-precise
+  `{ Real(3.567) } Integer(1) TRUNC → { Real(3.5) }`; n=2 bare-List heterogeneous
+  `{ Real(1.567) Real(2.891) } Integer(1) TRUNC → { Real(1.5) Real(2.8) }`;
+  n=2 Tagged-of-List tag-dropped (result is plain List); scalar Tagged tag-dropped
+  `:t:Real(3.567) Integer(1) TRUNC → Real(3.5)`; pairwise L×L
+  `{ Real(1.99) Real(2.345) } { Integer(0) Integer(2) } TRUNC → { Real(1) Real(2.34) }`;
+  Vector rejection guard `Vector(R,R) Integer(1) TRUNC → Bad argument type`.
+  TRUNC matrix row: L/T blank → ✓; V/M blank → ✗.
 
 ### Resolved this session (191)
 

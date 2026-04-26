@@ -118,7 +118,9 @@ class App {
         },
       },
       getContext: () => {
-        const levels = this.stack.levels(); // level 1 first
+        // `snapshot()` returns the stack ordered level-1-first — same
+        // shape we want for the LLM context (top of stack at index 0).
+        const levels = this.stack.snapshot();
         const st     = calcState;
         const opts   = this.display?.displayOpts;
         return {
@@ -131,6 +133,13 @@ class App {
         };
       },
     });
+
+    // The SidePanel is constructed BEFORE chatBot above, and its
+    // _restoreUIState() may have already rendered the AI tab while
+    // chatBot was still undefined (showing an "Initialising assistant…"
+    // placeholder).  Refresh now that chatBot exists so the real chat UI
+    // takes over without requiring user interaction.
+    if (this.sidePanel?.tab === 'ai') this.sidePanel.refresh();
 
     this._installChromeToggles();
 

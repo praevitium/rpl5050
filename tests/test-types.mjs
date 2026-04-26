@@ -9718,3 +9718,95 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+/* ================================================================
+   session196: TRUNC — List distribution + Tagged transparency
+   (_withTaggedBinary(_withListBinary(_truncOp())) wrapper-add)
+
+   TRUNC is a 2-arg op: (x n → y), truncates x to n decimal places.
+   Binary Tagged transparency drops the tag (unlike unary, which re-applies).
+   V/M are deliberately ✗ — no _withVMBinary; mirrors MOD/MIN/MAX policy.
+   ================================================================ */
+{
+  // n=0 empty-List bare — passthrough: { } 1 TRUNC → { }
+  {
+    const v = runOp('TRUNC', RList([]), Integer(1n));
+    assert(isList(v) && v.items.length === 0,
+      `session196: { } Integer(1) TRUNC → { } (n=0 bare List passthrough; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // n=0 Tagged-of-List — binary drops tag: :t:{ } 1 TRUNC → { }
+  {
+    const v = runOp('TRUNC', Tagged('t', RList([])), Integer(1n));
+    assert(isList(v) && v.items.length === 0,
+      `session196: :t:{ } Integer(1) TRUNC → { } (n=0 Tagged-of-List; binary tag drop; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // n=1 bare List single element: { Real(3.567) } Integer(1) TRUNC → { Real(3.5) }
+  {
+    const s = new Stack();
+    s.push(RList([Real(3.567)]));
+    s.push(Integer(1n));
+    lookup('TRUNC').fn(s);
+    const v = s.peek();
+    const item = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1
+        && isReal(item) && item.value.toNumber() === 3.5,
+      `session196: { Real(3.567) } Integer(1) TRUNC → { Real(3.5) } (n=1 bare List; got item=${item?.value?.toString()})`);
+  }
+
+  // n=2 bare List heterogeneous values: { Real(1.567) Real(2.891) } Integer(1) TRUNC → { Real(1.5) Real(2.8) }
+  {
+    const s = new Stack();
+    s.push(RList([Real(1.567), Real(2.891)]));
+    s.push(Integer(1n));
+    lookup('TRUNC').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 1.5
+        && isReal(b) && b.value.toNumber() === 2.8,
+      `session196: { Real(1.567) Real(2.891) } Integer(1) TRUNC → { Real(1.5) Real(2.8) } (n=2 bare List; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // n=2 Tagged-of-List — binary drops tag: :t:{ Real(1.567) Real(2.891) } Integer(1) TRUNC → { Real(1.5) Real(2.8) }
+  {
+    const s = new Stack();
+    s.push(Tagged('t', RList([Real(1.567), Real(2.891)])));
+    s.push(Integer(1n));
+    lookup('TRUNC').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && !isTagged(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 1.5
+        && isReal(b) && b.value.toNumber() === 2.8,
+      `session196: :t:{ Real(1.567) Real(2.891) } Integer(1) TRUNC → { Real(1.5) Real(2.8) } (Tagged-of-List; tag dropped; got type=${v?.type} a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // scalar Tagged — binary drops tag: :t:Real(3.567) Integer(1) TRUNC → Real(3.5)
+  {
+    const v = runOp('TRUNC', Tagged('t', Real(3.567)), Integer(1n));
+    assert(isReal(v) && !isTagged(v) && v.value.toNumber() === 3.5,
+      `session196: :t:Real(3.567) Integer(1) TRUNC → Real(3.5) (scalar Tagged; tag dropped; got type=${v?.type} val=${v?.value?.toString()})`);
+  }
+
+  // pairwise List × List: { Real(1.99) Real(2.345) } { Integer(0) Integer(2) } TRUNC → { Real(1) Real(2.34) }
+  {
+    const s = new Stack();
+    s.push(RList([Real(1.99), Real(2.345)]));
+    s.push(RList([Integer(0n), Integer(2n)]));
+    lookup('TRUNC').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 1
+        && isReal(b) && Math.abs(b.value.toNumber() - 2.34) < 1e-10,
+      `session196: { Real(1.99) Real(2.345) } { Integer(0) Integer(2) } TRUNC → { Real(1) Real(2.34) } (pairwise L×L; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Vector rejection — V stays ✗ (no _withVMBinary; mirrors MOD/MIN/MAX)
+  assertThrows(
+    () => runOp('TRUNC', Vector([Real(1.5), Real(2.5)]), Integer(1n)),
+    /Bad argument type/,
+    'session196: Vector Integer(1) TRUNC → Bad argument type (V deliberately ✗)');
+}
+

@@ -7902,7 +7902,11 @@ function _truncOp() {
     numeric(s);
   };
 }
-register('TRUNC', _truncOp());
+// Tagged transparency + List distribution.  n (level 1) may also be a
+// List (pairwise broadcast) or a scalar applied to every x in a List.
+// Vector/Matrix are deliberately rejected — no _withVMBinary exists and
+// TRUNC element-wise on V/M has no HP50 precedent (mirrors MOD/MIN/MAX).
+register('TRUNC', _withTaggedBinary(_withListBinary(_truncOp())));
 
 /* --------------- Percent family — %, %T, %CH ---------------
    HP50 AUR p.3-1.

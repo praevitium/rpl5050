@@ -4,7 +4,7 @@
 
 import { format, formatStackTop, DEFAULT_DISPLAY } from '../rpl/formatter.js';
 import { astToSvg } from '../rpl/pretty.js';
-import { isSymbolic, isMatrix, isVector } from '../rpl/types.js';
+import { isSymbolic, isMatrix, isVector, isList } from '../rpl/types.js';
 import { state as calcState } from '../rpl/state.js';
 
 export class Display {
@@ -145,6 +145,9 @@ export class Display {
         const { svg } = astToSvg(val.expr, { size: 22 });
         inner.innerHTML = svg;
         cell.classList.add('textbook');
+      } else if (calcState.textbookMode && isList(val)) {
+        inner.innerHTML = this._renderTextbookList(val);
+        cell.classList.add('textbook');
       } else if (calcState.textbookMode && (isMatrix(val) || isVector(val))) {
         // Textbook 2D matrix/vector: lay rows out as a CSS grid of
         // monospace cells with bracket pseudo-elements drawn either
@@ -232,6 +235,12 @@ export class Display {
       const padded = r.concat(Array(Math.max(0, ncols - r.length)).fill(null));
       return padded.map(cell => {
         if (cell === null) return '<span class="mcell"></span>';
+        // Symbolic cells get the same SVG pretty-print as top-level
+        // symbolics; everything else stays as formatted plain text.
+        if (isSymbolic(cell)) {
+          const { svg } = astToSvg(cell.expr, { size: 18 });
+          return `<span class="mcell mcell-sym">${svg}</span>`;
+        }
         const text = format(cell, this.displayOpts);
         // Cells are plain text — escape the four characters that bite
         // in HTML.  The formatter never emits raw markup, but this
@@ -249,6 +258,29 @@ export class Display {
       cells.join('') +
       `</span>`
     );
+  }
+
+  /** Render a List in textbook mode.
+   *
+   *  Produces:  { <item> , <item> , … }
+   *
+   *  Each item that is a Symbolic gets the full SVG pretty-print;
+   *  everything else uses the regular formatter so numbers, names,
+   *  nested lists, etc. all display correctly. */
+  _renderTextbookList(val) {
+    const items = val.items.map(item => {
+      if (isSymbolic(item)) {
+        const { svg } = astToSvg(item.expr, { size: 18 });
+        return `<span class="lcell lcell-sym">${svg}</span>`;
+      }
+      const text = format(item, this.displayOpts);
+      const safe = text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return `<span class="lcell">${safe}</span>`;
+    });
+    const inner = items.join('<span class="lsep">,​</span>');
+    return `<span class="list-inline">{ ${inner} }</span>`;
   }
 
   /** Render the command line.

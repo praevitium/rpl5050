@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 192)
+## Current implementation status (as of session 197)
 
 
 ### Program value — parser & round-trip
@@ -309,7 +309,27 @@ open, and the next-session queue.
 
 ---
 
-## Session 192 (this run) — what shipped
+## Session 197 (this run) — what shipped
+
+Session log pointer prose extension on Sunday 2026-04-26.
+Scope-capped at 1/3 workload per the scheduled-task guardrail.
+All R-bucket findings in `docs/REVIEW.md` remain fully closed
+(R-001 — R-012 all resolved; O-011 + O-012 `[deferred - post-ship]`;
+O-009 resolved session-189-code-review).
+
+**Doc-only run — no source or test change.**  The Session log pointer
+prose section had been frozen at "Session 167 is this run" since session
+167.  Sessions 172 / 180 / 184 / 188 / 192 were each verification-only
+or audit-only runs that did not extend the prose.  This run extends it
+with accurate one-paragraph summaries of each, demotes session 167's
+"is this run" wording to "was this lane", and updates the footnote
+demotion history.  Status stamp bumped from "as of session 192" to
+"as of session 197".  Session-192 `(this run)` heading demoted to
+plain past tense below (per the recurring R-005 discipline).
+
+---
+
+## Session 192 — what shipped
 
 Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
 1/3 workload per the scheduled-task guardrail.  All R-bucket findings
@@ -2767,7 +2787,7 @@ unaddressed rows; +8 session163 assertions in
 `tests/test-reflection.mjs` covering OBJ→ and EVAL parity on both
 shapes plus the ASCII-alias parity check); test-file prefix is
 `session163:` and the log file is `logs/session-163.md`.
-Session 167 is this run (release-mode audit-driven asymmetry
+Session 167 was this lane (release-mode audit-driven asymmetry
 close on `NEWOB`, sibling to the session-163 OBJ→ widening — a
 Rational reaching `_newObCopy`'s unenumerated tail returned
 identity (`v`) while every other numeric-scalar shape was
@@ -2783,10 +2803,46 @@ type stability, zero canonicalisation, List-of-Rational and
 Tagged-of-Rational shallow-copy contracts, and NEWOB→OBJ→
 composition with the s163 push-back branch); test-file prefix is
 `session167:` and the log file is `logs/session-167.md`.
+Session 172 was this lane (audit-driven outer-freeze parity fix in
+`_newObCopy`'s Program branch — the inline `{ type, tokens }` literal
+was not passed through `Object.freeze`, while every other enumerated
+shape uses its factory which freezes the outer wrapper; switched to
+`Program(v.tokens)` so the factory's double-freeze pair applies;
++33 session172 freeze-parity assertions in
+`tests/test-reflection.mjs` covering outer-frozen contract,
+inner-tokens-frozen contract, structural deep-equality, and EVAL
+equivalence); test-file prefix is `session172:` and the log file is
+`logs/session-172.md`.
+Session 180 was this lane (ship-day suspended-execution substrate
+doc-comment audit — full survey of `_singleStepMode` / `_stepInto` /
+`_insideSubProgram` / `_localFrames` state flags, `_driveGen`,
+`_evalValueGen`, `evalToken`, and every registered handler in the
+HALT / PROMPT / CONT / KILL / RUN / SST / SST↓ / DBUG family;
+findings: zero comment drift, zero dead state slots, zero missing
+`gen.return()` calls, zero TODO/FIXME markers; no source change; test
+baseline 5389/0 unchanged); log file is `logs/session-180.md`.
+Session 184 was this lane (post-ship verification pass — confirmed
+5401/0 clean baseline; sibling sessions 181–183 did not perturb the
+RPL programming substrate; no source or test change); log file is
+`logs/session-184.md`.
+Session 188 was this lane (post-ship verification pass — confirmed
+5448/0 clean baseline; Δ+47 entirely from sibling lanes sessions
+185–187; RPL programming substrate undisturbed; no source or test
+change); log file is `logs/session-188.md`.
+Session 192 was this lane (post-ship verification pass — confirmed
+5464/0 clean baseline; Δ+16 entirely from sibling lanes sessions
+189–191; all RPL-bucket REVIEW.md findings remain fully closed;
+no source or test change); log file is `logs/session-192.md`.
+Session 197 is this run (session log pointer prose extension —
+demoting session 167's "is this run" marker to past tense and
+adding pointer entries for sessions 172 / 180 / 184 / 188 / 192;
+no `www/src/rpl/ops.js` source change or test change; status stamp
+bumped from "as of session 192" to "as of session 197"); log file
+is `logs/session-197.md`.
 
 (Footnote — sessions 074 / 078 / 088 / 106 / 116 / 121 / 126 / 131
-/ 141 / 146 / 151 / 155 / 159 / 163 used the historical "is this
-run" wording in their authoring session; that label has since
+/ 141 / 146 / 151 / 155 / 159 / 163 / 167 used the historical "is
+this run" wording in their authoring session; that label has since
 been demoted to plain past tense as the lane runs forward.
 Demotion to plain past tense for sessions 121 / 126 / 131 / 136
 was bundled into session 141 per R-005; demotion of session 141's
@@ -2796,10 +2852,14 @@ session 151; demotion of session 151's own `(this run)` heading
 was bundled into session 155; demotion of session 155's own
 `(this run)` heading was bundled into session 159; demotion of
 session 159's own `(this run)` heading was bundled into session
-163; demotion of session 163's own `(this run)` heading is
-bundled into this session 167 run as part of the new
-session-167 chapter becoming the sole `(this run)` holder.  This
-is the recurring R-005 drift pattern — every substantive
-rpl-programming-lane run that adds a new `(this run)` chapter
-must also demote its predecessor; the recurrence is by design,
-the demote is the ship-discipline check.)
+163; demotion of session 163's own `(this run)` heading was
+bundled into session 167; demotion of session 167's own
+`(this run)` wording in the Session log pointer prose was
+bundled into session 197 as part of the five-session backfill
+(172 / 180 / 184 / 188 / 192).  Sessions 172 / 180 / 184 / 188 /
+192 never carried a `(this run)` marker in the Session log pointer
+prose — they were verification-only or audit-only runs that did
+not extend this prose section.  This is the recurring R-005 drift
+pattern — every substantive rpl-programming-lane run that adds a
+new `(this run)` marker must also demote its predecessor; the
+recurrence is by design, the demote is the ship-discipline check.)
