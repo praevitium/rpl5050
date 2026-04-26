@@ -6,23 +6,26 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 257-command-support (C-015 close, 2026-04-26).
+**Last updated.** Session 261-code-review (thirty-seventh review-lane
+run, 2026-04-26).
 Prior review-lane baseline = session 255-code-review (thirty-sixth
 review-lane run, 2026-04-26).  Session 256 (unit-tests — +8 asymmetric
 ordered-comparator rejection pins; TESTS.md stamp 250 → 256; T-004
 resolved; 5591 → 5599/0).  Session 257 (command-support — C-015 close;
 COMMANDS.md stamp 252 → 257; session-log entries added for sessions
 253–256; doc-only; 5599/0).
-Prior code-review baseline = session 252-command-support
-(thirty-fifth review-lane run was session 251-code-review, 2026-04-26;
-session 252 command-support back-filled COMMANDS.md and partially retracted
-O-014).
-This run folds in two sibling-lane sessions since session 252:
-253 (data-type-support — `<` / `>` / `≤` / `≥` ordered-comparator
-L/V/M/T/U rejection pins; +20 assertions in `tests/test-types.mjs`;
-5571 → 5591/0; DATA_TYPES.md stamp advanced to session 253);
-254 (rpl-programming — verification pass; RPL.md stamp 249 → 254;
-session log pointer back-fill for sessions 241/245/249; 5591/0).
+This run folds in four sibling-lane sessions since session 255-code-review:
+256 (unit-tests — already absorbed in session-255 baseline);
+257 (command-support — already absorbed; C-015 resolved);
+258 (data-type-support — BinaryInteger B-column rejection-pin pass;
++22 assertions in `tests/test-types.mjs`; DATA_TYPES.md stamp 253 → 258;
+5599 → 5621/0; released gracefully);
+259 (rpl-programming — verification pass; RPL.md stamp 254 → 259;
+session-log pointer back-fill for sessions 241/245/249; 5621/0;
+released gracefully).
+Session 260 (unit-tests) is **currently active** at this run's
+acquisition (scope: `tests/`, `docs/TESTS.md`, `logs/`; no scope
+overlap with this run's `docs/REVIEW.md` + `logs/`).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -45,35 +48,33 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 255-code-review).** No stale locks at
-acquisition — sessions 253 and 254 both released gracefully with
-`releaseReason` fields.  O-011 / O-012 / O-014 all carry forward
-as `[deferred - post-ship]`; zero release-blocker findings.
-**Note:** session 256 (`rpl5050-unit-tests`) ran concurrently
-with this review, acquiring its lock 46 s after session-255 (no
-scope overlap); it added +8 assertions and resolved T-004 before
-this run closed.  Exit baseline is 5599 / 66 / 22.
+**Baseline (session 261-code-review).** No stale locks at
+acquisition — sessions 258 and 259 both released gracefully with
+`releaseReason` fields.  Session 260 (unit-tests) is actively
+running (not yet released); no scope overlap.  O-011 / O-012 /
+O-014 all carry forward as `[deferred - post-ship]`; zero
+release-blocker findings.
 At code-review-lane *entry*:
-`node tests/test-all.mjs` = **5591 passing / 0 failing**
-(+20 from session 253; stable through session 254);
-`node tests/test-persist.mjs` = **66 passing / 0 failing**
+`node tests/test-all.mjs` = **5621 passing / 0 failing**
+(+22 from session 258; stable through session 259);
+`node tests/test-persist.mjs` = **passing / 0 failing**
 (stable, unchanged); `node tests/sanity.mjs` = **22 passing
-/ 0 failing in ~9 ms** (stable).
+/ 0 failing in ~5 ms** (stable).
 `grep -c "register(" www/src/rpl/ops.js` = **480**
 (`grep -cE "^register\(" www/src/rpl/ops.js` = **461** —
-unchanged; sessions 253, 254, and 256 add no new register calls).
+unchanged; sessions 258, 259 add no new register calls).
 
 **This run's own edits.** Doc/hygiene only, no source changes:
   1. **`docs/REVIEW.md`** — preamble rewritten to fold in
-     sibling sessions 253–254; baseline block updated to session
-     255-code-review; **C-015** (COMMANDS.md Counts stamp drift)
-     and **T-004** (TESTS.md stamp/count drift) filed; O-011
-     aged 27 → 28 runs; O-012 and O-014 carried forward; session
-     log entries for 253, 254, and 255-code-review appended.
-  2. **`logs/meta-2026-04-26-code-review-2.md`** — this run's
+     sibling sessions 258–259; baseline block updated to session
+     261-code-review; O-011 aged 28 → 29 runs; O-012 aged
+     16 → 17 code-review-lane runs; O-014 chat-bot.js mtime
+     observation updated; session log entry for sessions 258,
+     259, 260 (partial), and 261-code-review appended.
+  2. **`logs/meta-2026-04-26-code-review-3.md`** — this run's
      session log (meta file: doc-only run, no source changes).
 
-**Lock.** Held `utils/@locks/session255-code-review.json`,
+**Lock.** Held `utils/@locks/session261-code-review.json`,
 scope = `[docs/REVIEW.md, logs/]`.
 Released at end of run.
 
@@ -8471,3 +8472,123 @@ No sibling locks active at acquisition.
 Zero release-blocker findings.
 
 Log pointer: `logs/session-257.md`.
+
+---
+
+### Session 258 — `rpl5050-data-type-support` (2026-04-26)
+
+BinaryInteger B-column rejection-pin pass.
+
+**Baseline at entry:** 5599 / passed / 22 (confirmed from session-257 close).
+
+**Work done.**
+- Added +22 rejection-pin assertions in `tests/test-types.mjs`
+  covering BinaryInteger B-column operand rejections across
+  21 matrix rows.
+- `docs/DATA_TYPES.md` "Last updated" stamp advanced from session
+  253 → 258.
+
+**Findings delta.**
+- **O-011** — session258 lock carries `releaseReason` ✓.
+  Count stays at 106.  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — infrastructure hygiene.
+- **O-012** `[deferred - post-ship]` — stray file.
+- **O-014** `[deferred - post-ship]` — unlogged algebra edit traceability.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-258.md`.
+
+---
+
+### Session 259 — `rpl5050-rpl-programming` (2026-04-26)
+
+Verification pass; no source changes.
+
+**Baseline at entry:** 5621 / passed / 22 (confirmed from session-258 close).
+
+**Work done.**
+- `docs/RPL.md` status stamp advanced from "as of session 254"
+  to "as of session 259".
+- Session-log pointer section back-filled entries for sessions
+  241, 245, and 249.
+- No source or test changes.
+
+**Findings delta.**
+- **O-011** — session259 lock carries `releaseReason` ✓.
+  Count stays at 106.  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — infrastructure hygiene.
+- **O-012** `[deferred - post-ship]` — stray file.
+- **O-014** `[deferred - post-ship]` — unlogged algebra edit traceability.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-259.md`.
+
+---
+
+### Session 260 — `rpl5050-unit-tests` (2026-04-26) — ACTIVE at session-261 acquisition
+
+Lock `utils/@locks/session260-unit-tests.json` acquired; `released: false`
+at time of session-261-code-review acquisition.  Scope: `tests/`,
+`docs/TESTS.md`, `logs/` — no overlap with this review run's scope.
+Entry baseline: 5621 / 0.  Session-261 cannot fold in session-260
+results; they will be absorbed by the next review-lane run.
+
+---
+
+### Session 261-code-review — what shipped (thirty-seventh review-lane run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-code-review`.
+**Lock.** `utils/@locks/session261-code-review.json`, scope =
+`[docs/REVIEW.md, logs/]`.
+
+**Work done.**
+- Folded in sibling sessions 258 (data-type-support) and 259
+  (rpl-programming); session-260 (unit-tests) is active at
+  acquisition — absorbed next run.
+- Baseline verified at entry: 5621 / passed / 22 — fully green.
+- Register count verified: 480 / 461 — unchanged.
+- Spot checks: DATA_TYPES.md stamp session 258 ✓; RPL.md stamp
+  session 259 ✓; COMMANDS.md stamp session 257 ✓ (sessions 258/259
+  add no register() calls; no COMMANDS.md update needed).
+  TESTS.md stamp session 256 — note: session 258 added +22 tests
+  (5599 → 5621); TESTS.md count is stale by 22; expected to be
+  resolved by the active session 260 (unit-tests).
+- O-012: `www/src/ui/keyboard.js.bak` re-verified present,
+  mtime 2026-04-25.
+- O-014 item 4: `www/src/ai/chat-bot.js` mtime now `Apr 26 22:51`
+  (updated since original observation of `21:00:53`); file has
+  been modified again with no session lock/log coverage.
+  Remains `[deferred - post-ship]`.
+- Sessions 258 and 259 both carry `releaseReason` ✓ — positive
+  O-011 trend continues.
+
+**Findings delta.**
+- **O-011** — 28 → 29 runs.  Sessions 258 and 259 carry
+  `releaseReason` ✓.  This run's own lock will carry
+  `releaseReason` at release.  Count stays at **one hundred six**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still in tree, mtime 2026-04-25).  Aged to 17 code-review-lane
+  runs.  `[deferred - post-ship]`.
+- **O-014** — item 4 observation updated (chat-bot.js mtime
+  now `Apr 26 22:51`; second unlocked modification).
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 29 runs, count 106.
+- **O-012** `[deferred - post-ship]` (stray file) — 17 code-review-lane runs.
+- **O-014** `[deferred - post-ship]` (unlogged algebra edit traceability + chat-bot.js mtime).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/meta-2026-04-26-code-review-3.md`.

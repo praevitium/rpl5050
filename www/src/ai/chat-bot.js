@@ -356,6 +356,41 @@ function findMachineSectionStart(text) {
   return Math.min(jIdx, sIdx);
 }
 
+/** Strip `<think>…</think>` (and `<thinking>…</thinking>`) reasoning
+ *  blocks from a model response.  Reasoning-tuned models like Qwen3
+ *  and the DeepSeek-R1 family emit a hidden chain-of-thought before
+ *  their visible answer; without stripping, that internal monologue
+ *  leaks into:
+ *    1. the user-facing bubble (visual noise, sometimes contradicts
+ *       the final answer mid-thought),
+ *    2. the tool-call and SUGGEST parsers (a `{"name":...` shape
+ *       inside the reasoning would be misread as a real tool call),
+ *    3. the history we push for the next turn (wastes context and
+ *       can confuse subsequent prompts).
+ *
+ *  The stripper handles three shapes:
+ *    - complete `<think>…</think>` pairs   → removed entirely
+ *    - open `<think>` with no close yet    → everything from the
+ *      open tag onward is dropped (mid-stream we don't want to
+ *      show a partial reasoning trace)
+ *    - no tags at all                       → passthrough
+ *
+ *  Both `<think>` and `<thinking>` spellings are recognised; tag
+ *  matching is case-insensitive.
+ */
+function stripThinkBlocks(text) {
+  if (!text) return text;
+  // First: collapse every complete pair.  Greedy [\s\S] handles
+  // newlines (which `.` doesn't, even with /m).
+  let out = text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+  // Then: drop a trailing open-but-unclosed reasoning block.  This
+  // is the mid-stream case — tokens are still arriving inside the
+  // block; suppress them until the close tag lands and the previous
+  // replace catches the pair on the next pass.
+  out = out.replace(/<think(?:ing)?>[\s\S]*$/i, '');
+  return out;
+}
+
 /* ---- Starter chips ------------------------------------------------- */
 
 /** Initial suggestion chips, shown alongside the greeting once the
@@ -1436,7 +1471,6 @@ export class ChatBot {
       bubble = stream.bubble;
       textEl = stream.textEl;
       let fullText = '';
-      let hideStart = -1;
       const watchdog = this._makeStallWatchdog();
 
       try {
@@ -1445,30 +1479,33 @@ export class ChatBot {
             if (typeof t !== 'string' || !t) return;
             watchdog.onToken();
             fullText += t;
-            // Detect the start of the machine-readable section (first
-            // `{"name":` tool-call anchor OR `SUGGEST:` marker,
-            // whichever comes first) exactly once.  Once found, the
-            // bubble freezes its visible text at that offset — the
-            // rest of the streamed tokens are still accumulated (we
-            // need the full JSON brace-blocks and SUGGEST array at
-            // end-of-stream) but they don't appear in the user-facing
-            // prose.  The orchestrator-facing parsers below operate on
-            // the full text post-stream.
-            if (hideStart < 0) {
-              const idx = findMachineSectionStart(fullText);
-              if (idx >= 0) hideStart = idx;
-            }
-            const visible = hideStart >= 0
-              ? fullText.slice(0, hideStart).trim()
-              : fullText.trim();
+            // Strip <think>...</think> reasoning blocks BEFORE
+            // computing what the user sees and where the machine-
+            // readable section starts.  Reasoning-tuned models like
+            // Qwen3 / DeepSeek-R1 emit a hidden chain-of-thought
+            // before their visible answer; without stripping it
+            // would flicker into the bubble, get fed to the tool-
+            // call parser (a stray `{"name":` shape inside the
+            // reasoning would be misread as a real tool call), and
+            // pollute the history we save for next-turn context.
+            // Recomputed each token because mid-stream a `<think>`
+            // open tag may swallow tokens until its matching close
+            // arrives — the offset of the visible region is not a
+            // monotonic prefix of fullText.
+            const cleaned = stripThinkBlocks(fullText);
+            const idx = findMachineSectionStart(cleaned);
+            const visible = idx >= 0
+              ? cleaned.slice(0, idx).trim()
+              : cleaned.trim();
             textEl.textContent = visible || '…';
           },
         });
       } catch (err) {
         watchdog.stop();
-        const errDisplay = err.message === 'AbortError' ? fullText.trim() : `⚠ ${err.message}`;
+        const cleaned = stripThinkBlocks(fullText).trim();
+        const errDisplay = err.message === 'AbortError' ? cleaned : `⚠ ${err.message}`;
         this._finaliseStreamBubble(bubble, textEl, errDisplay, null);
-        if (fullText) this._history.push({ role: 'assistant', content: fullText.trim() });
+        if (cleaned) this._history.push({ role: 'assistant', content: cleaned });
         dwarn('runLoop: generate threw:', err.message);
         return;
       }
@@ -1480,9 +1517,11 @@ export class ChatBot {
       // skipped because the turn was cancelled.  (For _newChat,
       // the messages container gets wiped right after this anyway.)
       if (stale()) {
-        const visiblePart = hideStart >= 0
-          ? fullText.slice(0, hideStart).trim()
-          : fullText.trim();
+        const cleaned = stripThinkBlocks(fullText);
+        const idx = findMachineSectionStart(cleaned);
+        const visiblePart = idx >= 0
+          ? cleaned.slice(0, idx).trim()
+          : cleaned.trim();
         this._finaliseStreamBubble(bubble, textEl, visiblePart, null,
                                    { state: 'stopped' });
         dlog('runLoop: stale after generate, finalised stopped bubble');
@@ -1490,13 +1529,22 @@ export class ChatBot {
       }
 
       stalled = watchdog.isStalled();
-      trimmed = fullText.trim();
-      dlog(`runLoop: attempt ${attempt} returned ${trimmed.length} chars (stalled=${stalled}), hideStart=${hideStart}`);
+      // Cleaned text is the canonical view from this point on — the
+      // bubble body, the prose/JSON split, the tool-call and SUGGEST
+      // parsers, and the history push all operate on it.  fullText
+      // is retained only for the dlog below (so a debugging session
+      // can see how much got stripped vs how much was kept).
+      const cleanedText  = stripThinkBlocks(fullText);
+      trimmed = cleanedText.trim();
+      const hideStart = findMachineSectionStart(cleanedText);
+      dlog(`runLoop: attempt ${attempt} returned ${fullText.length} chars`,
+           `(${cleanedText.length} after stripping <think> blocks),`,
+           `stalled=${stalled}, hideStart=${hideStart}`);
 
-      const proseRaw = hideStart >= 0 ? fullText.slice(0, hideStart) : fullText;
+      const proseRaw = hideStart >= 0 ? cleanedText.slice(0, hideStart) : cleanedText;
       prose      = proseRaw.trim();
-      toolCalls  = parseAllToolCalls(fullText);
-      suggestions = parseSuggestions(fullText);
+      toolCalls  = parseAllToolCalls(cleanedText);
+      suggestions = parseSuggestions(cleanedText);
       // Apply the alias map up front, BEFORE deciding whether to
       // retry — saves a retry round-trip on the most frequent
       // failure mode where the model just used a near-synonym
@@ -1533,11 +1581,15 @@ export class ChatBot {
         bubble, textEl, display, null,
         stalled ? { state: 'stalled' } : undefined,
       );
-      // Push the FULL response (incl. all JSONs) to history every
-      // attempt — even the ones we're about to retry.  The corrective
-      // user message we'll inject below references "your previous
-      // response", so the previous response needs to actually be in
-      // the conversation log for the model to revise.
+      // Push the response to history every attempt — even the ones
+      // we're about to retry.  The corrective user message we'll
+      // inject below references "your previous response", so the
+      // previous response needs to actually be in the conversation
+      // log for the model to revise.  Note: `trimmed` is already
+      // post-strip-think-blocks (see assignment above), so the
+      // model's hidden reasoning trace is NOT included in history —
+      // saving context budget AND avoiding accidental influence on
+      // subsequent turns from a previous turn's chain-of-thought.
       this._history.push({ role: 'assistant', content: trimmed });
 
       // Validate tool names against the registry.  An empty toolCalls
