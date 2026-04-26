@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 193 (2026-04-26).  Unit-tests lane run
-(post-ship snapshot refresh — Sunday 2026-04-26; 11th release-window
+**Last updated.** Session 198 (2026-04-26).  Unit-tests lane run
+(post-ship snapshot refresh — Sunday 2026-04-26; 12th release-window
 run in this lane after sessions 156, 160, 164, 160-unit-tests,
-168, 173, 177, 181, 185, 189).
+168, 173, 177, 181, 185, 189, 193).
 
 Sibling deltas absorbed since the session-168 snapshot
 (5246 → 5306, **+60** over four sibling sessions):
@@ -846,7 +846,64 @@ Sibling deltas absorbed since session-189 snapshot
   assertion deltas.  `docs/RPL.md` stamp advanced to "as of session
   192".  All RPL-bucket findings confirmed closed.
 
-Session 193 unit-tests deltas (this run):
+Session 198 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Sibling deltas absorbed since session-193 snapshot
+(5464 → 5472, **+8** over sessions 194–197):
+- **Session 194** (code-review) — doc-only run; **0** assertion deltas.
+  `docs/REVIEW.md` post-ship aging; filed C-013 (COMMANDS.md
+  register-count drift); O-009 resolved; session-194-code-review log
+  written.  No source or test edits.
+- **Session 195** (command-support) — doc-only run; **0** assertion
+  deltas.  C-013 close: `docs/COMMANDS.md` register-count updated
+  481/460 → 482/461; `docs/REVIEW.md` C-013 promoted to resolved.
+  No source or test edits.
+- **Session 196** (data-type-support) — **+8** assertions in
+  `tests/test-types.mjs` (1016 → 1024; `session196:` labels) —
+  TRUNC wrapped with `_withTaggedBinary(_withListBinary(...))` to
+  close the last ship-prep audit candidate (L/T blank → ✓; V/M
+  blank → ✗ per MOD/MIN/MAX policy).  8 pins: n=0 bare-List, n=0
+  Tagged-of-List, n=1 bare-List value-precise, n=2 bare-List
+  heterogeneous, Tagged-of-List tag-drop, scalar Tagged tag-drop,
+  pairwise L×L, Vector rejection guard.  Source edit at
+  `www/src/rpl/ops.js` (`register('TRUNC', ...)` line).
+- **Session 197** (rpl-programming) — doc-only run; **0** assertion
+  deltas.  `docs/RPL.md` session-log pointer prose backfilled for
+  sessions 172 / 180 / 184 / 188 / 192; status stamp advanced to
+  session 197.  No source or test edits.
+
+Baseline at session-198 entry: **5472 / 0** (fully green).
+Final: **5472 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~6 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | **1024** | 0 | +8 s196 TRUNC L/T wrapper-add (`session196:` labels). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5472** | **0** | Session 198 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~6 ms smoke suite.                       |
+
+### Prior snapshot — Session 193 (retained for context)
+
+Session 193 unit-tests deltas:
 - **0** new assertions.  Snapshot-refresh-only run under scope cap.
 
 Baseline at session-193 entry: **5464 / 0** (fully green).
@@ -1848,7 +1905,20 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 193 (2026-04-26) — this run.  Unit-tests lane (post-ship
+- Session 198 (2026-04-26) — this run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5472 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-198; added session-198 coverage snapshot (absorbed
+  sibling deltas 5464 → 5472: s194 code-review doc-only, s195
+  command-support doc-only C-013 close, s196 +8 TRUNC L/T pins,
+  s197 rpl-programming doc-only); wrote `logs/session-198.md`.
+  Lock: `utils/@locks/session198-unit-tests.json`.
+
+- Session 193 (2026-04-26) — earlier run.  Unit-tests lane (post-ship
   snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
   snapshot-only run).  Gates at entry: test-all **5464 / 0**,
   test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001

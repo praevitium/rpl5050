@@ -185,9 +185,33 @@ function parseToolCall(text) {
   }
 }
 
-/** Strip tool_call blocks from the text, returning the clean prose. */
+/** Strip *complete* tool_call blocks from the text, returning the clean
+ *  prose.  Used for finalised messages, where every tool_call has its
+ *  closing tag. */
 function stripToolCalls(text) {
   return text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
+}
+
+/** Format a partial response for the live streaming bubble.
+ *
+ *  The model's output interleaves prose with tool_call blocks.  A naive
+ *  display would show raw `<tool_call>\n{"name":"run", …` as the JSON is
+ *  being typed out, which looks like the chat is broken.  Instead, we:
+ *    – strip any *complete* tool_call blocks (rare during streaming, but
+ *      possible if there are multiple),
+ *    – truncate at the first *opening* `<tool_call>` tag, replacing the
+ *      partial XML with a small "preparing action…" badge.
+ *
+ *  Returns a string that's safe to drop into textContent. */
+function formatStreamingText(text) {
+  // Remove any already-closed tool_call blocks first.
+  let s = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
+  const open = s.indexOf('<tool_call>');
+  if (open >= 0) {
+    const prose = s.slice(0, open).trimEnd();
+    return prose ? `${prose}\n\n⚙ preparing action…` : '⚙ preparing action…';
+  }
+  return s.trim();
 }
 
 /* ================================================================
@@ -255,7 +279,7 @@ export class ChatBot {
     // Load button — shown until model is ready
     this._loadBtn = document.createElement('button');
     this._loadBtn.className = 'cb-load-btn';
-    this._loadBtn.textContent = 'Download model (~400 MB)';
+    this._loadBtn.textContent = 'Load model (~460 MB, bundled)';
     this._loadBtn.title = 'Downloads Qwen2.5-0.5B-Instruct (quantised) from HuggingFace and caches it locally.';
     this._loadBtn.addEventListener('click', () => this._startLoad());
 
@@ -395,15 +419,26 @@ export class ChatBot {
       try {
         await this._llm.generate(messages, {
           onToken: (t) => {
+            // Defensive: some streamer implementations flush a final
+            // empty/null token; ignore non-strings rather than appending
+            // "null"/"undefined" into the bubble.
+            if (typeof t !== 'string' || t.length === 0) return;
             fullText += t;
-            // Show clean text (strip in-progress tool_call markup).
-            textEl.textContent = stripToolCalls(fullText) || '…';
+            // Hide partial tool_call markup behind a "preparing action…"
+            // placeholder so the user never sees raw XML/JSON streaming
+            // in.  Empty fullText still shows the spinner ellipsis.
+            textEl.textContent = formatStreamingText(fullText) || '…';
           },
         });
       } catch (err) {
         if (err.message !== 'AbortError') {
           this._finaliseStreamBubble(bubble, textEl, `⚠ ${err.message}`, null);
           this._history.push({ role: 'assistant', content: fullText || err.message });
+        } else {
+          // Aborted: still finalise the bubble so the streaming cursor
+          // and "preparing…" placeholder don't linger forever.
+          this._finaliseStreamBubble(bubble, textEl, stripToolCalls(fullText), null);
+          if (fullText) this._history.push({ role: 'assistant', content: fullText });
         }
         return;
       }
@@ -412,8 +447,13 @@ export class ChatBot {
       const cleanText = stripToolCalls(fullText);
 
       if (!toolCall) {
-        // Final assistant turn — render markdown and finish.
-        this._finaliseStreamBubble(bubble, textEl, cleanText, null);
+        // Final assistant turn — render markdown and finish.  If the
+        // model produced no output at all (e.g. greedy decoding chose
+        // EOS as its first token), surface a fallback so the user
+        // always sees that the turn completed instead of an invisible
+        // empty bubble.
+        const display = cleanText || '_(model returned no output — try rephrasing.)_';
+        this._finaliseStreamBubble(bubble, textEl, display, null);
         this._history.push({ role: 'assistant', content: fullText });
         return;
       }
@@ -425,14 +465,11 @@ export class ChatBot {
         // Non-destructive: execute automatically without confirmation.
         this._finaliseStreamBubble(bubble, textEl, cleanText, null);
         const result = this._getContext();
-        this._history.push({
-          role: 'tool',
-          content: JSON.stringify({
-            stack: result.stack,
-            angleMode: result.angleMode,
-            displayMode: result.displayMode,
-            dir: result.dir,
-          }),
+        this._pushToolResult({
+          stack: result.stack,
+          angleMode: result.angleMode,
+          displayMode: result.displayMode,
+          dir: result.dir,
         });
         // Loop to let the model process the result.
         continue;
@@ -453,32 +490,34 @@ export class ChatBot {
           try {
             this._tools.run(code);
             const after = this._getContext();
-            this._history.push({
-              role: 'tool',
-              content: JSON.stringify({ success: true, stack: after.stack }),
-            });
+            this._pushToolResult({ success: true, stack: after.stack });
           } catch (err) {
-            this._history.push({
-              role: 'tool',
-              content: JSON.stringify({ error: err.message }),
-            });
+            this._pushToolResult({ error: err.message });
           }
         } else {
-          this._history.push({
-            role: 'tool',
-            content: JSON.stringify({ cancelled: true }),
-          });
+          this._pushToolResult({ cancelled: true });
         }
         continue;
       }
 
       // Unknown tool — tell the model.
       this._finaliseStreamBubble(bubble, textEl, cleanText, null);
-      this._history.push({
-        role: 'tool',
-        content: JSON.stringify({ error: `Unknown tool: ${toolCall.name}` }),
-      });
+      this._pushToolResult({ error: `Unknown tool: ${toolCall.name}` });
     }
+  }
+
+  /** Push a tool-call result into the conversation, wrapped in the
+   *  exact `<tool_response>…</tool_response>` shape the system prompt
+   *  promises the model.  We use `role:'user'` rather than `role:'tool'`
+   *  because the small Qwen2.5-0.5B model is far more reliable when the
+   *  conversation alternates user/assistant — and the explicit XML tags
+   *  give it a strong textual cue that this is tool output, not a new
+   *  user instruction. */
+  _pushToolResult(payload) {
+    this._history.push({
+      role: 'user',
+      content: `<tool_response>\n${JSON.stringify(payload)}\n</tool_response>`,
+    });
   }
 
   _abort() {

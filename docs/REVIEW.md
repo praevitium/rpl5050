@@ -6,22 +6,22 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 194-code-review (2026-04-26, post-ship
-code-review run — twenty-second review-lane run).  Prior baseline
-= session 189-code-review (twenty-first run, 2026-04-26).  This run
-folds in four sibling-lane sessions since session 189-code-review:
-190 (command-support — COMMANDS.md Counts stamp advanced to "as of
-session 190", register-count prose corrected to 481/460; C-012
-resolved; doc-only); 191 (data-type-support — HEAVISIDE + DIRAC
-L/V/M/T wrapper-add in `www/src/rpl/ops.js`; +16 pins in
-`tests/test-types.mjs` (1000 → 1016); two stale reject tests in
-`tests/test-algebra.mjs` updated; DATA_TYPES.md stamp refreshed
-to Session 191; baseline 5448 → 5464/0); 192 (rpl-programming —
-verification-only, doc-only RPL.md stamp bump; confirmed 5464/0
-baseline, all RPL-bucket findings closed); 193 (unit-tests —
-snapshot refresh: TESTS.md stamp 189 → 193, sibling-delta
-narrative for s190–s192 added; confirmed 5464/0 baseline; lock
-released before this run began).
+**Last updated.** Session 198-code-review (2026-04-26, post-ship
+code-review run — twenty-third review-lane run).  Prior baseline
+= session 194-code-review (twenty-second run, 2026-04-26).  This run
+folds in four sibling-lane sessions since session 194-code-review:
+195 (command-support — C-013 close; COMMANDS.md Counts stamp advanced
+to "as of session 195", register-count prose updated to 482/461;
+doc-only); 196 (data-type-support — TRUNC L/T wrapper-add,
+`_withTaggedBinary(_withListBinary(_truncOp()))`; +8 pins in
+`tests/test-types.mjs` (5464 → 5472); DATA_TYPES.md stamp refreshed
+to Session 196; baseline 5464 → 5472/0); 197 (rpl-programming —
+doc-only RPL.md session-log pointer backfill for sessions 172/180/184/
+188/192; status stamp 192 → 197; no source/test changes; 5472/0
+confirmed); 198-unit-tests (concurrent lock held `docs/TESTS.md` +
+`logs/`, released before this run wrote any log output — TESTS.md
+stamp refreshed to session 198, sibling-delta narrative for s194–s197
+added; 5472/0 confirmed).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -44,49 +44,47 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 194-code-review).** Session193-unit-tests
+**Baseline (session 198-code-review).** Session198-unit-tests
 held a concurrent lock on `docs/TESTS.md` + `logs/` at this
-run's acquisition (startedAt: 1777190160, released at
-1777190269 before this run began writing); lock bodies for
-sessions 190–193 all released gracefully.  At review-lane
-*entry* (post-session-193-unit-tests)
-`node tests/test-all.mjs` = **5464 passing / 0 failing**
-(fully green; was 5448 at session-189-code-review entry; net
-Δ +16 across four sibling sessions — +16 s191 HEAVISIDE/DIRAC
-L/V/M/T pins; s190 / s192 / s193 doc-only or verification;
+run's acquisition (startedAt: 1777193784, releasedAt: 1777193887
+— released before this run acquired `logs/`); lock bodies for
+sessions 195–197 all released gracefully.  At review-lane
+*entry* (post-session-198-unit-tests)
+`node tests/test-all.mjs` = **5472 passing / 0 failing**
+(fully green; was 5464 at session-194-code-review entry; net
+Δ +8 across three sibling sessions — +8 s196 TRUNC L/T pins;
+s195 / s197 / s198-unit-tests doc-only or verification;
 T-003 remains **fully resolved** since session 185);
-`node tests/test-persist.mjs` = **66 passing / 0 failing**
+`node tests/test-persist.mjs` = **all passing / 0 failing**
 (stable, unchanged); `node tests/sanity.mjs` = **22 passing
-/ 0 failing in ~6 ms** (stable).  `node --check` clean
+/ 0 failing in ~5 ms** (stable).  `node --check` clean
 across all four core sources (`www/src/app.js`,
 `www/src/rpl/ops.js`, `www/src/rpl/state.js`,
 `www/src/rpl/types.js`).
 `grep -c "register(" www/src/rpl/ops.js` = **482**
 (`grep -cE "^register\(" www/src/rpl/ops.js` = **461** —
-COMMANDS.md Counts prose updated to match at session-195
-C-013 close).
+COMMANDS.md Counts prose matches at session-195 C-013 close).
 
 **This run's own edits.** Two edits this run — pure
 doc/hygiene, no source changes:
   1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 194-code-review (22nd review-lane run); preamble
-     rewritten to fold in sibling sessions 190–193; baseline
-     block rewritten with 5464 / 66 / 22 entry gates and
-     updated register-count note; **O-011** aged 9 → 10 runs,
-     four new lock-body occurrences (190/191/192/193), running
-     count now **forty-eight** since session 106; **O-012**
-     re-verified present; one new finding filed (**C-013**
-     COMMANDS.md register-count drift +1/+1 after session 191).
-  2. **`logs/session-194-code-review.md`** — this run's
+     session 198-code-review (23rd review-lane run); preamble
+     rewritten to fold in sibling sessions 195–198-unit-tests;
+     baseline block rewritten with 5472 / all / 22 entry gates
+     and updated register-count note; **O-011** aged 10 → 11
+     runs, four new lock-body occurrences (195/196/197/198-unit-
+     tests), running count now **fifty-two** since session 106;
+     **O-012** re-verified present; one new finding filed
+     (**C-014** COMMANDS.md session-log block stops at session
+     186 — sessions 187–197 have no entries).
+  2. **`logs/session-198-code-review.md`** — this run's
      session log.
 
-**Lock.** Held `utils/@locks/session194-code-review.json`
-throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
-review-lane scope; no broadening required this run since no
-in-place source edits were taken).  Session193-unit-tests held
-a concurrent non-overlapping lock on `docs/TESTS.md` + `logs/`
-but released before this run wrote any log output.  Released
-at end of run.
+**Lock.** Held `utils/@locks/session198-code-review.json`
+throughout, initially scope = `docs/REVIEW.md` only (awaiting
+session198-unit-tests release of `logs/`); broadened to
+`docs/REVIEW.md` + `logs/` after session198-unit-tests
+released (releasedAt: 1777193887).  Released at end of run.
 
 ---
 
@@ -191,9 +189,15 @@ O-012** only (both `[deferred - post-ship]`).  COMMANDS.md
 stamp advanced to session 195; register-count prose updated to
 482 / 461.
 
-Ship is complete.  Post-ship lanes may pull O-011 / O-012 as
-remaining hygiene (infrastructure / stray-file; no behavior
-risk).
+**C-014 filed session 198-code-review.**  COMMANDS.md session-log
+block stops at session 186; sessions 187–197 (11 sessions) have
+no entries.  `[deferred - post-ship]` — doc-only back-fill for
+the command-support lane.  Open queue: **O-011 + O-012 + C-014**
+(all `[deferred - post-ship]`).
+
+Ship is complete.  Post-ship lanes may pull O-011 / O-012 / C-014
+as remaining hygiene (infrastructure / stray-file / session-log
+back-fill; no behavior risk).
 
 ---
 
@@ -3699,6 +3703,45 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   to 482 / 461; session-191 wrapper-add mechanism explained in
   the prose.  Doc-only close, no source change.
 
+### C-014  `COMMANDS.md` session-log block missing entries for sessions 187–197
+
+- **Classification.** Commands (doc drift / session-log gap).
+- **Where.** `docs/COMMANDS.md` session-log block (most-recent-
+  first list at the end of the file); last entry at session 186.
+- **What.** The COMMANDS.md session-log block stops at session
+  186 (`rpl5050-command-support`, 2026-04-26, doc-reconciliation
+  pass).  Sessions 187 through 197 — eleven sessions spanning
+  all five sibling lanes — have no log entries in the block:
+  187 (data-type-support — XPON/MANT wrappers, +15 pins), 188
+  (rpl-programming — doc-only RPL.md stamp bump), 189
+  (unit-tests — TESTS.md snapshot refresh), 189-code-review
+  (C-012 + O-012 filings), 190 (command-support — C-012 close,
+  Counts stamp 186 → 190, register-count prose corrected), 191
+  (data-type-support — HEAVISIDE + DIRAC wrappers, +16 pins),
+  192 (rpl-programming — doc-only), 193 (unit-tests — TESTS.md
+  refresh), 194-code-review (C-013 filing, O-011 aging), 195
+  (command-support — C-013 close, Counts stamp 190 → 195), 196
+  (data-type-support — TRUNC wrapper, +8 pins), 197 (rpl-
+  programming — RPL.md backfill), 198-unit-tests (TESTS.md
+  refresh).
+- **Why.** COMMANDS.md's session-log block is the canonical
+  per-run audit trail for the Commands lane.  The recurring
+  anti-pattern (C-005 / C-006 / C-007 / C-008 all filed and
+  closed for the same kind of gap in earlier cycles) now has
+  eleven sessions of backlog.  A reader consulting the file
+  to understand "what changed between session 186 and now?"
+  has no inline record.
+- **Fix.** Command-support lane: back-fill session-log entries
+  for sessions 187–197 at the top of the log block (most-
+  recent-first order).  Entries for sessions with no register
+  or row changes can be one-liners; sessions with row flips or
+  new ops need the standard summary paragraph.
+- **Confidence.** high — `grep -n "^\- \*\*session 18[7-9]\|
+  ^\- \*\*session 19[0-7]" docs/COMMANDS.md` returns zero hits.
+- **Age.** 1 run (filed session 198-code-review).
+  **Status.** open.  Lane = `rpl5050-command-support`.
+  `[deferred - post-ship]` — doc-only, no behavior risk.
+
 ### O-012  Stray `www/src/ui/keyboard.js.bak` backup file
 
 - **Classification.** Other (file-hygiene / build artifact).
@@ -3725,8 +3768,10 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   Re-verified session 194-code-review: `find www/ -name '*.bak*'`
   still returns one hit (`www/src/ui/keyboard.js.bak`); file
   unchanged.
-- **Age.** 1 run (filed session 189-code-review; aged session
-  194-code-review).
+  Re-verified session 198-code-review: same one hit; mtime
+  2026-04-25; file still present and unchanged.
+- **Age.** 2 runs (filed session 189-code-review; aged sessions
+  194-code-review, 198-code-review).
   **Status.** open.  Lane = `rpl5050-ui-development` or any
   lane in an interactive session.  `[deferred - post-ship]`
   pending interactive approval — no behavior risk.
@@ -6277,3 +6322,133 @@ lane-id drift):**
 Zero release-blocker findings.  **T-003 + O-009 fully closed.**
 
 Log pointer: `logs/session-189-code-review.md`.
+
+### Session 194-code-review — what shipped (twenty-second review-lane run, post-ship audit)
+
+**Date.** Sunday 2026-04-26 (post-ship).
+**Lock.** `utils/@locks/session194-code-review.json`
+(scope = `docs/REVIEW.md` + `logs/`).
+Session193-unit-tests held a concurrent lock on `docs/TESTS.md`
++ `logs/` (startedAt: 1777190160, released at 1777190269)
+before this run wrote any output.
+
+**Entry gates.**
+- `node tests/test-all.mjs` = **5464 / 0** (fully green).
+- `node tests/test-persist.mjs` = **66 / 0** (stable).
+- `node tests/sanity.mjs` = **22 / 0** in ~6 ms (stable).
+- `node --check` clean across all four core sources.
+
+**Sibling sessions absorbed (190–193):**
+- **190** (command-support, doc-only) — C-012 close; COMMANDS.md
+  Counts stamp "as of session 186" → "as of session 190";
+  register-count prose corrected to 481/460.
+- **191** (data-type-support, +16 pins) — HEAVISIDE + DIRAC
+  L/V/M/T wrapper-add; +16 pins in `tests/test-types.mjs`
+  (1000 → 1016); two stale reject tests in `tests/test-algebra.mjs`
+  updated; DATA_TYPES.md stamp Session 187 → Session 191
+  (5448 → 5464).
+- **192** (rpl-programming, verification-only) — RPL.md stamp
+  bump "as of session 188" → "as of session 192"; confirmed
+  5464/0 baseline; all RPL-bucket findings closed.
+- **193** (unit-tests, ran concurrently) — TESTS.md snapshot
+  refresh, stamp 189 → 193; sibling-delta narrative for
+  s190–s192 added; confirmed 5464/0 baseline.
+
+**Findings delta.**
+- **C-012** — promoted from `[ship-stretch]` to
+  `[resolved - session 190]`.  COMMANDS.md register-count
+  corrected to 481/460 by session 190 command-support run.
+- **O-011** — 9 → 10 runs.  Four new lock-body occurrences
+  (190 / 191 / 192 / 193); running count now **forty-eight**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk).  `[deferred - post-ship]`.
+- **C-013** — new finding filed.  COMMANDS.md register-count
+  prose stale after session-191 HEAVISIDE/DIRAC wrapper-add;
+  actual 482/461 vs. claimed 481/460.  Lane =
+  `rpl5050-command-support`.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 190" — current.
+  Register count claim 481/460 stale by +1/+1 — see C-013.
+- `grep -c "register("` = 482 actual; `grep -cE "^register\("` = 461 actual.
+- DATA_TYPES.md Last-updated = "Session 191" — current.
+- TESTS.md Last-updated = "Session 193" — current.
+- RPL.md stamp = "as of session 192" — current.
+- Lane-task-id drift: none found.
+- `src/...` path drift in docs: none actionable.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 10 runs.
+- **O-012** `[deferred - post-ship]` (stray file).
+- **C-013** new, `[deferred - post-ship]` (doc-only, command-support).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-194-code-review.md`.
+
+### Session 198-code-review — what shipped (twenty-third review-lane run, post-ship audit)
+
+**Date.** Sunday 2026-04-26 (post-ship).
+**Lock.** `utils/@locks/session198-code-review.json`
+(acquired initially scope = `docs/REVIEW.md` only; broadened
+to `docs/REVIEW.md` + `logs/` after session198-unit-tests
+released (startedAt: 1777193784, releasedAt: 1777193887)).
+
+**Entry gates.**
+- `node tests/test-all.mjs` = **5472 / 0** (fully green).
+- `node tests/test-persist.mjs` = **all passing / 0 failing** (stable).
+- `node tests/sanity.mjs` = **22 / 0** in ~5 ms (stable).
+- `node --check` clean across all four core sources.
+
+**Sibling sessions absorbed (195–198-unit-tests):**
+- **195** (command-support, doc-only) — C-013 close; COMMANDS.md
+  Counts stamp "as of session 190" → "as of session 195";
+  register-count prose updated to 482/461.
+- **196** (data-type-support, +8 pins) — TRUNC L/T wrapper-add,
+  `_withTaggedBinary(_withListBinary(_truncOp()))` closes the last
+  ship-prep 2026-04-25 audit candidate; +8 pins in
+  `tests/test-types.mjs` (5464 → 5472); DATA_TYPES.md stamp
+  Session 191 → Session 196.
+- **197** (rpl-programming, doc-only) — RPL.md session-log pointer
+  backfill for sessions 172/180/184/188/192; status stamp
+  "as of session 192" → "as of session 197"; no source/test changes.
+- **198-unit-tests** (concurrent) — TESTS.md snapshot refresh,
+  stamp 193 → 198; sibling-delta narrative for s194–s197 added;
+  confirmed 5472/0 baseline; released before this run wrote output.
+
+**Findings delta.**
+- **C-013** — promoted from open to `[resolved - session 195]`.
+  COMMANDS.md register-count corrected to 482/461.
+- **O-011** — 10 → 11 runs.  Four new lock-body occurrences
+  (195 / 196 / 197 / 198-unit-tests); running count now
+  **fifty-two** since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk, mtime 2026-04-25).  `[deferred - post-ship]`.
+- **C-014** — new finding filed.  COMMANDS.md session-log block
+  stops at session 186; sessions 187–197 have no entries (11
+  sessions).  Recurring anti-pattern from C-005/C-006/C-007/C-008.
+  Lane = `rpl5050-command-support`.  `[deferred - post-ship]`.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 195" — current.
+  Register count claim 482/461 — verified correct.
+- `grep -c "register("` = 482 actual; `grep -cE "^register\("` = 461 actual.
+- DATA_TYPES.md Last-updated = "Session 196" — current.
+- TESTS.md Last-updated = "Session 198" — current (s198
+  unit-tests updated concurrently).
+- RPL.md stamp = "as of session 197" — current.
+- Lane-task-id drift: none found.
+- `src/...` path drift in docs: none actionable.
+- `node --check` clean on all core sources.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 11 runs.
+- **O-012** `[deferred - post-ship]` (stray file).
+- **C-014** new, `[deferred - post-ship]` (doc-only, command-support).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-198-code-review.md`.

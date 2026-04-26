@@ -635,12 +635,32 @@ export class SidePanel {
     // AI tab: preserve the chatbot's live DOM across re-renders by
     // lazily creating a persistent container and re-appending it
     // (avoids destroying conversation history or losing event listeners).
+    //
+    // Subtlety: the SidePanel is constructed before `app.chatBot` exists
+    // (see app.js — SidePanel at L99, ChatBot at L112), and
+    // _restoreUIState() may call open()→_render() from inside our own
+    // constructor.  We must NOT cache an unmounted container, or
+    // subsequent renders will keep re-appending an empty <div> forever.
+    // So we only cache after a successful mount, and re-attempt on every
+    // render until ChatBot is available.
     if (this.tab === 'ai') {
       if (!this._chatContainer) {
-        this._chatContainer = document.createElement('div');
-        this._chatContainer.className = 'cb-panel-wrap';
-        // Mount is idempotent — called once; the chatBot retains its DOM.
-        this.app.chatBot?.mount(this._chatContainer);
+        const container = document.createElement('div');
+        container.className = 'cb-panel-wrap';
+        if (this.app.chatBot) {
+          this.app.chatBot.mount(container);
+          this._chatContainer = container;          // cache only on success
+        } else {
+          // ChatBot not yet constructed — render a placeholder this turn
+          // and try again next render.  Don't cache.
+          const placeholder = document.createElement('div');
+          placeholder.className = 'cb-panel-wrap';
+          placeholder.textContent = 'Initialising assistant…';
+          body.innerHTML = '';
+          body.appendChild(placeholder);
+          this._refreshExpandLabel();
+          return;
+        }
       }
       body.innerHTML = '';
       body.appendChild(this._chatContainer);

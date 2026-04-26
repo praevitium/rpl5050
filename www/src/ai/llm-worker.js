@@ -26,9 +26,15 @@ import {
   env,
 } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.0';
 
-// Allow fetching model weights from the HuggingFace Hub.
-env.allowRemoteModels = true;
-env.allowLocalModels  = false;
+// Model weights are bundled into the app at www/models/<MODEL_ID>/.
+// `localModelPath` is resolved against the WORKER's URL inside
+// transformers.js, not the document origin — so a bare `models/` would
+// look up at /src/ai/models/ and 404.  Anchor it at the page origin
+// with a full URL so the lookup lands on /models/<MODEL_ID>/...
+// regardless of where the worker file lives in the source tree.
+env.allowRemoteModels = false;
+env.allowLocalModels  = true;
+env.localModelPath    = `${self.location.origin}/models/`;
 
 const MODEL_ID = 'onnx-community/Qwen2.5-0.5B-Instruct';
 
@@ -68,7 +74,10 @@ async function loadModel() {
       });
 
       generator = await pipeline('text-generation', MODEL_ID, {
-        dtype: 'q4',
+        // q4f16 weights are ~483 MB vs ~786 MB for plain q4 with
+        // similar quality, and run faster on WebGPU.  Must match the
+        // file shipped under www/models/.../onnx/.
+        dtype: 'q4f16',
         device,
         progress_callback: progressCallback,
       });
@@ -113,7 +122,7 @@ function makeStreamer(id) {
 
 /* ---- Generation ---- */
 
-async function generate({ id, messages, maxTokens = 768 }) {
+async function generate({ id, messages, maxTokens = 256 }) {
   if (!generator) {
     self.postMessage({ type: 'error', id, message: 'Model not loaded' });
     return;
@@ -124,12 +133,20 @@ async function generate({ id, messages, maxTokens = 768 }) {
   try {
     const streamer = makeStreamer(id);
 
+    // Qwen2.5-0.5B-Instruct sampling.  The Qwen team's published
+    // recommendation is T=0.7, top_p=0.8, top_k=20, repetition_penalty
+    // =1.05; we tighten T and top_p further so this assistant reads as
+    // terse and predictable rather than chatty.  Pure greedy (do_sample
+    // :false) on this 0.5B model collapses casual turns to <|im_end|>
+    // immediately and yields empty replies, so we keep sampling on but
+    // at low temperature for near-deterministic output.
     await generator(messages, {
       max_new_tokens: maxTokens,
-      temperature: 0.6,
-      // Greedy decoding is faster and more deterministic for a
-      // calculator assistant that needs accurate command names.
-      do_sample: false,
+      do_sample: true,
+      temperature: 0.2,
+      top_p: 0.8,
+      top_k: 20,
+      repetition_penalty: 1.05,
       streamer,
     });
 
