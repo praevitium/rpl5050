@@ -12,6 +12,42 @@
    without overlapping the side panel itself.
    ================================================================= */
 
+/* Panel-name → doc-heading aliases.  The HP50 manual headings use the
+   Unicode glyphs (√, –, ≤, …) while the panel labels keep ASCII /
+   mnemonic forms (SQRT, -, <=, …).  When a direct lookup misses,
+   `show()` falls back through this table.  Keep both sides upper-case
+   so the existing key normalization stays one-step. */
+const ALIASES = new Map([
+  // Operator glyphs the panel labels with ASCII equivalents.
+  ['SQRT',    '√'],
+  ['-',       '–'],
+  ['HMS-',    'HMS–'],
+  ['ROW-',    'ROW–'],
+  ['COL-',    'COL–'],
+  ['STO-',    'STO–'],
+  ['<=',      '≤'],
+  ['>=',      '≥'],
+  ['<>',      '≠'],
+  // Names the panel mnemonic-ifies.
+  ['LIM',     'LIMIT'],
+  ['TCHEB',   'TCHEBYCHEFF'],
+  ['CHARPOL', 'PCAR'],
+  ['INTEG',   'INTVX'],
+  // Statistics ASCII aliases for the Σ-prefixed canonical names.
+  ['SX',      'ΣX'],
+  ['SY',      'ΣY'],
+  ['SXY',     'ΣXY'],
+  ['SX2',     'ΣX2'],
+  ['SY2',     'ΣY2'],
+  ['MAXS',    'MAXΣ'],
+  ['MINS',    'MINΣ'],
+  ['NSIGMA',  'NΣ'],
+  // List-fold ASCII aliases.
+  ['SLIST',   'ΣLIST'],
+  ['PLIST',   'ΠLIST'],
+  ['DLIST',   'ΔLIST'],
+]);
+
 let _loadPromise = null;
 let _sectionsByName = null;
 
@@ -111,7 +147,9 @@ export class CommandHelp {
       return;
     }
     if (this._currentName !== key) return;       // request changed mid-load
-    const frag = sections.get(key);
+    const aliased = ALIASES.get(key);
+    const frag = sections.get(key)
+              ?? (aliased ? sections.get(aliased.toUpperCase()) : undefined);
     this._inner.innerHTML = '';
     if (frag) {
       this._inner.appendChild(frag.cloneNode(true));
