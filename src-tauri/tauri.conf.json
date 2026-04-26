@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "identifier": "com.rpl5050.rp5050ai",
   "build": {
-    "beforeBuildCommand": "",
-    "beforeDevCommand": "",
-    "frontendDist": "../www"
+    "beforeBuildCommand": "node scripts/build-frontend-dist.mjs",
+    "beforeDevCommand": { "script": "node scripts/build-frontend-dist.mjs", "wait": true },
+    "frontendDist": "../www-dist"
   },
   "app": {
     "windows": [

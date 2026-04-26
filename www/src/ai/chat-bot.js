@@ -71,6 +71,25 @@ function dgroupEnd()    { /* eslint-disable-next-line no-console */ console.grou
 // empty/partial fullText doesn't yield a parseable JSON brace block.
 const STALL_TIMEOUT_MS = 45000;
 
+// History-context budget, in characters of total prompt (system +
+// kept history).  The system prompt is always included; history is
+// kept newest-first up to this cap, dropping the oldest messages
+// only when necessary to fit.
+//
+// Why a budget at all: every LLM turn rebuilds the entire prompt
+// from scratch (no KV-cache reuse across calls — see resetChat() in
+// the worker).  Prefill cost grows roughly quadratically with input
+// length, so an unbounded conversation makes each turn slower than
+// the last.  Capping the prompt keeps turn latency stable.
+//
+// Why this number: ~4 chars/token is the rule of thumb for Latin-
+// script English, so 16000 chars ≈ 4000 tokens.  The combined
+// system prompt is ~7500 chars, leaving ~8500 chars (~2000 tokens)
+// for history — comfortably enough for ~5–10 turns of context, way
+// more than small chat-tuned models effectively use.  The newest
+// turn is always kept even if it would exceed the budget on its own.
+const HISTORY_BUDGET_CHARS = 16000;
+
 /* ---- Simple markdown → DOM renderer --------------------------------
    Handles the subset the assistant actually uses: headers, bold,
    italic, inline code, fenced code blocks, bullet lists.
@@ -246,11 +265,78 @@ function parseAllToolCalls(text) {
   return calls;
 }
 
-// (Previously: parseSuggestionsArray() — lenient JSON-array parser for
-// the per-turn follow-up chips Phase 3 used to generate.  Removed when
-// the three-phase pipeline collapsed into a single combined call;
-// chips are now starter-only.  STARTER_CHIPS still uses the chip
-// rendering machinery below.)
+/** Parse a `SUGGEST: [...]` block out of the model's combined-response
+ *  output.  The model is told to use this section — separate from the
+ *  tool-call JSON blocks above it — to propose follow-up questions
+ *  the user might ask next.  These are rendered as clickable chips,
+ *  NOT executed as actions; clicking a chip re-submits its text as a
+ *  new user message.
+ *
+ *  Format: a single line `SUGGEST: ["q1", "q2", "q3"]` (JSON array
+ *  of short strings) optionally preceded/followed by whitespace.
+ *  Lenient: accepts the array anywhere after the SUGGEST anchor,
+ *  walks brackets manually so escape sequences inside strings don't
+ *  confuse the matcher, falls back to extracting double-quoted
+ *  tokens if JSON.parse rejects the slice (small models occasionally
+ *  emit smart quotes or stray commas).  Returns up to three trimmed
+ *  non-empty strings, or null if nothing matched. */
+function parseSuggestions(text) {
+  if (!text) return null;
+  const anchor = /\bSUGGEST\s*:/i.exec(text);
+  if (!anchor) return null;
+  const after = text.slice(anchor.index + anchor[0].length);
+  const lo = after.indexOf('[');
+  if (lo < 0) return null;
+  let depth = 0;
+  let hi = -1;
+  for (let i = lo; i < after.length; i++) {
+    const c = after[i];
+    if (c === '[') depth++;
+    else if (c === ']') {
+      depth--;
+      if (depth === 0) { hi = i; break; }
+    }
+  }
+  if (hi < 0) return null;
+  const slice = after.slice(lo, hi + 1);
+  const tryParse = (raw) => {
+    try {
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return null;
+      const out = arr
+        .map(v => (typeof v === 'string' ? v.trim() : ''))
+        .filter(Boolean)
+        .slice(0, 3);
+      return out.length ? out : null;
+    } catch { return null; }
+  };
+  let items = tryParse(slice);
+  if (items) return items;
+  // Fallback — pull every double-quoted token from the slice.
+  const quoted = [...slice.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)]
+    .map(m => m[1].trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  return quoted.length ? quoted : null;
+}
+
+/** Find the earliest offset in `text` where the hideable
+ *  machine-readable section starts — the first occurrence of either
+ *  a JSON tool-call anchor (`{"name":`) or a `SUGGEST:` marker.
+ *  Used by _runLoop's streaming detector to know when to stop
+ *  appending streamed tokens to the user-facing bubble (both
+ *  JSON and SUGGEST are orchestrator-only; the user shouldn't see
+ *  raw structured output flicker in their chat).  Returns -1 when
+ *  neither marker is present yet (still pure prose). */
+function findMachineSectionStart(text) {
+  const jsonM = text.match(/\{\s*"name"\s*:/);
+  const sugM  = text.match(/\bSUGGEST\s*:/i);
+  const jIdx = jsonM ? jsonM.index : -1;
+  const sIdx = sugM  ? sugM.index  : -1;
+  if (jIdx < 0) return sIdx;
+  if (sIdx < 0) return jIdx;
+  return Math.min(jIdx, sIdx);
+}
 
 /* ---- Starter chips ------------------------------------------------- */
 
@@ -309,6 +395,21 @@ const MODELS = [
 
 const DEFAULT_MODEL_ID  = MODELS.find((m) => m.isDefault)?.id ?? MODELS[0].id;
 const MODEL_STORAGE_KEY = 'rpl5050.chatbot.modelId';
+
+// First-run consent gate.  The chatbot is a research preview that
+// downloads multi-GB model weights, runs WebGPU inference on the
+// user's device, and proposes calculator commands that mutate state.
+// We surface those facts in a one-time notice and require an
+// explicit Enable click before any of the chat UI mounts.  The flag
+// is versioned (`.v1`) so the notice can be re-shown if its terms
+// change materially in a future revision.
+const CONSENT_KEY = 'rpl5050.chatbot.consented.v1';
+function hasConsented() {
+  try { return localStorage.getItem(CONSENT_KEY) === '1'; } catch { return false; }
+}
+function setConsented() {
+  try { localStorage.setItem(CONSENT_KEY, '1'); } catch { /* private mode */ }
+}
 
 // One-shot migration key.  Premium-tier models (≥7B) consistently
 // stall in the WebLLM 0.2.x runtime — see the worker comment around
@@ -511,8 +612,28 @@ export class ChatBot {
     this._container = el;
     el.innerHTML = '';
     el.classList.add('cb-root');
-    el.appendChild(this._buildUI());
 
+    // First-run consent gate.  Until the user has explicitly enabled
+    // the assistant, we render only the disclosure notice and an
+    // Enable button — no model picker, no streaming UI, no worker
+    // launch (the LLM instance exists but does nothing until load()
+    // is called).  Once the user accepts, the gate is replaced with
+    // the regular UI in-place; the consent flag is persisted in
+    // localStorage so the gate doesn't re-appear on every page load.
+    if (!hasConsented()) {
+      dlog('mount: consent not yet given — rendering gate');
+      el.appendChild(this._buildConsentGate());
+      return;
+    }
+
+    el.appendChild(this._buildUI());
+    this._initialiseModelLoad();
+  }
+
+  /** Resolve which model to load on first mount.  Pulled out of mount()
+   *  so the consent-gate Enable handler can call it after swapping in
+   *  the regular UI. */
+  _initialiseModelLoad() {
     if (this._llm.status === 'idle') {
       const saved = loadSavedModelId();
       const known = saved && MODELS.some((m) => m.id === saved);
@@ -522,6 +643,70 @@ export class ChatBot {
         this._showPicker();
       }
     }
+  }
+
+  /** First-run notice + Enable button.  Replaces the regular chat UI
+   *  until the user clicks Enable.  The notice covers the four
+   *  practical points a new user needs before the assistant runs:
+   *  research-preview status, on-device execution, weight-download
+   *  size, and the explicit-confirmation guarantee on mutating
+   *  actions.  Tone is professional / informational — no marketing,
+   *  no emoji garlands. */
+  _buildConsentGate() {
+    const wrap = document.createElement('div');
+    wrap.className = 'cb-consent';
+
+    const title = document.createElement('h2');
+    title.className = 'cb-consent-title';
+    title.textContent = 'AI Assistant — Research Preview';
+    wrap.appendChild(title);
+
+    const intro = document.createElement('p');
+    intro.className = 'cb-consent-intro';
+    intro.textContent =
+      'This panel hosts an experimental on-device assistant that can answer ' +
+      'questions about RPL syntax and propose calculator commands on your behalf. ' +
+      'Please review the notes below before enabling it.';
+    wrap.appendChild(intro);
+
+    const list = document.createElement('ul');
+    list.className = 'cb-consent-list';
+    const points = [
+      'Replies are generated by a small language model and may be inaccurate, incomplete, or out of date. Verify any output you intend to act on.',
+      'Inference runs locally in your browser via WebGPU. Conversations and calculator state are not transmitted to any external service.',
+      'The first time you select a model, its weights download from the WebLLM CDN (typically 0.4–2.5 GB depending on model). Subsequent sessions reuse the browser cache.',
+      'Any action that mutates the calculator — running RPL, storing variables, editing the entry line — surfaces a confirmation card with the proposed command. Nothing executes without your explicit click.',
+    ];
+    for (const text of points) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      list.appendChild(li);
+    }
+    wrap.appendChild(list);
+
+    const footer = document.createElement('p');
+    footer.className = 'cb-consent-footer';
+    footer.textContent =
+      'Click Enable to continue. This preference is remembered for future sessions; ' +
+      'clearing the site’s storage will restore the notice.';
+    wrap.appendChild(footer);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cb-consent-accept';
+    button.textContent = 'Enable assistant';
+    button.addEventListener('click', () => {
+      dlog('mount: user enabled assistant — persisting consent and swapping in chat UI');
+      setConsented();
+      // Replace the gate with the regular UI in-place.  We're already
+      // mounted into _container, so just clear and rebuild.
+      this._container.innerHTML = '';
+      this._container.appendChild(this._buildUI());
+      this._initialiseModelLoad();
+    });
+    wrap.appendChild(button);
+
+    return wrap;
   }
 
   /* ---- UI construction ---- */
@@ -966,15 +1151,14 @@ export class ChatBot {
     const content = ctxNote ? `${ctxNote}\n\n${userText}` : userText;
     this._history.push({ role: 'user', content });
 
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT_COMBINED },
-      ...this._history,
-    ];
+    const systemMsg = { role: 'system', content: SYSTEM_PROMPT_COMBINED };
+    const keptHistory = this._trimHistoryForBudget(systemMsg);
+    const messages = [systemMsg, ...keptHistory];
     this._logPhase('combined', messages);
 
     const { bubble, textEl } = this._addStreamingBubble();
     let fullText = '';
-    let jsonStart = -1;     // byte offset where the JSON block begins, or -1
+    let hideStart = -1;     // byte offset where the hideable section begins, or -1
     const watchdog = this._makeStallWatchdog();
 
     try {
@@ -983,19 +1167,20 @@ export class ChatBot {
           if (typeof t !== 'string' || !t) return;
           watchdog.onToken();
           fullText += t;
-          // Detect JSON start exactly once.  Once found, the bubble
-          // freezes its visible text at that offset — the rest of the
-          // streamed tokens are still accumulated (we need the full
-          // JSON object at end-of-stream) but they don't appear in the
-          // user-facing prose.  parseToolCall later locates the same
-          // brace-block via the same regex shape, keeping detection
-          // and parsing in sync.
-          if (jsonStart < 0) {
-            const m = fullText.match(/\{\s*"name"\s*:/);
-            if (m) jsonStart = m.index;
+          // Detect the start of the machine-readable section (first
+          // `{"name":` tool-call anchor OR `SUGGEST:` marker, whichever
+          // comes first) exactly once.  Once found, the bubble freezes
+          // its visible text at that offset — the rest of the streamed
+          // tokens are still accumulated (we need the full JSON
+          // brace-blocks and SUGGEST array at end-of-stream) but they
+          // don't appear in the user-facing prose.  The orchestrator-
+          // facing parsers below operate on the full text post-stream.
+          if (hideStart < 0) {
+            const idx = findMachineSectionStart(fullText);
+            if (idx >= 0) hideStart = idx;
           }
-          const visible = jsonStart >= 0
-            ? fullText.slice(0, jsonStart).trim()
+          const visible = hideStart >= 0
+            ? fullText.slice(0, hideStart).trim()
             : fullText.trim();
           textEl.textContent = visible || '…';
         },
@@ -1017,8 +1202,8 @@ export class ChatBot {
     // log shouldn't carry a half-formed reply.  (For _newChat, the
     // messages container gets wiped right after this anyway.)
     if (stale()) {
-      const visiblePart = jsonStart >= 0
-        ? fullText.slice(0, jsonStart).trim()
+      const visiblePart = hideStart >= 0
+        ? fullText.slice(0, hideStart).trim()
         : fullText.trim();
       const display = visiblePart
         ? `${visiblePart}\n\n_(stopped — partial output shown.)_`
@@ -1029,15 +1214,22 @@ export class ChatBot {
     }
 
     const trimmed = fullText.trim();
-    dlog(`runLoop: model returned ${trimmed.length} chars (stalled=${watchdog.isStalled()}), jsonStart=${jsonStart}`);
+    dlog(`runLoop: model returned ${trimmed.length} chars (stalled=${watchdog.isStalled()}), hideStart=${hideStart}`);
 
-    // Split prose vs JSON.  jsonStart is computed from the unstripped
-    // fullText, so we use the same offset on `trimmed` only after
-    // confirming both are aligned — easier to slice fullText first
-    // and trim the prose portion.
-    const proseRaw   = jsonStart >= 0 ? fullText.slice(0, jsonStart) : fullText;
+    // Split prose vs machine-readable section.  Then extract every
+    // JSON tool call AND the SUGGEST array (if any).  Tool calls are
+    // dispatched as actions; SUGGEST items become clickable chips
+    // the user can use to ask follow-up questions — they are NOT
+    // executed automatically.  This separation is the contract that
+    // stops the model's "helpful" follow-up suggestions from being
+    // run as actions the user didn't ask for.
+    const proseRaw   = hideStart >= 0 ? fullText.slice(0, hideStart) : fullText;
     const prose      = proseRaw.trim();
-    const toolCall   = jsonStart >= 0 ? parseToolCall(fullText.slice(jsonStart)) : null;
+    const toolCalls  = parseAllToolCalls(fullText);
+    const suggestions = parseSuggestions(fullText);
+    dlog(`runLoop: extracted ${toolCalls.length} tool call(s)`,
+         toolCalls.map(c => c.name),
+         'suggestions=', suggestions);
 
     let display;
     if (watchdog.isStalled()) {
@@ -1046,27 +1238,66 @@ export class ChatBot {
         : '_(reply stalled with no output — model may be overloaded; try a smaller model.)_';
     } else if (prose) {
       display = prose;
-    } else if (toolCall) {
+    } else if (toolCalls.length > 0) {
       // Defensive: model emitted JSON without a prose preamble.  Show
       // a generic placeholder so the bubble isn't empty above the
-      // tool widget.
-      display = `Running ${toolCall.name}.`;
+      // tool widgets.
+      display = toolCalls.length === 1
+        ? `Running ${toolCalls[0].name}.`
+        : `Running ${toolCalls.length} actions.`;
     } else {
       display = '_(model returned no output — try rephrasing.)_';
     }
     this._finaliseStreamBubble(bubble, textEl, display, null);
-    // Push the FULL response (incl. JSON) to history.  Keeping the
-    // JSON in the assistant turn reinforces the format on subsequent
-    // turns — the next turn's model sees its own previous tool call
-    // as a literal example of the expected shape.
+    // Push the FULL response (incl. all JSONs) to history.  Keeping
+    // the structured calls in the assistant turn reinforces the
+    // format on subsequent turns — the next turn's model sees its
+    // own previous tool calls as a literal example of the expected
+    // shape, including the multi-call pattern when that was used.
     this._history.push({ role: 'assistant', content: trimmed });
 
-    if (toolCall) {
-      dlog('runLoop: dispatching tool from inline JSON:', toolCall.name);
-      await this._dispatchTool(toolCall);
-      if (stale()) { dlog('runLoop: stale after tool dispatch, exit'); return; }
+    if (toolCalls.length === 0) {
+      dlog('runLoop: no tool calls in response (conceptual question or model omitted JSON)');
     } else {
-      dlog('runLoop: no tool call in response (conceptual question or model omitted JSON)');
+      // Dispatch in document order.  Each iteration awaits the full
+      // tool lifecycle (confirm widget render → user click → handler
+      // execute → history note).  Three exit conditions stop the
+      // chain mid-flight:
+      //   1. stale()  — Stop pressed or new chat reset
+      //   2. cancel   — _dispatchTool returns false on user-cancelled
+      //                 confirm; the user rejected this step, so any
+      //                 follow-up steps that depended on it would be
+      //                 surprising at best, destructive at worst
+      //   3. unknown  — _dispatchTool also returns false on unknown
+      //                 tool names, to avoid spamming bubbles for
+      //                 every malformed call in a bad chain
+      for (let i = 0; i < toolCalls.length; i++) {
+        const tc = toolCalls[i];
+        dlog(`runLoop: dispatching tool ${i + 1}/${toolCalls.length}:`, tc.name);
+        const ok = await this._dispatchTool(tc);
+        if (stale()) {
+          dlog('runLoop: stale after tool dispatch, exit (skipped',
+               toolCalls.length - i - 1, 'remaining call(s))');
+          return;
+        }
+        if (!ok) {
+          dlog('runLoop: dispatch returned false (cancel or unknown), aborting chain (skipped',
+               toolCalls.length - i - 1, 'remaining call(s))');
+          break;
+        }
+      }
+    }
+
+    // Render follow-up suggestions (if any) as chips below the
+    // turn's output.  Click-handler is _sendChip, which submits the
+    // chip text as a new user message — so the model gets a fresh
+    // turn with the user's stated intent.  Suggestions are NOT
+    // dispatched automatically; that's the whole point of routing
+    // them through the chip-suggestion channel rather than the
+    // tool-call channel.
+    if (!stale() && suggestions?.length) {
+      dlog('runLoop: rendering', suggestions.length, 'suggestion chip(s)');
+      this._renderChips(suggestions, bubble);
     }
     dlog('runLoop: turnId=', turnId, 'complete');
   }
@@ -1075,9 +1306,20 @@ export class ChatBot {
    *  confirm widget for mutating tools, executes, then appends a
    *  natural-language summary of what happened to history (so the
    *  *next* user turn's model sees coherent prose alongside its
-   *  previous JSON tool call, not just raw structured output).  No
-   *  return value — single-pass pipeline doesn't need to signal
-   *  continuation. */
+   *  previous JSON tool call, not just raw structured output).
+   *
+   *  Returns:
+   *   - `true`  on success (confirmed + ran, or read-only auto-exec —
+   *     including handler failures, since "ran but errored" is still
+   *     a definitive outcome the chain shouldn't preempt)
+   *   - `false` if the user cancelled the confirm widget — a signal
+   *     to the caller (multi-call dispatch loop in _runLoop) that the
+   *     user has rejected this action and any chained follow-up
+   *     actions should NOT run either
+   *
+   *   Unknown tools also return `false` so a chain doesn't keep
+   *   producing diagnostic bubbles for each malformed call.
+   */
   async _dispatchTool(toolCall) {
     const tool = this._registry[toolCall.name];
     const args = toolCall.arguments ?? {};
@@ -1088,7 +1330,7 @@ export class ChatBot {
       dwarn('dispatchTool: unknown tool', toolCall.name);
       this._addAssistantBubble(`_(unknown tool: \`${toolCall.name}\`.)_`);
       this._pushHistoryNote(`(Tried to use unknown tool "${toolCall.name}".)`);
-      return;
+      return false;
     }
 
     if (tool.confirm) {
@@ -1107,9 +1349,9 @@ export class ChatBot {
       });
       this._pendingConfirm = null;
       if (!confirmed) {
-        dlog('dispatchTool: user cancelled', toolCall.name);
+        dlog('dispatchTool: user cancelled', toolCall.name, '— chain will stop');
         this._pushHistoryNote(`(User cancelled the proposed ${toolCall.name} action.)`);
-        return;
+        return false;
       }
       dlog('dispatchTool: user confirmed, executing', toolCall.name);
       try {
@@ -1123,7 +1365,7 @@ export class ChatBot {
         this._pushHistoryNote(`(Running ${toolCall.name} failed: ${err.message}.)`);
         dwarn('dispatchTool: handler threw for', toolCall.name, err);
       }
-      return;
+      return true;
     }
 
     // Read-only — execute silently.
@@ -1137,6 +1379,7 @@ export class ChatBot {
       this._pushHistoryNote(`(Reading ${toolCall.name} failed: ${err.message}.)`);
       dwarn('dispatchTool: read-only handler threw for', toolCall.name, err);
     }
+    return true;
   }
 
   /** Append a short natural-language note to history as if the
@@ -1205,6 +1448,62 @@ export class ChatBot {
     console.log('total chars:', messages.reduce((n, m) => n + (m.content?.length ?? 0), 0));
     // eslint-disable-next-line no-console
     console.groupEnd();
+  }
+
+  /** Select which messages from `this._history` to send on the next
+   *  turn, given the HISTORY_BUDGET_CHARS cap.
+   *
+   *  Policy (matches the contract requested in chat):
+   *   - The system prompt is ALWAYS included (passed in as `systemMsg`
+   *     so we can subtract its size from the budget).
+   *   - All history messages are included by default; only when the
+   *     total would exceed the budget do we drop messages.
+   *   - When dropping, OLDER messages go first.  The most recent turn
+   *     is sacrosanct — it's the one the user just typed and the
+   *     assistant's reply directly follows from it — and is included
+   *     even when it alone exceeds the budget.
+   *
+   *  Implementation walks history newest-to-oldest, accumulating
+   *  characters until the budget is hit; then reverses to chronological
+   *  order so the model sees the conversation in the natural reading
+   *  direction.  We don't try to keep user/assistant pairs together —
+   *  if a tool-result note ends up orphaned from its preceding
+   *  assistant turn, the model will re-orient on the next user turn
+   *  anyway, and the alternative (skipping pairs) wastes budget on
+   *  preserving boundaries the model doesn't strictly need.
+   *
+   *  Returns a new array (does NOT mutate this._history). */
+  _trimHistoryForBudget(systemMsg) {
+    const budget = HISTORY_BUDGET_CHARS - (systemMsg.content?.length ?? 0);
+    if (budget <= 0) {
+      // Pathological: system prompt alone already exceeds the cap.
+      // Send only the most recent message so the turn at least
+      // happens; loud warning so the budget can be raised.
+      dwarn('history-trim: system prompt alone is', systemMsg.content?.length, 'chars',
+            '(>= budget', HISTORY_BUDGET_CHARS, ') — sending only the latest message');
+      return this._history.slice(-1);
+    }
+    const kept = [];
+    let total = 0;
+    for (let i = this._history.length - 1; i >= 0; i--) {
+      const m = this._history[i];
+      const size = m.content?.length ?? 0;
+      // Always include the most recent message even if it alone blows
+      // the budget — kept.length === 0 forces the first iteration in.
+      if (kept.length > 0 && total + size > budget) break;
+      kept.push(m);
+      total += size;
+    }
+    kept.reverse();
+    if (kept.length < this._history.length) {
+      dlog('history-trim: dropped', this._history.length - kept.length, 'old message(s),',
+           'kept', kept.length, 'recent message(s),', total, 'chars (budget',
+           budget, 'available after system prompt)');
+    } else {
+      dlog('history-trim: full history fits (', this._history.length, 'messages,',
+           total, 'chars,', budget - total, 'chars budget remaining)');
+    }
+    return kept;
   }
 
   /** Build a stall watchdog for the active generate() call.

@@ -1,0 +1,2 @@
+index.html:90 Live reload enabled.
+system-prompt.js:155 Uncaught SyntaxError: Unexpected identifier 'get_stack' (at system-prompt.js:155:141)

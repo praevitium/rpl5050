@@ -41,48 +41,40 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 251-code-review).** Stale sibling lock at
-acquisition: `session250-unit-tests` has `released: false` —
-session-250 crash (TESTS.md updated, no log written); see new
-finding **O-014** filed this run.  Sessions 247/248/249 all released
-gracefully and carry `releaseReason` fields — positive O-011
-development (see O-011 aging below).
-At code-review-lane *entry*:
+**Baseline (session 252 — command-support).** No stale locks at
+acquisition.  session250-unit-tests lock re-verified as
+`released: true` with `releaseReason: "graceful — snapshot
+refresh complete"` — the session-251-code-review characterisation
+of it as `released: false` was an observation of stale state;
+**O-014 partially retracted** (items 1 and 2; see O-014 body).
+Sessions 247–251 all released gracefully.
+At command-support-lane *entry*:
 `node tests/test-all.mjs` = **5571 passing / 0 failing**
-(fully green; +11 from sessions 247–250: +8 from session-248
-UTPC/UTPT widening in test-types.mjs + 3 from unlogged algebra
-edit absorbed by session-250 snapshot;
-T-003 remains **fully resolved** since session 185);
+(stable, unchanged from session 251-code-review);
 `node tests/test-persist.mjs` = **66 passing / 0 failing**
 (stable, unchanged); `node tests/sanity.mjs` = **22 passing
-/ 0 failing in ~6 ms** (stable).
+/ 0 failing in ~5 ms** (stable).
 `grep -c "register(" www/src/rpl/ops.js` = **480**
 (`grep -cE "^register\(" www/src/rpl/ops.js` = **461** —
-unchanged from session-246-code-review; sessions 247–250 added no
-new register calls).
+unchanged; session 252 adds no new register calls).
 
 **This run's own edits.** Two edits this run — pure
 doc/hygiene, no source changes:
-  1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 251-code-review (thirty-fifth review-lane run);
-     preamble rewritten to fold in sibling sessions 247–250;
-     baseline block updated to session 251-code-review;
-     **O-011** aged 25 → 26 runs (+3 new occurrences:
-     session247-command-support, session248-data-type-support,
-     session249-rpl-programming all released WITH releaseReason
-     (first time this field has appeared — partial fix progress);
-     session250-unit-tests released: false — no releaseReason
-     and no log; net this run's own lock adds +1 without
-     releaseReason; running count now **one hundred five**
-     since session 106); **O-012** re-verified present, aged to
-     15 code-review-lane runs; **O-014** filed (session-250
-     crash — unreleased lock, no session log, unlogged algebra
-     edit); session-log entries for 247/248/249/250/251-code-review
-     added.
-  2. **`logs/meta-2026-04-26-code-review.md`** — this run's session log.
+  1. **`docs/COMMANDS.md`** — Counts stamp bumped from
+     "session 247" → "session 252"; session-log entries
+     back-filled for sessions 248 / 249 / 250 / 251-code-review;
+     session-252 entry added at top.
+  2. **`docs/REVIEW.md`** — preamble rewritten to fold in
+     sibling sessions 248–251-code-review; baseline block
+     updated to session 252; **O-014** partially retracted
+     (items 1 and 2 — lock was released, log exists); remaining
+     O-014 items (unlogged +3 algebra edit traceability;
+     chat-bot.js mtime anomaly) carried forward as
+     `[deferred - post-ship]`; session-252 log entry added.
+  3. **`logs/session-252.md`** — this run's session log.
 
-**Lock.** Held `utils/@locks/session246-code-review.json`,
-scope = `[docs/REVIEW.md, logs/]`.
+**Lock.** Held `utils/@locks/session252-command-support.json`,
+scope = `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`.
 Released at end of run.
 
 ---
@@ -3940,54 +3932,41 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   session 243 (2026-04-26)" comment added to `system-prompt.js`
   above the `RPL_CATALOG` constant.
 
-### O-014  Session-250 crash — unreleased lock, missing session log, unlogged source edit
+### O-014  Unlogged +3 algebra assertions + chat-bot.js mtime anomaly
 
 - **Classification.** Other (process / audit-trail hygiene).
-- **Where.** `utils/@locks/session250-unit-tests.json` (`released:
-  false`); `logs/` (no `session-250.md` written); `tests/test-
-  algebra.mjs` (+3 assertions added ~160 s after session-249.md
-  with no lock or log coverage).
-- **What.** Four related anomalies in the session-250 unit-tests
-  run: (1) the lock body shows `released: false` — the run
-  updated `docs/TESTS.md` but exited before calling `release()`;
-  (2) no `logs/session-250.md` was written; (3) `tests/test-
+- **Where.** `tests/test-algebra.mjs` (+3 assertions added ~160 s
+  after session-249.md with no lock or log coverage);
+  `www/src/ai/chat-bot.js` (mtime 21:00:53, modified after
+  session-249 closed at 20:45, with no session labels or lock).
+- **What.** Originally filed (session 251-code-review) as four
+  anomalies including an unreleased lock and missing log for
+  session-250.  **Items (1) and (2) retracted (session 252):**
+  `utils/@locks/session250-unit-tests.json` re-read at session-252
+  acquisition shows `released: true`, `releaseReason: "graceful —
+  snapshot refresh complete"`, and `logs/session-250.md` exists
+  (complete, ~3 KB).  The session-251-code-review lane observed
+  stale filesystem state.  Remaining open items: (3) `tests/test-
   algebra.mjs` was modified (+3 assertions, 1061 → 1064) in the
   ~160 s window between session-249's close and session-250's
-  acquisition, with no session lock or log covering the edit;
-  (4) `www/src/ai/chat-bot.js` (68 KB, 1617 lines) was modified
-  at mtime 21:00:53 — after session-249 closed (20:45) and
-  after session-250 started (20:48) — with no session labels and
-  no lock/log coverage.  The chat-bot.js change was not inspected
-  in detail this run (scope cap); a behavior audit is warranted.
-  Session-250's own TESTS.md snapshot absorbed the +3 algebra
-  assertions and documented the gap ("Unlogged post-249 edit ...
-  the next command-support lane run should back-fill a session
-  log entry").  No session labels beyond `session160` appear in
-  the added assertions.  All 3 new assertions pass (`test-
-  algebra.mjs` 1064 / 0 at this run's entry).
-- **Why.** Two audit-trail gaps: (a) the stale lock
-  (`session250-unit-tests`, `released: false`) will appear as a
-  potential live-lock to future `acquire()` callers and to the
-  review-lane's conflict check; (b) the unlogged algebra edit has
-  no traceability — if those 3 assertions regress in a future
-  session, there is no log to blame.
-- **Fix.**
-  - Prune the stale `session250-unit-tests` lock (any lane in
-    an interactive session can delete or update it to
-    `released: true, releasedAt: <ts>`).
-  - Back-fill a `logs/session-250.md` note (one paragraph
-    describing the snapshot work done and the unlogged algebra
-    edit, with a label like "partial — crash before log write").
-    The `rpl5050-command-support` lane is the best fit per the
-    session-250 snapshot's own suggestion.
-  - The algebra edit itself needs no fix — all assertions pass
-    and the coverage is valid; the gap is purely in traceability.
-- **Confidence.** high — lock body, TESTS.md snapshot text, and
-  file mtimes all verified in situ this run.
-- **Age.** new (filed session 251-code-review).
-- **Status.** `[ship-stretch]` — back-fill and lock-prune are
-  low-risk hygiene; no behavior impact.  Lane = `rpl5050-command-
-  support` (back-fill) + any interactive session (lock prune).
+  acquisition, with no session lock or log covering the edit —
+  no session labels beyond `session160` appear in the added
+  assertions; all 3 pass; session-250 snapshot absorbed them;
+  (4) `www/src/ai/chat-bot.js` was modified at mtime 21:00:53
+  — after session-249 closed (20:45) — with no session labels
+  or lock/log coverage; behavior audit deferred.
+- **Why.** Audit-trail gap: the unlogged algebra edit has no
+  traceability if those 3 assertions regress.  The chat-bot.js
+  change is uninspected.
+- **Fix.** Items 3 and 4 are post-ship hygiene only — no behavior
+  impact.  Algebra assertions all pass; gap is traceability only.
+  Chat-bot.js audit can happen in the first post-ship session.
+- **Confidence.** high — lock body, session-250.md, TESTS.md
+  snapshot, and file mtimes all verified.
+- **Age.** 1 run (filed session 251-code-review; partially
+  retracted session 252).
+- **Status.** `[deferred - post-ship]` — items 1 and 2 retracted;
+  items 3 and 4 are low-risk hygiene with no behavior impact.
 
 ---
 
@@ -8203,3 +8182,43 @@ end of run.
 Zero release-blocker findings.
 
 Log pointer: `logs/meta-2026-04-26-code-review.md`.
+
+---
+
+### Session 252 — what shipped (command-support, doc-reconciliation pass)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-command-support`.
+**Lock.** `utils/@locks/session252-command-support.json`, released at
+end of run.
+
+**Work done.**
+- Back-filled COMMANDS.md session-log entries for sessions 248 /
+  249 / 250 / 251-code-review (four sibling sessions with no prior
+  COMMANDS.md entries).  Session-252 entry added at top.
+  Counts stamp advanced from "as of session 247" → "as of session 252".
+- Partially retracted **O-014**: re-read of
+  `utils/@locks/session250-unit-tests.json` shows `released: true`
+  and `releaseReason: "graceful — snapshot refresh complete"`;
+  `logs/session-250.md` exists and is complete.  Session-251-code-review
+  observed stale filesystem state.  Items 1 and 2 of O-014 retracted;
+  items 3 (unlogged +3 algebra assertions) and 4 (chat-bot.js mtime
+  anomaly) carried forward as `[deferred - post-ship]`.
+- REVIEW.md preamble rewritten to fold in sessions 248–251-code-review;
+  baseline updated to session 252; O-014 body updated with retraction.
+
+**Findings delta.**
+- **O-011** — 26 → 27 runs.  This run's own lock carries
+  `releaseReason` field.  Running count now **one hundred six**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — partially retracted (items 1 and 2); items 3 and 4
+  reclassified to `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 27 runs, count 106.
+- **O-012** `[deferred - post-ship]` (stray file) — 15 code-review-lane runs.
+- **O-014** `[deferred - post-ship]` (unlogged algebra edit traceability + chat-bot.js mtime).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-252.md`.

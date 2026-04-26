@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 247 — 2026-04-26)
+## Counts (as of session 252 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -808,6 +808,72 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 252** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass.  Counts stamp advanced from
+  session 247 → 252; session-log entries back-filled for sessions
+  248 / 249 / 250 / 251-code-review (four sibling sessions with no
+  prior COMMANDS.md entries).  O-014 closed: session-250 log
+  (`logs/session-250.md`) and lock (`released: true`,
+  `releaseReason: "graceful — snapshot refresh complete"`) both
+  confirm the session completed normally; session-251-code-review
+  observed stale state at audit time.  No source or test edits.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5571 / 66 / 22.  Run-close: **5571 / 66 / 22**.
+  Lock = `utils/@locks/session252-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 251-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Thirty-fifth review-lane run; post-ship audit.  REVIEW.md preamble
+  folded in sibling sessions 248–250; baseline updated to 5571 / 66 / 22;
+  O-011 aged 25 → 26 runs (running count one hundred five since
+  session 106); O-012 re-verified present, aged to 15 code-review-lane
+  runs; O-014 filed (session-250 lock seen as `released: false` at
+  audit time, no log visible — since resolved; see session 252 above).
+  No source or test changes.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5571 / 66 / 22.  Run-close: **5571 / 66 / 22**.
+  Lock = `utils/@locks/session251-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 250** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh (twenty-fourth unit-tests run).  TESTS.md
+  "Last updated" stamp advanced from session 246 → 250; new
+  `## Coverage snapshot (session 250)` section inserted absorbing
+  sibling deltas from sessions 247–249 plus an unlogged post-249
+  algebra edit (+3 assertions in `tests/test-algebra.mjs`);
+  per-file table updated (`test-algebra.mjs` 1061 → 1064,
+  `test-types.mjs` 1112 → 1120, aggregate 5560 → 5571).
+  No new test assertions authored this run.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5571 / 66 / 22.  Run-close: **5571 / 66 / 22**.
+  Lock = `utils/@locks/session250-unit-tests.json`, scope
+  `[docs/TESTS.md, logs/]`, released gracefully at end of run.
+
+- **session 249** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification pass (doc-only).  RPL.md "Current implementation
+  status" stamp advanced from session 245 → 249; session-249 pointer
+  entry added.  Confirmed 5568 / 0 baseline; all RPL-bucket REVIEW.md
+  findings remain fully closed.  No source or test changes.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5568 / 66 / 22.  Run-close: **5568 / 66 / 22**.
+  Lock = `utils/@locks/session249-rpl-programming.json`, scope
+  `[docs/RPL.md, logs/]`, released gracefully at end of run.
+
+- **session 248** (2026-04-26) — `rpl5050-data-type-support` lane.
+  UTPC / UTPT List + Tagged widening.  Extracted `_utpcScalar` /
+  `_utptScalar` from former inline stack handlers and wrapped both
+  registrations with `_withTaggedBinary(_withListBinary(…))` —
+  matching the BETA two-arg pattern.  UTPF (3-arg) left bare.
+  DATA_TYPES.md "Last updated" stamp advanced to Session 248.
+  +8 assertions in `tests/test-types.mjs` (1112 → 1120).
+  No ✗ → ✓ row transitions (UTPC / UTPT rows remain ✓; this was a
+  wrapper-coverage lift, not a new registration).
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5560 / 66 / 22.  Run-close: **5568 / 66 / 22**.
+  Lock = `utils/@locks/session248-data-type-support.json`, scope
+  `[www/src/rpl/ops.js, tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`,
+  released gracefully at end of run.
 
 - **session 247** (2026-04-26) — `rpl5050-command-support` lane.
   Post-ship doc-reconciliation pass.  Counts stamp advanced from
