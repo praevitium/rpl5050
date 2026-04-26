@@ -71,29 +71,42 @@ function dgroupEnd()    { /* eslint-disable-next-line no-console */ console.grou
 // empty/partial fullText doesn't yield a parseable JSON brace block.
 const STALL_TIMEOUT_MS = 45000;
 
-// History-context budget, in characters of total prompt (system +
-// kept history).  The system prompt is always included; history is
-// kept newest-first up to this cap, dropping the oldest messages
-// only when necessary to fit.
+// Reserve for the model's own response — we don't want the prompt to
+// fill the entire context window, otherwise there's no room for the
+// generated tokens.  ~1024 tokens (~4000 chars at ~4 chars/token) is
+// generous for our typical reply length (a sentence + a few JSON
+// blocks ≈ 200 tokens) but leaves headroom for unusually long replies
+// without bumping into the model's hard context cap.
+const RESPONSE_RESERVE_CHARS = 4000;
+
+// Per-model history budget, in characters of prompt (system + kept
+// history).  Computed from the active model's contextTokens entry in
+// MODELS, minus a reserve for the response itself.  See callers
+// (_trimHistoryForBudget, _renderStats) — both call effectiveBudget()
+// fresh each turn so a model swap mid-session updates the cap.
 //
 // Why a budget at all: every LLM turn rebuilds the entire prompt
 // from scratch (no KV-cache reuse across calls — see resetChat() in
 // the worker).  Prefill cost grows roughly quadratically with input
 // length, so an unbounded conversation makes each turn slower than
-// the last.  Capping the prompt keeps turn latency stable.
+// the last.  Capping the prompt keeps turn latency stable AND
+// guarantees we never exceed the configured context window.
 //
-// Why this number: ~4 chars/token is the rule of thumb for Latin-
-// script English, so 22000 chars ≈ 5500 tokens.  The combined
-// system prompt has grown to ~12000 chars (catalog + behaviour
-// rules + examples for stack-first / multi-push / multi-call
-// patterns), leaving ~10000 chars (~2500 tokens) for history —
-// comfortably enough for ~5–10 turns of context, more than small
-// chat-tuned models effectively use.  The newest turn is always
-// kept even if it would exceed the budget on its own.  Update this
-// constant if the system prompt grows further (the dlog at the
-// _trimHistoryForBudget call site reports the post-prompt budget
-// remaining each turn — handy for tuning).
-const HISTORY_BUDGET_CHARS = 22000;
+// Why per-model: each MODELS entry has its own contextTokens (see
+// the catalog).  A 2K-context model like TinyLlama gets a tiny
+// budget; a 16K-context model like Llama 3.2 3B gets nearly 12K
+// chars to play with.  Computing this dynamically means the trimmer
+// matches whatever the user picked from the picker.
+function effectiveBudget(llm) {
+  const ctxTokens = activeContextTokens(llm);
+  // Tokens → chars: rough 4 chars/token for English / Latin-script.
+  // We err on the small side (use 4) so we under-count tokens-per-
+  // char, leaving headroom in case a turn happens to be denser.
+  const ctxChars = ctxTokens * 4;
+  // Floor at zero — pathological, but guards arithmetic if the
+  // model's window is somehow smaller than the response reserve.
+  return Math.max(0, ctxChars - RESPONSE_RESERVE_CHARS);
+}
 
 /* ---- Simple markdown → DOM renderer --------------------------------
    Handles the subset the assistant actually uses: headers, bold,
@@ -361,42 +374,78 @@ const STARTER_CHIPS = [
    can pick what fits.  All entries are q4f16_1 quantization (the
    standard for WebGPU); all are instruction-tuned (no base models).
 
+   Per-entry fields:
+     id, label, size, note — self-explanatory.
+     isDefault              — sticky-default for first-time mount.
+     contextTokens          — context_window_size we pass to
+                              CreateMLCEngine.  Each value is chosen
+                              to be at-or-below the model's known
+                              wasm-library compile-time max while
+                              giving us enough headroom to fit our
+                              ~3K-token system prompt + several turns
+                              of history.  Tune individual entries up
+                              if a model is silently truncating the
+                              system prompt; tune down if a model
+                              fails to load with "kv_cache too large".
+
    Adding/removing models: paste a `model_id:` line from the WebLLM
-   config and fill in label / size / note.  Sizes are approximate
+   config and fill in the fields above.  Sizes are approximate
    download size (≈ on-disk Cache Storage size after download), not
-   VRAM requirement — VRAM is similar for q4f16_1 but exact numbers
-   live on each prebuiltAppConfig entry's vram_required_MB field if
-   you need them.
+   VRAM requirement.
+
+   --- Why these contextTokens values, briefly ---
+   We're in testing phase comparing models, so we want each one
+   running at "as much context as it can actually use" rather than
+   the lowest common denominator.  WebLLM's compile-time defaults
+   tend to be 4K for browser memory safety, well below most modern
+   models' native maxes (32K-128K).  These values try to surface
+   each model's real capability while staying inside what the
+   prebuilt wasm libs were compiled for and what typical browser
+   WebGPU contexts (~6 GB VRAM) can hold.
+
+   If a model fails to load with "kv_cache too large" or similar,
+   drop its value to 4096; if a model silently misbehaves on long
+   prompts (e.g. the system prompt gets clipped), bump it up.
    ------------------------------------------------------------------ */
 const MODELS = [
   // ---- 0.4-0.7 GB — fastest, weakest ----
-  { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC',          label: 'SmolLM2 360M',           size: '~370 MB',  note: 'Fastest, weakest — fluent but unreliable on math / structured output' },
-  { id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',          label: 'Qwen2.5 0.5B',           size: '~400 MB',  note: 'Tiny, surprisingly good at JSON / tool calls' },
-  { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 0.5B',     size: '~400 MB',  note: 'Code-tuned 0.5B — handles RPL syntax better than the base 0.5B' },
-  { id: 'Qwen3-0.6B-q4f16_1-MLC',                     label: 'Qwen3 0.6B',             size: '~500 MB',  note: 'Newer Qwen generation' },
-  { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',       label: 'TinyLlama 1.1B',         size: '~700 MB',  note: 'Classic small chat model' },
+  { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC',          label: 'SmolLM2 360M',           size: '~370 MB',  contextTokens: 8192,  note: 'Fastest, weakest — fluent but unreliable on math / structured output' },
+  { id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',          label: 'Qwen2.5 0.5B',           size: '~400 MB',  contextTokens: 16384, note: 'Tiny, surprisingly good at JSON / tool calls' },
+  { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 0.5B',     size: '~400 MB',  contextTokens: 16384, note: 'Code-tuned 0.5B — handles RPL syntax better than the base 0.5B' },
+  { id: 'Qwen3-0.6B-q4f16_1-MLC',                     label: 'Qwen3 0.6B',             size: '~500 MB',  contextTokens: 16384, note: 'Newer Qwen generation' },
+  { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',       label: 'TinyLlama 1.1B',         size: '~700 MB',  contextTokens: 2048,  note: 'Native max only 2K — too small for our system prompt; included for completeness, not recommended' },
 
   // ---- 0.9-1.5 GB — small / sweet spot ----
-  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 1B',           size: '~880 MB',  note: 'Smaller fallback — fast but weaker reasoning' },
-  { id: 'stablelm-2-zephyr-1_6b-q4f16_1-MLC',         label: 'StableLM 2 Zephyr 1.6B', size: '~1.0 GB',  note: 'Stability AI chat-tuned' },
-  { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC',          label: 'SmolLM2 1.7B',           size: '~1.0 GB',  note: 'Larger SmolLM2 — better follow-through than 360M' },
-  { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  note: 'Code-tuned 1.5B — strong at structured output' },
-  { id: 'Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC',     label: 'Qwen2.5 Math 1.5B',      size: '~1.3 GB',  note: 'Math-tuned — better at calc-style reasoning' },
-  { id: 'Qwen3-1.7B-q4f16_1-MLC',                     label: 'Qwen3 1.7B',             size: '~1.4 GB',  note: 'Newer Qwen, mid-size' },
+  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 1B',           size: '~880 MB',  contextTokens: 16384, note: 'Smaller fallback — fast but weaker reasoning (model native max 128K)' },
+  { id: 'stablelm-2-zephyr-1_6b-q4f16_1-MLC',         label: 'StableLM 2 Zephyr 1.6B', size: '~1.0 GB',  contextTokens: 4096,  note: 'Stability AI chat-tuned (native max 4K — tight for our prompt)' },
+  { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC',          label: 'SmolLM2 1.7B',           size: '~1.0 GB',  contextTokens: 8192,  note: 'Larger SmolLM2 — better follow-through than 360M' },
+  { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  contextTokens: 16384, note: 'Code-tuned 1.5B — strong at structured output' },
+  { id: 'Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC',     label: 'Qwen2.5 Math 1.5B',      size: '~1.3 GB',  contextTokens: 4096,  note: 'Math-tuned — native max often 4K; better at calc-style reasoning than length' },
+  { id: 'Qwen3-1.7B-q4f16_1-MLC',                     label: 'Qwen3 1.7B',             size: '~1.4 GB',  contextTokens: 16384, note: 'Newer Qwen, mid-size' },
 
   // ---- 1.9-2.4 GB — mid-tier ----
-  { id: 'gemma-2-2b-it-q4f16_1-MLC',                  label: 'Gemma 2 2B',             size: '~1.9 GB',  note: 'Google instruction-tuned 2B' },
-  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 3B',           size: '~2.3 GB',  note: 'Recommended default — much smarter than 1B, stable in browser WebGPU (unlike 7B+)', isDefault: true },
-  { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC',          label: 'Hermes 3 (Llama 3.2 3B)', size: '~2.3 GB', note: 'NousResearch fine-tune of Llama 3.2 3B — strong tool calling' },
-  { id: 'Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC',      label: 'Qwen2.5 Coder 3B',       size: '~2.4 GB',  note: 'Code-tuned 3B' },
-  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',          label: 'Phi 3.5 mini',           size: '~2.4 GB',  note: 'Microsoft — strong on tool / structured output' },
+  { id: 'gemma-2-2b-it-q4f16_1-MLC',                  label: 'Gemma 2 2B',             size: '~1.9 GB',  contextTokens: 8192,  note: 'Google instruction-tuned 2B (native max 8K)' },
+  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 3B',           size: '~2.3 GB',  contextTokens: 16384, note: 'Recommended default — much smarter than 1B, stable in browser WebGPU (unlike 7B+); native max 128K', isDefault: true },
+  { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC',          label: 'Hermes 3 (Llama 3.2 3B)', size: '~2.3 GB', contextTokens: 16384, note: 'NousResearch fine-tune of Llama 3.2 3B — strong tool calling' },
+  { id: 'Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC',      label: 'Qwen2.5 Coder 3B',       size: '~2.4 GB',  contextTokens: 16384, note: 'Code-tuned 3B' },
+  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',          label: 'Phi 3.5 mini',           size: '~2.4 GB',  contextTokens: 16384, note: 'Microsoft — strong on tool / structured output (native max 128K)' },
 
   // ---- 3.0+ GB — premium, needs a beefy GPU ----
-  { id: 'Qwen3-4B-q4f16_1-MLC',                       label: 'Qwen3 4B',               size: '~3.2 GB',  note: 'Premium Qwen3 mid-tier' },
-  { id: 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC',       label: 'Mistral 7B v0.3',        size: '~4.5 GB',  note: 'Premium — needs ≥6 GB VRAM' },
-  { id: 'Qwen2.5-7B-Instruct-q4f16_1-MLC',            label: 'Qwen2.5 7B',             size: '~5.0 GB',  note: 'Premium — needs ≥6 GB VRAM' },
-  { id: 'Llama-3.1-8B-Instruct-q4f16_1-MLC',          label: 'Llama 3.1 8B',           size: '~5.4 GB',  note: 'Top-tier — needs ≥6 GB VRAM' },
+  { id: 'Qwen3-4B-q4f16_1-MLC',                       label: 'Qwen3 4B',               size: '~3.2 GB',  contextTokens: 16384, note: 'Premium Qwen3 mid-tier' },
+  { id: 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC',       label: 'Mistral 7B v0.3',        size: '~4.5 GB',  contextTokens: 16384, note: 'Premium — needs ≥6 GB VRAM (native max 32K)' },
+  { id: 'Qwen2.5-7B-Instruct-q4f16_1-MLC',            label: 'Qwen2.5 7B',             size: '~5.0 GB',  contextTokens: 8192,  note: 'Premium — needs ≥6 GB VRAM; capped at 8K to leave VRAM for KV cache (native max 32K)' },
+  { id: 'Llama-3.1-8B-Instruct-q4f16_1-MLC',          label: 'Llama 3.1 8B',           size: '~5.4 GB',  contextTokens: 8192,  note: 'Top-tier — needs ≥6 GB VRAM; 8K cap for VRAM headroom (native max 128K)' },
 ];
+
+/** Look up the per-model contextTokens for the currently-loaded model.
+ *  Falls back to 4096 (a safe WebLLM default) when no model is loaded
+ *  or the loaded id isn't in our catalog. */
+function activeContextTokens(llm) {
+  const id = llm?.loadedModelId;
+  if (!id) return 4096;
+  const entry = MODELS.find((m) => m.id === id);
+  return entry?.contextTokens ?? 4096;
+}
 
 const DEFAULT_MODEL_ID  = MODELS.find((m) => m.isDefault)?.id ?? MODELS[0].id;
 const MODEL_STORAGE_KEY = 'rpl5050.chatbot.modelId';
@@ -1025,8 +1074,15 @@ export class ChatBot {
     this._loadBtn.classList.add('hidden');
     this._switchModelBtn.classList.add('hidden');
     this._hidePicker();
+    // Pass the catalog-defined contextTokens for this model so WebLLM
+    // configures the KV cache for the size we actually want, instead
+    // of falling back to the prebuilt-config default (typically 4K,
+    // too small for our system prompt + history).
+    const entry = MODELS.find((m) => m.id === modelId);
+    const contextTokens = entry?.contextTokens;
+    dlog('startLoad: modelId=', modelId, 'contextTokens=', contextTokens ?? '(default)');
     try {
-      await this._llm.load(modelId);
+      await this._llm.load(modelId, { contextTokens });
     } catch (err) {
       this._loadBtn.disabled = false;
       this._loadBtn.textContent = 'Retry';
@@ -1112,27 +1168,59 @@ export class ChatBot {
     this._renderStats(stats);
   }
 
-  /** Update the inline stats element with the latest turn's numbers
-   *  plus session totals.  Element is built lazily on first stats
-   *  arrival; if the element doesn't exist yet (rare race during
-   *  initialisation), this just no-ops. */
+  /** Update the inline stats element with the latest turn's numbers,
+   *  context-budget usage, and cumulative session totals.  Element is
+   *  built lazily on first stats arrival; if the element doesn't
+   *  exist yet (rare race during initialisation), this just no-ops.
+   *
+   *  The three lines, top-to-bottom:
+   *
+   *    1. Last turn — input/output tokens, end-to-end latency, decode
+   *       throughput.  Most actionable for "is the model alive and
+   *       fast enough?"
+   *
+   *    2. Context usage — input chars vs HISTORY_BUDGET_CHARS as
+   *       both an absolute fraction and a percentage.  When this
+   *       approaches 100%, _trimHistoryForBudget will start dropping
+   *       the oldest messages — surfacing the number lets the user
+   *       see that boundary coming instead of being surprised by it.
+   *
+   *    3. Session totals — turns and total output tokens since the
+   *       last "New chat".
+   */
   _renderStats(stats) {
     if (!this._statsEl) return;
-    const inTok  = Math.round((stats.inputChars ?? 0) / 4);
-    const outTok = stats.outputTokens ?? 0;
-    const ms     = Math.round(stats.totalMs ?? 0);
-    const tps    = stats.decodeTps !== null && stats.decodeTps !== undefined
+    const inChars  = stats.inputChars ?? 0;
+    const inTok    = Math.round(inChars / 4);
+    const outTok   = stats.outputTokens ?? 0;
+    const ms       = Math.round(stats.totalMs ?? 0);
+    const tps      = stats.decodeTps !== null && stats.decodeTps !== undefined
       ? stats.decodeTps.toFixed(1) + ' tok/s'
       : '—';
-    const t      = this._sessionTotals ?? { turns: 0, outputTokens: 0 };
-    // Two-line layout — last turn (most actionable for "is the model
-    // alive / fast enough?") on top, session totals (cumulative cost
-    // since last new chat) on the bottom.  Compact format because
-    // the panel is narrow.
+    // Context-budget arithmetic.  We report against the active
+    // model's effectiveBudget — the same number that drives the
+    // history trimmer — so the percentage tells the user how close
+    // they are to history actually getting dropped.  Each model in
+    // the catalog has its own contextTokens, so this number changes
+    // when the user switches models.
+    const budgetChars  = effectiveBudget(this._llm);
+    const ctxPct       = budgetChars > 0
+      ? Math.min(100, Math.round((inChars / budgetChars) * 100))
+      : 0;
+    const ctxBudgetTok = Math.round(budgetChars / 4);
+    const t        = this._sessionTotals ?? { turns: 0, outputTokens: 0 };
     this._statsEl.textContent =
       `last turn: ~${inTok} in / ${outTok} out tok · ${ms}ms · ${tps}` +
       `\n` +
+      `context: ~${inTok} / ~${ctxBudgetTok} tok (${ctxPct}% of budget)` +
+      `\n` +
       `session: ${t.turns} turn${t.turns === 1 ? '' : 's'}, ${t.outputTokens} out tok`;
+    // Visual cue when the budget is nearly full — the user can tell
+    // at a glance that the next turn may drop older history.  Three
+    // bands: green/default, amber when 75–95%, red when >95%.
+    this._statsEl.classList.remove('cb-stats-warn', 'cb-stats-crit');
+    if (ctxPct >= 95) this._statsEl.classList.add('cb-stats-crit');
+    else if (ctxPct >= 75) this._statsEl.classList.add('cb-stats-warn');
     this._statsEl.classList.remove('hidden');
   }
 
@@ -1314,10 +1402,11 @@ export class ChatBot {
       const visiblePart = hideStart >= 0
         ? fullText.slice(0, hideStart).trim()
         : fullText.trim();
-      const display = visiblePart
-        ? `${visiblePart}\n\n_(stopped — partial output shown.)_`
-        : '_(stopped.)_';
-      this._finaliseStreamBubble(bubble, textEl, display, null);
+      // Body is just the partial prose now — the "Stopped by user"
+      // line is rendered as a styled badge inside the bubble (see
+      // _finaliseStreamBubble's `opts.state` branch).
+      this._finaliseStreamBubble(bubble, textEl, visiblePart, null,
+                                 { state: 'stopped' });
       dlog('runLoop: stale after generate, finalised stopped bubble');
       return;
     }
@@ -1340,11 +1429,16 @@ export class ChatBot {
          toolCalls.map(c => c.name),
          'suggestions=', suggestions);
 
+    // Body is the prose-only portion; if the watchdog fired, the
+    // explanatory badge is added by _finaliseStreamBubble via opts.
+    // For empty-prose stalls we fall back to a one-liner so the
+    // bubble has at least something visible above the badge.
     let display;
     if (watchdog.isStalled()) {
       display = prose
-        ? `${prose}\n\n_(reply stalled — partial output shown.)_`
-        : '_(reply stalled with no output — model may be overloaded; try a smaller model.)_';
+        || (toolCalls.length > 0
+            ? `Partial response — ${toolCalls.length} tool call(s) detected before timeout.`
+            : 'Model timed out before producing any output. Consider switching to a smaller model.');
     } else if (prose) {
       display = prose;
     } else if (toolCalls.length > 0) {
@@ -1357,7 +1451,10 @@ export class ChatBot {
     } else {
       display = '_(model returned no output — try rephrasing.)_';
     }
-    this._finaliseStreamBubble(bubble, textEl, display, null);
+    this._finaliseStreamBubble(
+      bubble, textEl, display, null,
+      watchdog.isStalled() ? { state: 'stalled' } : undefined,
+    );
     // Push the FULL response (incl. all JSONs) to history.  Keeping
     // the structured calls in the assistant turn reinforces the
     // format on subsequent turns — the next turn's model sees its
@@ -1497,7 +1594,35 @@ export class ChatBot {
    *  into one human-readable sentence per turn. */
   _pushHistoryNote(text) {
     if (!text) return;
-    this._history.push({ role: 'assistant', content: text });
+    // CRITICAL: fold the note INTO the preceding assistant message
+    // when one exists, instead of pushing a new assistant entry.
+    //
+    // Why: Llama / Qwen / most chat templates expect strict
+    // user-assistant alternation.  Two back-to-back assistant
+    // messages (the model's reply with embedded JSON, then a
+    // separate tool-result note) trip the template — sometimes
+    // visible as MessageOrderError, more often as silent
+    // misbehaviour where the *next* turn produces empty / nonsense
+    // output.  This was the cause of "prompts after the first tool
+    // run don't work at all" reports: turn 2's prompt looked like
+    // [system, user(t1), assistant(t1+json), assistant(tool_note),
+    // user(t2)] — the chat template can't render the consecutive
+    // assistants and the model effectively sees garbage.
+    //
+    // Folding the note into the previous assistant turn keeps the
+    // sequence strictly alternating.  When the most recent entry
+    // isn't an assistant (e.g. an unknown-tool note arrived first),
+    // we fall back to a fresh assistant push — that case still has
+    // two adjacent assistants if the model speaks again, but it's
+    // a minor edge case and the fold catches the common path.
+    const last = this._history[this._history.length - 1];
+    if (last && last.role === 'assistant') {
+      last.content = last.content
+        ? `${last.content}\n${text}`
+        : text;
+    } else {
+      this._history.push({ role: 'assistant', content: text });
+    }
   }
 
   /** Convert a tool's structured result into a one-line English
@@ -1583,13 +1708,17 @@ export class ChatBot {
    *
    *  Returns a new array (does NOT mutate this._history). */
   _trimHistoryForBudget(systemMsg) {
-    const budget = HISTORY_BUDGET_CHARS - (systemMsg.content?.length ?? 0);
+    const totalBudget = effectiveBudget(this._llm);
+    const budget = totalBudget - (systemMsg.content?.length ?? 0);
     if (budget <= 0) {
-      // Pathological: system prompt alone already exceeds the cap.
-      // Send only the most recent message so the turn at least
-      // happens; loud warning so the budget can be raised.
+      // Pathological: system prompt alone already exceeds the
+      // active model's effective budget (i.e. the model's context
+      // window minus the response reserve).  Send only the most
+      // recent message so the turn at least happens; loud warning
+      // so the user can switch to a model with more context.
       dwarn('history-trim: system prompt alone is', systemMsg.content?.length, 'chars',
-            '(>= budget', HISTORY_BUDGET_CHARS, ') — sending only the latest message');
+            '(>= budget', totalBudget, ') — sending only the latest message;',
+            'consider switching to a model with a larger contextTokens setting');
       return this._history.slice(-1);
     }
     const kept = [];
@@ -1766,7 +1895,7 @@ export class ChatBot {
   }
 
   /** Replace the streaming span with rendered markdown + optional tool-call widget. */
-  _finaliseStreamBubble(bubble, _textEl, cleanText, toolCall) {
+  _finaliseStreamBubble(bubble, _textEl, cleanText, toolCall, opts = {}) {
     bubble.classList.remove('cb-bubble-streaming');
     bubble.innerHTML = '';
 
@@ -1783,6 +1912,28 @@ export class ChatBot {
       // path awaits the tool.
       const { widget } = this._buildToolCallWidget(toolCall);
       bubble.appendChild(widget);
+    }
+
+    // Distinct visual treatment when a finalisation is the result of
+    // a watchdog timeout or a user-stop.  The CSS class adds a
+    // coloured left border + tinted background and the badge spells
+    // out the cause inside the bubble — so the stall is obvious at a
+    // glance, not buried in the body text the way the prior italic-
+    // underscore hint was.  `opts.state` is one of:
+    //   'stalled' — watchdog fired (model went silent past
+    //                STALL_TIMEOUT_MS); user did not press Stop
+    //   'stopped' — user pressed Stop or hit New Chat mid-stream
+    //   undefined — normal completion, no decoration
+    if (opts.state === 'stalled' || opts.state === 'stopped') {
+      bubble.classList.add(opts.state === 'stalled'
+        ? 'cb-bubble-stalled'
+        : 'cb-bubble-stopped');
+      const badge = document.createElement('div');
+      badge.className = 'cb-bubble-status-badge';
+      badge.textContent = opts.state === 'stalled'
+        ? `⚠ Timed out — model went silent for ${Math.round(STALL_TIMEOUT_MS / 1000)}s. ${cleanText ? 'Partial output shown above.' : 'No output produced.'}`
+        : `■ Stopped by user. ${cleanText ? 'Partial output shown above.' : 'No output produced.'}`;
+      bubble.appendChild(badge);
     }
 
     this._scrollBottom();

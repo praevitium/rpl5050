@@ -54,7 +54,7 @@ Arithmetic:
   + - * / ^   binary ops on the top two stack levels (level2 OP level1)
   NEG INV ABS SQ SQRT   unary numeric ops
   EXP LN LOG ALOG   exponential / logarithms (LOG is base 10, ALOG is 10^x)
-  FACT   factorial of a non-negative integer (10 FACT → 3628800)
+  FACT   factorial (the "!" operator).  10 FACT → 3628800.  USE THIS for "factorial of N", "N!", "N factorial".  DO NOT confuse with FACTOR — that's a different command (algebraic factorisation, see Symbolic / CAS section below).
   MOD    level2 mod level1
   XROOT  bth root: level2 XROOT level1 = level2^(1/level1)
 
@@ -83,7 +83,7 @@ Symbolic / CAS:
   INTEG   \`expr\` \`var\` INTEG — indefinite integral; for definite: \`expr\` \`var=a..b\` INTEG
   SOLVE   \`eq\` \`var\` SOLVE — solve an equation (e.g. \`X^2-5*X+6=0\` \`X\` SOLVE)
   PROOT   [c_n … c_1 c_0] PROOT — roots of a polynomial given as descending coefficient vector
-  EXPAND COLLECT FACTOR PARTFRAC   algebraic rewrites of a Symbolic
+  EXPAND COLLECT FACTOR PARTFRAC   algebraic rewrites of a Symbolic.  FACTOR is algebraic factorisation — \`X^2-1\` FACTOR → \`(X-1)*(X+1)\`.  USE FACTOR for "factor X^2-1", "factorise this expression".  DO NOT confuse with FACT (factorial).  Mnemonic: FACT ends in T (like "ten!"); FACTOR has more letters (like a factored expression has more terms).
   SUBST   \`expr\` \`var=value\` SUBST — substitute
   EVAL    simplify / evaluate the Symbolic on level 1
   →NUM    force numeric evaluation of a Symbolic
@@ -181,6 +181,24 @@ Examples:
 User: factorial of 10
 Computing the factorial of 10.
 {"name":"run","arguments":{"text":"10 FACT"}}
+
+— FACT vs FACTOR (DIFFERENT commands; do not swap them):
+
+User: 7!
+Computing 7 factorial.
+{"name":"run","arguments":{"text":"7 FACT"}}
+
+User: factor x^2 - 9
+Factoring X^2 - 9.
+{"name":"run","arguments":{"text":"\`X^2-9\` FACTOR"}}
+
+User: factorise (x-1)*(x+1)*x
+Factoring the expression.
+{"name":"run","arguments":{"text":"\`(X-1)*(X+1)*X\` FACTOR"}}
+
+User: 12 factorial
+Computing 12 factorial.
+{"name":"run","arguments":{"text":"12 FACT"}}
 
 User: add 3 to 5
 Adding 3 and 5.

@@ -10956,3 +10956,79 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+// ── session256: Ordered comparators < > ≤ ≥ — cross-type asymmetric rejection pins ──────────
+// session253 covered homogeneous bad-type pairs (L×L, V×V, M×M, T×T, U×U).
+// These 8 pins cover the asymmetric case where exactly one operand is a valid numeric scalar
+// and the other is a non-number, confirming the `!isNumber(a) || !isNumber(b)` OR-guard fires
+// regardless of which operand is bad and regardless of stack position.
+{
+  // R(level-2) × L(level-1): scalar on top-of-effective-input, List below.
+  const s = new Stack();
+  s.push(Real(3));
+  s.push(RList([Real(1)]));
+  assertThrows(() => lookup('<').fn(s), /Bad argument type/i,
+    'session256: R(3) {R(1)} < → Bad argument type (R×L cross-type; L on level-1 fires OR-guard)');
+}
+{
+  // L(level-2) × R(level-1): List on level-2, scalar on level-1 — guards that OR not AND logic
+  // means the List side fires even when the other operand is a valid Real.
+  const s = new Stack();
+  s.push(RList([Real(1)]));
+  s.push(Real(3));
+  assertThrows(() => lookup('<').fn(s), /Bad argument type/i,
+    'session256: {R(1)} R(3) < → Bad argument type (L×R cross-type; L on level-2 fires OR-guard)');
+}
+{
+  // R × V: Real level-2, Vector level-1.  Different op (>) to spread coverage across all four.
+  const s = new Stack();
+  s.push(Real(3));
+  s.push(Vector([Real(1), Real(2)]));
+  assertThrows(() => lookup('>').fn(s), /Bad argument type/i,
+    'session256: R(3) V[R(1),R(2)] > → Bad argument type (R×V cross-type asymmetric rejection)');
+}
+{
+  // R × M: Real level-2, Matrix level-1.
+  const s = new Stack();
+  s.push(Real(3));
+  s.push(Matrix([[Real(1)]]));
+  assertThrows(() => lookup('>').fn(s), /Bad argument type/i,
+    'session256: R(3) M[[R(1)]] > → Bad argument type (R×M cross-type asymmetric rejection)');
+}
+{
+  // R × T: Real level-2, Tagged level-1.  Confirms Tagged NOT transparently unwrapped even in
+  // the asymmetric position (the level-2 Real cannot "see through" the Tagged on level-1).
+  const s = new Stack();
+  s.push(Real(3));
+  s.push(Tagged('x', Real(1)));
+  assertThrows(() => lookup('≤').fn(s), /Bad argument type/i,
+    'session256: R(3) :x:R(1) ≤ → Bad argument type (R×T cross-type; T not unwrapped on level-1)');
+}
+{
+  // Z × U: Integer level-2, Unit level-1.  Guards that the BinInt→Integer promotion step
+  // that runs before the isNumber guard does not accidentally accept Unit as a numeric.
+  const s = new Stack();
+  s.push(Integer(1n));
+  s.push(Unit(1, [['m', 1]]));
+  assertThrows(() => lookup('≥').fn(s), /Bad argument type/i,
+    'session256: Integer(1) 1_m ≥ → Bad argument type (Z×U cross-type; Unit not numeric)');
+}
+{
+  // R × S: Real level-2, String level-1.  The String compare arm requires BOTH operands to be
+  // String; a Real+String mix bypasses that arm and hits the !isNumber guard (String is not
+  // isNumber), so this throws rather than lex-comparing.
+  const s = new Stack();
+  s.push(Real(5));
+  s.push(Str('hello'));
+  assertThrows(() => lookup('<').fn(s), /Bad argument type/i,
+    'session256: R(5) "hello" < → Bad argument type (R×S; String arm requires both-String)');
+}
+{
+  // S × R: String level-2, Real level-1.  Symmetric to the R×S case above — confirms the
+  // guard fires in both level orientations for mixed String+numeric.
+  const s = new Stack();
+  s.push(Str('hello'));
+  s.push(Real(5));
+  assertThrows(() => lookup('<').fn(s), /Bad argument type/i,
+    'session256: "hello" R(5) < → Bad argument type (S×R; String arm requires both-String)');
+}
+

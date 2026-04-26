@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 250 (2026-04-26).  Unit-tests lane run
-(post-ship snapshot refresh — Sunday 2026-04-26; 24th release-window
-run in this lane after sessions 156, 160, 164, 160-unit-tests,
-168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246, 250).
+**Last updated.** Session 256 (2026-04-26).  Unit-tests lane run
+(cross-type comparator rejection pins — Sunday 2026-04-26; 25th
+release-window run in this lane after sessions 156, 160, 164, 160-unit-tests,
+168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246, 250, 256).
 Note: session-233-unit-tests lock was pruned as crashed (header-only
 update; no session log written) — absorbed into a prior run's snapshot.
 Note: session 238 log index claims a coverage snapshot was added but
@@ -833,6 +833,78 @@ Session 117 unit-tests deltas:
   `cowork_allow_file_delete` permission prompt is blocked in
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
+
+## Coverage snapshot (session 256)
+
+Sibling deltas absorbed since session-250 snapshot
+(5571 → 5591, **+20** over sessions 251–254 + session-255-code-review):
+- **Session 251-code-review** — doc-only run; **0** assertion deltas.
+  O-014 filed (session-250 crash / unlogged algebra edit).  No source
+  or test edits.
+- **Session 252** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 247 → 252; session-log
+  back-fill for sessions 248/249/250/251-code-review; O-014 partially
+  retracted (items 1+2; items 3+4 reclassified `[deferred - post-ship]`).
+  No source or test edits.
+- **Session 253** (data-type-support) — **+20** assertions in
+  `tests/test-types.mjs` (1120 → 1140; `session253:` labels) —
+  Ordered comparators `<`/`>`/`≤`/`≥` L/V/M/T/U homogeneous rejection
+  pins.  20 cells in DATA_TYPES.md coverage matrix promoted from `·`
+  to `✗`.  No source change — `comparePair()` already rejects all
+  five non-numeric types.
+- **Session 254** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 249" back-fill; session-log pointer entries for sessions 245
+  and 249 back-filled.  No source or test edits.
+- **Session 255-code-review** — active at session-256 entry (lock
+  acquired 2026-04-26T21:57:30Z, not yet released); **0** assertion
+  deltas expected (doc-only review lane run).
+
+Session 256 unit-tests deltas (this run):
+- **+8 cross-type ordered-comparator asymmetric rejection pins** in
+  `tests/test-types.mjs` (1140 → 1148; `session256:` labels).
+  Session 253 covered homogeneous bad-type pairs (L×L, V×V, M×M, T×T,
+  U×U) for all four ordered comparators.  This cluster covers the
+  asymmetric case — exactly one operand is a valid numeric scalar and
+  the other is a non-number — confirming the `!isNumber(a) || !isNumber(b)`
+  OR-guard in `comparePair()` fires regardless of which stack level holds
+  the bad operand.  Pin set: R×L (level-2 Real, level-1 List via `<`),
+  L×R (List level-2, Real level-1 — OR not AND; `<`), R×V (`>`),
+  R×M (`>`), R×T (Tagged NOT unwrapped even in asymmetric position; `≤`),
+  Z×U (Integer level-2, Unit level-1; `≥`), R×S (Real+String mix —
+  String arm requires BOTH String; `<`), S×R (String level-2, Real
+  level-1 symmetric; `<`).  No source change.
+
+Baseline at session-256 entry: **5591 / 0** (fully green).
+Final: **5599 / 0** — fully green (+8 from this run).
+`test-persist.mjs` 66 / 0 (stable; D-001 closed ship-prep 2026-04-25).
+`sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1064 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1148 | 0    | +20 s253 ordered-comparator L/V/M/T/U homogeneous rejection. +8 s256 cross-type asymmetric rejection. |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5599** | **0** | Session 256 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable; D-001 closed ship-prep 2026-04-25. |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 250 (retained for context)
 
 ## Coverage snapshot (session 250)
 

@@ -85,8 +85,14 @@ export class LLM {
   /** Load (or switch to) a model.  Calling with the same id while
    *  ready resolves immediately; calling with a different id while
    *  ready re-loads.  Calling concurrently returns the same
-   *  in-flight promise. */
-  load(modelId) {
+   *  in-flight promise.
+   *
+   *  `opts.contextTokens` overrides WebLLM's default context window
+   *  for this model.  Each model in our catalog has its own value
+   *  (see MODELS in chat-bot.js); larger windows let more of the
+   *  conversation history reach the model but use more VRAM.
+   *  Omit / pass falsy to use WebLLM's prebuilt-config default. */
+  load(modelId, opts = {}) {
     if (!modelId) {
       return Promise.reject(new Error('load() requires a modelId'));
     }
@@ -104,7 +110,7 @@ export class LLM {
       // WORKER_VERSION below is the surest way to force a fresh
       // fetch on the next full page reload.  Bump this any time
       // llm-worker.js changes in a way users need to see.
-      const WORKER_VERSION = '11';
+      const WORKER_VERSION = '12';
       const workerUrl = new URL('./llm-worker.js', import.meta.url);
       workerUrl.searchParams.set('v', WORKER_VERSION);
       this._worker = new Worker(workerUrl, { type: 'module' });
@@ -127,7 +133,11 @@ export class LLM {
       this._loadReject  = reject;
     });
 
-    this._worker.postMessage({ type: 'load', modelId });
+    this._worker.postMessage({
+      type: 'load',
+      modelId,
+      contextTokens: opts.contextTokens || null,
+    });
     return this._loadPromise;
   }
 

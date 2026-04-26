@@ -1533,11 +1533,55 @@ body.mode-minimal .keypad {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: #6b7280;
-  white-space: pre-line;        /* honour the \n between last-turn and session lines */
+  white-space: pre-line;        /* honour the \n separators between stat lines */
   border-top: 1px solid rgba(255,255,255,.04);
   background: transparent;
+  transition: color .25s ease;
 }
 .cb-stats.hidden { display: none; }
+/* Context-budget thresholds.  Warn at 75%+, crit at 95%+ — the user
+   sees the colour shift before _trimHistoryForBudget actually starts
+   dropping messages.  Greens are the muted theme accents elsewhere
+   in the panel; warn/crit borrow from the existing error palette. */
+.cb-stats.cb-stats-warn { color: #f0b048; }
+.cb-stats.cb-stats-crit { color: #e58a8a; }
+
+/* ---- Bubble timeout / stop decorations ---------------------------
+   `cb-bubble-stalled` is set by _finaliseStreamBubble when the stall
+   watchdog aborted the generate (model went silent past
+   STALL_TIMEOUT_MS).  `cb-bubble-stopped` is the user-pressed-Stop
+   counterpart.  Both get a coloured left border + tinted body so
+   they're visually distinct from a normal completion at a glance.
+   The status badge inside spells out the cause in plain text. */
+.cb-bubble-stalled {
+  border-color: rgba(229, 138, 138, .45) !important;
+  background: rgba(58, 30, 30, .55) !important;
+  border-left: 3px solid #e58a8a !important;
+}
+.cb-bubble-stopped {
+  border-color: rgba(240, 176, 72, .45) !important;
+  background: rgba(58, 47, 30, .55) !important;
+  border-left: 3px solid #f0b048 !important;
+}
+.cb-bubble-status-badge {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-style: normal;
+  line-height: 1.4;
+  background: rgba(0, 0, 0, .25);
+  color: inherit;
+}
+.cb-bubble-stalled .cb-bubble-status-badge {
+  color: #f5b0b0;
+  border: 1px solid rgba(229, 138, 138, .35);
+}
+.cb-bubble-stopped .cb-bubble-status-badge {
+  color: #f5cc8a;
+  border: 1px solid rgba(240, 176, 72, .35);
+}
 
 /* ---- Status bar ---- */
 /* Header: status text on the left, "New chat" reset button on the

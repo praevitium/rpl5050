@@ -56,7 +56,7 @@ let _aborted = false;
 
 /* ---- Model loading ---- */
 
-async function loadModel({ modelId }) {
+async function loadModel({ modelId, contextTokens }) {
   if (!modelId) {
     self.postMessage({ type: 'status', status: 'error', message: 'No modelId supplied' });
     return;
@@ -67,6 +67,13 @@ async function loadModel({ modelId }) {
     status: 'loading',
     message: `Initialising ${modelId}…`,
   });
+  if (contextTokens) {
+    // eslint-disable-next-line no-console
+    console.log('[llm-worker] load: contextTokens override =', contextTokens);
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('[llm-worker] load: no contextTokens override (WebLLM default applies)');
+  }
 
   // WebLLM's progress callback shape: { progress: 0..1, text, timeElapsed }
   // We map onto the existing single-bar progress UI by fanning the
@@ -91,12 +98,22 @@ async function loadModel({ modelId }) {
     // Switching models: if `engine` already exists for a previous
     // modelId, just let CreateMLCEngine replace it.  WebLLM cleans
     // up the old WebGPU device internally; no explicit unload needed.
-    engine = await CreateMLCEngine(modelId, { initProgressCallback });
+    //
+    // Third arg is ChatOptions.  We override context_window_size per
+    // model from the catalog — WebLLM's prebuilt defaults are
+    // typically 4K for browser memory safety, well below most
+    // models' native maxes.  See chat-bot.js MODELS for the values
+    // and the rationale comments there.  If we ever want to expose
+    // other ChatOptions (sliding_window_size, attention_sink_size,
+    // sampling defaults), add them to the chatOpts object below.
+    const chatOpts = contextTokens ? { context_window_size: contextTokens } : undefined;
+    engine = await CreateMLCEngine(modelId, { initProgressCallback }, chatOpts);
     self.postMessage({
       type: 'status',
       status: 'ready',
       message: `Ready (WebGPU)`,
       device: 'webgpu',
+      contextTokens: contextTokens || null,
     });
   } catch (err) {
     // eslint-disable-next-line no-console
