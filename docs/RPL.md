@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 172)
+## Current implementation status (as of session 180)
 
 
 ### Program value — parser & round-trip
@@ -309,7 +309,51 @@ open, and the next-session queue.
 
 ---
 
-## Session 172 (this run) — what shipped
+## Session 180 (this run) — what shipped
+
+Ship-day audit-only run on Sunday 2026-04-26.  Scope-capped at 1/3
+workload per the scheduled-task guardrail.  All R-bucket findings
+in `docs/REVIEW.md` were fully closed at run-entry (R-001 — R-012
+all resolved; O-009 + O-011 `[deferred - post-ship]`).  Priority
+items 1–3 from the lane task file (R-008 OBJ→ fidelity, R-001…R-006
+closures, RPL.md reconciliation) were all completed in prior runs
+(sessions 155 / 159 / 163 / 167 / 172).  This run executed
+priority #4: suspended-execution substrate doc-comment audit.
+
+**Suspended-execution substrate audit — no source change.**  Full
+survey of `ops.js` module-level state flags (`_singleStepMode` /
+`_stepInto` / `_insideSubProgram` / `_localFrames`), `_driveGen`,
+`_evalValueGen`, `evalToken`, and every registered handler in the
+HALT / PROMPT / CONT / KILL / RUN / SST / SST↓ / DBUG family.
+Findings: zero comment drift, zero dead state slots, zero missing
+`gen.return()` calls, zero TODO/FIXME/HACK/XXX markers.  The
+substrate emerged from session-178's CONT dead-catch removal and
+RUN step-state-clear rewrite in clean, fully-documented condition.
+No `www/src/rpl/ops.js` source change this run.
+
+Session-172 `(this run)` heading demoted to plain past tense below
+(per the recurring R-005 discipline — each rpl-programming-lane run
+that adds a `(this run)` chapter must also demote its predecessor).
+
+### User-reachable demo
+
+No new behavior.  Existing session-178 RUN demo remains valid:
+`« 1 2 + 10 * »` ENTER → DBUG → SST → RUN → stack shows `30`.
+
+### Verification
+
+| Gate                                | Result        |
+|-------------------------------------|---------------|
+| `node --check www/src/rpl/ops.js`   | clean         |
+| `node tests/test-all.mjs`           | 5389 / 0      |
+| `node tests/test-persist.mjs`       | 66 / 0        |
+| `node tests/sanity.mjs`             | 22 / 0 (~5 ms)|
+
+Δ from session-179 close (5389 / 0): **0** — audit-only run.
+
+---
+
+## Session 172 — what shipped
 
 Final RPL-lane run on Sunday 2026-04-26, the ship day itself.
 Hour 17 Pacific (odd, outside the 06–08 window) — both run guards

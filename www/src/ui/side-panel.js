@@ -39,6 +39,7 @@ import { UNIT_CATALOG } from '../rpl/units.js';
 import {
   exportVariableToFile, parseVariableFile,
 } from '../rpl/persist.js';
+import { CommandHelp } from './command-help.js';
 
 /* -----------------------------------------------------------------
    Command categories.  Keys are the display names; values are arrays
@@ -337,6 +338,14 @@ export class SidePanel {
     // layout survives a reload.
     this._collapsedSections = new Set();
     this.el = null;
+    // Lazily-loaded popup that overlays the calculator with the
+    // command-reference entry for whichever Commands-tab button is
+    // hovered.  Mounted into #calculator so its `inset: 0` covers
+    // the calc area only — the side panel stays clickable.
+    const calcEl = document.getElementById('calculator');
+    this.commandHelp = calcEl
+      ? new CommandHelp({ host: calcEl })
+      : null;
     this._build();
     this._restoreUIState();
   }
@@ -409,6 +418,20 @@ export class SidePanel {
       const { action, value } = btn.dataset;
       this._handleAction(action, value);
     });
+
+    // Right-click on a Commands-tab op button → show the command-
+    // reference popup over the calculator.  Suppressing the native
+    // context menu here is the whole point of the gesture; left-click
+    // still routes through the normal action handler above.  Unit-
+    // symbol buttons are skipped (no reference entry for them).
+    panel.querySelector('.side-panel-body')
+      .addEventListener('contextmenu', (ev) => {
+        if (!this.commandHelp) return;
+        const btn = ev.target.closest?.('.sp-cmd[data-action="op"]');
+        if (!btn) return;
+        ev.preventDefault();
+        this.commandHelp.show(btn.dataset.value);
+      });
 
     // Files tab mirrors the current directory — any STO/PURGE or
     // CRDIR/UPDIR fires a state event, and we repaint only if the
@@ -554,6 +577,7 @@ export class SidePanel {
 
   close() {
     this.el.classList.add('hidden');
+    if (this.commandHelp) this.commandHelp.hide();
     this._saveUIState();
   }
 
@@ -687,7 +711,10 @@ export class SidePanel {
           b.dataset.action = 'op';
           b.dataset.value  = name;
           b.textContent = name;
-          b.title = available ? `Run ${name}` : `${name} — not yet implemented`;
+          const baseTitle = available
+            ? `Run ${name}`
+            : `${name} — not yet implemented`;
+          b.title = `${baseTitle}\nRight-click for reference`;
         }
         grid.appendChild(b);
       }
@@ -714,7 +741,7 @@ export class SidePanel {
         b.dataset.action = 'op';
         b.dataset.value  = name;
         b.textContent = name;
-        b.title = `Run ${name}`;
+        b.title = `Run ${name}\nRight-click for reference`;
         grid.appendChild(b);
       }
       wrap.appendChild(section);

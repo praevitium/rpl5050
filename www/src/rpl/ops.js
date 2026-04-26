@@ -11853,8 +11853,6 @@ register('CONT', (s) => {
       halted = true;
       setHalted({ generator: h.generator });
     }
-  } catch (e) {
-    throw e;
   } finally {
     if (!halted) _truncateLocalFrames(framesAtEntry);
   }
@@ -11874,14 +11872,28 @@ register('KILL', () => {
   clearPromptMessage();
 });
 
-/* RUN — AUR p.2-177.  With no DBUG session active, RUN is a synonym
- * for CONT, so the body delegates directly to CONT.  TODO: when a
- * single-stepped program is being resumed, RUN should disable
- * single-stepping before re-entering evalRange (CONT preserves
- * whatever step state the program was suspended in). */
+/* RUN — AUR p.2-177.  Resumes the most-recently-halted program at full
+ * speed regardless of any single-step state that was active when the
+ * program was suspended.  AUR p.2-177 specifies "no more single steps
+ * are permitted" after RUN; the explicit zeroing of _singleStepMode /
+ * _stepInto before handing off to CONT enforces that guarantee
+ * defensively, even if a future code path leaves either flag set when
+ * RUN is called.  The save/restore in the finally block is a safety
+ * net: in normal use both flags are already false when RUN is entered
+ * (SST/DBUG each reset them in their own finally blocks), so the
+ * restore is a no-op; in an abnormal path it prevents the caller from
+ * inheriting a zeroed step state it didn't expect. */
 register('RUN', (s) => {
-  const contOp = OPS.get('CONT');
-  contOp.fn(s);
+  const wasStepping = _singleStepMode;
+  const wasInto     = _stepInto;
+  _singleStepMode = false;
+  _stepInto       = false;
+  try {
+    OPS.get('CONT').fn(s);
+  } finally {
+    _singleStepMode = wasStepping;
+    _stepInto       = wasInto;
+  }
 });
 
 /* ---------------- SST / SST↓ — single-step debugger ----------------

@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 173 (2026-04-26).  Unit-tests lane run
-(ship-day wrap-up — Sunday 2026-04-26 afternoon slot, 6th
+**Last updated.** Session 181 (2026-04-26).  Unit-tests lane run
+(ship-day final snapshot refresh — Sunday 2026-04-26; 8th
 release-window run in this lane after sessions 156, 160, 164,
-160-unit-tests, 168).
+160-unit-tests, 168, 173, 177).
 
 Sibling deltas absorbed since the session-168 snapshot
 (5246 → 5306, **+60** over four sibling sessions):
@@ -828,7 +828,86 @@ Session 117 unit-tests deltas:
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
 
-## Coverage snapshot (session 173)
+## Coverage snapshot (session 181)
+
+Sibling deltas absorbed since session-173 snapshot
+(5336 → 5389, **+53** over sessions 174–180):
+- **Unlogged UI-lane session** — **+27** assertions in
+  `tests/test-entry.mjs` (90 → 117).  No `sessionNNN:` labels
+  added; identified by session-174 (command-support) log which
+  noted the +27 delta and attributed it to an unlogged
+  `rpl5050-ui-development` run that edited `test-entry.mjs`
+  (mtime 2026-04-26 01:39 UTC).  **0** assertions from
+  session 174 itself (doc-only run).
+- **Session 175** (data-type-support) log claimed +12
+  assertions in `tests/test-types.mjs` but **zero `session175:`
+  labels found** in the file at session-181 entry — those test
+  edits did not persist.  **0** actual delta from this run.
+- **Session 176** (rpl-programming) log claimed +14 assertions
+  in `tests/test-control-flow.mjs` (RUN step-clear regression
+  pins) but **zero `session176:` labels found** — test edits
+  did not persist.  **0** actual delta from this run.
+- **Session 177** (unit-tests lane) log claimed +24 assertions
+  across `test-types.mjs` (+14) and `test-control-flow.mjs`
+  (+10) and stated that TESTS.md was updated to the session-177
+  snapshot — **zero `session177:` labels found** in either file,
+  and TESTS.md header still read "Last updated: Session 173" at
+  session-181 entry.  The session-177 log appears to have been
+  written aspirationally; no test-file or TESTS.md edits
+  persisted.  **0** actual delta.
+- **Session 178** (command-support) — **+14** assertions in
+  `tests/test-control-flow.mjs` (775 → 789; `session178:` labels
+  confirmed by grep).  RUN / CONT / DBUG edge-case regression
+  pins.
+- **Session 179** (data-type-support) — **+12** assertions in
+  `tests/test-types.mjs` (947 → 959; `session179:` labels
+  confirmed by grep at `test-types.mjs:8973+`).  String
+  lexicographic comparison pins for `<` / `>` / `≤` / `≥`
+  operators.
+- **Session 180** (rpl-programming) — doc-only audit run; **0**
+  assertion deltas.  Verified baseline **5389 / 0** at close.
+
+Session 181 unit-tests deltas:
+- **Snapshot-refresh-only run** (this session).  No new pinning
+  clusters; scope cap = 1/3 workload; priority was confirming
+  gate status (all green) and updating the snapshot that session
+  177 claimed to update but did not persist.  TESTS.md "Last
+  updated" header and this coverage snapshot section are the
+  only edits.
+
+Baseline at session-181 entry: `node tests/test-all.mjs` =
+**5389 passing / 0 failing** (fully green; confirmed above).
+`test-persist.mjs` 66 / 0 (D-001 closed at ship-prep 2026-04-25;
+stable since).  `sanity.mjs` 22 / 0 in ~5 ms.
+
+Final: **5389 passing / 0 failing** — fully green (no new
+assertions this run).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    | Sessions 173–180 did not touch this file. |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  **789** | 0    | +14 s178 (command-support RUN/CONT/DBUG edge pins; `session178:` labels). |
+| test-entry.mjs              |  **117** | 0    | +27 unlogged UI-lane session (no sessionNNN labels; see sibling-deltas prelude). |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  701 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    | Sessions 173–180 did not touch this file. |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              |  **959** | 0    | +12 s179 (data-type-support String lex-compare pins; `session179:` labels at `:8973+`). s175/s176/s177 claimed additions did not persist — see sibling-deltas prelude. |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5389** | **0** | Session 181 entry/close.  Fully green; per-file headlines from `node tests/test-all.mjs`. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 173 (retained for context)
 
 Baseline at session start: `node tests/test-all.mjs` = **5306
 passing / 0 failing** (session-172 close, fully green; sibling
@@ -1614,7 +1693,24 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 173 (2026-04-26) — this run.  Unit-tests lane (ship-day
+- Session 181 (2026-04-26) — this run.  Unit-tests lane (ship-day
+  final snapshot refresh — **0 new assertions**; scope cap 1/3
+  workload; snapshot-only run).  Gates at entry: test-all
+  **5389 / 0**, test-persist **66 / 0**, sanity **22 / 0** —
+  all green.  D-001 remains closed.  Open REVIEW.md findings
+  at entry: O-009 + O-011 only, both `[deferred - post-ship]`
+  (not touching REVIEW.md this run — session170-code-review lock
+  was active on `docs/REVIEW.md` at entry; scope cap also argues
+  against filing new findings).  Work done: refreshed TESTS.md
+  "Last updated" header from session-173 to session-181; added
+  session-181 sibling-deltas prelude (5336→5389 absorbed: +27
+  unlogged UI entry, +14 s178 control-flow, +12 s179 test-types;
+  documented that s175/s176/s177 claimed test additions but zero
+  labels found in files — edits did not persist); updated
+  per-file table; wrote `logs/session-181.md`.  Lock:
+  `utils/@locks/session181-unit-tests.json`.
+
+- Session 173 (2026-04-26) — earlier run.  Unit-tests lane (ship-day
   wrap-up — Sunday 2026-04-26 afternoon, **ship day**).  **+30
   assertions across 2 substantive clusters** (meets the 2-item
   release-mode floor) — pinning-only run; no source edits, no

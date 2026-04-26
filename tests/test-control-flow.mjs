@@ -2539,6 +2539,72 @@ import { assert, assertThrows } from './helpers.mjs';
     'session083: after RUN, the older halt remains on the LIFO');
 }
 
+/* ---- RUN step-state clear: DBUG → SST → RUN drains halt (session178) ---- */
+/* Verifies AUR p.2-177 "no more single steps are permitted" after RUN.
+ * The explicit _singleStepMode / _stepInto zeroing in RUN's body ensures
+ * the remainder of the program runs full-speed even when the last step
+ * was via SST.  Program « 1 2 + 10 * »: DBUG runs token 1 (push 1),
+ * SST runs token 2 (push 2), RUN drains the remaining 3 tokens (+ 10 *). */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([Integer(1n), Integer(2n), Name('+'), Integer(10n), Name('*')]));
+  lookup('DBUG').fn(s);
+  assert(s.depth === 1 && s.peek().value === 1n && haltedDepth() === 1,
+    'session178: DBUG pauses after token 1 (push 1); haltedDepth=1');
+  assert(singleStepMode() === false,
+    'session178: DBUG resets singleStepMode after the suspending step');
+  lookup('SST').fn(s);
+  assert(s.depth === 2 && s.peek().value === 2n && haltedDepth() === 1,
+    'session178: SST advances one token (push 2); still halted, stack depth=2');
+  assert(singleStepMode() === false,
+    'session178: SST resets singleStepMode after stepping');
+  lookup('RUN').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 1 && s.peek().value === 30n,
+    'session178: RUN drains halt and completes program (1+2=3, 3*10=30)');
+  assert(singleStepMode() === false,
+    'session178: RUN cleared _singleStepMode at exit (AUR p.2-177)');
+  assert(stepIntoMode() === false,
+    'session178: RUN cleared _stepInto at exit');
+}
+
+/* ---- RUN step-state clear: DBUG → SST↓ → RUN (session178) ---- */
+/* Same pattern as above but using SST↓ (step-into) instead of SST.
+ * Program « 5 3 - 2 * »: DBUG token 1 (push 5), SST↓ token 2 (push 3),
+ * RUN drains remaining 3 tokens (- 2 *) → 5−3=2, 2*2=4. */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([Integer(5n), Integer(3n), Name('-'), Integer(2n), Name('*')]));
+  lookup('DBUG').fn(s);
+  assert(s.depth === 1 && s.peek().value === 5n && haltedDepth() === 1,
+    'session178: DBUG+SST↓: DBUG pauses after token 1 (push 5)');
+  lookup('SST↓').fn(s);
+  assert(s.depth === 2 && s.peek().value === 3n && haltedDepth() === 1,
+    'session178: SST↓ advances one token (push 3); still halted');
+  lookup('RUN').fn(s);
+  assert(haltedDepth() === 0 && s.depth === 1 && s.peek().value === 4n,
+    'session178: RUN drains halt and completes program (5-3=2, 2*2=4)');
+  assert(singleStepMode() === false,
+    'session178: RUN cleared singleStepMode after SST↓-last-step path');
+  assert(stepIntoMode() === false,
+    'session178: RUN cleared _stepInto even when last step was SST↓');
+}
+
+/* ---- RUN with no halted program raises error; step flags stay cleared (session178) ---- */
+/* Semantic regression: RUN's error path must not leave step flags set.
+ * The finally block restores the prior values (both false in normal use). */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  let caught = null;
+  try { lookup('RUN').fn(s); } catch (e) { caught = e; }
+  assert(caught && /No halted program/.test(caught.message),
+    'session178: RUN with no halted program raises No halted program (parity with CONT)');
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session178: RUN error path leaves both step flags cleared (finally restores prior=false)');
+}
+
 /* ================================================================
    Generator-based evalRange: HALT at any structural depth
    ================================================================

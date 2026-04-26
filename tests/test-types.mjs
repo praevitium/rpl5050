@@ -8970,3 +8970,115 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+// ---- session179: String lex compare pins for < > ≤ ≥ ----------------------------
+// ops.js `comparePair` has a String branch (HP50 User Guide App. J: char-code
+// lexicographic order) that predates this session.  The matrix shows ✓ on S for
+// all four ordered-compare ops, but no hard assertions existed.  This cluster
+// pins the contract: both-String lex path + cross-type rejection guard.
+{
+  // Strict less-than ------------------------------------------------------------
+  {
+    const s = new Stack();
+    s.push(Str('abc')); s.push(Str('abd'));
+    lookup('<').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session179: "abc" < "abd" → Real(1) (String lex: 'c'<'d' at position 2); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+  {
+    const s = new Stack();
+    s.push(Str('abd')); s.push(Str('abc'));
+    lookup('<').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session179: "abd" < "abc" → Real(0) (reverse order — not less); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+  {
+    // equality boundary: strict < returns false
+    const s = new Stack();
+    s.push(Str('abc')); s.push(Str('abc'));
+    lookup('<').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session179: "abc" < "abc" → Real(0) (equal strings: strict less is false); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+  {
+    // empty string is lex-less than any non-empty
+    const s = new Stack();
+    s.push(Str('')); s.push(Str('a'));
+    lookup('<').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session179: "" < "a" → Real(1) (empty string is lex-less than any non-empty); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+
+  // Strict greater-than ---------------------------------------------------------
+  {
+    const s = new Stack();
+    s.push(Str('b')); s.push(Str('a'));
+    lookup('>').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session179: "b" > "a" → Real(1) (String lex: 'b'>'a'); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+  {
+    const s = new Stack();
+    s.push(Str('a')); s.push(Str('b'));
+    lookup('>').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(0),
+      `session179: "a" > "b" → Real(0) (reverse order — not greater); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+
+  // Less-or-equal ---------------------------------------------------------------
+  {
+    // equality boundary: ≤ returns true for equal strings
+    const s = new Stack();
+    s.push(Str('abc')); s.push(Str('abc'));
+    lookup('≤').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session179: "abc" ≤ "abc" → Real(1) (equality boundary: ≤ is true for equal strings); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+  {
+    const s = new Stack();
+    s.push(Str('abc')); s.push(Str('abd'));
+    lookup('≤').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session179: "abc" ≤ "abd" → Real(1) (lex less satisfies ≤); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+
+  // Greater-or-equal ------------------------------------------------------------
+  {
+    // equality boundary: ≥ returns true for equal strings
+    const s = new Stack();
+    s.push(Str('abc')); s.push(Str('abc'));
+    lookup('≥').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session179: "abc" ≥ "abc" → Real(1) (equality boundary: ≥ is true for equal strings); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+  {
+    const s = new Stack();
+    s.push(Str('abd')); s.push(Str('abc'));
+    lookup('≥').fn(s);
+    const v = s.peek();
+    assert(isReal(v) && v.value.eq(1),
+      `session179: "abd" ≥ "abc" → Real(1) (lex greater satisfies ≥); got type=${v?.type} val=${v?.value?.toString?.()}`);
+  }
+
+  // Cross-type rejection --------------------------------------------------------
+  // HP50 AUR App. J: mixing String with non-String on ordered compare → Bad argument type.
+  assertThrows(
+    () => { const s = new Stack(); s.push(Str('a')); s.push(Integer(5n)); lookup('<').fn(s); },
+    'Bad argument type',
+    'session179: Str < Integer → Bad argument type (cross-type String/numeric mix rejected)'
+  );
+  assertThrows(
+    () => { const s = new Stack(); s.push(Integer(5n)); s.push(Str('a')); lookup('<').fn(s); },
+    'Bad argument type',
+    'session179: Integer < Str → Bad argument type (cross-type numeric/String mix rejected)'
+  );
+}
+

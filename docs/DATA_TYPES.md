@@ -5,7 +5,24 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 171 (2026-04-25, release-mode wrap-up
+**Last updated.** Session 179 (2026-04-26, ship-day 1/3-scope run;
+lane name **`session179-data-type-support`**) — one pinning cluster
+closing the String lex compare coverage gap on `<` / `>` / `≤` / `≥`
+(the ordered-comparator intro paragraph carried a stale "still Bad
+argument type" note; the implementation was already in `comparePair`
+but had zero hard assertions).  No source-side changes; lane held only
+`tests/test-types.mjs`, `docs/DATA_TYPES.md`, `logs/`.
++12 hard assertions in `tests/test-types.mjs` (947 → 959): four ops ×
+value-true + value-false + equality boundary pins for `<`/`>`, equality
+boundary for `≤`/`≥`, plus `""<"a"` empty-string sentinel and two
+cross-type rejection guards.  Stale intro text removed and replaced
+with accurate description citing HP50 User Guide App. J + session 179.
+Notes columns for all four ordered-compare rows updated.
+Verification gates at exit: `node tests/test-all.mjs` 5389/0/0,
+`node tests/test-persist.mjs` 66/0, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (179)" below.
+
+**Last updated (prior — session 171).** Session 171 (2026-04-25, release-mode wrap-up
 on T-1 day; lane name **`session171-data-types`**) — two pinning
 clusters lifting session 166's n=0/n=1 boundary structure and
 session 168's heterogeneous-output mixed-input value-pin pattern
@@ -830,16 +847,16 @@ Numeric-family ordered compare.  `comparePair()` promotes BinInt to
 Integer (with wordsize mask applied to the payload) before routing
 through `promoteNumericPair`, so BinInt × BinInt and cross-family
 BinInt × Integer / Real are accepted.  Complex with a non-zero
-imaginary part rejects (no total order on ℂ).  String lex order is
-still `Bad argument type` — tracked in the "next-session candidates"
-list below.
+imaginary part rejects (no total order on ℂ).  String lex compare
+(both operands must be String; HP50 User Guide App. J char-code
+lexicographic) is supported — session 179 pinned the contract.
 
 | Op   | R | Z | B | C* | N | Sy | L | V | M | T | U | S | Notes |
 |------|---|---|---|----|---|----|---|---|---|---|---|---|-------|
-| `<`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). Session 130 pinned BinInt × Rational composition (B → Integer mask + Integer × Rational → rational kind cross-multiply): `#10h < Rational(33,2)` → 1 (16*2=32 < 33*1=33); ws=8 mask edge `#1FFh < Rational(300,1)` → 1 (#1FFh masks to 255 < 300, NOT 511 > 300 — mask BEFORE compare); negative Q boundary `Rational(-3,4) < #0h` → 1 (cross-multiply -3 < 0). Session 135 pinned BinInt cross-base ordered compare `#5h < #6d` → 1 (`comparePair` ignores the formatter `.base` field — both operands are still type `'binaryInteger'`, mask + value compare). |
-| `>`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned operand-order on B × Q: `Rational(33,2) > #10h` → 1 (symmetric to <); ws=8 mask preserved on in-range value `#FFh > Rational(254,1)` → 1 (#FFh stays 255 > 254). |
-| `≤`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned Q × B: `Rational(7,3) ≤ #3h` → 1 (cross-multiply 7 ≤ 9). |
-| `≥`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned the rational-branch equality boundary `Rational(2,1) ≥ #2h` → 1 (Rational(2,1) does not auto-collapse to Integer at the constructor — collapse is op-result-level — but the rational-kind compare still fires correctly). |
+| `<`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Session 074 added B (comparePair coerces via `Integer(value & mask)`). Session 130 pinned BinInt × Rational composition (B → Integer mask + Integer × Rational → rational kind cross-multiply): `#10h < Rational(33,2)` → 1 (16*2=32 < 33*1=33); ws=8 mask edge `#1FFh < Rational(300,1)` → 1 (#1FFh masks to 255 < 300, NOT 511 > 300 — mask BEFORE compare); negative Q boundary `Rational(-3,4) < #0h` → 1 (cross-multiply -3 < 0). Session 135 pinned BinInt cross-base ordered compare `#5h < #6d` → 1 (`comparePair` ignores the formatter `.base` field — both operands are still type `'binaryInteger'`, mask + value compare). Session 179 pinned String lex path: `"abc"<"abd"` → 1, `"abd"<"abc"` → 0, `"abc"<"abc"` → 0 (strict), `""<"a"` → 1 (empty lex-less). Cross-type rejection pinned: `Str<Integer` → Bad argument type. |
+| `>`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned operand-order on B × Q: `Rational(33,2) > #10h` → 1 (symmetric to <); ws=8 mask preserved on in-range value `#FFh > Rational(254,1)` → 1 (#FFh stays 255 > 254). Session 179 pinned String lex path: `"b">"a"` → 1, `"a">"b"` → 0. |
+| `≤`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned Q × B: `Rational(7,3) ≤ #3h` → 1 (cross-multiply 7 ≤ 9). Session 179 pinned String lex path: `"abc"≤"abc"` → 1 (equality boundary), `"abc"≤"abd"` → 1. |
+| `≥`  | ✓ | ✓ | ✓ | ~  | ✓ | ✓  | · | · | · | · | · | ✓ | Same. Session 130 pinned the rational-branch equality boundary `Rational(2,1) ≥ #2h` → 1 (Rational(2,1) does not auto-collapse to Integer at the constructor — collapse is op-result-level — but the rational-kind compare still fires correctly). Session 179 pinned String lex path: `"abc"≥"abc"` → 1 (equality boundary), `"abd"≥"abc"` → 1. |
 
 *`~` on Complex = accepted only when both `im === 0`; otherwise `Bad argument type`.
 
@@ -895,7 +912,36 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
 
+### Resolved this session (179)
+
+- **Cluster 1 — String lex compare pinning on `<` / `>` / `≤` / `≥`.**
+  The `comparePair()` function in `ops.js` has had a String branch
+  since before this lane was active (HP50 User Guide App. J: both
+  operands must be String; char-code lexicographic order; mixing
+  String with non-String → `Bad argument type`).  The matrix carried
+  `✓` in the S column for all four ops, but the intro paragraph still
+  said "String lex order is still `Bad argument type`" — a stale note
+  that predated the implementation.  No hard assertions existed for
+  the String path on any of the four ops.  This cluster:
+  - **Removes the stale intro-paragraph claim** and replaces it with
+    an accurate description citing HP50 User Guide App. J + session 179.
+  - **Pins 12 hard assertions** covering:
+    - `<` strict-less true (`"abc"<"abd"` → 1), false
+      (`"abd"<"abc"` → 0), equality-boundary (`"abc"<"abc"` → 0),
+      empty-string sentinel (`""<"a"` → 1);
+    - `>` strict-greater true (`"b">"a"` → 1), false (`"a">"b"` → 0);
+    - `≤` equality-boundary (`"abc"≤"abc"` → 1) and lex-less
+      (`"abc"≤"abd"` → 1);
+    - `≥` equality-boundary (`"abc"≥"abc"` → 1) and lex-greater
+      (`"abd"≥"abc"` → 1);
+    - cross-type rejections: `Str<Integer` → Bad argument type,
+      `Integer<Str` → Bad argument type.
+  - **Updates Notes columns** for all four ordered-compare rows.
+  No source-side changes.  No REVIEW.md findings closed (D-001 was
+  already resolved; O-009/O-011 are post-ship deferred).
+
 ### Resolved this session (171)
+
 
 - **Cluster 1 — SINH / COSH / TANH / ASINH n=0 empty-List + n=1
   single-element boundary closures on the bare-List + Tagged-of-List

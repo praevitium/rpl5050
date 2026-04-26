@@ -6,26 +6,42 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 169-code-review (2026-04-25, third
-release wrap-up code-review run — afternoon slot, T-1 day before
-the Sunday 2026-04-26 ship).  Eighteenth review-lane run.
-Prior baseline = session 164-code-review (seventeenth run, also
-2026-04-25).  This run folds in the four sibling-lane closures
-since session 164: 165 (command-support — release-mode doc-
-reconciliation, COMMANDS.md Counts heading refreshed `as of
-session 161` → `as of session 165`, session-log back-fill
-sessions 162 / 163 / 164; no source edits); 166 (data-type-
-support — two more pinning clusters lifting the n=0/n=1
-boundary axis onto LOG / EXP / ALOG and ACOSH / ATANH;
-`tests/test-types.mjs` widened +19 assertions; no source-side
-changes); 167 (rpl-programming — audit-driven NEWOB widening
-to Rational, sibling to session 163's OBJ→ extension; one-line
-predicate widening at `_newObCopy` in `www/src/rpl/ops.js`
-plus header / inline comment expansion, +20 `session167:` pins
-in `tests/test-reflection.mjs`).  `session168-unit-tests` is
-in flight at this run's acquisition (scope `tests/` + `docs/
-TESTS.md`); their TESTS.md refresh + coverage closure for the
-165 / 166 / 167 deltas will land after this REVIEW.md update.
+**Last updated.** Session 170-code-review (2026-04-26, ship-day
+code-review run — fourth release wrap-up run).  Nineteenth
+review-lane run.  Prior baseline = session 169-code-review
+(eighteenth run, 2026-04-25).  This run folds in eleven
+sibling-lane sessions since session 169: 170 (command-support
+— doc-only COMMANDS.md reconciliation, Counts stamp refreshed
+`as of session 165` → `as of session 170`, NEWOB row Notes
+added for s167 widening, session-log back-fill 166–169; no
+source / test edits); 171 (data-type-support — SINH / COSH /
+TANH / ASINH n=0/n=1 boundary + heterogeneous-output pinning
+on bare-List + Tagged-of-List, +22 `session171:` pins in
+`tests/test-types.mjs`; no source-side changes); 172
+(rpl-programming — NEWOB-on-Program outer-freeze parity fix,
+one-line widening at `www/src/rpl/ops.js:9341`, +33
+`session172:` freeze-parity pins in
+`tests/test-reflection.mjs`); 173 (unit-tests — trig boundary
++ heterogeneous-output pin clusters, +30 pins, TESTS.md stamp
+refreshed to "Session 173"); 174 (command-support — doc-only
+COMMANDS.md + REVIEW.md pass; no source / test edits); 175
+(data-type-support — trig heterogeneous-output mixed-input
+value pins, +12 pins **claimed but did not persist** — see
+T-003); 176 (rpl-programming — RUN explicit
+`_singleStepMode` / `_stepInto` clear per AUR p.2-177 + CONT
+dead catch+rethrow removal; source and +14 pin edits **did
+not persist** — re-landed by s178); 177 (unit-tests —
+EXACT-mode Integer trig + RUN edge matrix pins, +24 pins
+**claimed but did not persist**, TESTS.md refresh **claimed
+but did not persist** — see T-003); 178 (command-support —
+re-landed session 176's RUN / CONT source edits + +14
+`session178:` regression pins in
+`tests/test-control-flow.mjs`, COMMANDS.md Counts stamp bumped
+to "as of session 178"); 179 (data-type-support — String lex
+compare pinning on `<` / `>` / `≤` / `≥`, +12 `session179:`
+pins in `tests/test-types.mjs`, DATA_TYPES.md stamp refreshed
+to "Session 179"); 180 (rpl-programming — doc-only
+`docs/RPL.md` pass, no source / test edits).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -48,72 +64,52 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 169-code-review).** Sibling lane
-`session168-unit-tests` was active at acquisition (scope
-`tests/` + `docs/TESTS.md`, started ~1 minute before this
-run's lock claim).  No overlap with this run's claimed scope
-(`docs/REVIEW.md` + `logs/`), so the helper allowed
-acquisition.  At review-lane *entry* `node tests/test-all.mjs`
-= **5206 passing / 0 failing** (fully green; was 5156 at
-session-164-code-review close, +50 across the four sibling-
-lane closures since: session-164-unit-tests +11 release-mode
-pin clusters, session 166 +19 LOG/EXP/ALOG + ACOSH/ATANH
-n=0/n=1 boundary pins, session 167 +20 NEWOB-on-Rational
-pins; session 165 was doc-only); `node tests/test-persist.mjs`
-= **66 passing / 0 failing** (stable, fully green since the
-D-001 ship-prep close — count unchanged across sessions 165 /
-166 / 167); `node tests/sanity.mjs` = **22 passing / 0 failing
-in ~5 ms** (stable).  `node --check` clean across all four
-core sources (`www/src/app.js`, `www/src/rpl/ops.js`,
-`www/src/rpl/state.js`, `www/src/rpl/types.js`).  Δ from
-session 164's run-close 5156: **+50** test-all.  test-persist
-unchanged at 66 / 0.  `grep -c "register(" www/src/rpl/ops.js`
-= **476** (unchanged since session 149 — no new registrations
-across sessions 150 → 167; session 167's NEWOB widening was a
-predicate widening of an existing `register()` call, not a
-new registration).  Since acquisition the sibling
-`session168-unit-tests` lane has continued to add pins for the
-session-165 / 166 / 167 deltas; final exit count captured at
-the verification block below.
+**Baseline (session 170-code-review).** No sibling locks at
+acquisition; sessions 165–180 all released gracefully before
+this run's lock claim.  At review-lane *entry*
+`node tests/test-all.mjs` = **5389 passing / 0 failing**
+(fully green; was 5206 at session-169-code-review entry; net
+Δ +183 across eleven sibling sessions — +22 s171 types
+boundary, +33 s172 reflection freeze-parity, +30 s173 trig
+boundary, +14 s178 RUN/CONT regression re-land, +12 s179
+String lex-compare; s174 / s180 doc-only; s175 / s176 / s177
+claimed +12 / +14 / +24 respectively but those test additions
+did not persist — see T-003); `node tests/test-persist.mjs`
+= **66 passing / 0 failing** (stable, unchanged since D-001
+ship-prep close); `node tests/sanity.mjs` = **22 passing /
+0 failing in ~5 ms** (stable).  `node --check` clean across
+all four core sources (`www/src/app.js`, `www/src/rpl/ops.js`,
+`www/src/rpl/state.js`, `www/src/rpl/types.js`).
+`grep -c "register(" www/src/rpl/ops.js` = **476** (unchanged
+since session 149 — no new registrations across sessions 170
+→ 180).
 
-**This run's own edits.** One edit this run — pure
+**This run's own edits.** Two edits this run — pure
 doc/hygiene, no source changes:
   1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 169-code-review (18th review-lane run); preamble
-     rewritten to fold in the session 165 / 166 / 167 sibling-
-     lane work since session 164; baseline block rewritten with
-     the 5206 / 66 / 22 entry gates; two carried-forward open
-     findings aged (**O-009** 10 → 11 runs — still
-     `[deferred - post-ship]`, both `.bak` files still on disk
-     at the same byte counts and mtimes, tooling gate
-     unchanged; **O-011** 5 → 6 runs — still
-     `[deferred - post-ship]` per the session 156 meta-log
-     triage, with three additional occurrences logged across
-     sessions 165 / 166 / 167's lock bodies and a fourth from
-     `session168-unit-tests` in flight, bringing the running
-     count of underlying-ambiguity occurrences to **twenty-
-     four** since session 106).  No promotions to resolved
-     this run (no sibling lane closed an open R-bucket /
-     D-bucket / C-bucket / X-bucket finding since session 164
-     — sessions 165 / 166 / 167 were release-mode doc-recon /
-     pinning / audit-extension work that didn't touch any
-     open finding).
+     session 170-code-review (19th review-lane run); preamble
+     rewritten to fold in the eleven sibling sessions 170–180;
+     baseline block rewritten with the 5389 / 66 / 22 entry
+     gates; two carried-forward deferred findings aged
+     (**O-009** 11 → 12 runs — still `[deferred - post-ship]`,
+     both `.bak` files still on disk at the same byte counts
+     and mtimes, tooling gate unchanged; **O-011** 6 → 7 runs
+     — still `[deferred - post-ship]`, eleven additional
+     sessions 170–180 lock bodies carry the same shape
+     ambiguity, running count now **thirty-five** since session
+     106); one new finding filed (**T-003** — sessions 175 and
+     177 test-assertion persistence gap: 26 pins missing from
+     `tests/test-types.mjs` + 10 pins missing from
+     `tests/test-control-flow.mjs` + `docs/TESTS.md` stamp
+     stale at "Session 173"; routed to `rpl5050-unit-tests`;
+     `[deferred - post-ship]`).
+  2. **`logs/session-170-code-review.md`** — this run's log.
 
-Session 169-code-review log added (`logs/session-169-code-
-review.md` to disambiguate from the concurrent
-`session168-unit-tests` lane's eventual `logs/session-168.md`
-when that lane writes its own log at close).  No RPL op
-behavior changed by review lane, no types widened, no tests
-added or deleted, no interpreter touched, no registrations
-added or removed.
-
-**Lock.** Held `utils/@locks/session169-code-review.json`
+**Lock.** Held `utils/@locks/session170-code-review.json`
 throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
 review-lane scope; no broadening required this run since no
-in-place source edits were taken).  Sibling lock at run-
-entry: `session168-unit-tests` (scope `tests/` + `docs/
-TESTS.md`) — no overlap with my scope, so the helper allowed
-acquisition.  Released at end of run.
+in-place source edits were taken).  No sibling locks at
+run-entry.  Released at end of run.
 
 ---
 
@@ -202,23 +198,23 @@ Translated into ledger items, in priority order:
    field; pure-infrastructure hygiene best landed post-ship per
    the session 156 meta-log triage.
 
-Open queue at session 169-code-review close: O-009 + O-011 —
-both `[deferred - post-ship]`, no behavior risk for the
+Open queue at session 170-code-review close: O-009 + O-011 +
+T-003 — all `[deferred - post-ship]`, no behavior risk for the
 release.  **Zero release-blocker class findings remain.**
 Re-verified at this run's entry: no sibling lane closed an
-open finding since session 164; no new findings surfaced by
-the audit-axis sweep (lane-id drift, COMMANDS_INVENTORY refs,
-`src/...` path drift, doc-stamp freshness, register-count vs.
-COMMANDS.md heading) — see the session-169-code-review log
-block below for the per-axis verification.
+open finding across sessions 170–180; one new finding (T-003
+— session 175 / 177 test-assertion persistence gap) surfaced
+by the audit-axis sweep.  `src/...` path drift: two surviving
+mentions in docs are historical audit-trail narrative blocks
+preserved per policy (not actionable).  doc-stamp freshness:
+TESTS.md frozen at "Session 173" (session 177's refresh did
+not persist — captured in T-003).  register-count vs.
+COMMANDS.md heading: both at 476 / "as of session 178" — no
+new registrations across sessions 170–180.
 
-Lane priority through Sunday close: **`rpl5050-rpl-programming`
-runs take precedence** over the other lanes' work where there
-is contention; they should pull any R-bucket items first.  Other
-lanes should avoid touching `www/src/rpl/ops.js` ranges that
-overlap `OBJ→` (`:6535-6745`, now extended to include the
-session-159 Unit branch) without coordinating via the lock
-system.
+Ship is complete.  Post-ship lanes should pull T-003 (unit-
+tests lane) and O-009 / O-011 (any lane) as early post-ship
+hygiene.
 
 ---
 
@@ -2433,6 +2429,73 @@ system.
 
 ## Findings — Unit Tests
 
+### T-003  Sessions 175 and 177 test-assertion additions did not persist; `docs/TESTS.md` stamp stale at "Session 173"
+
+- **Classification.** Unit Tests.
+- **Where.**
+  - `tests/test-types.mjs` — missing ~26 pins: 12 from session
+    175 (trig heterogeneous-output mixed-input value pins on
+    bare-List + Tagged-of-List for the forward-trig family) and
+    14 from session 177 (EXACT-mode Integer-input trig pinning).
+    Label trail jumps `session173` → `session179`; no
+    `session175` or `session177` labels present.
+  - `tests/test-control-flow.mjs` — missing ~10 pins from
+    session 177 (RUN edge matrix: DBUG-only, embedded-HALT,
+    empty-halt axes not covered by session 178's re-land which
+    only covered session 176's RUN step-clear cluster).  Label
+    trail ends at `session178`; no `session177` labels.
+  - `docs/TESTS.md` — "Last updated" stamp frozen at "Session
+    173 (2026-04-26)"; session 177 claimed to refresh it to
+    "Session 177" along with a sibling-deltas block + coverage
+    snapshot table update, but the refresh did not persist.
+- **What.** Sessions 175 (data-type-support) and 177
+  (unit-tests) both wrote detailed session logs and reported
+  green exit gates, but their actual test-file writes did not
+  survive to the shared filesystem.  Session 178
+  (command-support) observed a 5363-assertion baseline at its
+  entry — identical to the session 174 close count — confirming
+  that neither session 175's +12 nor session 176's +14 (re-
+  landed by s178 as session178 labels) nor session 177's +24
+  persisted.  Session 179 observed 5377 (= 5363 + 14 from
+  s178), confirming session 177's additions were still absent.
+  Current live count: 5389 = 5363 + 14 (s178) + 12 (s179).
+  Net gap vs. logs: **36 assertions** (12 s175 + 14 s177-types
+  + 10 s177-control-flow).
+- **Why.** The behaviors under test were live before the
+  pinning runs and remain live now (all 5389 assertions pass).
+  The missing pins are a regression safety-net gap, not a
+  correctness gap.  However: (a) the TESTS.md coverage table
+  reports inflated per-file counts against the session-177
+  close (which didn't land), misleading future auditors; (b)
+  the session 177 log describes 24 specific edge-case cells
+  that are now unverified by the harness — a future regression
+  in those cells would not be caught.
+- **Fix.** Unit-tests lane next run: re-execute the session
+  175 pinning set (forward-trig heterogeneous-output on
+  bare-List + Tagged-of-List) and the session 177 pinning set
+  (EXACT-mode Integer trig + RUN edge matrix) against the live
+  test files, using `session175r:` / `session177r:` labels
+  (or simply `session<next>:`) to avoid confusion with the
+  lost originals.  Refresh TESTS.md stamp and coverage
+  snapshot to reflect the re-landed counts.  Root cause of
+  the persistence failure is not known; the session logs exist
+  (`logs/session-175.md`, `logs/session-177.md`) and describe
+  the intended assertions in enough detail to recreate them
+  exactly.
+- **Confidence.** high — verified by label-grep across
+  `tests/test-types.mjs` and `tests/test-control-flow.mjs`
+  (`grep -oE "session[0-9]+" | sort -u` shows no session175
+  or session177 labels); confirmed by comparing session 178's
+  entry baseline (5363) against session 177's claimed close
+  (5478 — a 115-assertion gap that cannot be explained by doc-
+  only sessions 174 / 180 alone); TESTS.md stamp confirmed at
+  "Session 173" by direct read.
+- **Age.** new.
+- **Status.** `[deferred - post-ship]`.  Lane =
+  `rpl5050-unit-tests`.  Behaviors are live; no behavior risk
+  to the ship.  Post-ship first priority for the unit-tests
+  lane.
+
 ### T-002  `docs/TESTS.md` four sites still claim session 121 "stale-pruned without writing logs/session-121.md"
 
 - **Classification.** Unit Tests (doc drift inside the unit-tests
@@ -3161,6 +3224,18 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   `Operation not permitted` permission gate the prior
   unit-tests sessions hit.  11 review-lane runs aging.
   Status remains **[deferred - post-ship]**.
+  Re-verified session 170-code-review: `ls -la
+  tests/test-control-flow.mjs*` still shows both `.bak` files
+  at the same 92,129 / 92,141 byte counts and same Apr 24
+  11:54 / 13:41 mtimes; the live file has grown further with
+  sessions 173 / 178's pin-additions (now larger than the
+  237,247-byte reading at session 169, absorbing the +14 s178
+  RUN/CONT regression cluster in `test-control-flow.mjs`).
+  Sessions 169–180 did not delete the `.bak` files (no unit-
+  tests lane attempted deletion; sessions 173 / 177 ran under
+  the scheduled-task sandbox and hit the same `Operation not
+  permitted` gate per their session logs).  12 review-lane
+  runs aging.  Status remains **[deferred - post-ship]**.
 
 ### O-010  Session 121 shipped substantive changes without writing `logs/session-121.md`, COMMANDS.md update, RPL.md narrative, or tests
 
@@ -3503,6 +3578,16 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   **twenty-four** since session 106 (was 20 at session 164
   close + 3 from 165 / 166 / 167 + 1 in flight from 168).
   6 review-lane runs aging; status remains
+  **[deferred - post-ship]**.
+  Re-verified session 170-code-review: `grep -n
+  "releaseReason" utils/@locks/lock.mjs utils/@locks/README.md`
+  still returns zero hits.  Sessions 169-code-review through
+  180 (eleven sessions) all carry the same `heartbeatAt ≡
+  startedAt` shape ambiguity — no lane has added a
+  `releaseReason` field.  Running count of underlying-
+  ambiguity occurrences now **thirty-five** since session 106
+  (was 24 at session 169 close + 11 from sessions 170–180).
+  7 review-lane runs aging; status remains
   **[deferred - post-ship]**.
 
 ---

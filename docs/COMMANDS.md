@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 170 — 2026-04-26)
+## Counts (as of session 182 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -86,11 +86,66 @@ touched the row, and any known caveats worth carrying forward.
   165 / 166 / 167 deltas (+40 hard assertions; `tests/test-all.mjs`
   5206 → 5246).  Session 169 was the eighteenth review-lane run —
   doc-only REVIEW.md ledger refresh folding sibling closures since
-  session 164; no source / no test edits.  Session 170 (this run,
-  ship-day Sunday afternoon) is a doc-reconciliation pass — Counts
+  session 164; no source / no test edits.  Session 170 was a
+  doc-reconciliation pass (ship-day Sunday afternoon) — Counts
   stamp refresh through session 170, NEWOB row Notes amendment for
   the session-167 widening, and session-log back-fill (sessions
-  165 / 166 / 167 / 168 / 169 entries enumerated below).)
+  165 / 166 / 167 / 168 / 169 entries enumerated below).
+  Session 171 (`rpl5050-data-type-support`) added SINH / COSH /
+  TANH / ASINH n=0/n=1 boundary + heterogeneous-output mixed-input
+  pin clusters in `tests/test-types.mjs` (+27 assertions; no
+  source-side change; `tests/test-all.mjs` 5246 → 5273).  Session
+  172 (`rpl5050-rpl-programming`) fixed the NEWOB-on-Program
+  freeze-parity gap: the Program branch of `_newObCopy` at
+  `www/src/rpl/ops.js:9341` was dropping the outer
+  `Object.freeze`, so the copy's `tokens` array was mutable while
+  every other shape's copy was frozen; post-fix copy is frozen,
+  mutation attempt throws under ESM strict mode (+33
+  `session172:` pins in `tests/test-reflection.mjs`;
+  `tests/test-all.mjs` 5273 → 5306).  Session 173
+  (`rpl5050-unit-tests`) added forward-trig SIN / COS / TAN +
+  inverse-trig ASIN / ACOS / ATAN bare-List + T+L n=0/n=1
+  boundary closure pins (+30 assertions; no source-side change;
+  `tests/test-all.mjs` 5306 → 5336).  Session 174
+  (`rpl5050-command-support`) was a doc-reconciliation pass:
+  Counts stamp refresh through session 174, NEWOB row Notes
+  amendment for the session-172 freeze-parity fix, session-log
+  back-fill for sessions 171 / 172 / 173; also noted an unlogged
+  UI-lane session (test-entry.mjs tick 90 → 117, +27) whose
+  `logs/session-NNN.md` had not landed before the run's
+  acquisition (`tests/test-all.mjs` 5336 → 5363 at session-174
+  entry; the +27 is the UI-lane session's delta, already present
+  in the tree).  Sessions 175–177 wrote their log files but their
+  test-side and source-side changes did not persist to the
+  workspace tree; the session-174 baseline of 5363 / 0 was still
+  live at session-178 entry.  Session 178 (this run,
+  ship-day Sunday evening) re-landed session 176's RUN / CONT
+  correctness edits: CONT's dead `catch (e) { throw e; }` rethrow
+  removed (no-op in JS); RUN upgraded from a bare CONT delegate to
+  the AUR-p.2-177-correct save / zero / restore of `_singleStepMode`
+  and `_stepInto` before handing off to CONT — closes the TODO
+  block comment that had been live since session 083's initial RUN
+  registration.  +14 `session178:` regression assertions in
+  `tests/test-control-flow.mjs` pin the DBUG→SST→RUN drain, the
+  DBUG→SST↓→RUN drain, and the RUN-error-path step-flag-clear
+  (`tests/test-all.mjs` 5363 → 5377).  Session 179
+  (`rpl5050-data-type-support`) added 12 String lex-compare
+  hard assertions in `tests/test-types.mjs` covering `<` / `>` /
+  `≤` / `≥` on String operands (HP50 User Guide App. J char-code
+  lexicographic order; also corrected a stale DATA_TYPES.md intro
+  paragraph that had said String lex compare was still
+  `Bad argument type`; `tests/test-all.mjs` 5377 → 5389).  Session
+  180 (`rpl5050-rpl-programming`) was a suspended-execution substrate
+  audit of `www/src/rpl/ops.js` — doc-comments, generator hygiene,
+  dead state slots — and found no source change required; zero
+  test delta; `RPL.md` session-180 chapter added.  Session 181
+  (`rpl5050-unit-tests`) refreshed `docs/TESTS.md`: "Last updated"
+  stamp advanced from session 173 to session 181, sibling-deltas-
+  absorbed table (5336 → 5389 journey) added, per-file coverage
+  snapshot updated; zero test delta.  Session 182 (this run,
+  `rpl5050-command-support`) is a doc-reconciliation pass: Counts
+  stamp 178 → 182 and session-log back-fill for sessions 179 / 180
+  / 181 / 182.)
 - Partially shipped (~): 0
 - Not yet implemented (✗): 1 (only the `JORDAN` / `SCHUR`
   matrix-decomp row remains — the entire MODULO-family is ✓.)
@@ -98,16 +153,16 @@ touched the row, and any known caveats worth carrying forward.
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
 `grep -c "register(" www/src/rpl/ops.js` = **476** at the end of session
-170 (unchanged from session 149 — no new registrations across sessions
-150 → 170; was 471 at the end of session 144, was 466 at the end of
+182 (unchanged from session 149 — no new registrations across sessions
+150 → 182; was 471 at the end of session 144, was 466 at the end of
 session 139, was 463 at the end of session 134, was 458 at the end of
 session 129, was 455 at the end of session 124, was 448 at the end of
 session 119).  The actual top-level `register()` *call* count
 (`grep -cE '^register\(' www/src/rpl/ops.js`) is **455** (unchanged
-from session 149).  Session 167's `_newObCopy` Rational widening was
-an in-body predicate edit on the existing `register('NEWOB', ...)`
-call site, not a new registration — same shape as session 163's
-OBJ→ guard widening.
+from session 149).  Session 167's `_newObCopy` Rational widening,
+session 172's `_newObCopy` Program-branch freeze-parity fix, and
+session 178's RUN / CONT edits were all in-body edits on existing
+`register()` call sites — not new registrations.
 
 Session-153 row transitions:
 - **0 ops newly shipped** (no ✗ → ✓).  Release-mode wrap-up run.
@@ -615,7 +670,7 @@ not fallbacks.  Migration is incremental — rows below are flagged
 | `DECOMP` | ✓ | |
 | `HALT` `CONT` `KILL` | ✓ | Session 074 pilot — top-level program bodies only; HALT inside control flow or `→` raises a pilot-limit error. **Session 083:** multi-slot halted LIFO (`state.haltedStack`) matches HP50 AUR p.2-135; CONT/KILL pop one slot off the top, new `clearAllHalted()` drains, `haltedDepth()` exposes depth. **Session 088:** generator-based `evalRange` — structural HALT pilot-limit fully lifted; HALT now works from inside `FOR`, `IF`, `WHILE`, `DO`, `IFERR`, and `→` bodies. **Session 106:** named-sub-program HALT lifted via `evalToken` → `_evalValueGen` for Name-binding evaluations. **Session 121:** IFT / IFTE bodies lifted via the body-intercept path in `evalRange` (`ops.js:3145-3158`) — HALT / PROMPT inside an IFT or IFTE action now suspends cleanly. **Session 126:** SEQ / MAP per-iteration bodies lifted via `runSeq` / `runMap` generators (`ops.js:7568-7607`, `8053-8096`) — HALT / PROMPT inside a SEQ expression or MAP program suspends cleanly and CONT resumes inside the same iteration with the partial accumulator intact. **Session 131:** DOLIST / DOSUBS / STREAM per-iteration program bodies lifted via `runDoList` / `runDoSubs` / `runStream` generators (`ops.js:8142`, `:8224`, `:8304`) plus body-intercept dispatch in `evalRange` (`:3196`, `:3202`, `:3208`) — HALT / PROMPT inside a DOLIST / DOSUBS / STREAM iteration suspends cleanly and CONT resumes inside the same iteration with the partial accumulator and (for DOSUBS) the NSUB/ENDSUB context frame intact via the generator's `try/finally` teardown.  Residual: HALT reached through the **sync-fallback** Name-dispatch path for IFT / IFTE / SEQ / MAP / DOLIST / DOSUBS / STREAM (e.g. `'IFT' EVAL`, Tagged-wrapped `Name('SEQ')`) still rejects through `_driveGen` with the session-111 caller labels (`'IFT action'` / `'IFTE action'` / `'SEQ expression'` / `'MAP program'` / `'DOLIST program'` / `'DOSUBS program'` / `'STREAM program'`); body-intercept is the supported path.  See `docs/RPL.md:42-46`, `:117-123`, `:171-179`. |
 | `PROMPT` | ✓ | **Session 121** — HP50 AUR p.2-160 form: pop level 1, stash it as the active prompt banner via `setPromptMessage(msg)`, then yield up to the EVAL/CONT driver via the same generator-suspension channel HALT uses (`evalRange` intercept at `ops.js:3129-3136`).  CONT clears the banner via `clearPromptMessage()` and resumes the suspended generator; KILL drops the suspension and clears the banner; SST is a no-op for PROMPT (the suspension already happened).  Outside a running program — i.e. reaching the registered handler via Name dispatch (`'PROMPT' EVAL` from the keypad) — throws `PROMPT: not inside a running program`, mirroring HALT.  Owned by the rpl-programming lane (suspension protocol), not the UI lane (the prompt banner is rendered by the UI but the op itself is a control-flow primitive). |
-| `RUN` | ✓ | **Session 083** — registered as a CONT synonym for the no-DBUG case (AUR p.2-177). Will upgrade to debug-aware resume once DBUG substrate lands. |
+| `RUN` | ✓ | **Session 083** — registered as a CONT synonym for the no-DBUG case (AUR p.2-177).  **Session 178** — upgraded from a bare CONT delegate to AUR-p.2-177-correct behaviour: `_singleStepMode` and `_stepInto` are explicitly zeroed before handing off to CONT (save/zero/restore pattern), ensuring "no more single steps are permitted" (AUR p.2-177) holds even if either flag was set when RUN was called.  CONT's adjacent dead `catch (e) { throw e; }` rethrow (a no-op in JS — every exception propagates unchanged through the finally) also removed.  +14 `session178:` regression pins in `tests/test-control-flow.mjs` cover DBUG→SST→RUN drain, DBUG→SST↓→RUN drain, and RUN error-path step-flag-clear. |
 | `SST` `SST↓` `DBUG` | ✓ | **Session 101** — single-step debugger.  `SST` steps token-by-token through the most-recently-halted program (AUR p.2-184); `DBUG` installs a freshly-pushed Program as halted so the user can step from the first token (AUR p.2-77); `SST↓` originally registered as an alias for `SST`.  **Session 106:** `SST↓` shipped as a real step-into op via `_stepInto` + `_insideSubProgram` + `_shouldStepYield` (`ops.js:2944-3118`) — single-stepping now descends into the body of a sub-program reached by name lookup, while plain `SST` keeps stepping over.  See `docs/RPL.md:75-148`. |
 
 ## Variables & directories
@@ -686,6 +741,121 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 182** (2026-04-26) — `rpl5050-command-support` lane.
+  Ship-day doc-reconciliation pass.  Counts stamp refreshed from
+  session 178 → 182; session-log back-fill for sessions 179 / 180
+  / 181 added below (most-recent-first order maintained); sibling
+  deltas absorbed into the Counts narrative.  No source-side or
+  test-side edits.  No ✗ → ✓ row transitions.  `register()` count
+  unchanged at 476 / 455.  No new `docs/REVIEW.md` findings;
+  Commands bucket still fully closed (`C-001`…`C-011` all
+  resolved).  Open queue = `O-009` + `O-011` only, both
+  `[deferred - post-ship]`.
+  Run-entry: 5389 / 66 / 22.  Run-close: **5389 / 66 / 22**.
+  Lock = `utils/@locks/session182-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 181** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Ship-day TESTS.md snapshot refresh.  Updated `docs/TESTS.md`:
+  "Last updated" stamp session 173 → 181; sibling-deltas-absorbed
+  table (5336 → 5389 journey with per-session breakdown) added;
+  per-file coverage snapshot updated to current counts.  Flagged
+  sessions 175 / 176 / 177 as log-persisted but test/source-
+  changes-not-persisted.  Zero test delta; `tests/test-all.mjs`
+  5389 / 0 at both entry and close.
+
+- **session 180** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Ship-day suspended-execution substrate audit.  Survey of
+  `www/src/rpl/ops.js` state flags, `_driveGen`, `_evalValueGen`,
+  `evalToken`, and the full HALT / CONT / KILL / RUN / SST / SST↓
+  / DBUG block — doc-comments accurate, no dead state slots, no
+  missing `gen.return()` calls, zero TODO/FIXME/HACK/XXX hits.
+  No source change required; zero test delta.  `RPL.md`
+  session-180 chapter added (session-172 `(this run)` heading
+  demoted; status heading bumped session 172 → 180).
+
+- **session 179** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Ship-day String lex-compare pinning.  +12 `session179:` assertions
+  in `tests/test-types.mjs` covering `<` / `>` / `≤` / `≥` on
+  String operands (HP50 User Guide App. J char-code lexicographic
+  order; equality-boundary + empty-string sentinel + cross-type
+  rejection).  Stale DATA_TYPES.md intro paragraph ("String lex
+  compare is still Bad argument type") corrected; Notes columns for
+  `<` / `>` / `≤` / `≥` rows updated.  `tests/test-all.mjs`
+  5377 → **5389** (+12).  No source change.
+
+- **session 178** (2026-04-26) — `rpl5050-command-support` lane.
+  Ship-day source + test correctness pass.  Two source edits in
+  `www/src/rpl/ops.js` + 14 regression pins in
+  `tests/test-control-flow.mjs`.
+
+  1. **RUN step-state clear** — AUR p.2-177 requires "no more
+     single steps are permitted" after RUN.  Pre-fix RUN was a
+     bare `OPS.get('CONT').fn(s)` one-liner with a TODO comment
+     since session 083.  DBUG substrate shipped in session 101
+     but the RUN upgrade never landed; sessions 175–177 wrote
+     log files documenting the fix but the source changes did
+     not persist to the workspace tree.  This run re-lands the
+     fix: RUN now saves `_singleStepMode` / `_stepInto`, zeroes
+     both, delegates to CONT, then restores in a `finally` block
+     (save/zero/restore pattern at `www/src/rpl/ops.js:11887-
+     11898`).  The TODO block comment is replaced with a docblock
+     citing AUR p.2-177 and the defensive-zeroing rationale.
+
+  2. **CONT dead-rethrow removal** — the adjacent CONT body had
+     `catch (e) { throw e; }` which is a no-op in JS (every
+     exception propagates unchanged through the `finally` whether
+     or not a catch+rethrow wraps it).  Collapsed to a bare
+     `try / finally` at `www/src/rpl/ops.js:11849-11860`.
+
+  3. **+14 `session178:` regression assertions** —
+     `tests/test-control-flow.mjs`, three blocks inserted after
+     the session-083 "RUN also resumes the LIFO top" block:
+     (a) DBUG→SST→RUN drains halt + step-flags cleared (7 pins);
+     (b) DBUG→SST↓→RUN drains halt + `_stepInto` cleared (5 pins);
+     (c) RUN-error-path raises "No halted program" + both flags
+     stay cleared (2 pins).
+     `tests/test-all.mjs` 5363 → **5377** (+14).
+
+  No ✗ → ✓ row transitions.  `register()` count unchanged at
+  476 / 455.  No new `docs/REVIEW.md` findings; Commands bucket
+  still fully closed (`C-001`…`C-011` all resolved).  Open
+  queue = `O-009` + `O-011` only, both `[deferred - post-ship]`.
+  Run-entry: 5363 / 66 / 22.  Run-close: **5377 / 66 / 22**.
+  Lock = `utils/@locks/session178-command-support.json`, scope
+  `[www/src/rpl/ops.js, tests/test-control-flow.mjs,
+  docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 174** (2026-04-26) — `rpl5050-command-support` lane.
+  Release-mode doc-reconciliation: Counts stamp refresh (session
+  170 → 174), NEWOB row Notes amendment for session-172 freeze-
+  parity fix, session-log back-fill for sessions 171 / 172 / 173
+  / 174.  No source-side or test-side edits.  Also noted an
+  unlogged UI-lane session (test-entry.mjs 90 → 117, +27) whose
+  log had not landed before the run's acquisition; test-all at
+  run-entry = 5363 / 0 (the +27 already present).  Run-close
+  identical to run-entry.  Lock released gracefully.
+
+- **session 173** (2026-04-26) — `rpl5050-unit-tests` lane.
+  +30 hard assertions: forward-trig SIN / COS / TAN + inverse-
+  trig ASIN / ACOS / ATAN bare-List + T+L n=0/n=1 boundary
+  closure pins in `tests/test-types.mjs`.  No source-side change.
+  `tests/test-all.mjs` 5306 → 5336.
+
+- **session 172** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  NEWOB-on-Program freeze-parity fix: the Program branch of
+  `_newObCopy` was dropping `Object.freeze` on the copy's `tokens`
+  array, making the copy mutable while every other shape was
+  frozen.  Fixed at `www/src/rpl/ops.js:9341`; +33 `session172:`
+  pins in `tests/test-reflection.mjs`.
+  `tests/test-all.mjs` 5273 → 5306.
+
+- **session 171** (2026-04-25) — `rpl5050-data-type-support` lane.
+  SINH / COSH / TANH / ASINH n=0/n=1 boundary + heterogeneous-
+  output mixed-input pin clusters in `tests/test-types.mjs`
+  (+27 assertions; no source-side change).
+  `tests/test-all.mjs` 5246 → 5273.
 
 - **session 165** (2026-04-25) — `rpl5050-command-support` lane.
   Release-mode doc-reconciliation run, no source-side or test-side

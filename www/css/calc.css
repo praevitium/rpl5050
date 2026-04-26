@@ -65,6 +65,9 @@ body {
   justify-content: center;
   overflow: hidden;
   min-width: 0;
+  /* Anchor for the .cmd-help-popup overlay (inset: 0) so the popup
+     covers exactly the calculator area and not the side panel. */
+  position: relative;
 }
 
 .bezel {
@@ -775,6 +778,7 @@ body.sp-resizing {
 }
 .sp-filter {
   flex: 1 1 auto;
+  min-width: 0;
   background: #15181f;
   border: 1px solid #3a4252;
   color: #e7ebf2;
@@ -1092,4 +1096,106 @@ body.mode-minimal .soft-row,
 body.mode-minimal .nav-row,
 body.mode-minimal .keypad {
   display: none;
+}
+
+/* =================================================================
+   Command help popup.
+   Mounted into #calculator and absolutely positioned to fill the
+   calculator area on hover-over of a side-panel command button.
+   The HTML cloned in is the original docs/hp50-commands.html section
+   (h2 + meta + pre); we restyle it for the dark calc theme.
+   ================================================================= */
+.cmd-help-popup {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  background: rgba(15, 18, 26, 0.96);
+  color: #e7ebf2;
+  font-family: var(--font-ui);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  overflow: hidden;
+}
+.cmd-help-popup.hidden {
+  display: none;
+}
+.cmd-help-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #aab1bd;
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.cmd-help-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .08);
+  border-color: rgba(255, 255, 255, .12);
+}
+.cmd-help-inner {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px 22px 22px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.cmd-help-inner h2 {
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 18px;
+  font-weight: 600;
+  color: #cbe7ff;
+  background: #1f2a3a;
+  border-left: 3px solid #67e8f9;
+  border-radius: 3px;
+}
+.cmd-help-inner h2 .in-app {
+  background: #1e3a26;
+  color: #6fdd8a;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 0.65em;
+  font-weight: 600;
+  margin-left: 0.4em;
+  vertical-align: middle;
+}
+.cmd-help-inner h2 .not-in-app {
+  background: #3a1e1e;
+  color: #e58a8a;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 0.65em;
+  font-weight: 600;
+  margin-left: 0.4em;
+  vertical-align: middle;
+}
+.cmd-help-inner .meta {
+  color: #8a93a4;
+  font-size: 0.85em;
+  margin: 0 0 8px 4px;
+}
+.cmd-help-inner pre {
+  background: #15181f;
+  border: 1px solid #2a3142;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin: 0;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #d8dde6;
+  white-space: pre;
+  overflow-x: auto;
+}
+.cmd-help-empty {
+  color: #8a93a4;
+  font-style: italic;
 }

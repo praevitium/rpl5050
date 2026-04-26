@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+/* =================================================================
+   Refresh the in-app / not-in-app badges in
+   www/docs/hp50-commands.html against the live ops registry.
+
+   Run with `node scripts/update-hp50-badges.mjs`.
+
+   The HTML file has three places that reference each command's
+   implementation status:
+
+     1. Each <h2 id="cmd-…"> heading carries a span:
+            <span class="in-app">in app</span>
+        or  <span class="not-in-app">not in app</span>
+
+     2. The TOC link gets `class='notinapp'` when the command isn't
+        implemented; in-app entries have no class.
+
+     3. The lead paragraph reports "320 are implemented in this RPL
+        app" — that count needs to track too.
+
+   The original generator that produced this file isn't checked in,
+   so this script edits the existing markup in place.  Pure regex
+   updates (no DOM library) — the markup the generator emits is
+   regular enough that a few targeted patterns suffice.
+   ================================================================= */
+
+import { fileURLToPath } from 'node:url';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { allOps } from '../www/src/rpl/ops.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const HTML_PATH = path.resolve(HERE, '../www/docs/hp50-commands.html');
+
+const registered = new Set(allOps().map(s => s.toUpperCase()));
+
+// HP50 reference docs encode `<`, `>`, etc. as HTML entities in the
+// h2 display text (e.g. `&lt;(Less than)`).  We have to decode before
+// looking up the registry, since ops are registered as raw chars.
+function decodeEntities(s) {
+  return s
+    .replace(/&lt;/g,   '<')
+    .replace(/&gt;/g,   '>')
+    .replace(/&amp;/g,  '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g,            (_, d) => String.fromCodePoint(parseInt(d, 10)));
+}
+
+function commandKey(display) {
+  // Strip the parenthetical disambiguator the generator appends to
+  // symbol commands (e.g. `!(Factorial)` → `!`).  Decode entities and
+  // upper-case so the match is symmetric with `register()`.
+  const stripped = display.replace(/\s*\(.*\)\s*$/, '').trim();
+  return decodeEntities(stripped).toUpperCase();
+}
+
+let html = readFileSync(HTML_PATH, 'utf8');
+
+// Pass 1: rewrite each <h2 id="cmd-…"> badge based on registration.
+const idToInApp = new Map();
+let h2Count = 0;
+html = html.replace(
+  /<h2 id="(cmd-[^"]+)">([^<]+?) <span class="(?:in-app|not-in-app)">(?:in app|not in app)<\/span>/g,
+  (_m, id, display) => {
+    h2Count += 1;
+    const inApp = registered.has(commandKey(display));
+    idToInApp.set(id, inApp);
+    const cls   = inApp ? 'in-app' : 'not-in-app';
+    const label = inApp ? 'in app' : 'not in app';
+    return `<h2 id="${id}">${display} <span class="${cls}">${label}</span>`;
+  });
+
+if (h2Count === 0) {
+  console.error('No <h2 id="cmd-…"> entries matched — has the markup changed?');
+  process.exit(1);
+}
+
+// Pass 2: rewrite TOC links to match.  The lead anchor in the file
+// (id='top') has no `cmd-` prefix; only links pointing at command
+// sections are touched.
+html = html.replace(
+  /<a href="(#cmd-[^"]+)"(?:\s+class='notinapp')?>([^<]+)<\/a>/g,
+  (m, href, label) => {
+    const id = href.slice(1);
+    if (!idToInApp.has(id)) return m;
+    return idToInApp.get(id)
+      ? `<a href="${href}">${label}</a>`
+      : `<a href="${href}" class='notinapp'>${label}</a>`;
+  });
+
+// Pass 3: the lead paragraph's "320 are implemented" count.
+const inAppCount = [...idToInApp.values()].filter(Boolean).length;
+const totalCount = idToInApp.size;
+html = html.replace(
+  /(\d+) commands extracted from the HP 50g Advanced User's Reference Manual\. (\d+) are implemented in this RPL app\./,
+  `${totalCount} commands extracted from the HP 50g Advanced User's Reference Manual. ${inAppCount} are implemented in this RPL app.`);
+
+writeFileSync(HTML_PATH, html);
+
+console.log(
+  `Updated ${HTML_PATH}: ${inAppCount} in-app, ${totalCount - inAppCount} not-in-app of ${totalCount} commands.`);

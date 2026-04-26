@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node tests/test-all.mjs",
     "build-info": "node scripts/gen-build-info.mjs",
+    "update-hp50-badges": "node scripts/update-hp50-badges.mjs",
     "postinstall": "npm run build-info",
     "preserve": "npm run build-info",
     "serve": "npx --yes live-server --port=5050 --host=127.0.0.1 --no-browser --entry-file=index.html www",
