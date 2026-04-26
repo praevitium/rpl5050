@@ -158,33 +158,24 @@ async function generate({ id, messages, maxTokens = 256 }) {
   let outputChars  = 0;
   let outputTokens = 0;
 
-  // Reset the engine's cached chat state before every generate.
+  // (Previously: engine.resetChat() was called here before every
+  // generate.  That was added when the orchestrator ran a 3-phase
+  // pipeline where each phase had a DIFFERENT system prompt — the
+  // KV cache from phase N's create() was incompatible with phase
+  // N+1's, and resetChat() flushed the engine state so each phase
+  // got a clean slate.
   //
-  // We pass the full messages array (incl. system prompt) on every
-  // call — there's no notion of "continue the conversation" at this
-  // layer; each phase is its own independent stateless inference.
-  // WebLLM, however, retains internal conversation state between
-  // chat.completions.create() calls and tries to do an incremental
-  // prefill against the previous KV cache.  That worked on Phase 1
-  // (cache was empty) but on Phase 2 — different system prompt,
-  // longer messages array, consecutive user/assistant turns — the
-  // engine wedges in some "compute the increment" path that never
-  // emits a first token.  Symptom: zero GPU usage, no `tok` events,
-  // no `done`, no error.  resetChat() flushes the cached state so
-  // each generate starts from clean slate.
-  try {
-    if (typeof engine.resetChat === 'function') {
-      await engine.resetChat();
-      // eslint-disable-next-line no-console
-      console.log('[llm-worker] resetChat: ok (engine state cleared)');
-    } else {
-      // eslint-disable-next-line no-console
-      console.warn('[llm-worker] resetChat: not exposed by this WebLLM build — state may bleed between calls');
-    }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[llm-worker] resetChat failed (continuing):', err);
-  }
+  // We're now single-phase: every user turn issues exactly one
+  // create() call, all with the same system prompt and a strictly
+  // appending message array.  In that shape WebLLM's incremental
+  // prefill (which reuses the KV cache against the prior call's
+  // tokens) is correct and beneficial — calling resetChat() between
+  // turns appears to actually CAUSE a hang on the next create()
+  // call instead of preventing one.  Observed live in a Qwen2.5
+  // Coder 0.5B session where turn 2's create() never returned.
+  //
+  // If we ever reintroduce multi-phase prompts, this is the place
+  // resetChat() would go back.)
 
   try {
     // Sampling tuned for *near-deterministic + accurate* output
