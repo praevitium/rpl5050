@@ -195,9 +195,16 @@ no entries.  `[deferred - post-ship]` — doc-only back-fill for
 the command-support lane.  Open queue: **O-011 + O-012 + C-014**
 (all `[deferred - post-ship]`).
 
-Ship is complete.  Post-ship lanes may pull O-011 / O-012 / C-014
-as remaining hygiene (infrastructure / stray-file / session-log
-back-fill; no behavior risk).
+**C-014 resolved session 199.**  `rpl5050-command-support` lane
+back-filled session-log entries for sessions 187–198 (thirteen
+blocks — sessions 187 / 188 / 189 / 189-code-review / 190 / 191
+/ 192 / 193 / 194-code-review / 195 / 196 / 197 / 198-code-review
+/ 198-unit-tests) in `docs/COMMANDS.md`.  Counts stamp advanced
+199 → 199.  Open queue: **O-011 + O-012** only (both
+`[deferred - post-ship]`).
+
+Ship is complete.  Post-ship lanes may pull O-011 / O-012 as
+remaining hygiene (infrastructure / stray-file; no behavior risk).
 
 ---
 
@@ -3739,8 +3746,9 @@ are UI-adjacent but classified under Other for bookkeeping.)_
 - **Confidence.** high — `grep -n "^\- \*\*session 18[7-9]\|
   ^\- \*\*session 19[0-7]" docs/COMMANDS.md` returns zero hits.
 - **Age.** 1 run (filed session 198-code-review).
-  **Status.** open.  Lane = `rpl5050-command-support`.
-  `[deferred - post-ship]` — doc-only, no behavior risk.
+  **Status.** [resolved - session 199].  `rpl5050-command-support`
+  lane back-filled session-log entries for sessions 187–198 in
+  `docs/COMMANDS.md`; Counts stamp advanced to session 199.
 
 ### O-012  Stray `www/src/ui/keyboard.js.bak` backup file
 

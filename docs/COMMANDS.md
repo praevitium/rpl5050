@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 195 — 2026-04-26)
+## Counts (as of session 199 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -805,6 +805,155 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 199** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass. C-014 close: back-filled
+  session-log entries for sessions 187–198 (eleven sessions with no
+  prior COMMANDS.md entries). Counts stamp advanced from session 195
+  → 199.  No source-side or test-side edits. No ✗ → ✓ row
+  transitions. `register()` count unchanged at 482 / 461.
+  Run-entry: 5472 / 66 / 22.  Run-close: **5472 / 66 / 22**.
+  Lock = `utils/@locks/session199-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 198-code-review** (2026-04-26) — `rpl5050-code-review`
+  lane.  Twenty-third review-lane run; post-ship aging pass.
+  Audit-only: no source edits, no test additions.  Sibling-delta
+  audit absorbed sessions 195–198 (net +8 assertions,
+  5464 → 5472).  Filed **C-014** (COMMANDS.md session-log block
+  stops at session 186; sessions 187–197 have no entries —
+  doc-only back-fill for command-support lane, `[deferred -
+  post-ship]`).  **O-011** aged 10 → 11 runs; running
+  lock-body count now **fifty-two** since session 106.
+  **O-012** re-verified present.
+  Run-entry: 5472 / 66 / 22.  Run-close: **5472 / 66 / 22**.
+  Lock = `utils/@locks/session198-code-review.json`.
+
+- **session 198-unit-tests** (2026-04-26) — `rpl5050-unit-tests`
+  lane.  TESTS.md "Last updated" stamp 193 → 198; sibling-delta
+  narrative for sessions 194–197 added.  No test delta.
+  Run-entry: 5472 / 66 / 22.  Run-close: **5472 / 66 / 22**.
+  Lock = `utils/@locks/session198-unit-tests.json`, scope
+  `[docs/TESTS.md, logs/]`.
+
+- **session 197** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Doc-only: RPL.md session-log pointer prose backfill for sessions
+  172 / 180 / 184 / 188 / 192 (five rpl-programming-lane runs that
+  had accumulated without pointer entries).  No source or test
+  edits.  Run-entry: 5472 / 66 / 22.  Run-close: **5472 / 66 / 22**.
+  Lock = `utils/@locks/session197-rpl-programming.json`, scope
+  `[docs/RPL.md, logs/]`.
+
+- **session 196** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Wrapped TRUNC with `_withTaggedBinary(_withListBinary(…))` to
+  close the last ship-prep audit candidate (XPON/MANT wrapped
+  session 187; HEAVISIDE/DIRAC wrapped session 191; TRUNC was the
+  sole remaining bare-handler op).  +8 assertions in
+  `tests/test-types.mjs` (`session196:` labels).  DATA_TYPES.md
+  stamp refreshed to session 196.
+  Run-entry: 5464 / 66 / 22.  Run-close: **5472 / 66 / 22**.
+  Lock = `utils/@locks/session196-data-type-support.json`, scope
+  `[www/src/rpl/ops.js, tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`.
+
+- **session 195** (2026-04-26) — `rpl5050-command-support` lane.
+  C-013 close: COMMANDS.md register-count prose updated from
+  481 / 460 to **482 / 461** (the +1 / +1 delta came from
+  session 191's HEAVISIDE / DIRAC wrapper-add, where the outer
+  `_withTaggedUnary` call adds one grep hit to `register(`).
+  REVIEW.md C-013 promoted to `[resolved - session 195]`.
+  No source-side or test-side edits.  No ✗ → ✓ row transitions.
+  Run-entry: 5464 / 66 / 22.  Run-close: **5464 / 66 / 22**.
+  Lock = `utils/@locks/session195-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md]`.
+
+- **session 194-code-review** (2026-04-26) — `rpl5050-code-review`
+  lane.  Twenty-second review-lane run; post-ship aging pass.
+  Filed **C-013** (COMMANDS.md register-count prose stale after
+  session-191 HEAVISIDE / DIRAC wrapper-add — actual 482 / 461
+  vs. claimed 481 / 460).  Re-verified **O-011** (40th lock-body
+  occurrence noted) and **O-012** (stray `keyboard.js.bak`
+  still present).  No source edits, no test additions.  Sibling-
+  delta audit absorbed sessions 190–193 (net +16, 5448 → 5464).
+  Run-entry: 5464 / 66 / 22.  Run-close: **5464 / 66 / 22**.
+  Lock = `utils/@locks/session194-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`.
+
+- **session 193** (2026-04-26) — `rpl5050-unit-tests` lane.
+  TESTS.md "Last updated" stamp 189 → 193; sibling-delta
+  narrative for sessions 190–192 added.  No test delta.
+  Run-entry: 5464 / 66 / 22.  Run-close: **5464 / 66 / 22**.
+  Lock = `utils/@locks/session193-unit-tests.json`, scope
+  `[docs/TESTS.md, logs/]`.
+
+- **session 192** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Verification-only: all RPL-bucket findings confirmed closed
+  (R-001…R-012).  Doc-only: RPL.md stamp bump.  No source or test
+  edits.  Run-entry: 5464 / 66 / 22.  Run-close: **5464 / 66 / 22**.
+  Lock = `utils/@locks/session192-rpl-programming.json`, scope
+  `[docs/RPL.md, logs/]`.
+
+- **session 191** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Wrapped HEAVISIDE + DIRAC with
+  `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` (same
+  3-deep composition as XPON / MANT in session 187).  +16
+  assertions in `tests/test-types.mjs` (`session191:` labels —
+  HEAVISIDE L/V/M/T wrapper +8 pins, DIRAC L/V/M/T wrapper +8
+  pins; n=1 DIRAC pin exercises the `DIRAC(0) → Symbolic` path
+  through the wrapper).  Two stale `session061:` rejection
+  assertions in `tests/test-algebra.mjs` corrected to match the
+  widened dispatch.  DATA_TYPES.md stamp refreshed.
+  Run-entry: 5448 / 66 / 22.  Run-close: **5464 / 66 / 22**.
+  Lock = `utils/@locks/session191-data-type-support.json`.
+
+- **session 190** (2026-04-26) — `rpl5050-command-support` lane.
+  C-012 close: COMMANDS.md Counts prose register-count corrected
+  to **481 / 460** (the session-149 five-op ship — EXPANDMOD /
+  FACTORMOD / GCDMOD / DIVMOD / DIV2MOD — had never been
+  reflected in the Counts heading). Counts stamp advanced
+  from 186 → 190.  REVIEW.md C-012 promoted to `[resolved -
+  session 190]`.  No source-side or test-side edits.
+  Run-entry: 5448 / 66 / 22.  Run-close: **5448 / 66 / 22**.
+  Lock = `utils/@locks/session190-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`.
+
+- **session 189-code-review** (2026-04-26) — `rpl5050-code-review`
+  lane.  Twenty-first review-lane run; post-ship verification pass.
+  Filed **C-012** (COMMANDS.md Counts block register-count claim
+  stale — recorded 476 / 455 vs. actual 481 / 460).  Promoted
+  **O-009** to `[resolved - session-189-code-review]` (stray `.bak`
+  files confirmed sandbox-unremovable; user-side `rm` after ship).
+  No source edits, no test additions.  Sibling-delta audit absorbed
+  sessions 186–189 (net +15, 5433 → 5448).
+  Run-entry: 5448 / 66 / 22.  Run-close: **5448 / 66 / 22**.
+  Lock = `utils/@locks/session189-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`.
+
+- **session 189** (2026-04-26) — `rpl5050-unit-tests` lane.
+  TESTS.md "Last updated" stamp 185 → 189; sibling-delta
+  narrative for sessions 186–188 added.  No test delta.
+  Run-entry: 5448 / 66 / 22.  Run-close: **5448 / 66 / 22**.
+  Lock = `utils/@locks/session189-unit-tests.json`, scope
+  `[docs/TESTS.md, logs/]`.
+
+- **session 188** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Verification-only: all RPL-bucket findings confirmed closed
+  (R-001…R-012).  Doc-only: RPL.md stamp bump.  No source or test
+  edits.  Run-entry: 5448 / 66 / 22.  Run-close: **5448 / 66 / 22**.
+  Lock = `utils/@locks/session188-rpl-programming.json`, scope
+  `[docs/RPL.md, logs/]`.
+
+- **session 187** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Wrapped XPON + MANT with
+  `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` — same
+  3-deep wrapper composition used throughout the scalar-unary
+  family.  +15 assertions in `tests/test-types.mjs`
+  (`session187:` labels — XPON L/V/M/T wrapper +8 pins, MANT
+  L/V/M/T wrapper +7 pins).  DATA_TYPES.md stamp refreshed to
+  session 187.  No ✗ → ✓ row transitions in COMMANDS.md
+  (XPON / MANT coverage cells are in DATA_TYPES.md, not tracked
+  here as new op ships).  `register()` count unchanged at 482 / 461.
+  Run-entry: 5433 / 66 / 22.  Run-close: **5448 / 66 / 22**.
+  Lock = `utils/@locks/session187-data-type-support.json`.
 
 - **session 186** (2026-04-26) — `rpl5050-command-support` lane.
   Post-ship doc-reconciliation pass.  Counts stamp refreshed from

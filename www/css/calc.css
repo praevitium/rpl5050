@@ -1441,18 +1441,44 @@ body.mode-minimal .keypad {
 }
 
 /* ---- Status bar ---- */
-.cb-status {
+/* Header: status text on the left, "New chat" reset button on the
+   right.  Single-row flex strip; the status text grows, the button
+   stays its natural width. */
+.cb-header {
   flex: 0 0 auto;
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.cb-status {
+  flex: 1 1 auto;
   font-size: 14.5px;
   font-weight: 600;
   letter-spacing: .3px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
   word-break: break-word;
+  /* Header gives this its padding now */
+  padding: 4px 0;
 }
 .cb-status-loading { color: #e6a64a; }
 .cb-status-ready   { color: #6edb8f; }
 .cb-status-error   { color: #e85a5a; }
+
+.cb-newchat-btn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.14);
+  color: #c0c8d8;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.cb-newchat-btn:hover  { background: #2b313c; border-color: rgba(255,255,255,.25); color: #e5ecf7; }
+.cb-newchat-btn:active { background: #1a1f2a; }
 
 /* ---- Download progress ---- */
 .cb-progress {
@@ -1686,13 +1712,22 @@ body.mode-minimal .keypad {
   background: #1a1f2c;
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 6px;
-  padding: 9px 11px;
+  /* Single-line height matches .cb-send-btn (40px): vertical padding
+     10×2 + line-height 20 + border 1×2 = 42 with border-box → 40
+     content + border.  JS auto-grows by setting style.height to
+     scrollHeight; max-height caps the growth at ~10 lines.
+     `overflow-y: auto` keeps the scrollbar hidden until that cap. */
+  min-height: 40px;
+  max-height: 14em;
+  padding: 10px 11px;
   color: #d0d5e0;
   font-family: var(--font-ui);
-  font-size: 16.5px;
-  line-height: 1.4;
+  font-size: 14.5px;
+  line-height: 20px;
   outline: none;
   transition: border-color .15s;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 .cb-input:focus        { border-color: rgba(103,232,249,.5); }
 .cb-input:disabled     { opacity: .5; }
@@ -1715,6 +1750,37 @@ body.mode-minimal .keypad {
 .cb-send-btn:hover    { background: #225e38; color: #a0f0b8; }
 .cb-send-btn:active   { background: #0f2e1c; }
 .cb-send-btn:disabled { opacity: .4; cursor: default; }
+
+/* Suggestion chips — wrap below the most recent assistant bubble.
+   One row of pill-shaped buttons that submit their text as the next
+   user message when clicked.  Styling mirrors .cb-btn-cancel (subdued
+   border + hover lift) so they read as suggestions rather than primary
+   actions. */
+.cb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px 0;
+  padding: 0 4px;
+}
+.cb-chip {
+  appearance: none;
+  border: 1px solid #3a4254;
+  background: #232936;
+  color: #c0c8d8;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: normal;
+  text-align: left;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.cb-chip:hover    { background: #2b313c; color: #e5ecf7; border-color: #4a5266; }
+.cb-chip:active   { background: #1a1f2a; }
+.cb-chip:disabled { opacity: .5; cursor: default; }
 
 /* The side-panel-body needs to flex when the AI tab is active */
 .side-panel-body:has(.cb-panel-wrap) {

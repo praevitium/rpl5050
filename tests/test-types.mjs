@@ -9810,3 +9810,145 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     'session196: Vector Integer(1) TRUNC → Bad argument type (V deliberately ✗)');
 }
 
+/* ================================================================
+   session200: GAMMA / LNGAMMA / erf / erfc — L/V/M/T verification
+   (stale `·` cells → ✓ in DATA_TYPES.md matrix)
+
+   These ops were already wrapped in their current registrations:
+     GAMMA   → _withTaggedUnary(_withListUnary(bespoke-V/M handler))
+     LNGAMMA → _withTaggedUnary(_withListUnary(bespoke-V/M handler))
+     erf     → _withTaggedUnary(_withListUnary(bespoke-V/M handler))
+     erfc    → _withTaggedUnary(_withListUnary(bespoke-V/M handler))
+   The DATA_TYPES.md matrix carried `·` (not-applicable) for L/V/M on
+   all four ops — a documentation lag from when the wrappers were added.
+   No source changes; this cluster adds the missing hard assertions
+   and promotes the matrix cells.
+
+   Integer operands are used throughout because the inner handlers have
+   an EXACT-mode integer-stay-exact arm:
+     GAMMA(Integer(n))  = Integer((n-1)!)  for small n (≤ 170).
+     GAMMA(Integer(2))  = Integer(1),  GAMMA(Integer(5)) = Integer(24).
+     LNGAMMA(Integer(2)) = Real(0)  (ln 1! = ln 1 = 0, exact fp result).
+     erf(Integer(0))    = Real(0)   (zero special-case, no series).
+     erfc(Integer(0))   = Real(1)   (zero special-case).
+   These clean-integer inputs give deterministic, floating-point-exact
+   outputs that pin the wrapper dispatch without needing tolerance guards.
+   ================================================================ */
+{
+  // ---- GAMMA ----
+
+  // n=0 bare-List passthrough: { } GAMMA → { }
+  {
+    const v = runOp('GAMMA', RList([]));
+    assert(isList(v) && v.items.length === 0,
+      `session200: { } GAMMA → { } (n=0 bare-List passthrough; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // n=0 Tagged-of-List: :g:{ } GAMMA → :g:{ }
+  {
+    const v = runOp('GAMMA', Tagged('g', RList([])));
+    assert(isTagged(v) && v.tag === 'g' && isList(v.value) && v.value.items.length === 0,
+      `session200: :g:{ } GAMMA → :g:{ } (n=0 T+L; got tag=${v?.tag} type=${v?.value?.type})`);
+  }
+
+  // n=2 bare-List integer-exact: { Integer(1) Integer(5) } GAMMA → { Integer(1) Integer(24) }
+  {
+    const v = runOp('GAMMA', RList([Integer(1n), Integer(5n)]));
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && v.items.length === 2
+        && isInteger(a) && a.value === 1n
+        && isInteger(b) && b.value === 24n,
+      `session200: { Integer(1) Integer(5) } GAMMA → { Integer(1) Integer(24) } (n=2 bare-List integer-exact; got a=${a?.value} b=${b?.value})`);
+  }
+
+  // n=2 Tagged-of-List: :g:{ Integer(1) Integer(5) } GAMMA → :g:{ Integer(1) Integer(24) }
+  {
+    const v = runOp('GAMMA', Tagged('g', RList([Integer(1n), Integer(5n)])));
+    const inner = v?.value;
+    const [a, b] = inner?.items ?? [];
+    assert(isTagged(v) && v.tag === 'g' && isList(inner)
+        && isInteger(a) && a.value === 1n
+        && isInteger(b) && b.value === 24n,
+      `session200: :g:{ Integer(1) Integer(5) } GAMMA → :g:{ Integer(1) Integer(24) } (T+L; tag preserved; got tag=${v?.tag} a=${a?.value} b=${b?.value})`);
+  }
+
+  // Vector axis: [ Integer(1) Integer(5) ] GAMMA → [ Integer(1) Integer(24) ]
+  {
+    const v = runOp('GAMMA', Vector([Integer(1n), Integer(5n)]));
+    const [a, b] = v?.items ?? [];
+    assert(isVector(v) && v.items.length === 2
+        && isInteger(a) && a.value === 1n
+        && isInteger(b) && b.value === 24n,
+      `session200: [ Integer(1) Integer(5) ] GAMMA → [ Integer(1) Integer(24) ] (V integer-exact; got a=${a?.value} b=${b?.value})`);
+  }
+
+  // Matrix axis: [[ Integer(2) Integer(3) ]] GAMMA → [[ Integer(1) Integer(2) ]]
+  {
+    const v = runOp('GAMMA', Matrix([[Integer(2n), Integer(3n)]]));
+    const row = v?.rows?.[0] ?? [];
+    assert(isMatrix(v) && v.rows.length === 1 && row.length === 2
+        && isInteger(row[0]) && row[0].value === 1n
+        && isInteger(row[1]) && row[1].value === 2n,
+      `session200: [[ Integer(2) Integer(3) ]] GAMMA → [[ Integer(1) Integer(2) ]] (M integer-exact; got r00=${row[0]?.value} r01=${row[1]?.value})`);
+  }
+
+  // ---- LNGAMMA ----
+
+  // n=0 bare-List passthrough: { } LNGAMMA → { }
+  {
+    const v = runOp('LNGAMMA', RList([]));
+    assert(isList(v) && v.items.length === 0,
+      `session200: { } LNGAMMA → { } (n=0 bare-List passthrough; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // Matrix axis: [[ Integer(2) ]] LNGAMMA → [[ Real(0) ]]   (lngamma(2) = ln(1!) = 0 exactly)
+  {
+    const v = runOp('LNGAMMA', Matrix([[Integer(2n)]]));
+    const cell = v?.rows?.[0]?.[0];
+    assert(isMatrix(v) && isReal(cell) && cell.value.toNumber() === 0,
+      `session200: [[ Integer(2) ]] LNGAMMA → [[ Real(0) ]] (M; lngamma(2)=0 exact fp; got cell=${cell?.value?.toString()})`);
+  }
+
+  // Tagged scalar: :h:Integer(2) LNGAMMA → :h:Real(0)
+  {
+    const v = runOp('LNGAMMA', Tagged('h', Integer(2n)));
+    assert(isTagged(v) && v.tag === 'h' && isReal(v.value) && v.value.value.toNumber() === 0,
+      `session200: :h:Integer(2) LNGAMMA → :h:Real(0) (T scalar; lngamma(2)=0; got tag=${v?.tag} val=${v?.value?.value?.toNumber()})`);
+  }
+
+  // Vector axis: [ Integer(2) ] LNGAMMA → [ Real(0) ]
+  {
+    const v = runOp('LNGAMMA', Vector([Integer(2n)]));
+    const a = v?.items?.[0];
+    assert(isVector(v) && v.items.length === 1 && isReal(a) && a.value.toNumber() === 0,
+      `session200: [ Integer(2) ] LNGAMMA → [ Real(0) ] (V; lngamma(2)=0; got a=${a?.value?.toString()})`);
+  }
+
+  // ---- erf ----
+
+  // bare-List: { Integer(0) } erf → { Real(0) }   (erf(0) = 0, zero special-case)
+  {
+    const v = runOp('erf', RList([Integer(0n)]));
+    const a = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 && isReal(a) && a.value.toNumber() === 0,
+      `session200: { Integer(0) } erf → { Real(0) } (bare-List; erf(0)=0; got a=${a?.value?.toString()})`);
+  }
+
+  // Vector axis: [ Integer(0) ] erf → [ Real(0) ]
+  {
+    const v = runOp('erf', Vector([Integer(0n)]));
+    const a = v?.items?.[0];
+    assert(isVector(v) && v.items.length === 1 && isReal(a) && a.value.toNumber() === 0,
+      `session200: [ Integer(0) ] erf → [ Real(0) ] (V; erf(0)=0; got a=${a?.value?.toString()})`);
+  }
+
+  // ---- erfc ----
+
+  // Tagged scalar: :e:Integer(0) erfc → :e:Real(1)   (erfc(0) = 1, zero special-case)
+  {
+    const v = runOp('erfc', Tagged('e', Integer(0n)));
+    assert(isTagged(v) && v.tag === 'e' && isReal(v.value) && v.value.value.toNumber() === 1,
+      `session200: :e:Integer(0) erfc → :e:Real(1) (T scalar; erfc(0)=1; got tag=${v?.tag} val=${v?.value?.value?.toNumber()})`);
+  }
+}
+

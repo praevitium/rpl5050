@@ -5,7 +5,22 @@ lane is widening.  It does not track whether an op is implemented at all — tha
 lives in `docs/COMMANDS.md`.
 This file answers: *for this op, which types does the handler actually accept?*
 
-**Last updated.** Session 196 (2026-04-26, post-ship TRUNC L/T wrapper-add;
+**Last updated.** Session 200 (2026-04-26, post-ship GAMMA/LNGAMMA/erf/erfc L/V/M
+stale-`·`-cell promotion; lane name **`session200-data-type-support`**) — no source
+changes; these ops were already wrapped in `_withTaggedUnary(_withListUnary(bespoke-V/M
+handler))` — the DATA_TYPES.md matrix carried `·` (not-applicable) for their L/V/M
+cells as a documentation lag.  +13 hard assertions in `tests/test-types.mjs`
+(5472 → 5485): GAMMA ×6 (n=0 bare-List; n=0 T+L; n=2 bare-List integer-exact; n=2
+T+L; V integer-exact; M integer-exact); LNGAMMA ×4 (n=0 bare-List; M lngamma(2)=0;
+T scalar; V); erf ×2 (bare-List erf(0)=0; V); erfc ×1 (T scalar erfc(0)=1).
+GAMMA/LNGAMMA matrix rows: L/V/M `·`→`✓`.  ERF row: L/V `·`→`✓`; M stays `·`
+(handler branch present but no assertion this session).  ERFC row: T re-verified;
+L/V/M stay `·`.
+Verification gates at exit: `node tests/test-all.mjs` 5485/0/0,
+`node tests/test-persist.mjs` 66/0, `node tests/sanity.mjs` 22/0.
+See "Resolved this session (200)" below.
+
+**Last updated (prior — session 196).** Session 196 (2026-04-26, post-ship TRUNC L/T wrapper-add;
 lane name **`session196-data-type-support`**) — wrapping TRUNC in
 `_withTaggedBinary(_withListBinary(_truncOp()))` to close the last remaining
 ship-prep 2026-04-25 audit candidate (XPON/MANT closed session 187, HEAVISIDE/DIRAC
@@ -871,10 +886,10 @@ step / impulse — so the simplify-time fold stays conservative.
 |-----------|---|---|---|---|----|---|---|---|---|-------|
 | HEAVISIDE | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Step function.  Session 105 pinned Sy round-trip + folds: HEAVISIDE(2)=1, HEAVISIDE(0)=1 (HP50 convention: right-continuous at 0), HEAVISIDE(-1)=0. **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — bare handler.  **Session 191:** wrapped `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` — L/V/M/T promoted to ✓.  +8 pins in `tests/test-types.mjs`: n=0 bare+T+L, n=1 bare {Real(2)}→{Real(1)}, n=2 heterogeneous {2,-1}→{1,0} bare+T+L, Vector [1,-1]→[1,0], Matrix [[1,-1]]→[[1,0]], scalar Tagged :x:Real(3)→:x:Real(1). |
 | DIRAC     | ✓ | ✓ | · | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Impulse δ(x).  At non-zero real, folds to 0; at x=0 leaves symbolic (distribution).  Session 105 pinned `DIRAC(X-1)` round-trip + `DIRAC(3)=0`, `DIRAC(0)` → null. **Ship-prep 2026-04-25 audit:** L/V/M/T downgraded — bare handler.  **Session 191:** wrapped `_withTaggedUnary(_withListUnary(_withVMUnary(…)))` — L/V/M/T promoted to ✓.  +8 pins in `tests/test-types.mjs`: n=0 bare+T+L, n=1 bare {Real(0)}→{Symbolic(DIRAC(0))} (at-zero path through wrapper), n=2 bare+T+L non-zero, Vector, Matrix, scalar Tagged :x:Real(5)→:x:Real(0). |
-| GAMMA     | ✓ | ✓ | ✗ | ✓ | ✓  | · | · | · | ✓ | Γ(x).  Integer fold only (GAMMA(n) = (n-1)! for n ≥ 1, n ≤ 171); non-integer / non-positive / overflow → null (leave symbolic).  Session 105 pinned Sy round-trip + GAMMA(5)=24, GAMMA(0)→null, GAMMA(0.5)→null, GAMMA(180)→null. |
-| LNGAMMA   | ✓ | ✓ | ✗ | ✓ | ✓  | · | · | · | ✓ | ln Γ(x).  No fold (Lanczos lives on the stack).  Session 105 pinned Sy round-trip + null fold. |
-| ERF       | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Error function.  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold. |
-| ERFC      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Complementary erf.  Same as ERF.  Session 105 pinned Sy round-trip + null fold. |
+| GAMMA     | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | Γ(x).  Integer fold only (GAMMA(n) = (n-1)! for n ≥ 1, n ≤ 171); non-integer / non-positive / overflow → null (leave symbolic).  Session 105 pinned Sy round-trip + GAMMA(5)=24, GAMMA(0)→null, GAMMA(0.5)→null, GAMMA(180)→null.  **Session 200:** L/V/M cells promoted `·`→`✓` — already wrapped as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`; matrix was stale.  +6 integer-exact pins: n=0 bare-List `{}`→`{}`; n=0 T+L `:g:{}`→`:g:{}`; n=2 bare-List `{Integer(1) Integer(5)}`→`{Integer(1) Integer(24)}`; n=2 T+L tag-preserved; V `[Integer(1) Integer(5)]`→`[Integer(1) Integer(24)]`; M `[[Integer(2) Integer(3)]]`→`[[Integer(1) Integer(2)]]`. |
+| LNGAMMA   | ✓ | ✓ | ✗ | ✓ | ✓  | ✓ | ✓ | ✓ | ✓ | ln Γ(x).  No fold (Lanczos lives on the stack).  Session 105 pinned Sy round-trip + null fold.  **Session 200:** L/V/M cells promoted `·`→`✓` — same wrapper shape as GAMMA; matrix was stale.  +4 pins using lngamma(2)=0 exact-fp identity: n=0 bare-List `{}`→`{}`; M `[[Integer(2)]]`→`[[Real(0)]]`; T scalar `:h:Integer(2)`→`:h:Real(0)`; V `[Integer(2)]`→`[Real(0)]`. |
+| ERF       | ✓ | · | · | ✓ | ✓  | ✓ | ✓ | · | ✓ | Error function (registered as `erf`).  No simplify-time fold.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** L/V cells promoted `·`→`✓` — already wrapped as `_withTaggedUnary(_withListUnary(bespoke-V/M handler))`; matrix was stale.  +2 pins using erf(0)=Real(0) zero special-case: bare-List `{Integer(0)}`→`{Real(0)}`; V `[Integer(0)]`→`[Real(0)]`.  M remains `·` — bespoke V/M branch is in the handler but no hard assertion added for M this session. |
+| ERFC      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Complementary erf (registered as `erfc`).  Same as ERF.  Session 105 pinned Sy round-trip + null fold.  **Session 200:** +1 T re-verification pin `:e:Integer(0) erfc`→`:e:Real(1)` (erfc(0)=1 zero special-case; T was already ✓).  L/V/M remain `·` — wrapped same as erf but no bare-collection assertions added this session. |
 | BETA      | ✓ | ✓ | · | ✓ | ✓  | · | · | · | ✓ | Arity 2 — B(a, b).  No simplify-time fold (needs log-gamma).  Session 105 pinned Sy round-trip + null fold. |
 | UTPC      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Upper-tail χ² CDF.  Arity 2 — UTPC(ν, x).  No simplify-time fold (needs incomplete gamma).  Session 105 pinned Sy round-trip + null fold. |
 | UTPF      | ✓ | · | · | ✓ | ✓  | · | · | · | ✓ | Upper-tail F CDF.  Arity 3 — UTPF(ν₁, ν₂, x).  No simplify-time fold (needs incomplete beta).  Session 105 pinned Sy round-trip + null fold. |
@@ -968,6 +983,24 @@ is the same as in `<`/`≤`/`>`/`≥` (`Real(1) == Integer(1)` = 1).
    into per-op sections would let Notes column cross-reference the
    Rational-exact-path vs Q→R widening vs Q→C widening contract
    session 115 pinned.  Doc-only; low effort.
+
+### Resolved this session (200)
+
+- **GAMMA / LNGAMMA / erf / erfc L/V/M stale-`·`-cell promotion — documentation-only fix.**
+  All four ops were already registered with `_withTaggedUnary(_withListUnary(bespoke-V/M
+  handler))`, meaning List, Vector, Matrix, and Tagged inputs all dispatched correctly.
+  The DATA_TYPES.md matrix carried `·` (not-applicable) for their L/V/M cells as a
+  documentation lag from when the wrappers were added.  No source changes.
+  +13 `session200:` pins in `tests/test-types.mjs` (5472 → 5485):
+  GAMMA ×6 — n=0 bare-List passthrough `{}`→`{}`; n=0 T+L `:g:{}`→`:g:{}`;
+  n=2 bare-List integer-exact `{Integer(1) Integer(5)}`→`{Integer(1) Integer(24)}`;
+  n=2 T+L tag-preserved; V `[Integer(1) Integer(5)]`→`[Integer(1) Integer(24)]`;
+  M `[[Integer(2) Integer(3)]]`→`[[Integer(1) Integer(2)]]`.
+  LNGAMMA ×4 — n=0 bare-List passthrough; M `[[Integer(2)]]`→`[[Real(0)]]`
+  (lngamma(2)=0 exact-fp); T scalar `:h:Integer(2)`→`:h:Real(0)`; V `[Integer(2)]`→`[Real(0)]`.
+  erf ×2 — bare-List `{Integer(0)}`→`{Real(0)}` (erf(0)=0 zero special-case); V `[Integer(0)]`→`[Real(0)]`.
+  erfc ×1 — T scalar re-verify `:e:Integer(0)`→`:e:Real(1)` (erfc(0)=1; T was already ✓).
+  Matrix promotions: GAMMA L/V/M `·`→`✓`; LNGAMMA L/V/M `·`→`✓`; ERF L/V `·`→`✓` (M stays `·`).
 
 ### Resolved this session (196)
 

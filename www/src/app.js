@@ -18,7 +18,7 @@ import { format } from './rpl/formatter.js';
 import {
   state as calcState, subscribe as subscribeState,
   cycleAngle, toggleApproxMode, cycleCoordMode, setBinaryBase,
-  varOrder, varRecall, varStore, currentPath,
+  varOrder, varList, varRecall, varStore, currentPath,
   goInto, goHome, goUp,
 } from './rpl/state.js';
 import { lookup } from './rpl/ops.js';
@@ -111,10 +111,33 @@ class App {
     // The SidePanel mounts the chatBot's DOM on first AI-tab open.
     this.chatBot = new ChatBot({
       tools: {
-        /** Run RPL code exactly as if the user typed it and pressed ENTER. */
+        /** Run RPL code exactly as if the user typed it and pressed ENTER.
+         *  This is how the model "places things on the stack" — the RPL
+         *  parser handles numbers, names, expressions, programs, and
+         *  whole sequences indifferently. */
         run: (text) => {
           this.entry.recall(text);
           this.entry.enter();
+        },
+        /** Insert text at the editor cursor without committing.  Lets
+         *  the model build up an expression piece-by-piece while the
+         *  user watches. */
+        appendToEditor: (text) => {
+          this.entry.type(text);
+        },
+        /** Empty the editor buffer (HP50 ON / cancel). */
+        clearEditor: () => {
+          this.entry.cancel();
+        },
+        /** Read the current editor buffer — what the user is typing. */
+        getEditor: () => this.entry.buffer,
+        /** List variable names in the current directory. */
+        listVars: () => varList(),
+        /** Recall the value bound to `name` (or undefined). */
+        recallVar: (name) => {
+          const v = varRecall(name);
+          if (v === undefined) return undefined;
+          return format(v, this.display?.displayOpts);
         },
       },
       getContext: () => {
