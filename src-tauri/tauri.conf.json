@@ -1,7 +1,7 @@
 {
-  "productName": "rp5050sx",
+  "productName": "rp5050ai",
   "version": "0.1.0",
-  "identifier": "com.rpl5050.rp5050sx",
+  "identifier": "com.rpl5050.rp5050ai",
   "build": {
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
@@ -10,7 +10,7 @@
   "app": {
     "windows": [
       {
-        "title": "rp5050sx - RPL Scientific Calculator",
+        "title": "rp5050ai - RPL Scientific Calculator",
         "width": 600,
         "height": 900,
         "resizable": true,

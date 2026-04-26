@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 190 — 2026-04-26)
+## Counts (as of session 195 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -186,27 +186,47 @@ touched the row, and any known caveats worth carrying forward.
   was a post-ship review-lane run: filed C-012 (register-count drift) and
   O-012 (stray keyboard.js.bak); O-009 promoted to resolved.  Session 190
   (this run, `rpl5050-command-support`) closed C-012: Counts stamp 186 →
-  190 and register-count prose updated to live figures 481 / 460.)
+  190 and register-count prose updated to live figures 481 / 460.
+  Session 191 (`rpl5050-data-type-support`) added HEAVISIDE + DIRAC
+  L/V/M/T wrapper-add in `www/src/rpl/ops.js` — each bare register()
+  call wrapped with `_withTaggedUnary(_withListUnary(_withVMUnary(…)))`;
+  +16 pins in `tests/test-types.mjs` (sessions 191 and 192 combined
+  delta); DATA_TYPES.md stamp refreshed; baseline 5448 → 5464.  Session
+  192 (`rpl5050-rpl-programming`) was a verification-only pass — all
+  RPL-bucket findings confirmed closed; no source or test edits.  Session
+  193 (`rpl5050-unit-tests`) refreshed `docs/TESTS.md`: "Last updated"
+  stamp 189 → 193, sibling-delta narrative for s190–s192 added; confirmed
+  5464 / 0 baseline.  Session 194-code-review was a post-ship review-lane
+  run: filed C-013 (register-count drift after session-191 wrapper-add);
+  re-verified O-011 / O-012; confirmed 5464 / 0 baseline.  Session 195
+  (this run, `rpl5050-command-support`) closed C-013: Counts stamp 190 →
+  195 and register-count prose updated to live figures 482 / 461.)
 - Partially shipped (~): 0
 - Not yet implemented (✗): 1 (only the `JORDAN` / `SCHUR`
   matrix-decomp row remains — the entire MODULO-family is ✓.)
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" www/src/rpl/ops.js` = **481** at the end of session
-190 (was 471 at the end of session 144, was 466 at the end of session
-139, was 463 at the end of session 134, was 458 at the end of session
-129, was 455 at the end of session 124, was 448 at the end of session
-119).  The actual top-level `register()` *call* count
-(`grep -cE '^register\(' www/src/rpl/ops.js`) is **460** at the end of
-session 190 (was 455 at the end of session 144; session 149 added five
-more top-level registrations — `EXPANDMOD`, `FACTORMOD`, `GCDMOD`,
-`DIVMOD`, `DIV2MOD` — bringing the live count to 460, but the Counts
-heading was incorrectly recorded as "unchanged from session 149"; corrected
-this run as part of the C-012 close).  Session 167's `_newObCopy` Rational
-widening, session 172's `_newObCopy` Program-branch freeze-parity fix, and
-session 178's RUN / CONT edits were all in-body edits on existing
-`register()` call sites — not new registrations.
+`grep -c "register(" www/src/rpl/ops.js` = **482** at the end of session
+195 (was 481 at the end of session 190, was 471 at the end of session
+144, was 466 at the end of session 139, was 463 at the end of session
+134, was 458 at the end of session 129, was 455 at the end of session
+124, was 448 at the end of session 119).  The +1 between session 190
+and session 195 occurred in session 191 (data-type-support —
+`_withTaggedUnary(_withListUnary(_withVMUnary(…)))` wrapper-add for
+HEAVISIDE and DIRAC; the extra `register(` hit is the `_withTaggedUnary`
+inner wrapper call folded into the top-level registration line).  The
+actual top-level `register()` *call* count
+(`grep -cE '^register\(' www/src/rpl/ops.js`) is **461** at the end of
+session 195 (was 460 at the end of session 190, was 455 at the end of
+session 144; session 149 added five more top-level registrations —
+`EXPANDMOD`, `FACTORMOD`, `GCDMOD`, `DIVMOD`, `DIV2MOD` — bringing the
+live count to 460, but the Counts heading was incorrectly recorded as
+"unchanged from session 149"; corrected at session-190 C-012 close).
+Session 167's `_newObCopy` Rational widening, session 172's `_newObCopy`
+Program-branch freeze-parity fix, and session 178's RUN / CONT edits were
+all in-body edits on existing `register()` call sites — not new
+registrations.
 
 Session-153 row transitions:
 - **0 ops newly shipped** (no ✗ → ✓).  Release-mode wrap-up run.

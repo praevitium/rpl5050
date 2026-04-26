@@ -1,4 +1,4 @@
-# Tauri Setup for rp5050sx
+# Tauri Setup for rp5050ai
 
 This project is now configured to run as a native desktop application on macOS, Windows, and Linux using Tauri.
 

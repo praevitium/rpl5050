@@ -331,7 +331,7 @@ export class SidePanel {
   constructor({ root, app }) {
     this.root = root;
     this.app = app;
-    this.tab = 'commands';                         // active tab
+    this.tab = 'ai';                               // active tab
     this.historySort = 'newest';                   // 'newest' | 'oldest'
     // Set of `${tab}:${sectionTitle}` strings marking sections the
     // user has collapsed.  Absence = open (the default for every new
@@ -361,6 +361,8 @@ export class SidePanel {
            title="Drag to resize"></div>
       <div class="side-panel-head">
         <div class="side-panel-tabs" role="tablist">
+          <button type="button" class="sp-tab" data-tab="ai"       role="tab"
+                  title="AI Assistant" aria-label="AI Assistant">✦</button>
           <button type="button" class="sp-tab" data-tab="commands" role="tab"
                   title="Commands" aria-label="Commands">📖</button>
           <button type="button" class="sp-tab" data-tab="chars"    role="tab"
@@ -570,7 +572,7 @@ export class SidePanel {
     }
   }
 
-  open(tab = 'commands') {
+  open(tab = 'ai') {
     this.el.classList.remove('hidden');
     this.setTab(tab);
     this._saveUIState();
@@ -582,7 +584,7 @@ export class SidePanel {
     this._saveUIState();
   }
 
-  toggle(tab = 'commands') {
+  toggle(tab = 'ai') {
     if (this.isOpen() && this.tab === tab) { this.close(); return; }
     this.open(tab);
   }
@@ -609,6 +611,10 @@ export class SidePanel {
     // worth bulk-toggling (Commands and Characters).
     this.el.querySelector('.sp-expand').classList.toggle(
       'hidden', tab !== 'commands' && tab !== 'chars');
+    // The filter bar is unused on the AI tab — hide it so the chatbot
+    // gets the full panel height.
+    const filterRow = this.el.querySelector('.side-panel-filter');
+    if (filterRow) filterRow.classList.toggle('hidden', tab === 'ai');
     // Clear the filter input when switching tabs so stale text from the
     // Commands filter doesn't hide every History entry.
     const filterInput = this.el.querySelector('.sp-filter');
@@ -625,6 +631,23 @@ export class SidePanel {
   _render() {
     const body = this.el.querySelector('.side-panel-body');
     const filter = this.el.querySelector('.sp-filter').value.trim().toLowerCase();
+
+    // AI tab: preserve the chatbot's live DOM across re-renders by
+    // lazily creating a persistent container and re-appending it
+    // (avoids destroying conversation history or losing event listeners).
+    if (this.tab === 'ai') {
+      if (!this._chatContainer) {
+        this._chatContainer = document.createElement('div');
+        this._chatContainer.className = 'cb-panel-wrap';
+        // Mount is idempotent — called once; the chatBot retains its DOM.
+        this.app.chatBot?.mount(this._chatContainer);
+      }
+      body.innerHTML = '';
+      body.appendChild(this._chatContainer);
+      this._refreshExpandLabel();
+      return;
+    }
+
     body.innerHTML = '';
     if (this.tab === 'commands') body.appendChild(this._renderCommands(filter));
     else if (this.tab === 'history') body.appendChild(this._renderHistory(filter));
@@ -1219,7 +1242,7 @@ export class SidePanel {
     let st;
     try { st = JSON.parse(raw); } catch { return; }
     if (!st || typeof st !== 'object') return;
-    const tab = VALID_TABS.has(st.tab) ? st.tab : 'commands';
+    const tab = VALID_TABS.has(st.tab) ? st.tab : 'ai';
     if (st.historySort === 'newest' || st.historySort === 'oldest') {
       this.historySort = st.historySort;
       const lbl = this.el.querySelector('.sp-sort');
@@ -1283,7 +1306,7 @@ const PANEL_MIN_WIDTH = 240;
 const PANEL_MAX_WIDTH = 800;
 
 const UI_STORAGE_KEY = 'hp50.ui.sidePanel';
-const VALID_TABS = new Set(['commands', 'chars', 'files', 'history']);
+const VALID_TABS = new Set(['commands', 'chars', 'files', 'history', 'ai']);
 
 /* Short labels beside each file row.  Kept compact (≤4 chars) so the
    type column doesn't push the name off-screen on narrow panels. */

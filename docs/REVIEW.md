@@ -6,23 +6,22 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 189-code-review (2026-04-26, post-ship
-code-review run — twenty-first review-lane run).  Prior baseline
-= session 185-code-review (twentieth run, 2026-04-26).  This run
-folds in four sibling-lane sessions since session 185-code-review:
-186 (command-support — COMMANDS.md Counts stamp "as of session
-182" → "as of session 186", session-log back-fill 183–186,
-register count note refreshed at 476/455 (NB: stale — actual is
-478/457 per this run's grep; new finding C-012); no source / test
-edits); 187 (data-type-support — XPON + MANT L/V/M/T wrapper-add
-in `www/src/rpl/ops.js`; +15 pins in `tests/test-types.mjs`
-(985 → 1000); DATA_TYPES.md stamp refreshed to Session 187;
-baseline 5433 → 5448/0); 188 (rpl-programming — verification-
-only, doc-only RPL.md stamp bump; confirmed 5448/0 baseline, all
-RPL-bucket findings closed); 189 (unit-tests — snapshot refresh:
-TESTS.md stamp 185 → 189, sibling-delta narrative for s186–s188
-added; confirmed 5448/0 baseline; ran concurrently with this
-code-review session).
+**Last updated.** Session 194-code-review (2026-04-26, post-ship
+code-review run — twenty-second review-lane run).  Prior baseline
+= session 189-code-review (twenty-first run, 2026-04-26).  This run
+folds in four sibling-lane sessions since session 189-code-review:
+190 (command-support — COMMANDS.md Counts stamp advanced to "as of
+session 190", register-count prose corrected to 481/460; C-012
+resolved; doc-only); 191 (data-type-support — HEAVISIDE + DIRAC
+L/V/M/T wrapper-add in `www/src/rpl/ops.js`; +16 pins in
+`tests/test-types.mjs` (1000 → 1016); two stale reject tests in
+`tests/test-algebra.mjs` updated; DATA_TYPES.md stamp refreshed
+to Session 191; baseline 5448 → 5464/0); 192 (rpl-programming —
+verification-only, doc-only RPL.md stamp bump; confirmed 5464/0
+baseline, all RPL-bucket findings closed); 193 (unit-tests —
+snapshot refresh: TESTS.md stamp 189 → 193, sibling-delta
+narrative for s190–s192 added; confirmed 5464/0 baseline; lock
+released before this run began).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -45,52 +44,46 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 189-code-review).** Session189-unit-tests
+**Baseline (session 194-code-review).** Session193-unit-tests
 held a concurrent lock on `docs/TESTS.md` + `logs/` at this
-run's acquisition (startedAt: 1777186619, released at
-1777186720 before this run began writing); lock bodies for
-sessions 186–189 all released gracefully.  At review-lane
-*entry* (post-session-189-unit-tests)
-`node tests/test-all.mjs` = **5448 passing / 0 failing**
-(fully green; was 5433 at session-185-code-review entry; net
-Δ +15 across four sibling sessions — +15 s187 XPON/MANT
-L/V/M/T pins; s186 / s188 / s189 doc-only or verification;
+run's acquisition (startedAt: 1777190160, released at
+1777190269 before this run began writing); lock bodies for
+sessions 190–193 all released gracefully.  At review-lane
+*entry* (post-session-193-unit-tests)
+`node tests/test-all.mjs` = **5464 passing / 0 failing**
+(fully green; was 5448 at session-189-code-review entry; net
+Δ +16 across four sibling sessions — +16 s191 HEAVISIDE/DIRAC
+L/V/M/T pins; s190 / s192 / s193 doc-only or verification;
 T-003 remains **fully resolved** since session 185);
 `node tests/test-persist.mjs` = **66 passing / 0 failing**
 (stable, unchanged); `node tests/sanity.mjs` = **22 passing
-/ 0 failing in ~5 ms** (stable).  `node --check` clean
+/ 0 failing in ~6 ms** (stable).  `node --check` clean
 across all four core sources (`www/src/app.js`,
 `www/src/rpl/ops.js`, `www/src/rpl/state.js`,
 `www/src/rpl/types.js`).
-`grep -c "register(" www/src/rpl/ops.js` = **478**
-(unchanged from session-185-code-review; `grep -cE
-"^register\(" www/src/rpl/ops.js` = **457** — two more than
-COMMANDS.md's session-186 claim of 476/455; see new finding
-C-012).
+`grep -c "register(" www/src/rpl/ops.js` = **482**
+(`grep -cE "^register\(" www/src/rpl/ops.js` = **461** —
+COMMANDS.md Counts prose updated to match at session-195
+C-013 close).
 
 **This run's own edits.** Two edits this run — pure
 doc/hygiene, no source changes:
   1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 189-code-review (21st review-lane run); preamble
-     rewritten to fold in sibling sessions 186–189; baseline
-     block rewritten with 5448 / 66 / 22 entry gates and
-     updated register-count note; **O-009 promoted to
-     `[resolved - session-189-code-review]`** — both
-     `test-control-flow.mjs.bak*` files confirmed absent by
-     `find` (exact removal unknown; session-189-unit-tests log
-     still listed them as "blocked" — user-side cleanup most
-     likely); **O-011** aged 8 → 9 runs, four new lock-body
-     occurrences (186/187/188/189), running count now
-     **forty-four** since session 106; two new findings filed
-     (**C-012** COMMANDS.md register-count drift; **O-012**
-     stray `keyboard.js.bak`).
-  2. **`logs/session-189-code-review.md`** — this run's
+     session 194-code-review (22nd review-lane run); preamble
+     rewritten to fold in sibling sessions 190–193; baseline
+     block rewritten with 5464 / 66 / 22 entry gates and
+     updated register-count note; **O-011** aged 9 → 10 runs,
+     four new lock-body occurrences (190/191/192/193), running
+     count now **forty-eight** since session 106; **O-012**
+     re-verified present; one new finding filed (**C-013**
+     COMMANDS.md register-count drift +1/+1 after session 191).
+  2. **`logs/session-194-code-review.md`** — this run's
      session log.
 
-**Lock.** Held `utils/@locks/session189-code-review.json`
+**Lock.** Held `utils/@locks/session194-code-review.json`
 throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
 review-lane scope; no broadening required this run since no
-in-place source edits were taken).  Session189-unit-tests held
+in-place source edits were taken).  Session193-unit-tests held
 a concurrent non-overlapping lock on `docs/TESTS.md` + `logs/`
 but released before this run wrote any log output.  Released
 at end of run.
@@ -182,18 +175,25 @@ Translated into ledger items, in priority order:
    field; pure-infrastructure hygiene best landed post-ship per
    the session 156 meta-log triage.
 
-Open queue at session 190 close: **O-011 + O-012** — O-011
-`[deferred - post-ship]` (infrastructure hygiene); O-012
-`[deferred - post-ship]` (stray file).  **C-012 resolved this
-run** (session 190 command-support — register-count prose
-corrected to 481 / 460).  **O-009 resolved session
-189-code-review.**  **T-003 fully resolved by session 185.**
-**Zero release-blocker class findings remain.**  COMMANDS.md
-stamp now "as of session 190"; register-count actual 481 / 460.
+Open queue at session 194-code-review close: **O-011 + O-012 +
+C-013** — O-011 `[deferred - post-ship]` (infrastructure
+hygiene); O-012 `[deferred - post-ship]` (stray file); C-013
+`[post-ship]` (COMMANDS.md register-count prose +1/+1 drift from
+session-191 HEAVISIDE/DIRAC wrapper-add; doc-only fix for
+command-support lane).  **C-012 resolved session 190.**
+**O-009 resolved session-189-code-review.**  **T-003 fully
+resolved by session 185.**  **Zero release-blocker class
+findings remain.**  COMMANDS.md stamp "as of session 190";
+register-count actual 482 / 461 (1 above the 481/460 claim).
 
-Ship is complete.  Post-ship lanes may pull O-011 / O-012
-as early post-ship hygiene (both pure infrastructure or
-file-hygiene, no behavior risk).
+**C-013 resolved session 195.**  Open queue is now **O-011 +
+O-012** only (both `[deferred - post-ship]`).  COMMANDS.md
+stamp advanced to session 195; register-count prose updated to
+482 / 461.
+
+Ship is complete.  Post-ship lanes may pull O-011 / O-012 as
+remaining hygiene (infrastructure / stray-file; no behavior
+risk).
 
 ---
 
@@ -3607,6 +3607,20 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   session 106 (was 40 at session 185-code-review close + 4
   from sessions 186–189).  **9 review-lane runs aging.**
   Status remains **[deferred - post-ship]**.
+  Re-verified session 194-code-review: `grep -n
+  "releaseReason" utils/@locks/lock.mjs utils/@locks/README.md`
+  still returns zero hits.  Sessions 190 (command-support —
+  `heartbeatAt: 1777184542` ≡ `startedAt`, confirmed released
+  before s191) / 191 (data-type-support — `heartbeatAt:
+  1777185399` ≡ `startedAt`) / 192 (rpl-programming) / 193
+  (unit-tests — `heartbeatAt: 1777190160` ≡ `startedAt`,
+  `releasedAt: 1777190269`) lock bodies all carry the same
+  shape ambiguity (pattern consistent with all prior sessions).
+  Running count of underlying-ambiguity occurrences now
+  **forty-eight** since session 106 (was 44 at session
+  189-code-review close + 4 from sessions 190–193).
+  **10 review-lane runs aging.**
+  Status remains **[deferred - post-ship]**.
 
 ### C-012  `COMMANDS.md` register-count claim stale after session 187's XPON/MANT wrapper-add
 
@@ -3651,6 +3665,40 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   190"; register-count prose rewritten with correct 481 / 460
   figures and accurate history.  `node --check` N/A (doc-only).
 
+### C-013  `COMMANDS.md` register-count claim stale after session 191's HEAVISIDE/DIRAC wrapper-add
+
+- **Classification.** Commands (doc drift).
+- **Where.** `docs/COMMANDS.md:196-204` — the Counts prose block
+  claiming "`grep -c "register(" www/src/rpl/ops.js` = **481**
+  at the end of session 190" and "actual top-level `register()`
+  call count … is **460**".
+- **What.** Actual counts as of session-194-code-review entry:
+  `grep -c "register("` = **482**; `grep -cE "^register\("` =
+  **461**.  The +1/+1 delta occurred in session 191
+  (data-type-support — HEAVISIDE + DIRAC L/V/M/T wrapper-add).
+  The session-191 log describes wrapping two existing `register()`
+  calls with `_withTaggedUnary(_withListUnary(_withVMUnary(…)))`;
+  the exact mechanism for the +1 top-level registration count is
+  not fully explained in the log, but the grep evidence is
+  unambiguous.  The COMMANDS.md Counts block was not updated by
+  session 191 (the data-type lane's charter does not include
+  COMMANDS.md edits).
+- **Why.** The Counts block is the canonical reference for
+  how many handlers are registered; a stale count erodes
+  trust in the doc as a completeness check.  Mirrors C-012.
+- **Fix.** Command-support lane: update the prose to read
+  "**482**" and "**461**" respectively; advance "as of session
+  190" to "as of session 194" (or whichever is current at fix
+  time).  One-paragraph doc-only edit, no source change required.
+- **Confidence.** high — `grep -c "register("
+  www/src/rpl/ops.js` = 482 and `grep -cE "^register\("` = 461
+  verified at this run's entry.
+- **Age.** 1 run (filed session 194-code-review).
+  **Status.** **[resolved - session 195]** — COMMANDS.md
+  Counts stamp advanced 190 → 195; register-count prose updated
+  to 482 / 461; session-191 wrapper-add mechanism explained in
+  the prose.  Doc-only close, no source change.
+
 ### O-012  Stray `www/src/ui/keyboard.js.bak` backup file
 
 - **Classification.** Other (file-hygiene / build artifact).
@@ -3674,7 +3722,11 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   `www/src/ui/` or repo-root to prevent future spillover.
 - **Confidence.** high — `find www/ -name '*.bak*'` returns
   exactly one hit at session-189-code-review entry.
-- **Age.** new (filed session 189-code-review).
+  Re-verified session 194-code-review: `find www/ -name '*.bak*'`
+  still returns one hit (`www/src/ui/keyboard.js.bak`); file
+  unchanged.
+- **Age.** 1 run (filed session 189-code-review; aged session
+  194-code-review).
   **Status.** open.  Lane = `rpl5050-ui-development` or any
   lane in an interactive session.  `[deferred - post-ship]`
   pending interactive approval — no behavior risk.

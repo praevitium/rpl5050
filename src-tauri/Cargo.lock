@@ -2682,7 +2682,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rp5050sx"
+name = "rp5050ai"
 version = "0.1.0"
 dependencies = [
  "serde",

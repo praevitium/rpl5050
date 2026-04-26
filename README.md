@@ -1,8 +1,8 @@
-# rp5050sx
+# rp5050ai
 
 **RPL Scientific Calculator — a modern HP 50g adaptation.**
 
-rp5050sx is a desktop reimplementation of the HP 50g graphing calculator. It
+rp5050ai is a desktop reimplementation of the HP 50g graphing calculator. It
 keeps the RPL stack, the User-RPL programming language, and the HP command
 surface, but replaces the 128×80 monochrome LCD with a high-resolution UI and
 swaps the 1990s-era CAS for [Giac](https://www-fourier.univ-grenoble-alpes.fr/~parisse/giac.html) —
@@ -91,7 +91,7 @@ harness exits non-zero on the first failure and prints a diff.
 
 ## License
 
-rp5050sx is licensed under the **GNU General Public License v3.0 or later**
+rp5050ai is licensed under the **GNU General Public License v3.0 or later**
 (`SPDX-License-Identifier: GPL-3.0-or-later`). The full text is in
 [LICENSE](LICENSE).
 

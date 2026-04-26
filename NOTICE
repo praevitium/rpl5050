@@ -1,7 +1,7 @@
-rp5050sx — RPL Scientific Calculator
+rp5050ai — RPL Scientific Calculator
 =====================================
 
-rp5050sx is licensed under the GNU General Public License v3.0 or later.
+rp5050ai is licensed under the GNU General Public License v3.0 or later.
 See LICENSE for the full text. SPDX-License-Identifier: GPL-3.0-or-later.
 
 This distribution bundles the following third-party components.
@@ -25,7 +25,7 @@ Giac / Xcas
   so for an HP 50g emulator, Giac is the most lineage-appropriate
   open-source CAS available.
 
-  Because Giac is GPL-3.0+, rp5050sx as a whole is distributed under
+  Because Giac is GPL-3.0+, rp5050ai as a whole is distributed under
   GPL-3.0-or-later. You may not relicense this project under a more
   permissive license while Giac remains bundled.
 

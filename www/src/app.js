@@ -32,6 +32,7 @@ import {
 } from './rpl/persist.js';
 import { giac } from './rpl/cas/giac-engine.mjs';
 import { FULL as BUILD_FULL } from './build-info.js';
+import { ChatBot } from './ai/chat-bot.js';
 
 class App {
   constructor() {
@@ -103,6 +104,33 @@ class App {
         if (this.sidePanel?.tab === 'history') this.sidePanel.refresh();
       });
     }
+
+    // AI assistant — completely decoupled from calculator internals.
+    // We hand it an opaque `tools` object and a `getContext` function;
+    // it never imports anything from rpl/ or the rest of the UI.
+    // The SidePanel mounts the chatBot's DOM on first AI-tab open.
+    this.chatBot = new ChatBot({
+      tools: {
+        /** Run RPL code exactly as if the user typed it and pressed ENTER. */
+        run: (text) => {
+          this.entry.recall(text);
+          this.entry.enter();
+        },
+      },
+      getContext: () => {
+        const levels = this.stack.levels(); // level 1 first
+        const st     = calcState;
+        const opts   = this.display?.displayOpts;
+        return {
+          stack: levels.slice(0, 8).map(v => format(v, opts)),
+          angleMode: st.angle,
+          displayMode: st.displayMode === 'STD'
+            ? 'STD'
+            : `${st.displayMode} ${st.displayDigits}`,
+          dir: currentPath().join('/') || 'HOME',
+        };
+      },
+    });
 
     this._installChromeToggles();
 
