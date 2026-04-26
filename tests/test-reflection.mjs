@@ -151,7 +151,7 @@ import { assert } from './helpers.mjs';
      §3-149 Input/Output table lists no numeric-scalar entry; the
      mantissa/exponent split is the job of MANT (AUR p.3-6) and XPON
      (AUR p.3-9), which are wired separately.  R-008 closed by
-     session 155. */
+     . */
   {
     const s = new Stack();
     s.push(Real(3.14));
@@ -224,11 +224,11 @@ import { assert } from './helpers.mjs';
       'ASCII alias OBJ-> behaves the same as OBJ→');
   }
 
-  /* session 156 — OBJ→ edge / composition pins extending the
-     session-155 Real/Tagged/Integer audit.  Five new pins covering
+ /* — OBJ→ edge / composition pins extending the
+ Real/Tagged/Integer audit. Five new pins covering
      the empty-container shapes (Vector / List / Program), the
      Tagged-of-Tagged composition, and the negative-Real branch.
-     None of these were exercised by session 155's pin set; each
+ None of these were exercised by 's pin set; each
      guards a distinct branch of the OBJ→ dispatch in
      `www/src/rpl/ops.js:6642-6720`. */
   {
@@ -277,7 +277,7 @@ import { assert } from './helpers.mjs';
   }
   {
     /* Negative Real → unchanged (no sign decomposition).
-       Session 155 pinned the zero-Real and positive-Real
+       pinned the zero-Real and positive-Real
        no-decomposition path; this closes the negative-sign
        branch, guarding against a future "fix" that special-cases
        sign extraction (some HP48-era RPL variants pushed
@@ -294,7 +294,7 @@ import { assert } from './helpers.mjs';
     /* Tagged-of-Tagged: only the outermost layer peels.  The
        inner Tagged value is preserved as the level-2 push, and
        the outer tag becomes the level-1 String per AUR §3-149.
-       Session 155 pinned the Real-inside-Tagged shape; this is
+       pinned the Real-inside-Tagged shape; this is
        the recursive-Tagged composition pin — guards against a
        refactor that flattens nested tags or recursively peels
        (the AUR is explicit that OBJ→ is one-layer-deep). */
@@ -311,7 +311,7 @@ import { assert } from './helpers.mjs';
       'session156: OBJ→ Tagged-of-Tagged level-2 = :inner:7 (inner Tagged preserved, NOT recursively peeled)');
   }
 
-  /* session 159 — OBJ→ on Unit (HP50 AUR §3-149: `x_unit → x  1_unit`).
+ /* — OBJ→ on Unit (HP50 AUR §3-149: `x_unit → x 1_unit`).
      Closes R-012 — the Unit branch was previously missing, so OBJ→ on
      a Unit value rejected with `Bad argument type` instead of pushing
      the bare numeric value (level 2) and the unit prototype `1_unit`
@@ -390,7 +390,7 @@ import { assert } from './helpers.mjs';
   {
     /* Tagged-of-Unit composition: only the outermost layer peels.
        The inner Unit value is preserved as the level-2 push, NOT
-       further decomposed — symmetric with the session-156
+ further decomposed — symmetric with the
        Tagged-of-Tagged pin.  Guards against a refactor that
        recursively decomposes through composite types. */
     const s = new Stack();
@@ -405,7 +405,7 @@ import { assert } from './helpers.mjs';
       'session159: OBJ→ :len:5_m level-2 = 5_m (inner Unit preserved, NOT recursively decomposed)');
   }
   {
-    /* ASCII alias OBJ-> works on Unit too (parity with session-155
+ /* ASCII alias OBJ-> works on Unit too (parity with
        OBJ-> alias pin on List). */
     const s = new Stack();
     s.push(Unit(2, [['kg', 1]]));
@@ -431,13 +431,13 @@ import { assert } from './helpers.mjs';
   }
 
   /* session160: OBJ→ Unit follow-up edges — boundary cases (zero / fractional
-     value, exponent != ±1 on uexpr) and round-trip closures that session 159's
+ value, exponent != ±1 on uexpr) and round-trip closures that 's
      R-012 close pin-set did not enumerate.  Five pins covering the value-side
      edges (zero, fractional) and the uexpr-side edges (exponent ≠ 1, multi-
      symbol round-trip, higher-power round-trip).  All five exercise the same
-     Unit branch in OBJ→'s dispatch; mirror of session 156's empty-V/L/P
+ Unit branch in OBJ→'s dispatch; mirror of 's empty-V/L/P
      boundary closures applied to the Unit row of AUR §3-149.  No source
-     change — the branch has been live since session 159. */
+     change — the branch has been live since . */
   {
     /* Zero-value Unit boundary: 0_m OBJ→ → 0  1_m.  Sign-rule edge: zero
        has no sign so the Real(0) push and the level-1 prototype both have
@@ -511,10 +511,10 @@ import { assert } from './helpers.mjs';
 
   /* session163 — OBJ→ on the remaining numeric-scalar shapes
      (BinaryInteger / Rational).  AUR §3-149 lists no row for any
-     numeric scalar, so the same fidelity choice the session-155
+ numeric scalar, so the same fidelity choice the
      close made for Real / Integer extends symmetrically to the
      other two scalar kinds: push the value back unchanged
-     (1-in / 1-out).  Prior to session 163 these shapes fell
+ (1-in / 1-out). Prior to these shapes fell
      through the OBJ→ dispatch and threw `Bad argument type` —
      a divergence from the choice already documented for
      Real / Integer.  Closes the AUR-fidelity audit of OBJ→'s
@@ -639,7 +639,7 @@ import { assert } from './helpers.mjs';
       'session163: EVAL 3/4 → 3/4 (Rational evaluates to itself; literal-push semantics)');
   }
 
-  /* session164 — OBJ→ session-163 follow-up edges that the s163 pin-set
+ /* session164 — OBJ→ follow-up edges that the s163 pin-set
      did not enumerate.  Six pins covering: Tagged-of-BinInt and
      Tagged-of-Rational composition (one-layer Tagged peel applied to
      the new BinInt/Rational push-back branch — mirror of session
@@ -655,14 +655,14 @@ import { assert } from './helpers.mjs';
      normalize n/1 to Integer — distinct from the s163 -7/2
      negative-numerator pin which has d>1.  All six exercise the
      widened `isReal(v) || isInteger(v) || isBinaryInteger(v) ||
-     isRational(v)` branch session 163 added at ops.js:6746 plus
+ isRational(v)` branch added at ops.js:6746 plus
      the existing Tagged peel at ops.js:6690-6696.  No source
      change. */
   {
     /* Tagged-of-BinInt OBJ→ — one-layer Tagged peel: outer Tagged
        drops to the existing isTagged branch, which pushes the
        inner BinInt on level 2 and the tag as a String on level 1.
-       Mirror of session 159's Tagged-of-Unit pin lifted onto the
+ Mirror of 's Tagged-of-Unit pin lifted onto the
        BinInt arm of the s163 cluster.  Guards against a future
        refactor that recurse-evaluates the Tagged inner value
        through OBJ→ a second time (would push the BinInt back
@@ -694,7 +694,7 @@ import { assert } from './helpers.mjs';
       'session164: OBJ→ :rat:3/4 → 3/4 + "rat" (one-layer Tagged peel onto the Rational arm of the s163 cluster; closes Tagged composition for both numeric-scalar shapes)');
   }
   {
-    /* ASCII alias OBJ-> on Rational — session 163 pinned the
+ /* ASCII alias OBJ-> on Rational — pinned the
        alias on BinInt but not on Rational.  Closes the s163
        alias-parity coverage for the second numeric-scalar shape
        added that run.  Pins OPS.get('OBJ→').fn dispatches
@@ -710,9 +710,9 @@ import { assert } from './helpers.mjs';
   }
   {
     /* BinaryInteger at octal base — types.js BIN_BASES lists
-       'h' / 'd' / 'o' / 'b'.  Session 163 pinned three of the
-       four ('h' / 'd' / 'b').  This pin closes the missing
-       'o' base — the fourth and final valid BinInt display
+       'h' / 'd' / 'o' / 'b'.  Three bases ('h' / 'd' / 'b') were
+       previously pinned; this pin closes the missing 'o' base —
+       the fourth and final valid BinInt display
        base.  Catches a refactor that special-cases base=='o'
        (e.g., a digit-grouping rendering tweak that accidentally
        reformats the value through OBJ→). */
@@ -1890,7 +1890,7 @@ function _roundTripProgram(prog) {
     'session088: SIZE on Real still throws Bad argument type');
 }
 
-/* ---- TVARS — type-filtered VARS (session 099) ---- */
+/* ---- TVARS — type-filtered VARS ---- */
 {
   resetHome();
 
@@ -2048,7 +2048,7 @@ function _roundTripProgram(prog) {
 }
 
 /* ================================================================
-   Session 146 — NEWOB on a Program.
+   NEWOB on a Program.
 
    NEWOB ( obj → obj' ) is the HP50 "force a fresh copy" op.  On the
    real unit it materialises a value that was recalled by reference
@@ -2058,7 +2058,7 @@ function _roundTripProgram(prog) {
    round-trips.
 
    Sessions 047 / 047b pinned NEWOB on Real, List, Matrix.  Program
-   NEWOB has been live since session 067 (the same change that
+ NEWOB has been live since (the same change that
    added OBJ→ / →PRG) but no test has pinned the round-trip
    invariants for it: distinct-object identity, distinct-tokens-
    array identity, structural equality, EVAL semantics agreement,
@@ -2221,7 +2221,7 @@ function _roundTripProgram(prog) {
 }
 
 /* ================================================================
-   Session 167 — NEWOB on Rational (audit-driven asymmetry close).
+   NEWOB on Rational (audit-driven asymmetry close).
 
    `_newObCopy` in `www/src/rpl/ops.js` enumerated every numeric-scalar
    shape (Real / Integer / BinaryInteger / Complex) and every composite
@@ -2229,7 +2229,7 @@ function _roundTripProgram(prog) {
    through the unenumerated tail and returned identity (`v`).  That
    left NEWOB on a Rational as the lone outlier vs. every sibling
    numeric-scalar shape — the same kind of audit-driven asymmetry
-   session 163 closed on the OBJ→ side (BinInt and Rational fell
+ closed on the OBJ→ side (BinInt and Rational fell
    through OBJ→'s dispatch and threw `Bad argument type`).
 
    The fix is a one-line `_newObCopy` widening:
@@ -2242,12 +2242,12 @@ function _roundTripProgram(prog) {
 
    These pins lock in the distinct-object identity contract for
    every numeric-scalar shape NEWOB enumerates.  Companion to
-   session 146's NEWOB-on-Program cluster above.
+ 's NEWOB-on-Program cluster above.
 
    Why under the rpl-programming lane:  NEWOB lives in the same
    reflection / metaprogramming family as OBJ→ / →PRG / DECOMP /
    STR→ — all programming-lane scope per RPL.md's lane charter.
-   The session-163 OBJ→ widening was filed here for the same
+ The OBJ→ widening was filed here for the same
    reason; closing the matching NEWOB asymmetry is the natural
    follow-on.
    ================================================================ */
@@ -2317,7 +2317,7 @@ function _roundTripProgram(prog) {
 
 /* ---- NEWOB on a List containing a Rational rebuilds the outer
         List but keeps the inner Rational identity (shallow-copy
-        contract per the session 146 nested-Program pin) ---- */
+        contract per the nested-Program pin) ---- */
 {
   const s = new Stack();
   const innerRat = Rational(3n, 4n);
@@ -2329,7 +2329,7 @@ function _roundTripProgram(prog) {
     'session167: NEWOB on List rebuilds the outer List object');
   assert(copy.items.length === 3,
     'session167: NEWOB on List preserves item count');
-  // The shallow-copy contract per session 146:  the outer container
+  // The shallow-copy contract per : the outer container
   // is rebuilt but inner immutable values keep identity.
   assert(copy.items[1] === innerRat,
     'session167: NEWOB on List preserves nested Rational identity (shallow-copy contract — outer rebuilt, immutable inner shared)');
@@ -2353,7 +2353,7 @@ function _roundTripProgram(prog) {
 }
 
 /* ---- NEWOB on Rational composes correctly with the OBJ→ Rational
-        push-back branch session 163 added — a NEWOB-then-OBJ→
+ push-back branch added — a NEWOB-then-OBJ→
         round-trip leaves an equal Rational on the stack with
         distinct-object identity from the original ---- */
 {
@@ -2375,33 +2375,33 @@ function _roundTripProgram(prog) {
 }
 
 /* ================================================================
-   Session 168 — NEWOB session-167 follow-up edges.
+ NEWOB follow-up edges.
 
-   The session-167 NEWOB widening enumerated every numeric-scalar
+ The NEWOB widening enumerated every numeric-scalar
    shape (Real / Integer / BinaryInteger / Rational / Complex) in
    _newObCopy at www/src/rpl/ops.js:9309-9314, but only the
-   Rational arm got hard-assertion pin coverage above (session 047
-   covered Real / List / Matrix; session 146 covered Program;
-   session 167 covered Rational + List-of-Rational + Tagged-of-
+ Rational arm got hard-assertion pin coverage above (
+ covered Real / List / Matrix; covered Program;
+ covered Rational + List-of-Rational + Tagged-of-
    Rational + NEWOB→OBJ→ composition on Rational).
 
    The other three numeric-scalar arms (Integer / BinaryInteger /
    Complex) and their Tagged-of-X composition shapes have been
-   live since session 067 but have no hard-assertion pin set.  A
+ live since but have no hard-assertion pin set. A
    refactor that drops one of those branches from _newObCopy
    would silently regress the distinct-object identity contract
    without surfacing a test failure.  These pins close that
-   shoulder by mirroring session 167's pin pattern onto the three
+ shoulder by mirroring 's pin pattern onto the three
    remaining numeric-scalar arms + extending the container
-   composition coverage to Vector (session 167 covered List +
+ composition coverage to Vector ( covered List +
    Tagged of Rational; this run adds Vector-of-Real shallow-copy
    contract + List-of-Tagged-of-Real nested composition + the
-   empty-List boundary that session 167's pin set did not
+ empty-List boundary that 's pin set did not
    enumerate).
 
    Why under the unit-tests lane (not rpl-programming):  this is
    pure coverage closure of an already-shipped enumeration; no
-   source-side widening, no behaviour change.  Session 167's own
+   source-side widening, no behaviour change. 's own
    widening (the Rational branch) was rpl-programming-lane scope
    because it edited www/src/rpl/ops.js; this follow-up only
    touches tests/.
@@ -2454,7 +2454,7 @@ function _roundTripProgram(prog) {
 
 /* ---- NEWOB on a BinaryInteger at octal base preserves base ---- */
 {
-  // Mirror of session 164's OBJ→ #7o octal-base preservation pin
+  // Mirror of 's OBJ→ #7o octal-base preservation pin
   // applied to the NEWOB sibling op.  Closes the BIN_BASES quartet
   // (h / d / b / o) on NEWOB; the .h pin above + this .o pin
   // demonstrate base-string is preserved across reconstruction.
@@ -2487,7 +2487,7 @@ function _roundTripProgram(prog) {
 /* ---- NEWOB on a Tagged-of-Integer rebuilds the Tagged shell
         and preserves the inner Integer by reference ---- */
 {
-  // Mirror of session 167 Tagged-of-Rational shallow-copy pin onto
+  // Mirror of Tagged-of-Rational shallow-copy pin onto
   // the Integer arm.  Since Integer is also frozen / immutable, the
   // shallow-copy contract preserves the inner by reference.
   const s = new Stack();
@@ -2533,7 +2533,7 @@ function _roundTripProgram(prog) {
 /* ---- NEWOB on a Tagged-of-Real preserves inner identity ---- */
 {
   // Closes the Tagged-of-X composition row for the Real arm.
-  // Session 167 only pinned Tagged-of-Rational; session 047 didn't
+  // only pinned Tagged-of-Rational; didn't
   // touch Tagged composition at all.  This pin completes the
   // shallow-copy composition row across all five enumerated
   // numeric-scalar shapes.
@@ -2552,9 +2552,9 @@ function _roundTripProgram(prog) {
 /* ---- NEWOB on a Vector containing Real items rebuilds the
         outer Vector but keeps inner Real items by reference ---- */
 {
-  // Mirror of session 167's List-of-Rational shallow-copy pin onto
+  // Mirror of 's List-of-Rational shallow-copy pin onto
   // the Vector container.  Vector is the next-most-common composite
-  // after List for User-RPL programs; session 047 pinned NEWOB on
+  // after List for User-RPL programs; pinned NEWOB on
   // an empty Matrix only (distinct-object) but did not pin the
   // shallow-copy contract on Vector items.  Vector items are
   // typed as Real per the constructor invariant; pin that
@@ -2578,7 +2578,7 @@ function _roundTripProgram(prog) {
 
 /* ---- NEWOB on an empty List rebuilds the outer List ---- */
 {
-  // Closes the n=0 List boundary on NEWOB.  Session 047's empty-
+  // Closes the n=0 List boundary on NEWOB. 's empty-
   // Matrix pin established the empty-container distinct-object
   // contract on Matrix; this pin extends it to the List shape.
   // Without this pin, a refactor that special-cases empty containers
@@ -2598,10 +2598,10 @@ function _roundTripProgram(prog) {
 /* ---- NEWOB on a List containing a Tagged value preserves the
         inner Tagged by reference (nested composition) ---- */
 {
-  // Mirror of session 146's nested-Program inside-Program shallow-
-  // copy pin, lifted onto a Tagged inner value.  Session 167 pinned
+  // Mirror of 's nested-Program inside-Program shallow-
+  // copy pin, lifted onto a Tagged inner value. pinned
   // List-of-Rational (immutable inner) and List-of-Real implicit
-  // via session 047; this pin extends to List-of-Tagged so that
+  // via ; this pin extends to List-of-Tagged so that
   // nested composite shapes are also covered.  Tagged is itself
   // immutable, so inner identity is preserved by-ref.
   const s = new Stack();
@@ -2618,9 +2618,9 @@ function _roundTripProgram(prog) {
 
 /* ---- NEWOB-then-OBJ→ on BinaryInteger composes correctly ---- */
 {
-  // Companion to session 167's NEWOB-then-OBJ→ on Rational composition
+  // Companion to 's NEWOB-then-OBJ→ on Rational composition
   // pin, lifted onto the BinaryInteger arm of the s163 push-back
-  // branch.  The session-163 OBJ→ widening brought BinInt into the
+  // branch. The OBJ→ widening brought BinInt into the
   // push-back branch; pin that NEWOB-then-OBJ→ round-trip on BinInt
   // is identity at the OBJ→ stage (the BinInt rebuilt by NEWOB is
   // pushed back unchanged by OBJ→) and distinct from the original.
@@ -2642,10 +2642,10 @@ function _roundTripProgram(prog) {
 }
 
 /* ================================================================
-   Session 172 — NEWOB freeze-parity sweep across every enumerated
+   NEWOB freeze-parity sweep across every enumerated
    shape.
 
-   Audit-driven asymmetry close, sibling to session 167's Rational
+ Audit-driven asymmetry close, sibling to 's Rational
    distinct-object widening.  Pre-172, `_newObCopy`'s Program branch
    constructed an inline object literal:
 
@@ -2659,10 +2659,10 @@ function _roundTripProgram(prog) {
    `Symbolic`), each of which `Object.freeze`s the outer wrapper.
    Program alone violated `Object.isFrozen(copy) === true`.
 
-   Session 146 / 167 / 168's NEWOB pin sets covered distinct-object
+   / 168's NEWOB pin sets covered distinct-object
    identity and inner-content shape but did not assert
-   `Object.isFrozen()` on the OUTER NEWOB result.  The session-167
-   Rational and session-168 follow-up pins did include
+ `Object.isFrozen()` on the OUTER NEWOB result. The
+ Rational and follow-up pins did include
    `Object.isFrozen(copy)` for the Rational atom (line 2268) but
    only for that one shape — every other shape's outer-freeze
    property was implicitly trusted via the factory path, while the
@@ -2779,7 +2779,7 @@ function _roundTripProgram(prog) {
         invariant after the freeze fix (smoke test that the factory
         switch did not change observable Program semantics) ---- */
 {
-  // The session-146 NEWOB-then-EVAL pin already covered behavioural
+  // The NEWOB-then-EVAL pin already covered behavioural
   // equivalence; this pin closes the formatter side — DECOMP on a
   // NEWOB-copied Program produces the same source string as DECOMP
   // on the original.  Any divergence here would indicate the factory

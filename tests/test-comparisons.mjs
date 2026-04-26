@@ -710,9 +710,9 @@ import { assert, assertThrows } from './helpers.mjs';
 
    Q participates in Z ⊂ Q ⊂ R ⊂ C, so ==, <, ≤, >, ≥, <>, SAME all
    flow through promoteNumericPair.  Coverage for this type was
-   absent from test-comparisons.mjs prior to session 107 (grep for
+ absent from test-comparisons.mjs prior to (grep for
    `Rational` in this file returned zero matches at entry).  See
-   docs/DATA_TYPES.md session-092 notes for the Rational rollout.
+ docs/DATA_TYPES.md notes for the Rational rollout.
    ================================================================ */
 
 /* ---- Q × Q canonicalisation — same ratio compares equal ---- */
@@ -861,13 +861,13 @@ import { assert, assertThrows } from './helpers.mjs';
 /* ================================================================
    session127: Rational × Complex + Rational × Real cross-type
    comparison edges.  Closes a coverage gap around the Q corner of
-   the promotion lattice — the session-107 block pinned Q × Q,
+ the promotion lattice — the block pinned Q × Q,
    Q × Z, and Q × R numerically-equal cases plus a single ordering
    pin sign-crossing.  This block adds:
 
      • Q < C is rejected as `Bad argument type` — same Complex-
        partial-order rejection that exists for Real < Complex
-       (session 069 line ~169) and pinned here for Q to confirm
+ and pinned here for Q to confirm
        the lattice rejection sits at the Complex side, not at a
        per-numeric-type wrap.
      • Q == C with non-zero im → 0 — Q lifts into the C corner
@@ -878,14 +878,14 @@ import { assert, assertThrows } from './helpers.mjs';
      • Q <> C with non-zero im → 1 — the negation of the above.
      • Q SAME C with non-zero im → 0 (numeric-promotion SAME
        within ℂ degrades to value compare; pin the unequal case
-       distinct from the session-107 Q SAME R equal-value case).
+ distinct from the Q SAME R equal-value case).
      • Q × R cross-type unequal: Q(1/3) == R(0.333) → 0 (1/3 ≠
        0.333 exactly — Q widens to its full Decimal at compare
        time, then `eqValues` numeric branch compares to R(0.333)
-       and returns false).  Companion to session-107's Q(1/2)
+ and returns false). Companion to 's Q(1/2)
        == R(0.5) = 1 pin.
      • Q × R cross-type ordering: Q(1/4) < R(0.3) → 1 — pins the
-       cross-type direction the session-107 block didn't cover
+ cross-type direction the block didn't cover
        (its sign-crossing test stayed in Q × Q).
    ================================================================ */
 
@@ -933,9 +933,9 @@ import { assert, assertThrows } from './helpers.mjs';
 
 /* ---- Q SAME C(non-zero im) → 0 -------------------------------------- *
  * SAME on numeric pairs flows through promoteNumericPair (per the
- * session-107 docstring); Q lifts into ℂ as {1/2, 0}, which is not
+ * docstring); Q lifts into ℂ as {1/2, 0}, which is not
  * SAME as {0, 1}.  Pinning the *unequal* case to balance the
- * session-107 Q SAME R equal-value pin. */
+ * Q SAME R equal-value pin. */
 {
   const s = new Stack();
   s.push(Rational(1, 2));
@@ -947,7 +947,7 @@ import { assert, assertThrows } from './helpers.mjs';
 
 /* ---- Q × R inequality at non-terminating decimal -------------------- *
  * 1/3 is not exactly representable in finite Decimal precision — the
- * session-107 block's Q(1/2) == R(0.5) pin used the exactly-
+ * block's Q(1/2) == R(0.5) pin used the exactly-
  * representable case.  This pin guards the *unequal* branch: 1/3
  * widens to its 15-digit Decimal (0.333333…), which is not equal to
  * R(0.333) (the 3-digit-truncated literal).  Anyone who later swaps
@@ -963,7 +963,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ---- Q × R cross-type ordering -------------------------------------- *
- * The session-107 ordering pins all stayed in Q × Q (1/3 < 1/2,
+ * The ordering pins all stayed in Q × Q (1/3 < 1/2,
  * 1/2 > 1/3, 2/3 ≤ 2/3, -1/2 < 1/2) plus one cross-type Q × Z
  * (3/2 ≥ 1) and one Z × Q (0 < 1/2).  Q × R direction was not pinned.
  * 1/4 = 0.25 < 0.3 — pin both directions (Q on level 2, R on level 1). */
@@ -988,7 +988,7 @@ import { assert, assertThrows } from './helpers.mjs';
 /* ================================================================
    session132: Rational × Integer reverse-direction edges.
 
-   The session-107 Q × Z block pinned Q-on-level-2 / Z-on-level-1
+ The Q × Z block pinned Q-on-level-2 / Z-on-level-1
    for == (equal + unequal) plus a single ordering pin per
    direction (3/2 ≥ 1 in Q × Z; 0 < 1/2 in Z × Q).  The reverse
    direction for == / <> / SAME and the missing ordering ops
@@ -1002,17 +1002,17 @@ import { assert, assertThrows } from './helpers.mjs';
 
    Adds:
      • Z == Q equal: Integer(3) == Rational(3/1) → 1 (== direction
-       symmetric to session-107's Q == Z = 1).
+ symmetric to 's Q == Z = 1).
      • Z == Q unequal: Integer(0) == Rational(1/2) → 0 (companion).
      • Z <> Q cross-type: Integer(2) <> Rational(1/3) → 1.
      • Q <> Z cross-type: Rational(7/4) <> Integer(2) → 1.
      • Z SAME Q cross-type: Integer(3) SAME Rational(3/1) → 1
        (numeric promotion holds; reverse-direction companion to
-       session-107 Q SAME Z = 1).
+ Q SAME Z = 1).
      • Z SAME Q cross-type unequal: Integer(2) SAME Rational(3/1)
        → 0 (pins the *unequal* SAME branch in Z × Q direction).
      • Z × Q sign-crossing < ordering: Integer(-1) < Rational(1/2)
-       → 1 (the one Z × Q ordering pin in session-107 stayed
+ → 1 (the one Z × Q ordering pin in stayed
        within non-negative inputs).
      • Q × Z ≤ at equal cross-value: Rational(2/1) ≤ Integer(2)
        → 1 (≤ at the Q-promotes-to-Z boundary; pins the equal
@@ -1074,7 +1074,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ---- Z × Q sign-crossing ordering ----
- * Session 107 pinned `0 < 1/2` (positive-only) and `-1/2 < 1/2`
+ * pinned `0 < 1/2` (positive-only) and `-1/2 < 1/2`
  * (sign-crossing but Q×Q).  The Z × Q sign-crossing direction
  * (Integer negative on the left, positive Q on the right) wasn't
  * pinned. */
@@ -1089,7 +1089,7 @@ import { assert, assertThrows } from './helpers.mjs';
 
 /* ---- Q × Z ≤ at the equal-value cross boundary ----
  * 2/1 promotes to integer 2; ≤ on the equal-value pair must return
- * 1.  Session 107 covered `≥` at the equal-cross case (3/2 ≥ 1
+ * 1. covered `≥` at the equal-cross case (3/2 ≥ 1
  * was sign-crossing-different).  This is the symmetric ≤ at
  * exact equality. */
 {

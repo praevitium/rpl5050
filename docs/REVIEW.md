@@ -6,16 +6,20 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 210-code-review (2026-04-26, twenty-sixth
-review-lane run).  Prior baseline = session 207
-(command-support doc-reconciliation, 2026-04-26).
-This run folds in three sibling-lane sessions since session 207:
-208 (data-type-support — erf M-cell pin promotion; +1 assertion in
-`tests/test-types.mjs`; DATA_TYPES.md stamp → Session 208; 5492 →
-5493/0); 209 (rpl-programming — RPL.md stamp 205 → 209; session-log
-pointer prose updated; doc-only; 5493/0); 210 (unit-tests — TESTS.md
-stamp → Session 210; snapshot block updated to 5493/0; doc-only;
-5493/0).
+**Last updated.** Session 246-code-review (thirty-fourth review-lane
+run, 2026-04-26).  Prior code-review baseline = session 242-code-review
+(thirty-third review-lane run, 2026-04-26).
+This run folds in four sibling-lane sessions since session 242-code-review:
+243 (command-support — COMMANDS.md Counts stamp 239 → 243; session-log
+back-fill for sessions 239–242-code-review/242; O-013 audit closed
+(RPL_CATALOG verified against live register() calls — no drift); doc-only;
+5541/0);
+244 (data-type-support — Z/L/V/M cell audit: ERF/ERFC Z `·`→`✓`;
+BETA L `·`→`✓`, V/M `·`→`✗`; UTPC/UTPF/UTPT Z `·`→`✓`, L/V/M `·`→`✗`;
++19 pins; 5541 → 5560/0);
+245 (rpl-programming — RPL.md stamp 241 → 245; verification pass; 5560/0);
+246 (unit-tests — TESTS.md stamp 242 → 246; snapshot absorbing sessions
+243–245 (+19 assertions); snapshot-only; 5560/0).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -38,38 +42,41 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 210-code-review).** Session 210-unit-tests was
-running concurrently at acquisition (lock `released: true` by the
-time audit began; no file conflict — different log targets).
+**Baseline (session 246-code-review).** No sibling lock conflict at
+acquisition; all four sibling sessions (243/244/245/246-unit-tests) released
+before this run (246-unit-tests lock body present without releaseReason —
+O-011 +1; session-246.md log confirmed written).
 At code-review-lane *entry*:
-`node tests/test-all.mjs` = **5493 passing / 0 failing**
-(fully green; +1 from session-207 entry — erf M-cell pin
-from session 208; T-003 remains **fully resolved** since
-session 185);
-`node tests/test-persist.mjs` = **all passing / 0 failing**
+`node tests/test-all.mjs` = **5560 passing / 0 failing**
+(fully green; +19 from session-244 Z/L/V/M cell audit;
+T-003 remains **fully resolved** since session 185);
+`node tests/test-persist.mjs` = **66 passing / 0 failing**
 (stable, unchanged); `node tests/sanity.mjs` = **22 passing
 / 0 failing in ~5 ms** (stable).
-`grep -c "register(" www/src/rpl/ops.js` = **482**
+`grep -c "register(" www/src/rpl/ops.js` = **480**
 (`grep -cE "^register\(" www/src/rpl/ops.js` = **461** —
-COMMANDS.md Counts prose still matches; sessions 208–210 added
-no new register calls).
+unchanged from session-242-code-review; sessions 243–246 added no
+new register calls).
 
 **This run's own edits.** Two edits this run — pure
 doc/hygiene, no source changes:
   1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 210-code-review (twenty-sixth review-lane run);
-     preamble rewritten to fold in sibling sessions 208–210;
-     baseline block rewritten with 5493 / all / 22 entry gates;
-     **O-011** aged 14 → 15 runs (four new lock-body occurrences:
-     session208-data-type-support / session209-rpl-programming /
-     session210-unit-tests / session210-code-review),
-     running count now **sixty-nine** since session 106; **O-012**
-     re-verified present, aged to 6 code-review-lane-equivalent
-     runs; session-log entry added for session 210-code-review.
-  2. **`logs/session-210-code-review.md`** — this run's session log.
+     session 246-code-review (thirty-fourth review-lane run);
+     preamble rewritten to fold in sibling sessions 243–246;
+     baseline block updated to session 246-code-review;
+     **O-011** aged 24 → 25 runs (+4 new occurrences:
+     session243-command-support, session244-data-type-support,
+     session245-rpl-programming, session246-unit-tests all released
+     without releaseReason; net this run: +4 + 1 for this run's
+     own lock = running count now **one hundred one** since
+     session 106); **O-012** re-verified present, aged to 14
+     code-review-lane runs; **O-013** resolved session 243 — no
+     further aging; session-log entries for 244/245/246/246-code-review
+     added.
+  2. **`logs/session-246-code-review.md`** — this run's session log.
 
-**Lock.** Held `utils/@locks/session210-code-review.json`
-throughout, scope = `[docs/REVIEW.md, logs/]`.
+**Lock.** Held `utils/@locks/session246-code-review.json`,
+scope = `[docs/REVIEW.md, logs/]`.
 Released at end of run.
 
 ---
@@ -3665,6 +3672,45 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   (was 59 at session 204 session-log close + 3 from sessions
   205/206-unit-tests/203-code-review).  **13 review-lane runs
   aging.**  Status remains **[deferred - post-ship]**.
+  Re-verified session 207-command-support (preamble-only at
+  that run; catchup here): `grep -n "releaseReason"
+  utils/@locks/lock.mjs utils/@locks/README.md` still returns
+  zero hits.  Sessions 204 (data-type-support — erfc Z/L/V/M
+  pins; +7) / 205 (rpl-programming — RPL.md stamp; doc-only) /
+  206-unit-tests (TESTS.md snapshot refresh; doc-only) /
+  207-command-support (COMMANDS.md back-fill; doc-only) lock
+  bodies all carry the same shape ambiguity.  Running count of
+  underlying-ambiguity occurrences now **sixty-five** since
+  session 106 (was 62 at session 203-code-review close + 3 from
+  sessions 204/205/206-unit-tests + 207-command-support: net +3
+  tracked at the session-207 run as reported in preamble).
+  **14 review-lane runs aging.**  Status remains
+  **[deferred - post-ship]**.
+  Re-verified session 210-code-review (preamble-only at that
+  run; catchup here): `grep -n "releaseReason"
+  utils/@locks/lock.mjs utils/@locks/README.md` still returns
+  zero hits.  Sessions 208 (data-type-support — erf M-cell pin;
+  +1) / 209 (rpl-programming — RPL.md stamp; doc-only) /
+  210-unit-tests (TESTS.md snapshot refresh; doc-only) /
+  210-code-review (this run — review-lane audit; doc-only) lock
+  bodies all carry the same shape ambiguity.  Running count of
+  underlying-ambiguity occurrences now **sixty-nine** since
+  session 106 (was 65 + 4 from sessions 208/209/210-unit-tests/
+  210-code-review).  **15 review-lane runs aging.**  Status
+  remains **[deferred - post-ship]**.
+  Re-verified session 211-code-review: `grep -n "releaseReason"
+  utils/@locks/lock.mjs utils/@locks/README.md` still returns
+  zero hits.  Sessions 211-command-support (COMMANDS.md stamp
+  207→211; doc-only) / 212-data-type-support (ZETA/LAMBERT
+  Z/L/V/M pins; +10) / 213-rpl-programming (RPL.md stamp
+  209→213; doc-only) / 214-unit-tests (TESTS.md snapshot
+  refresh; doc-only) / 211-code-review (this run) lock bodies
+  all carry the same shape ambiguity.  Running count of
+  underlying-ambiguity occurrences now **seventy-four** since
+  session 106 (was 69 + 5 from sessions 211-command-support /
+  212-data-type-support / 213-rpl-programming / 214-unit-tests /
+  211-code-review).  **16 review-lane runs aging.**  Status
+  remains **[deferred - post-ship]**.
 
 ### C-012  `COMMANDS.md` register-count claim stale after session 187's XPON/MANT wrapper-add
 
@@ -3817,12 +3863,76 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   Re-verified session 203-code-review: `find www/ -name '*.bak*'`
   still returns one hit (`www/src/ui/keyboard.js.bak`); mtime
   2026-04-25; file still present and unchanged.
-- **Age.** 4 runs (filed session 189-code-review; aged sessions
+  Re-verified session 210-code-review: `find www/ -name '*.bak*'`
+  still returns one hit (`www/src/ui/keyboard.js.bak`); mtime
+  2026-04-25; unchanged.
+  Re-verified session 211-code-review: `find www/ -name '*.bak*'`
+  still returns one hit (`www/src/ui/keyboard.js.bak`); mtime
+  2026-04-25; unchanged.  Sessions 211–214 did not delete the
+  file (no interactive session attempted deletion; scheduled-task
+  sandbox hits the same `Operation not permitted` gate as prior
+  runs for the `allow_cowork_file_delete` approval flow).
+- **Age.** 9 runs (filed session 189-code-review; aged sessions
   194-code-review, 198-code-review, 202-code-review,
-  203-code-review).
+  203-code-review, 210-code-review, 211-code-review,
+  219-code-review, 224-code-review).
+  Re-verified session 224-code-review: `find www/ -name '*.bak*'`
+  still returns one hit (`www/src/ui/keyboard.js.bak`); mtime
+  2026-04-25; unchanged.
+  Re-verified session 229-code-review, 234-code-review,
+  235-code-review, 242-code-review: `find www/ -name '*.bak*'`
+  still returns one hit (`www/src/ui/keyboard.js.bak`); mtime
+  2026-04-25; unchanged across all four re-checks.
+  **Age.** 13 code-review-lane runs.
   **Status.** open.  Lane = `rpl5050-ui-development` or any
   lane in an interactive session.  `[deferred - post-ship]`
   pending interactive approval — no behavior risk.
+
+### O-013  `www/src/ai/system-prompt.js` RPL_CATALOG is a manually maintained command index that can drift from `docs/COMMANDS.md`
+
+- **Classification.** Commands.
+- **Where.** `www/src/ai/system-prompt.js` — `RPL_CATALOG`
+  constant (top ~80 lines of the file).
+- **What.** The AI chat assistant added in the `www/src/ai/`
+  subsystem embeds a curated `RPL_CATALOG` string listing ~50
+  commonly used RPL commands with one-line descriptions and
+  stack-effect examples.  This catalog is a separate, manually
+  maintained representation of command semantics.  It is
+  intentionally a subset of `docs/COMMANDS.md` ("not an
+  exhaustive index"), but every command entry is a potential
+  source of drift: stale argument order, wrong arity, outdated
+  description, or missing commands that users would expect the
+  AI assistant to know.  The comment at the top of
+  `system-prompt.js` acknowledges the obligation: "Add commands
+  sparingly and only when they close a real gap that user
+  requests have hit."
+- **Why.** Low risk today; the catalog is concise and the commands
+  listed are stable core ops.  Risk grows as new ops land
+  (INVMOD 2-arg deviation, newly added CAS ops, etc.) and the
+  catalog falls behind.  The AI will give wrong advice for
+  commands it knows about incorrectly.
+- **Fix.** (1) Spot-check `RPL_CATALOG` entries against
+  `docs/COMMANDS.md` and `docs/@!MY_NOTES.md` Intentional
+  Deviations table each time a new op is shipped (e.g. INVMOD
+  is listed with no arity hint — the 2-arg deviation should
+  be noted).  (2) Add a comment in `system-prompt.js` listing
+  the most recent session that audited the catalog.  Low-effort
+  maintenance; no source-logic change required.
+- **Confidence.** high — `www/src/ai/system-prompt.js` verified
+  in situ session 224-code-review; `RPL_CATALOG` confirmed as a
+  standalone string not generated from any authoritative source.
+  Re-verified sessions 229-code-review, 234-code-review,
+  235-code-review, 242-code-review: `RPL_CATALOG` still a
+  standalone manually maintained constant; register count 461
+  unchanged across all four intervals; no new ops added that
+  would urgently require catalog update; drift risk remains
+  low but accumulating.
+- **Age.** 5 code-review-lane runs (filed session 224-code-review).
+- **Status.** `[resolved - session 243]` — `rpl5050-command-support`
+  audited all 20+ RPL_CATALOG command names against `docs/COMMANDS.md`
+  and ops.js `register()` calls; no drift found; "last audited —
+  session 243 (2026-04-26)" comment added to `system-prompt.js`
+  above the `RPL_CATALOG` constant.
 
 ---
 
@@ -6853,3 +6963,1045 @@ lane-id drift):**
 Zero release-blocker findings.
 
 Log pointer: `logs/session-210-code-review.md`.
+
+### Session 211 — what shipped (command-support, post-ship doc-reconciliation)
+
+Post-ship doc-reconciliation pass.  Files edited: `docs/COMMANDS.md`
+(Counts stamp 207 → 211; session-log back-filled for sessions
+208 / 209 / 210 / 210-code-review — four sessions with no prior
+COMMANDS.md entries), `logs/session-211.md` (session log).
+No source or test changes.
+
+**Findings delta.**
+- **O-011** — no REVIEW.md edits this run; counted in 211-code-review fold.
+- **O-012** — no REVIEW.md edits this run; re-verified in 211-code-review fold.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 15 runs (unchanged from 210-code-review).
+- **O-012** `[deferred - post-ship]` (stray file) — 6 runs (unchanged from 210-code-review).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-211.md`.
+
+### Session 212 — what shipped (data-type-support, ZETA/LAMBERT Z/L/V/M pins)
+
+ZETA and LAMBERT stale-`·`-cell promotion.  Files edited:
+`tests/test-types.mjs` (+10 `session212:` assertions, 5493 → 5503),
+`docs/DATA_TYPES.md` (Last-updated stamp → Session 212; ZETA and
+LAMBERT Z/L/V/M columns `·`→`✓`; "Resolved this session (212)" block
+prepended above session 208's block), `logs/session-212.md` (session log).
+No source changes.
+
+**Findings delta.**
+- **O-011** — no REVIEW.md edits this run; counted in 211-code-review fold.
+- **O-012** — no REVIEW.md edits this run; re-verified in 211-code-review fold.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 15 runs (unchanged).
+- **O-012** `[deferred - post-ship]` (stray file) — 6 runs (unchanged).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-212.md`.
+
+### Session 213 — what shipped (rpl-programming, post-ship verification pass)
+
+Post-ship verification-only pass.  Files edited: `docs/RPL.md`
+(status stamp "as of session 209" → "as of session 213"; Session 209
+`(this run)` heading demoted to plain past tense; Session 213
+`(this run)` block added; session-log pointer prose updated),
+`logs/session-213.md` (session log).
+No source or test changes.
+
+**Findings delta.**
+- No REVIEW.md edits this run (docs/REVIEW.md not in scope).
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 15 runs (unchanged).
+- **O-012** `[deferred - post-ship]` (stray file) — 6 runs (unchanged).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-213.md`.
+
+### Session 214 — what shipped (unit-tests, post-ship snapshot refresh)
+
+Post-ship snapshot refresh.  Files edited: `docs/TESTS.md`
+(Last-updated stamp → Session 214; release-window run count 15th → 16th;
+new coverage snapshot prepended absorbing sibling deltas 5493 → 5503;
+per-file table updated with test-types.mjs 1045 → 1055 from session-212's
++10 ZETA/LAMBERT pins), `logs/session-214.md` (session log).
+No source changes.
+
+**Findings delta.**
+- No REVIEW.md edits this run (docs/REVIEW.md not in scope).
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 15 runs (unchanged, per session-214 log).
+- **O-012** `[deferred - post-ship]` (stray file) — 6 runs (unchanged).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-214.md`.
+
+### Session 211-code-review — what shipped (code-review, twenty-seventh run)
+
+Post-ship audit pass.  Files edited: `docs/REVIEW.md`
+(Last-updated stamp bumped to session 211-code-review; preamble
+rewritten to fold in sessions 211–214; baseline updated to 5503/0/22;
+O-011 re-verified + aged 15 → 16 runs, finding-body catchup paragraphs
+added for sessions 207/210-code-review (previously preamble-only),
+running count sixty-nine → seventy-four; O-012 re-verified +
+aged to 7 code-review-lane runs; session-log entries for
+211/212/213/214/211-code-review added), `logs/session-211-code-review.md`
+(session log).
+No source or test changes.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 211" — current.
+  Sessions 212–214 added no new register() calls.
+  Register count claim 482/461 — verified correct.
+- DATA_TYPES.md Last-updated = "Session 212" — current.
+- TESTS.md Last-updated = "Session 214" — current.
+- RPL.md stamp = "as of session 213" — current.
+- `src/...` path drift in docs: one surviving mention at
+  `docs/RPL.md:2133` — confirmed historical audit-trail passage
+  (Session 106 P-001 migration narrative); preserved per policy.
+- Lane-task-id drift: none found.
+- `node --check` clean on all core sources (not modified this run).
+- `find www/ -name '*.bak*'` — one hit, O-012 still present.
+- COMMANDS.md session-log missing entries for sessions 212/213/214
+  (three-session gap); all three were doc-only or test-only with
+  no register changes — no formal finding filed; command-support
+  lane may back-fill in its next post-ship pass if desired.
+
+**Findings delta.**
+- **O-011** — 15 → 16 runs.  Five new lock-body occurrences
+  (session211-command-support / session212-data-type-support /
+  session213-rpl-programming / session214-unit-tests /
+  session211-code-review); running count now **seventy-four**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk); aged to 7 code-review-lane runs.
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 16 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 7 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-211-code-review.md`.
+
+### Session 215 — what shipped (command-support, post-ship)
+
+Post-ship doc-reconciliation pass.  Files edited: `docs/COMMANDS.md`
+(Counts stamp 211 → 215; session-log entries back-filled for
+211-code-review / 212 / 213 / 214 — all doc-only or test-only with
+no register changes).  No source or test changes.  Run-close: 5503/0.
+
+Log pointer: `logs/session-215.md`.
+
+### Session 216 — what shipped (data-type-support, post-ship)
+
+Post-ship stale-`·`-cell promotion.  Files edited: `tests/test-types.mjs`
+(+5 pins: PSI L-empty, L n=1, L n=2, V, M); `docs/DATA_TYPES.md`
+(PSI row L/V/M `·`→`✓`; Last-updated stamp → Session 216).
+Run-close: 5508/0 (+5 from entry).
+
+Log pointer: `logs/session-216.md`.
+
+### Session 217 — what shipped (rpl-programming, post-ship)
+
+Post-ship verification pass.  Files edited: `docs/RPL.md`
+(stamp "as of session 213" → "as of session 217"; session-log
+pointer updated).  No source or test changes.  Run-close: 5508/0.
+
+Log pointer: `logs/session-217.md`.
+
+### Session 218 — what shipped (unit-tests, post-ship)
+
+Post-ship snapshot refresh.  Files edited: `docs/TESTS.md`
+(Last-updated stamp 214 → 218; per-file table updated —
+test-types.mjs 1055 → 1060; session-218 log entry prepended).
+No source or test changes.  Run-close: 5508/0.
+
+Log pointer: `logs/session-218.md`.
+
+### Session 219-code-review — what shipped (code-review, twenty-eighth run)
+
+Post-ship audit pass.  Files edited: `docs/REVIEW.md`
+(Last-updated stamp bumped to session 219-code-review; preamble
+rewritten to fold in sessions 215–218; baseline updated to 5508/66/22;
+O-011 re-verified + aged 16 → 17 runs, running count seventy-four →
+seventy-nine; O-012 re-verified + aged to 8 code-review-lane runs;
+session-log entries for 215/216/217/218/219-code-review added),
+`logs/session-219-code-review.md` (session log).
+No source or test changes.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 215" — current.
+  Sessions 216–218 added no new register() calls.
+  Register count claim 482/461 — verified correct.
+- DATA_TYPES.md Last-updated = "Session 216" — current.
+- TESTS.md Last-updated = "Session 218" — current.
+- RPL.md stamp = "as of session 217" — current.
+- `src/...` path drift in docs: surviving mentions in RPL.md:2153
+  and TESTS.md:818 — both confirmed historical audit-trail passages;
+  preserved per policy.
+- Lane-task-id drift: none found.
+- `find www/ -name '*.bak*'` — one hit, O-012 still present.
+- `src-tauri/target/` tree contains `.bak` build-artifact files —
+  machine-generated; not in scope.
+
+**Findings delta.**
+- **O-011** — 16 → 17 runs.  Five new lock-body occurrences
+  (session215-command-support / session216-data-type-support /
+  session217-rpl-programming / session218-unit-tests /
+  code-review-2026-04-26); running count now **seventy-nine**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk); aged to 8 code-review-lane runs.
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 17 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 8 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-219-code-review.md`.
+
+### Session 220 — what shipped (command-support, post-ship doc-reconciliation)
+
+Post-ship doc-reconciliation pass.  Files edited: `docs/COMMANDS.md`
+(Counts stamp 215 → 220; session-log back-filled for sessions
+215 / 216 / 217 / 218 / 219-code-review — all doc-only or
+test-only with no register changes).  No source or test changes.
+Run-close: 5508/0.
+
+Log pointer: `logs/session-220.md`.
+
+### Session 221 — what shipped (data-type-support, post-ship)
+
+Post-ship doc-only pass.  Files edited: `docs/DATA_TYPES.md`
+(arithmetic section split — `+`/`-`/`*`/`/`/`^` pulled into dedicated
+subsection with per-op Notes rows and prose preamble; Last-updated
+stamp → Session 221).  No source or test changes.  Run-close: 5508/0.
+
+Log pointer: `logs/session-221.md`.
+
+### Session 222 — what shipped (rpl-programming, post-ship)
+
+Post-ship verification pass.  Files edited: `docs/RPL.md`
+(stamp "as of session 217" → "as of session 222"; session-log pointer
+updated).  No source or test changes.  Run-close: 5508/0.
+
+Log pointer: `logs/session-222.md`.
+
+### Session 223 — what shipped (unit-tests, post-ship snapshot refresh)
+
+Post-ship snapshot refresh.  Files edited: `docs/TESTS.md`
+(Last-updated stamp 218 → 223; release-window run count 17th → 18th;
+new coverage snapshot prepended absorbing sibling deltas 5508 → 5508;
+per-file table confirmed unchanged; session-223 log entry prepended).
+No source or test changes.  Run-close: 5508/0.
+
+**Findings delta.**
+- **O-011** — 17 → 18 runs.  Four new lock-body occurrences
+  (session220-command-support / session221-data-type-support /
+  session222-rpl-programming / session223-unit-tests); running count
+  now **eighty-three** since session 106.  `[deferred - post-ship]`.
+- **O-012** — not re-verified this run (unit-tests lane, no bak-file
+  sweep in scope); carried forward at 8 code-review-lane runs.
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 18 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 8 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-223.md`.
+
+### Session 224-code-review — what shipped (code-review, twenty-ninth run)
+
+Post-ship audit pass.  Files edited: `docs/REVIEW.md`
+(Last-updated stamp bumped to session 224-code-review; preamble
+rewritten to fold in sessions 220–223; baseline updated to
+session 224-code-review, gates 5508/66/22 unchanged; O-011
+aged 18 → 19 runs, running count eighty-three → eighty-four;
+O-012 re-verified present, aged to 9 code-review-lane runs;
+O-013 filed — AI subsystem `system-prompt.js` RPL_CATALOG drift
+risk; session-log entries for 220/221/222/223/224-code-review added),
+`logs/session-224-code-review.md` (session log).
+No source or test changes.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 220" — current.
+  Sessions 221–223 added no new register() calls.
+  Register count claim 482/461 — verified correct.
+- DATA_TYPES.md Last-updated = "Session 221" — current.
+- TESTS.md Last-updated = "Session 223" — current.
+- RPL.md stamp = "as of session 222" — current.
+- `www/src/ai/` subsystem (chat-bot.js, llm.js, llm-worker.js,
+  system-prompt.js) identified as unreviewed; O-013 filed.
+- `find www/ -name '*.bak*'` — one hit, O-012 still present
+  (`www/src/ui/keyboard.js.bak`; mtime 2026-04-25).
+- Lane-task-id drift: none found.
+- `src/...` path drift: surviving historical mentions in RPL.md
+  and TESTS.md confirmed as audit-trail passages; preserved per policy.
+
+**Findings delta.**
+- **O-011** — 18 → 19 runs.  One new lock-body occurrence
+  (session224-code-review); running count now **eighty-four**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk, mtime 2026-04-25); aged to 9 code-review-lane
+  runs.  `[deferred - post-ship]`.
+- **O-013** — new finding filed.  `www/src/ai/system-prompt.js`
+  RPL_CATALOG drift risk.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 19 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 9 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — new.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-224-code-review.md`.
+
+### Session 225 — what shipped (command-support, post-ship doc-reconciliation)
+
+Post-ship doc-reconciliation pass.  Files edited: `docs/COMMANDS.md`
+(Counts stamp 220 → 225; session-log back-filled for sessions
+221 / 222 / 223 / 224-code-review — all doc-only or test-only with
+no register changes; register-count prose updated: `grep -c` now
+480 / 461, −2 in total from session-220 comment-cleanup removing
+two comment lines that contained `register(`, not actual op changes),
+`docs/REVIEW.md` (this entry), `logs/session-225.md` (session log).
+No source or test changes.  Run-close: 5508/0.
+
+**Findings delta.**
+- **O-011** — 19 → 20 runs.  One new lock-body occurrence
+  (session225-command-support); running count now **eighty-five**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — carried forward at 9 code-review-lane runs.
+  `[deferred - post-ship]`.
+- **O-013** — carried forward, new (AI catalog drift risk).
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 20 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 9 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 1 run.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-225.md`.
+
+### Session 226 — what shipped (data-type-support, Q column + rejection pins)
+
+Q column inserted into all DATA_TYPES.md coverage-matrix tables; three
+CONJ/RE/IM Q rejection guards added to `tests/test-types.mjs`.
+Files edited: `docs/DATA_TYPES.md` (Last-updated stamp 221→226; Q column
+added to 12 tables; Next-session queue item 1 closed; "Resolved this
+session (226)" block added), `tests/test-types.mjs` (+3 session226:
+rejection assertions for CONJ/RE/IM on Rational), `docs/REVIEW.md`
+(this entry), `logs/session-226.md` (session log).
+No changes to ops.js or algebra.js.  Run-close: 5511/0/0.
+
+**Findings delta.**
+- **O-011** — 20 runs unchanged (no new lock-body occurrence this run;
+  ops.js not edited); running count stays **eighty-five** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — carried forward at 9 code-review-lane runs.
+  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk).
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 20 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 9 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 1 run.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-226.md`.
+
+### Session 227 — what shipped (rpl-programming, verification pass)
+
+Post-ship verification pass — no source or test changes.
+Files edited: `docs/RPL.md` (status stamp 222→227; session 222 pointer
+demoted from "is this run" to past tense; session 227 pointer entry
+added; footnote extended with 222→227 demotion record),
+`docs/REVIEW.md` (this entry), `logs/session-227.md` (session log).
+Run-close: 5511/0/22.
+
+**Findings delta.**
+- **O-011** — 20 runs unchanged (no new lock-body occurrence this run;
+  ops.js not edited); running count stays **eighty-five** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — carried forward at 9 code-review-lane runs.
+  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk).
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 20 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 9 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 1 run.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-227.md`.
+
+---
+
+### Session 228 — what shipped (unit-tests, post-ship snapshot refresh — PARTIAL RUN)
+
+Post-ship snapshot refresh — **partial run** (crashed after writing
+`docs/TESTS.md`; session log not written, lock not released).
+Files edited: `docs/TESTS.md` (Last-updated stamp 223 → 228; 19th
+release-window run; sibling deltas 5508 → 5511 absorbed; per-file
+table current; session-228 log entry prepended).  Lock
+`session228-unit-tests.json` was stale-pruned by session
+229-code-review (heartbeat frozen at startedAt, no session log
+written).  `docs/REVIEW.md` partial entry written, `logs/session-228.md`
+**not written**.  Run-close (as rebuilt from TESTS.md): 5511/0/22.
+
+**Findings delta.**
+- **O-011** — no new lock-body occurrence per session-228 ledger entry;
+  running count stays **eighty-five** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — carried forward (stray backup file).  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk).  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 20 runs.
+- **O-012** `[deferred - post-ship]` (stray file).
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 2 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-228.md` — **NOT WRITTEN** (crashed run).
+
+---
+
+### Session 229-code-review — what shipped (code-review, thirtieth run)
+
+Post-ship audit pass.  Files edited: `docs/REVIEW.md`
+(Last-updated stamp bumped to session 229-code-review; preamble
+rewritten to fold in sessions 225–228; baseline updated to
+session 229-code-review, gates 5511/66/22; stale session228-unit-tests
+lock cleared; session-228 partial entry corrected and formalised;
+O-011 aged 20 → 21 runs, one new occurrence session229-code-review,
+running count eighty-five → eighty-six; O-012 re-verified present,
+aged to 10 code-review-lane runs; O-013 aged to 2 runs;
+session-log entries for 225/226/227/228/229-code-review added),
+`logs/session-229-code-review.md` (session log).
+No source or test changes.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 225" — mild stamp drift
+  (sessions 226/227/228/229 added no register() calls; count 480/461
+  still accurate; command-support lane may advance stamp next pass).
+- DATA_TYPES.md Last-updated = "Session 226" — current.
+- TESTS.md Last-updated = "Session 228" — current.
+- RPL.md stamp = "as of session 227" — current.
+- `find www/ -name '*.bak*'` — one hit, O-012 still present
+  (`www/src/ui/keyboard.js.bak`).
+- Lane-task-id drift: none found.
+- `src/...` path drift: surviving historical mentions in RPL.md
+  and TESTS.md confirmed as audit-trail passages; preserved per policy.
+- Session-228 orphaned run noted: unit-tests lane stale lock cleared,
+  session-228.md not present; unit-tests lane should write a skeleton
+  session-228.md on next pass if desired.
+
+**Findings delta.**
+- **O-011** — 20 → 21 runs.  One new lock-body occurrence
+  (session229-code-review); running count now **eighty-six**
+  since session 106.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk); aged to 10 code-review-lane runs.
+  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk); aged to
+  2 runs.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 21 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 10 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 2 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-229-code-review.md`.
+
+---
+
+### Session 232 — what shipped (rpl-programming, verification pass)
+
+Post-ship verification pass — no source or test changes.
+Files edited: `docs/RPL.md` (status stamp 227→232; session 227 pointer
+demoted from "is this run" to "was this lane"; session 232 pointer entry
+added), `docs/REVIEW.md` (this entry), `logs/session-232.md` (session log).
+Run-close: 5519/0/22.
+
+**Findings delta.**
+- **O-011** — no new lock-body occurrence this run (ops.js not edited);
+  running count stays **eighty-seven** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — carried forward at 10 code-review-lane runs.
+  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk).
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 21 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 10 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 2 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-232.md`.
+
+---
+
+### Session 233 — what shipped (unit-tests, snapshot refresh — PARTIAL RUN)
+
+Post-ship snapshot refresh — **partial run** (crashed after writing
+`docs/TESTS.md` and `docs/REVIEW.md`; session log not written,
+lock not released).
+Files edited: `docs/TESTS.md` (Last-updated stamp 228→233; new Coverage
+snapshot (session 233) block added above session-228 block; per-file
+table reflects +8 absorbed from sessions 229–232), `docs/REVIEW.md`
+(this entry).  Lock `session233-unit-tests.json` was stale-pruned by
+session 234-code-review (heartbeat frozen at startedAt, no session log
+written).  `logs/session-233.md` **not written**.
+Run-close (as rebuilt from TESTS.md): 5519/0/22.
+
+**Findings delta.**
+- **D-001** — confirmed resolved.  `test-persist.mjs` ran fully green
+  (66 / 0) at both run-entry and run-close; no failing assertion at
+  the `session076: snapshot missing casVx resets to default 'X'` site.
+  Resolution credit: ship-prep 2026-04-25 (already recorded in the
+  D-001 body as `[resolved - ship-prep 2026-04-25]`).  No change to
+  status text needed — confirming green gate held.
+- **O-011** — no new lock-body occurrence this run (ops.js not edited);
+  running count stays **eighty-seven** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-013** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 21 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 10 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 2 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-233.md` — **NOT WRITTEN** (crashed run).
+
+---
+
+### Session 234-code-review — what shipped (code-review, thirty-first run)
+
+Post-ship audit pass.  Files edited: `docs/REVIEW.md`
+(Last-updated stamp bumped to session 234-code-review; preamble
+rewritten to fold in sessions 230–233; baseline updated to
+session 234-code-review, gates 5519/66/22; stale session233-unit-tests
+lock stale-pruned by this run; session-233 partial-run block corrected
+to remove false session-log claim and add partial-run note; O-011
+aged 21 → 22 runs, one new occurrence session234-code-review, running
+count eighty-seven → eighty-eight; O-012 re-verified present, aged to
+11 code-review-lane runs; O-013 aged to 3 runs; session-log entries
+for 230/231/232/233/234-code-review added),
+`logs/session-234-code-review.md` (session log).
+No source or test changes.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 230" — mild stamp drift
+  (sessions 231–233 added no new register() calls; count 480/461
+  still accurate; command-support lane should advance stamp next pass).
+- DATA_TYPES.md Last-updated = "Session 231" — current.
+- TESTS.md Last-updated = "Session 233" — current (partial run; doc written).
+- RPL.md stamp = "as of session 232" — current.
+- `find www/ -name '*.bak*'` — one hit, O-012 still present
+  (`www/src/ui/keyboard.js.bak`).
+- Lane-task-id drift: none found.
+- `src/...` path drift: surviving historical mentions in RPL.md
+  and TESTS.md confirmed as audit-trail passages; preserved per policy.
+- O-013 (AI catalog drift): no new ops landed since session 229
+  (register count 461 unchanged); RPL_CATALOG scope unchanged; no
+  new drift materialised this interval.
+- Session 233 orphaned run noted: unit-tests lane stale lock pruned;
+  REVIEW.md block corrected; session-233.md not present. Unit-tests
+  lane should write a skeleton session-233.md on next pass if desired.
+- session230-command-support.json has scope/intent fields swapped in
+  the lock body (cosmetic artifact of how the lane wrote its lock;
+  not a behavior issue; lock released normally, session-230.md exists).
+
+**Findings delta.**
+- **O-011** — 21 → 22 runs.  One new lock-body occurrence
+  (session234-code-review); session 231 self-counted one occurrence
+  (session231-data-type-support.json, +1 → 87); sessions 230/232/233
+  recorded no new occurrences per their own ledger entries; net this
+  run: +1.  Running count now **eighty-eight** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk, mtime 2026-04-25); aged to 11 code-review-lane
+  runs.  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk); aged to
+  3 code-review-lane runs.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 22 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 11 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 3 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-234-code-review.md`.
+
+### Session 237 — what shipped (rpl-programming, post-ship verification pass)
+
+Post-ship verification pass.  Files edited: `docs/RPL.md`
+(status stamp bumped from "as of session 232" to "as of session 237";
+session-232 pointer demoted from "is this run" to "was this lane";
+session-237 pointer entry added), `docs/REVIEW.md` (this block),
+`logs/session-237.md` (session log).
+No source or test changes.
+
+**Findings delta.**
+- **O-011** — no new lock-body occurrence this run (ops.js not
+  edited); running count stays **eighty-eight** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — carried forward (`www/src/ui/keyboard.js.bak` still
+  present).  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk).
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 22 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 11 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 3 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-237.md`.
+
+### Session 238 — what shipped (unit-tests, post-ship snapshot refresh — partial run)
+
+Post-ship snapshot refresh.  Files edited: `docs/TESTS.md`
+(Last-updated stamp bumped from session 233 to session 238;
+session-238 coverage snapshot added; no new assertions — 5525/66/22
+unchanged from run-entry).
+Session log NOT written.  Lock (`utils/@locks/session238-unit-tests.json`)
+NOT released — crashed before cleanup.  Lock stale-pruned by
+session-235-code-review (heartbeat frozen at startedAt=1777226191;
+releaseReason field added).  Unit-tests lane should write a skeleton
+`logs/session-238.md` on next pass if desired.
+
+**Findings delta.**
+- **O-011** — sessions 235/236/237 each released without releaseReason
+  (+3); this run (238) stale-pruned WITH releaseReason by session-235-code-review
+  (0); running count advances per session-235-code-review.
+  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-013** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 22 runs (count deferred to session-235-code-review tally).
+- **O-012** `[deferred - post-ship]` (stray file) — 11 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 3 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-238.md` — **NOT WRITTEN** (crashed run).
+
+---
+
+### Session 235-code-review — what shipped (code-review, thirty-second run)
+
+Post-ship audit pass.  Files edited: `docs/REVIEW.md`
+(Last-updated stamp bumped to session 235-code-review; preamble
+rewritten to fold in sessions 235–238; baseline updated to session
+235-code-review, gates 5525/66/22; stale session238-unit-tests
+lock stale-pruned by this run; session-238 partial-run block added;
+O-011 aged 22 → 23 runs, +3 new occurrences from sessions 235/236/237
+releasing without releaseReason + 1 for this run's own lock, running
+count now **ninety-two** since session 106; O-012 re-verified present,
+aged to 12 code-review-lane runs; O-013 aged to 4 code-review-lane
+runs; session-log entries for 235/236/237/238/235-code-review added),
+`logs/session-235-code-review.md` (session log).
+No source or test changes.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 235" — current (sessions
+  236/237/238 added no new register() calls; count 480/461 still
+  accurate; mild stamp drift when command-support lane next runs).
+- DATA_TYPES.md Last-updated = "Session 236" — current.
+- TESTS.md Last-updated = "Session 238" — current (partial run; doc written).
+- RPL.md stamp = "as of session 237" — current.
+- `find www/ -name '*.bak*'` — one hit, O-012 still present
+  (`www/src/ui/keyboard.js.bak`).
+- Lane-task-id drift: none found.
+- `src/...` path drift: surviving historical mentions confirmed as
+  audit-trail passages; preserved per policy.
+- O-013 (AI catalog drift): register count 461 unchanged; no new
+  ops landed since session 231; RPL_CATALOG scope unchanged; no
+  new drift materialised this interval.
+- Session 238 orphaned run noted: unit-tests lane stale lock pruned;
+  TESTS.md updated, session-238.md not present.
+
+**Findings delta.**
+- **O-011** — 22 → 23 runs.  Three new lock-body occurrences since
+  session 234-code-review: session235-command-support,
+  session236-data-type-support, session237-rpl-programming (all
+  released without releaseReason, +3 → 91); session238-unit-tests
+  stale-pruned WITH releaseReason by this run (0); this run's own
+  lock (session235-code-review) will release without releaseReason
+  (+1 → 92).  Running count now **ninety-two** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk); aged to 12 code-review-lane runs.
+  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk); aged to
+  4 code-review-lane runs.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 23 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 12 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 4 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-235-code-review.md`.
+
+---
+
+### Session 239 — what shipped (command-support, doc-reconciliation pass)
+
+Doc-reconciliation pass.  Files edited: `docs/COMMANDS.md`
+(Counts stamp 235 → 239; session-log back-fill for sessions
+235-code-review / 236 / 237 / 238 added), `logs/session-239.md`
+(session log).
+No source or test changes.  Run-close: 5525/0/22.
+
+**Findings delta.**
+- **O-011** — no new lock-body occurrence in ops.js; one occurrence
+  for this run's own lock (session239-command-support released
+  without releaseReason, +1 → 93 running count).
+  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-013** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 23 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 12 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 4 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-239.md`.
+
+---
+
+### Session 240 — what shipped (data-type-support, Q-cell audit stat-dist + combinatorial)
+
+Q-cell audit pass.  Files edited: `tests/test-types.mjs` (+16
+session-240 assertions: 14 rejection pins for GAMMA/LNGAMMA/ERF/ERFC/
+BETA/UTPC/UTPF/UTPT/HEAVISIDE/DIRAC/COMB/PERM/IQUOT/IREMAINDER Q=✗;
+2 acceptance pins for XROOT Q=✓ via `toRealOrThrow` + `^` delegation),
+`docs/DATA_TYPES.md` (Last-updated stamp 236 → 240; 15 Q-cell entries
+updated in coverage matrix; Notes column updated; next-session queue
+item 5 struck through), `logs/session-240.md` (session log).
+No source changes.  Run-close: 5525 → 5541 / 0 / 22.
+
+**Findings delta.**
+- **O-011** — one occurrence for this run's own lock
+  (session240-data-type-support released without releaseReason,
+  +1 → 94 running count).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-013** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 23 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 12 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 4 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-240.md`.
+
+---
+
+### Session 241 — what shipped (rpl-programming, post-ship verification pass)
+
+Post-ship verification pass.  Files edited: `docs/RPL.md`
+(status stamp 237 → 241), `docs/REVIEW.md` (session-241 block added),
+`logs/session-241.md` (session log).
+No source or test changes.  Run-close: 5541/0/22.
+
+**Findings delta.**
+- **O-011** — one occurrence for this run's own lock
+  (session241-rpl-programming released without releaseReason,
+  +1 → 95 running count).  `[deferred - post-ship]`.
+- **O-012** — carried forward (`www/src/ui/keyboard.js.bak` still
+  present).  `[deferred - post-ship]`.
+- **O-013** — carried forward (AI catalog drift risk).
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 23 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 12 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 4 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-241.md`.
+
+---
+
+### Session 242-code-review — what shipped (code-review, thirty-third run)
+
+Post-ship audit pass.  Files edited: `docs/REVIEW.md`
+(Last-updated stamp bumped to session 242-code-review; preamble
+rewritten to fold in sessions 239–241; baseline block updated to
+session 242-code-review, gates 5541/66/22; O-011 aged 23 → 24 runs,
+three new occurrences session239-command-support,
+session240-data-type-support, session241-rpl-programming all released
+without releaseReason (+3 → 95); this run's own lock
+session242-code-review releases without releaseReason (+1 → 96);
+running count now **ninety-six** since session 106; O-012 re-verified
+present, aged to 13 code-review-lane runs; O-013 re-verified present,
+aged to 5 code-review-lane runs; session-log entries for
+239/240/241/242-code-review added),
+`logs/session-242-code-review.md` (session log).
+No source or test changes.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 239" — current (sessions
+  240/241 added no new register() calls; count 480/461 still
+  accurate; mild stamp drift when command-support lane next runs).
+- DATA_TYPES.md Last-updated = "Session 240" — current.
+- TESTS.md Last-updated = "Session 238" — mild stamp drift
+  (session 240 added +16 assertions: 5525 → 5541; unit-tests lane
+  should refresh snapshot on next pass).
+- RPL.md stamp = "as of session 241" — current.
+- `find www/ -name '*.bak*'` — one hit, O-012 still present
+  (`www/src/ui/keyboard.js.bak`).
+- Lane-task-id drift: none found.
+- `src/...` path drift: surviving historical mentions confirmed as
+  audit-trail passages; preserved per policy.
+- O-013 (AI catalog drift): register count 461 unchanged;
+  RPL_CATALOG scope unchanged; no new drift materialised.
+- session220-code-review.json: lock body contains literal
+  `$(date +%s)` strings for startedAt/heartbeatAt (bash variable
+  substitution never executed when the file was written); released
+  field is `false`.  This is a historical artifact from session 220
+  that has no operational impact — the stale-prune logic would fail
+  to parse the timestamp and skip this file; normal code-review
+  operations are unaffected.  No action needed.
+
+**Findings delta.**
+- **O-011** — 23 → 24 runs.  Three new lock-body occurrences since
+  session 235-code-review: session239-command-support,
+  session240-data-type-support, session241-rpl-programming (all
+  released without releaseReason, +3 → 95); this run's own
+  lock (session242-code-review) will release without releaseReason
+  (+1 → 96).  Running count now **ninety-six** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still on disk, mtime 2026-04-25); aged to 13 code-review-lane
+  runs.  `[deferred - post-ship]`.
+- **O-013** — re-verified present; aged to 5 code-review-lane
+  runs.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 24 runs.
+- **O-012** `[deferred - post-ship]` (stray file) — 13 code-review-lane runs.
+- **O-013** `[deferred - post-ship]` (AI catalog drift) — 5 runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-242-code-review.md`.
+
+---
+
+### Session 243 — what shipped (command-support, post-ship doc-reconciliation + O-013 audit)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-command-support`.
+**Lock.** `utils/@locks/session243-command-support.json`, released at
+end of run.
+
+**Work done.**
+- COMMANDS.md Counts stamp advanced from session 239 → 243.
+- Session-log entries back-filled for sessions 239 / 240 / 241 /
+  242-code-review / 242 (five sibling sessions without prior
+  COMMANDS.md entries).
+- **O-013 audit closed:** spot-checked all 20 RPL_CATALOG command
+  names in `www/src/ai/system-prompt.js` against `docs/COMMANDS.md`
+  and live `register()` calls in `ops.js` — every catalog entry
+  (`+ - * / ^ NEG INV ABS SQ SQRT EXP LN LOG ALOG FACT MOD XROOT
+  SIN COS TAN ASIN ACOS ATAN RAD DEG GRD SWAP DROP DUP DUP2 OVER
+  ROT CLEAR STO RCL PURGE VARS HOME UPDIR DERIV INTEG SOLVE PROOT
+  EXPAND COLLECT FACTOR PARTFRAC SUBST EVAL →NUM LIMIT GET PUT SIZE`)
+  confirmed registered and ✓.  No drift.  Added "last audited —
+  session 243 (2026-04-26)" comment to `system-prompt.js` above the
+  `RPL_CATALOG` constant.
+- No source or test changes.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5541 / 66 / 22.  Run-close: **5541 / 66 / 22**.
+
+**Findings delta.**
+- **O-011** — lock session243-command-support will release without
+  releaseReason (+1 → 97).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-013** — **[resolved - session 243]**.  All RPL_CATALOG entries
+  verified correct; "last audited" comment added to `system-prompt.js`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 25 runs, count 97.
+- **O-012** `[deferred - post-ship]` (stray file) — 13 code-review-lane runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-243.md`.
+
+### Session 244 — what shipped (data-type-support, Z/L/V/M cell audit)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-data-type-support`.
+**Lock.** `utils/@locks/session244-data-type-support.json`, released at
+end of run.
+
+**Work done.**
+- **ERF / ERFC Z-cell doc-lag promotion** (`·`→`✓`): `_erfScalar` /
+  `_erfcScalar` both have `isInteger` branch; Z column was stale.
+  +4 pins in `tests/test-types.mjs`.
+- **UTPC / UTPF / UTPT Z-cell doc-lag promotion** (`·`→`✓`): shared
+  `asReal` helper accepts Integer; Z column was stale.  +3 pins.
+- **BETA L/V/M audit**: L `·`→`✓` (`_withListBinary` wrapper distributes
+  element-wise); V/M `·`→`✗` (no `_withVMBinary`; `_betaScalar` receives
+  Vector/Matrix as `a` → `null` → Bad argument type).  +4 pins.
+- **UTPC / UTPF / UTPT L/V/M rejection pins** (`·`→`✗`): bare handlers,
+  no list/vector/matrix wrappers; List/Vector reach `asReal` → Bad
+  argument type.  +8 pins.
+- Total: 16 cell promotions, +19 assertions (5541 → 5560); no source
+  changes — guards already live.
+
+**Findings delta.**
+- **O-011** — lock session244-data-type-support released without
+  releaseReason (+1 → 98).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-013** — already resolved session 243; no change.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 25 runs, count 98.
+- **O-012** `[deferred - post-ship]` (stray file) — 13 code-review-lane runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-244.md`.
+
+---
+
+### Session 245 — what shipped (rpl-programming, verification pass)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-rpl-programming`.
+**Lock.** `utils/@locks/session245-rpl-programming.json`, released at
+end of run.
+
+**Work done.**
+- Post-ship verification pass: confirmed 5560 / 0 clean baseline.
+- `docs/RPL.md` status stamp bumped from "as of session 241" to
+  "as of session 245".
+- No source or test changes.
+
+**Findings delta.**
+- **O-011** — lock session245-rpl-programming released without
+  releaseReason (+1 → 99).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 25 runs, count 99.
+- **O-012** `[deferred - post-ship]` (stray file) — 13 code-review-lane runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-245.md`.
+
+---
+
+### Session 246 — what shipped (unit-tests, snapshot refresh)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-unit-tests`.
+**Lock.** `utils/@locks/session246-unit-tests.json`, released at
+end of run.
+
+**Work done.**
+- `docs/TESTS.md` stamp advanced from session 242 → 246.
+- Coverage snapshot absorbed sibling deltas 5541 → 5560 (+19 over
+  sessions 243–245: s243 +0; s244 +19 in test-types.mjs; s245 +0).
+- Session 246 itself: 0 new assertions (scope-capped snapshot-only run).
+- No source or test changes.
+
+**Findings delta.**
+- **O-011** — lock session246-unit-tests released without
+  releaseReason (+1 → 100).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 25 runs, count 100.
+- **O-012** `[deferred - post-ship]` (stray file) — 13 code-review-lane runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-246.md`.
+
+---
+
+### Session 246-code-review — what shipped (thirty-fourth review-lane run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-code-review`.
+**Lock.** `utils/@locks/session246-code-review.json`, released at
+end of run.
+
+**Work done.**
+- Folded in sibling sessions 243 (command-support), 244 (data-type-support),
+  245 (rpl-programming), 246 (unit-tests).
+- Baseline verified at entry: 5560 / 66 / 22 — fully green.
+- Register count verified: 480 / 461 — unchanged.
+- O-013 confirmed resolved (session 243); `system-prompt.js` "last
+  audited" comment in place.
+- Spot checks: forbidden-pattern grep clean; DATA_TYPES.md stamp session 244
+  ✓; RPL.md stamp session 245 ✓; COMMANDS.md stamp session 243 ✓;
+  TESTS.md stamp session 246 ✓.
+- No new findings filed.  Open queue unchanged: O-011 + O-012 (both
+  `[deferred - post-ship]`).
+- Two doc edits: REVIEW.md preamble update + this session log.
+
+**Findings delta.**
+- **O-011** — 24 → 25 runs.  +4 new occurrences (sessions 243/244/245/246
+  all released without releaseReason) + 1 for this run's own lock =
+  running count now **one hundred one** since session 106.
+  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak` still
+  in tree).  Aged to 14 code-review-lane runs.  `[deferred - post-ship]`.
+- **O-013** — resolved session 243.  No further aging.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 25 runs, count 101.
+- **O-012** `[deferred - post-ship]` (stray file) — 14 code-review-lane runs.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-246-code-review.md`.

@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 207 — 2026-04-26)
+## Counts (as of session 243 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -207,8 +207,11 @@ touched the row, and any known caveats worth carrying forward.
 - Will-not-support (by design): 9 menu groups
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
-`grep -c "register(" www/src/rpl/ops.js` = **482** at the end of session
-195 (was 481 at the end of session 190, was 471 at the end of session
+`grep -c "register(" www/src/rpl/ops.js` = **480** at the end of session
+225 (was 482 at the end of sessions 195–224; dropped by −2 at session 225
+because the working-tree comment-cleanup pass removed two comment lines
+that happened to contain `register(` — no actual registration change;
+was 481 at the end of session 190, was 471 at the end of session
 144, was 466 at the end of session 139, was 463 at the end of session
 134, was 458 at the end of session 129, was 455 at the end of session
 124, was 448 at the end of session 119).  The +1 between session 190
@@ -805,6 +808,437 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 243** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass.  Counts stamp advanced from
+  session 239 → 243; session-log entries back-filled for sessions
+  239 / 240 / 241 / 242-code-review / 242 (five sibling sessions with no
+  prior COMMANDS.md entries).  O-013 audit: spot-checked all RPL_CATALOG
+  entries in `www/src/ai/system-prompt.js` against `docs/COMMANDS.md`
+  and ops.js `register()` calls — all 20 catalog command names
+  confirmed registered and ✓; no drift found.  Added "last audited"
+  comment to `system-prompt.js` above RPL_CATALOG.  No source or
+  test edits.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5541 / 66 / 22.  Run-close: **5541 / 66 / 22**.
+  Lock = `utils/@locks/session243-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, www/src/ai/system-prompt.js, logs/]`,
+  released at end of run.
+
+- **session 242** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh (22nd unit-tests run).  TESTS.md
+  "Last updated" stamp 238 → 242; full coverage snapshot added for
+  session 242 absorbing sibling deltas since session 233 (+22
+  assertions: sessions 236 +6 and 240 +16); per-file count table
+  updated to 5541 / 0.  Note: session-238 snapshot gap absorbed
+  (no `## Coverage snapshot (session 238)` heading had existed;
+  back-filled here).  No source changes.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5541 / 66 / 22.  Run-close: **5541 / 66 / 22**.
+  Lock = `utils/@locks/session242-unit-tests.json`, scope
+  `[docs/TESTS.md, logs/]`, released at end of run.
+
+- **session 242-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Thirty-third review-lane run; post-ship audit.  REVIEW.md preamble
+  folded in sessions 239–241; baseline updated to 5541 / 66 / 22;
+  O-011 aged 23 → 24 runs (running count ninety-six since session 106;
+  +3 new occurrences sessions 239/240/241 + this run's own lock = +1
+  for 96 total); O-012 re-verified present, aged to 13 code-review-lane
+  runs; O-013 aged to 5 code-review-lane runs; session220-code-review
+  lock anomaly noted (literal `$(date +%s)` strings, historical artifact,
+  no action required); TESTS.md stamp-drift noted (unit-tests lane to
+  refresh).  No source or test changes.  No ✗ → ✓ row transitions.
+  Run-entry: 5541 / 66 / 22.  Run-close: **5541 / 66 / 22**.
+  Lock = `utils/@locks/session242-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 241** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification pass (doc-only).  RPL.md "Current implementation
+  status" stamp advanced from session 237 → 241; session-241 pointer
+  entry added to pointer-prose log.  REVIEW.md session-241 block added
+  (O-011 running count ninety-five; O-012 and O-013 carried forward).
+  No source or test changes.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5541 / 66 / 22.  Run-close: **5541 / 66 / 22**.
+  Lock = `utils/@locks/session241-rpl-programming.json`, scope
+  `[docs/RPL.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 240** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Q-cell audit: stat-dist family (GAMMA / LNGAMMA / ERF / ERFC / BETA /
+  UTPC / UTPF / UTPT / HEAVISIDE / DIRAC — all Q=✗, 10 pins) and
+  combinatorial family (COMB / PERM / IQUOT / IREMAINDER Q=✗, XROOT
+  Q=✓, 6 pins).  +16 assertions in `tests/test-types.mjs` (1077 → 1093);
+  DATA_TYPES.md Q-column cells updated for 15 ops.  No source changes.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5525 / 66 / 22.  Run-close: **5541 / 66 / 22** (+16).
+  Lock = `utils/@locks/session240-data-type-support.json`, scope
+  `[tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`, released at
+  end of run.
+
+- **session 239** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass.  Counts stamp advanced from
+  session 235 → 239; session-log entries back-filled for sessions
+  235-code-review / 236 / 237 / 238 (four sibling sessions with no
+  prior COMMANDS.md entries).  No source or test edits.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5525 / 66 / 22.  Run-close: **5525 / 66 / 22**.
+  Lock = `utils/@locks/session239-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 238** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh (partial run — crashed after updating
+  `docs/TESTS.md`; session log was written post-hoc; lock stale-pruned
+  by session 235-code-review).  TESTS.md "Last updated" stamp 233 → 238;
+  sibling-deltas-absorbed table updated (sessions 229–237).  No source
+  or test changes.  No ✗ → ✓ row transitions.
+  Run-entry: 5525 / 66 / 22.  Run-close: **5525 / 66 / 22**.
+  Lock = `utils/@locks/session238-unit-tests.json`, stale-pruned by
+  session 235-code-review.
+
+- **session 237** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification pass (doc-only).  RPL.md "Current implementation
+  status" stamp advanced from session 232 → 237; session-237 pointer
+  entry added to pointer-prose log.  REVIEW.md session-237 block added
+  (O-011 running count eighty-eight, no new occurrence this run; O-012
+  and O-013 carried forward).  No source or test changes.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5525 / 66 / 22.  Run-close: **5525 / 66 / 22**.
+  Lock = `utils/@locks/session237-rpl-programming.json`, scope
+  `[docs/RPL.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 236** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Q-cell audit: LNP1 / EXPM / TRUNC / ZETA / LAMBERT / PSI.  Added
+  6 pins to `tests/test-types.mjs` (LNP1 Rational→Real acceptance pin,
+  EXPM Rational→Real acceptance pin, TRUNC Rational rejection, ZETA /
+  LAMBERT / PSI Rational rejections).  DATA_TYPES.md Q-column cells
+  updated for all six ops (LNP1 + EXPM: `·` → `✓`; TRUNC + ZETA +
+  LAMBERT + PSI: `·` → `✗`).  No source changes.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5519 / 66 / 22.  Run-close: **5525 / 66 / 22** (+6).
+  Lock = `utils/@locks/session236-data-type-support.json`, scope
+  `[tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`, released at
+  end of run.
+
+- **session 235-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Thirty-second review-lane run; post-ship audit.  Stale
+  session238-unit-tests lock stale-pruned at acquisition.  REVIEW.md
+  last-updated stamp bumped to session 235-code-review; preamble
+  rewritten to fold in sessions 235–238; baseline updated to
+  5525 / 66 / 22; O-011 aged 22 → 23 runs (running count ninety-two
+  since session 106; +3 new occurrences: sessions 235 / 236 / 237 all
+  released without releaseReason + this run's own lock = +1 for 92
+  total); O-012 re-verified present, aged to 12 code-review-lane runs;
+  O-013 aged to 4 runs.  No source or test changes.
+  Run-entry: 5525 / 66 / 22.  Run-close: **5525 / 66 / 22**.
+  Lock = `utils/@locks/session235-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 235** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass.  Counts stamp advanced from
+  session 230 → 235; session-log entries back-filled for sessions
+  231 / 232 / 233 / 234-code-review (four sibling sessions with no
+  prior COMMANDS.md entries).  No source or test edits.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5519 / 66 / 22.  Run-close: **5519 / 66 / 22**.
+  Lock = `utils/@locks/session235-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 234-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Post-ship audit pass (thirty-first review-lane run).  REVIEW.md
+  last-updated stamp bumped to session 234-code-review; preamble
+  rewritten to fold in sessions 230–233; baseline updated to
+  5519 / 66 / 22; stale session233-unit-tests lock pruned; session-233
+  partial-run block corrected in REVIEW.md; O-011 aged 21 → 22 runs
+  (running count eighty-eight since session 106); O-012 re-verified
+  present, aged to 11 code-review-lane runs; O-013 aged to 3 runs.
+  No source or test changes.
+  Run-entry: 5519 / 66 / 22.  Run-close: **5519 / 66 / 22**.
+  Lock = `utils/@locks/session234-code-review.json`.
+
+- **session 233** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh (partial run — crashed after writing
+  docs/TESTS.md and docs/REVIEW.md; session log not written, lock
+  not released).  TESTS.md "Last updated" stamp 228 → 233; new
+  coverage snapshot (session 233) block added; per-file table updated
+  (test-types.mjs 1063 → 1071; others unchanged).  No new test
+  assertions; no source edits.  Lock stale-pruned by session
+  234-code-review.
+  Run-entry: 5519 / 66 / 22.  Run-close: **5519 / 66 / 22**.
+  Lock = `utils/@locks/session233-unit-tests.json` (stale-pruned).
+
+- **session 232** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification pass — doc-only.  RPL.md status stamp
+  227 → 232; session-232 pointer entry added; session-227 entry
+  demoted to past tense.  REVIEW.md session-232 block added
+  (O-011/O-012/O-013 carried forward, count stays eighty-seven).
+  No source or test edits.
+  Run-entry: 5519 / 66 / 22.  Run-close: **5519 / 66 / 22**.
+  Lock = `utils/@locks/session232-rpl-programming.json`, scope
+  `[docs/RPL.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 231** (2026-04-26) — `rpl5050-data-type-support` lane.
+  CONJ / RE / IM Rational widening + Q-cell audit for ARG / % / %T /
+  %CH / GCD / LCM.  Source change: `_conjScalar`, `_reScalar`,
+  `_imScalar` each widened to accept Rational (was: Real / Integer
+  only); three session-226 rejection pins replaced by four acceptance
+  pins in `tests/test-types.mjs` (net +1); DATA_TYPES.md CONJ / RE /
+  IM Q-column ✗ → ✓.  Q-audit pass: ARG / % / %T / %CH / GCD / LCM —
+  source widening + 7 pins (+7 assertions).  DATA_TYPES.md stamp
+  refreshed to Session 231.  No new registrations.
+  Run-entry: 5511 / 66 / 22.  Run-close: **5519 / 66 / 22** (+8).
+  Lock = `utils/@locks/session231-data-type-support.json`, scope
+  `[www/src/rpl/ops.js, tests/test-types.mjs, docs/DATA_TYPES.md,
+  docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 230** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass.  Counts stamp advanced from
+  session 225 → 230; session-log entries back-filled for sessions
+  226 / 227 / 228 / 229-code-review (four sibling sessions with no
+  prior COMMANDS.md entries).  No source or test edits.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5511 / 66 / 22.  Run-close: **5511 / 66 / 22**.
+  Lock = `utils/@locks/session230-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 229-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Post-ship audit pass (thirtieth review-lane run).  REVIEW.md
+  last-updated stamp bumped to session 229-code-review; preamble
+  rewritten to fold in sessions 225–228; baseline confirmed 5511 / 66 / 22.
+  O-011 aged 20 → 21 runs (running count now eighty-six lock-body
+  occurrences since session 106).  Stale `session228-unit-tests` lock
+  cleared (heartbeat frozen; TESTS.md had been written but session log
+  and lock release had not completed).  O-012 re-verified present.
+  O-013 aged to 2 runs.  No source or test changes.
+  Run-entry: 5511 / 66 / 22.  Run-close: **5511 / 66 / 22**.
+  Lock = `utils/@locks/session229-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 228** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Partial run.  TESTS.md "Last updated" stamp 223 → 228; session-228
+  coverage snapshot added; sibling-delta narrative for sessions 224–227
+  added (net +3, 5508 → 5511).  Session log written retrospectively.
+  Lock not released by this run; stale lock cleared by session 229-code-review.
+  Run-entry: 5511 / 66 / 22.  Run-close: **5511 / 66 / 22**.
+  Lock = `utils/@locks/session228-unit-tests.json`, scope
+  `[docs/TESTS.md, docs/REVIEW.md, logs/]`.
+
+- **session 227** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification pass (doc-only).  RPL.md status stamp 222 → 227;
+  session-227 pointer entry added; session-222 entry demoted to past tense.
+  No source or test edits.
+  Run-entry: 5511 / 66 / 22.  Run-close: **5511 / 66 / 22**.
+  Lock = `utils/@locks/session227-rpl-programming.json`, scope
+  `[docs/RPL.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 226** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Q column added to all twelve DATA_TYPES.md coverage-matrix tables
+  (column inserted between Z and B/C in each table; values derived
+  from already-pinned assertions only — no aspirational ✓).  +3
+  CONJ/RE/IM Q-rejection pins in `tests/test-types.mjs` pinning
+  `CONJ Rational(1,2)` / `RE Rational(1,2)` / `IM Rational(1,2)` → Bad
+  argument type; documents a known gap (Q ⊂ R so those scalars should
+  accept Rational, but the `isRational` branch is missing — post-ship
+  widening candidate).  DATA_TYPES.md stamp refreshed to Session 226.
+  No `register()` changes.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5511 / 66 / 22** (+3).
+  Lock = `utils/@locks/session226-data-type-support.json`, scope
+  `[www/src/rpl/ops.js, tests/test-types.mjs, docs/DATA_TYPES.md,
+  docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 225** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass. Counts stamp advanced from
+  session 220 → 225; session-log entries back-filled for sessions
+  221 / 222 / 223 / 224-code-review (four sibling sessions with no
+  prior COMMANDS.md entries). No source or test edits.
+  No ✗ → ✓ row transitions. `register()` count: `grep -c` drops
+  480 / 461 (total / top-level); −2 in total from session-220
+  comment-cleanup removing two comment lines containing `register(`;
+  no actual registration change.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session225-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 224-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Post-ship audit pass (twenty-ninth review-lane run). REVIEW.md
+  last-updated stamp bumped to session 224-code-review; preamble
+  rewritten to fold in sessions 220–223; baseline updated to
+  5508 / 66 / 22. O-011 re-verified + aged 18 → 19 runs (running
+  count eighty-four lock-body occurrences since session 106).
+  O-012 re-verified present (`www/src/ui/keyboard.js.bak`), aged to
+  9 code-review-lane runs. O-013 filed (`www/src/ai/system-prompt.js`
+  RPL_CATALOG drift risk; `[deferred - post-ship]`). Session-log
+  entries for 220/221/222/223/224-code-review appended to REVIEW.md.
+  No source or test changes.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session224-code-review.json`.
+
+- **session 223** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh (eighteenth release-window unit-tests
+  run). TESTS.md "Last updated" stamp advanced from session 218 →
+  223; session-223 coverage snapshot prepended (sibling delta +0,
+  5508 → 5508 unchanged); per-file table confirmed unchanged.
+  No new assertions; no source edits.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session223-unit-tests.json`.
+
+- **session 222** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification-only pass. RPL.md status stamp bumped
+  "as of session 217" → "as of session 222"; session-222 block added.
+  No source or test edits.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session222-rpl-programming.json`.
+
+- **session 221** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Post-ship doc-only pass. DATA_TYPES.md arithmetic section split:
+  `+`/`-`/`*`/`/`/`^` pulled into a dedicated subsection with
+  per-op Notes rows and prose preamble (BinInt masking, Unit
+  dim-algebra, Tagged binary tag-drop contracts); unary-sign table
+  renamed to "Reference rows — unary sign/complex ops (NEG/CONJ/
+  RE/IM)". "Last updated" stamp → Session 221. No source or test
+  edits.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session221-data-type-support.json`.
+
+- **session 220** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass. Counts stamp advanced from
+  session 215 → 220; session-log entries back-filled for sessions
+  215 / 216 / 217 / 218 / 219-code-review (five sibling sessions
+  with no prior COMMANDS.md entries). No source or test edits.
+  No ✗ → ✓ row transitions. `register()` count unchanged at 482 / 461.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session220-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 219-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Post-ship audit pass (twenty-eighth review-lane run). REVIEW.md
+  last-updated stamp bumped to session 219-code-review; preamble
+  rewritten to fold in sessions 215–218; baseline updated to
+  5508 / 66 / 22. O-011 re-verified + aged 16 → 17 runs (running
+  count seventy-nine lock-body occurrences since session 106).
+  O-012 re-verified present (`www/src/ui/keyboard.js.bak`), aged to
+  8 code-review-lane runs. Session-log entries for 215/216/217/218/
+  219-code-review appended to REVIEW.md. No source or test changes.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/code-review-2026-04-26.json`.
+
+- **session 218** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh. TESTS.md "Last updated" stamp advanced
+  from session 214 → 218; session-218 coverage snapshot prepended
+  (absorbing sibling delta +5 from session 216, 5503 → 5508);
+  per-file table updated (test-types.mjs 1055 → 1060). No new
+  assertions; no source edits.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session218-unit-tests.json`.
+
+- **session 217** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification-only pass. RPL.md status stamp bumped
+  "as of session 213" → "as of session 217"; session-217 block added.
+  No source or test edits.
+  Run-entry: 5508 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session217-rpl-programming.json`.
+
+- **session 216** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Post-ship stale-`·`-cell promotion pass. PSI L/V/M cells promoted
+  from `·` to `✓` in DATA_TYPES.md; +5 hard assertions in
+  `tests/test-types.mjs` (`session216:` labels: PSI L-empty, L n=1,
+  L n=2, V, M). DATA_TYPES.md "Last updated" stamp → Session 216.
+  No source changes.
+  Run-entry: 5503 / 66 / 22.  Run-close: **5508 / 66 / 22**.
+  Lock = `utils/@locks/session216-data-type-support.json`.
+
+- **session 215** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass. Counts stamp advanced from
+  session 211 → 215; session-log entries back-filled for sessions
+  211-code-review / 212 / 213 / 214 (four sibling sessions with no
+  prior COMMANDS.md entries). No source or test edits.
+  No ✗ → ✓ row transitions. `register()` count unchanged at 482 / 461.
+  Run-entry: 5503 / 66 / 22.  Run-close: **5503 / 66 / 22**.
+  Lock = `utils/@locks/session215-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 214** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh. TESTS.md "Last updated" stamp advanced
+  from session 210 → 214; session-214 coverage snapshot prepended
+  (absorbing sibling delta +10 from session 212, 5493 → 5503);
+  per-file table updated (test-types.mjs 1045 → 1055). No new
+  assertions; no source edits.
+  Run-entry: 5503 / 66 / 22.  Run-close: **5503 / 66 / 22**.
+  Lock = `utils/@locks/session214-unit-tests.json`.
+
+- **session 213** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification-only pass. RPL.md status stamp bumped
+  "as of session 209" → "as of session 213"; session-213 block added.
+  No source or test edits.
+  Run-entry: 5503 / 66 / 22.  Run-close: **5503 / 66 / 22**.
+  Lock = `utils/@locks/session213-rpl-programming.json`.
+
+- **session 212** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Post-ship stale-`·`-cell promotion pass. ZETA and LAMBERT Z/L/V/M
+  cells promoted from `·` to `✓` in DATA_TYPES.md; confirmed via
+  probe that both `_zetaScalar` and `_lambertScalar` accept Integer
+  inputs and that List/Vector/Matrix wrapper paths route correctly.
+  +10 hard assertions in `tests/test-types.mjs` (`session212:` labels).
+  DATA_TYPES.md header stamp bumped to session 212. No source changes.
+  Run-entry: 5493 / 66 / 22.  Run-close: **5503 / 66 / 22**.
+  Lock = `utils/@locks/session212-data-type-support.json`.
+
+- **session 211-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Post-ship audit (twenty-seventh review-lane run). REVIEW.md preamble
+  and baseline block rewritten to fold in sessions 211–214 (5493 → 5503).
+  O-011 finding body updated with two missing catchup paragraphs
+  (sessions 207 and 210-code-review): occurrence count 62 → 69 → 74;
+  run count 13 → 14 → 15 → 16. O-012 re-verified present; aged to
+  7 code-review-lane runs. No source or test edits.
+  Run-entry: 5503 / 66 / 22.  Run-close: **5503 / 66 / 22**.
+  Lock = `utils/@locks/session211-code-review.json`.
+
+- **session 211** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass. Back-filled session-log entries
+  for sessions 208 / 209 / 210 / 210-code-review (four sibling
+  sessions with no prior COMMANDS.md entries). Counts stamp advanced
+  from session 207 → 211. No source-side or test-side edits. No ✗ → ✓
+  row transitions. `register()` count unchanged at 482 / 461.
+  Run-entry: 5493 / 66 / 22.  Run-close: **5493 / 66 / 22**.
+  Lock = `utils/@locks/session211-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 210-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Post-ship audit pass (twenty-sixth review-lane run). REVIEW.md
+  last-updated stamp bumped; preamble rewritten to fold in sessions
+  208–210; baseline updated to 5493 / 0 / 22. O-011 re-verified +
+  aged 14 → 15 runs (running count sixty-nine lock-body occurrences
+  since session 106). O-012 re-verified present
+  (`www/src/ui/keyboard.js.bak`), aged to 6 code-review-lane runs.
+  session-210-code-review.md log written. No source or test changes.
+  Run-entry: 5493 / 66 / 22.  Run-close: **5493 / 66 / 22**.
+  Lock = `utils/@locks/session210-code-review.json`.
+
+- **session 210** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Post-ship snapshot refresh. TESTS.md "Last updated" stamp advanced
+  from session 206 → 210; session-210 coverage snapshot block
+  prepended (absorbing s208 +1 from erf M-cell pin, 5492 → 5493);
+  sibling-delta narrative for sessions 207–209 added; per-file table
+  updated (test-types.mjs 1044 → 1045). No new assertions; no source
+  edits.
+  Run-entry: 5493 / 66 / 22.  Run-close: **5493 / 66 / 22**.
+  Lock = `utils/@locks/session210-unit-tests.json`.
+
+- **session 209** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Post-ship verification-only pass. RPL.md status stamp bumped
+  "as of session 205" → "as of session 209"; session-209 chapter
+  added; session-205 `(this run)` heading demoted to past tense.
+  No source or test edits.
+  Run-entry: 5493 / 66 / 22.  Run-close: **5493 / 66 / 22**.
+  Lock = `utils/@locks/session209-rpl-programming.json`.
+
+- **session 208** (2026-04-26) — `rpl5050-data-type-support` lane.
+  Post-ship pin-only pass. Closed final ERF row gap: erf M-cell
+  promoted from `·` to `✓` in DATA_TYPES.md; +1 hard assertion in
+  `tests/test-types.mjs` (`[[Integer(0)]]` → `[[Real(0)]]`).
+  DATA_TYPES.md last-updated stamp bumped to Session 208. No source
+  changes.
+  Run-entry: 5492 / 66 / 22.  Run-close: **5493 / 66 / 22**.
+  Lock = `utils/@locks/session208-data-type-support.json`.
 
 - **session 207** (2026-04-26) — `rpl5050-command-support` lane.
   Post-ship doc-reconciliation pass. Back-filled session-log entries

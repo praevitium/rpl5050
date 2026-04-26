@@ -343,7 +343,7 @@ function vals(s) {
 /* ================================================================
    session137: stack-op edge-path coverage closure.
 
-   The session-064 block has thorough happy-path + first-arg
+ The block has thorough happy-path + first-arg
    "Too few" coverage but stops short of three rejection branches
    that share a `_toNonNegIntCount` / `_toPosIntIndex` /
    `s.depth < n` guard, plus DUPDUP's positive case (the file
@@ -469,13 +469,13 @@ function vals(s) {
 /* ================================================================
    session147: PICK / PICK3 / UNPICK / NDUPN rejection-path closure.
 
-   The session-064 happy-path block + session-137 edge-path block
+ The happy-path block + edge-path block
    between them pin most of the {ROLL, ROLLD, DROPN, DUPN, UNPICK,
    NDUPN, DUPDUP} surface.  PICK and PICK3 still have unverified
    rejection branches:
 
      • PICK rejects via a wrapper guard `!Number.isInteger(k) || k<1`
-       (ops.js:174–179).  The session-064 block pins the `k===0`
+ (ops.js:174–179). The block pins the `k===0`
        case, but the *negative* case and the *non-integer Real* case
        (e.g. 1.5) follow distinct `< 1` / `!Number.isInteger`
        branches inside the same `if`; both go untested.
@@ -484,17 +484,17 @@ function vals(s) {
        wrapper-side branch was unpinned (only Bad argument *value*
        paths were exercised).
      • PICK with N>depth dispatches into stack.js:129's
-       `n < level` guard ('Too few arguments').  The session-064
+ `n < level` guard ('Too few arguments'). The
        block has happy-path PICK pins (`3 PICK`, `1 PICK ≡ DUP`)
        and a `0 PICK` reject, but the depth-overrun branch was
        only pinned for ROLL / ROLLD / UNPICK / DROPN / DUPN
-       (session 137), never for PICK itself.
+, never for PICK itself.
      • PICK3 is registered as a thin wrapper `s.pick(3)` (ops.js
-       :7213); the session-064 block has only the happy-path pin
+ :7213); the block has only the happy-path pin
        (`(100 200 300) PICK3 → 100`).  When depth<3 the
        `s.pick(3)` call hits the same `n < level` guard — the
        reject branch is unpinned for PICK3.
-     • UNPICK -1: session-137 added 0-UNPICK and N>depth UNPICK
+ • UNPICK -1: added 0-UNPICK and N>depth UNPICK
        reject pins, but the *negative-N* branch of
        `_toPosIntIndex` was never specifically exercised.  -1
        and 0 share the same `n < 1` rejection but going through
@@ -504,7 +504,7 @@ function vals(s) {
        the negative-N pin guards against that).
      • NDUPN with depth=1 (only the count on the stack, no `x`
        below it) hits the `if (s.depth < 1)` guard at
-       `ops.js:7255` — distinct from session-137's NDUPN -1
+ `ops.js:7255` — distinct from 's NDUPN -1
        reject (which fires earlier at `_toNonNegIntCount`).
        Pinning this branch closes NDUPN's rejection grid.
    ================================================================ */

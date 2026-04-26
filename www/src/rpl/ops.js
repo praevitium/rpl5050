@@ -74,10 +74,10 @@ import {
   // setComplexMode, getPrngSeed are all exported from state.js and
   // used directly by tests or other modules; no op handler calls them.
   setCasVx, getCasVx,
-  // Session 144: ADDTMOD / SUBTMOD / MULTMOD / POWMOD / MODSTO consult
-  // and mutate the global CAS MODULO state slot via these helpers.
+  // ADDTMOD / SUBTMOD / MULTMOD / POWMOD / MODSTO consult and mutate
+  // the global CAS MODULO state slot via these helpers.
   setCasModulo, getCasModulo,
-  // Session 121: PROMPT op uses these to publish/clear the prompt banner.
+  // PROMPT op uses these to publish/clear the prompt banner.
   // getPromptMessage is exported from state.js for tests / UI subscribers.
   setPromptMessage, clearPromptMessage,
   getRealMaxExp, setRealMaxExp,
@@ -244,8 +244,8 @@ function _astToRplValue(ast) {
   // through `giacToAst` as a Neg-wrapped Num.  Unwrap so EGVL / EGV /
   // GREDUCE / FACTOR present a negative numeric eigenvalue or
   // remainder as a plain Real(-v) instead of a Symbolic with a
-  // single-leaf negation node.  (Session 119 — surfaced when
-  // GREDUCE's AUR worked example returned `-1`.)
+  // single-leaf negation node.  (Surfaced by GREDUCE's AUR worked
+  // example which returns `-1`.)
   if (ast.kind === 'neg' && ast.arg && ast.arg.kind === 'num') {
     return Real(-ast.arg.value);
   }
@@ -905,10 +905,7 @@ function _stringCoerce(v) {
 // Arithmetic +, -, *, /, ^ are registered later in this file via
 // `_withTaggedBinary(_binaryMathMixed(op))` — that pass is the single
 // source of truth for scalar arithmetic dispatch (Tagged, BinInt×Real
-// mixing, String-concat on `+`).  Session 099 removed the first-pass
-// `register('+', ...)` / `binaryMath(op)` shadows that existed here;
-// they were unreachable (Map semantics — second `register()` wins) and
-// still pulled weight in greps.  The second-pass still calls
+// mixing, String-concat on `+`).  The second-pass still calls
 // `binaryMath('+')(s)` as the generic numeric fallback inside the `+`
 // handler, so `binaryMath` itself is live.
 
@@ -1189,11 +1186,9 @@ function unaryReal(name, fn) {
    ----------------------------------------------------------------- */
 // Real-only SIN/COS/TAN/ASIN/ACOS/ATAN/LN/LOG/EXP/ALOG were registered
 // here in the first pass via `trigFwd` / `trigInv` / `unaryReal`.
-// Session 099 removed the shadows; the second-pass Complex-aware
-// registrations near `_trigFwdCx` / `_unaryCx` (late in this file) are
-// the authoritative entry points.  `trigFwd` and `trigInv` had no
-// other callers — deleted with the registers.  `unaryReal` remains —
-// R→D / D→R still use it.
+// The Complex-aware registrations near `_trigFwdCx` / `_unaryCx`
+// (late in this file) are the authoritative entry points.
+// `unaryReal` remains live — R→D / D→R still use it.
 
 /* --------------------- hyperbolic ---------------------
    SINH/COSH/TANH/ASINH/ACOSH/ATANH live in KNOWN_FUNCTIONS for
@@ -1206,7 +1201,7 @@ function unaryReal(name, fn) {
    -------------------------------------------------------------------- */
 // Hyperbolic SINH/COSH/TANH/ASINH/ACOSH/ATANH — first-pass Real-only
 // registrations lived here (unaryReal-based plus domain-checked ACOSH/
-// ATANH bodies).  Session 099 removed them; see the `_unaryCx`
+// ATANH bodies).  See the `_unaryCx`
 // registrations late in this file for the complex-aware authoritative
 // versions, and the `_withTaggedUnary(_withListUnary(_withVMUnary(...)))`
 // wrapping for Tagged / List / V/M widening.
@@ -1423,20 +1418,20 @@ register('ARG', _withTaggedUnary(_withListUnary((s) => {
    identity, and IM is a zero-valued array — but the element-wise
    dispatch is in place for when Complex entries can appear in arrays. */
 function _conjScalar(v) {
-  if (isReal(v) || isInteger(v)) return v;
+  if (isReal(v) || isInteger(v) || isRational(v)) return v;
   if (isComplex(v)) return Complex(v.re, -v.im);
   if (_isSymOperand(v)) return Symbolic(AstFn('CONJ', [_toAst(v)]));
   throw new RPLError('Bad argument type');
 }
 function _reScalar(v) {
-  if (isReal(v) || isInteger(v)) return v;
+  if (isReal(v) || isInteger(v) || isRational(v)) return v;
   if (isComplex(v)) return Real(v.re);
   if (_isSymOperand(v)) return Symbolic(AstFn('RE', [_toAst(v)]));
   throw new RPLError('Bad argument type');
 }
 function _imScalar(v) {
   if (isReal(v))    return Real(0);
-  if (isInteger(v)) return Integer(0n);
+  if (isInteger(v) || isRational(v)) return Integer(0n);
   if (isComplex(v)) return Real(v.im);
   if (_isSymOperand(v)) return Symbolic(AstFn('IM', [_toAst(v)]));
   throw new RPLError('Bad argument type');
@@ -1734,11 +1729,10 @@ function _combPermArgs(a, b, opName) {
   // is explicitly rejected even when integer-valued (`5/1`) — HP50 AUR
   // §3-29 worked example shows the firmware rejects fractional COMB /
   // PERM arguments rather than coercing them; we match that contract
-  // uniformly.  Complex is subsumed by !isInteger && !isReal.  This
-  // guard previously read `if (!isNumber(...)) ...` which let Rational
-  // leak through to a downstream `v.value.isFinite()` access (Rational
-  // payload is `{n, d}` — no `.value`), surfacing as a JavaScript
-  // TypeError instead of an RPLError; closes review-lane finding C-011.
+  // uniformly.  Complex is subsumed by !isInteger && !isReal.  Rational
+  // is excluded explicitly because its payload is `{n, d}` — no `.value`
+  // — so allowing it through would cause a JavaScript TypeError rather
+  // than a clean RPLError at the downstream `v.value.isFinite()` check.
   if (!isInteger(a) && !isReal(a)) throw new RPLError('Bad argument type');
   if (!isInteger(b) && !isReal(b)) throw new RPLError('Bad argument type');
   const toBig = (v) => {
@@ -3427,7 +3421,7 @@ function* runArrow(s, toks, arrowIdx, to, depth) {
       // Symbolic body — EVAL leaves the (possibly partially reduced)
       // value on the stack, matching HP50 behaviour.  Symbolic eval is
       // synchronous (no HALT path), so no yield* needed.
-      // Session 116: pass an explicit caller label.  A pure-algebraic
+      // Pass an explicit caller label.  A pure-algebraic
       // body cannot reach a Program node (the AST has no embedding for
       // it), so this label is defensive — the only way to surface it
       // would be a future extension that lets a Symbolic carry a Program
@@ -3613,7 +3607,7 @@ function _shouldStepYield() {
 /** Evaluate a single non-control token.  Semantics mirror the pre-
  *  control-flow Program loop.
  *
- *  Session 106: generator function.  Any Name whose binding resolves
+ *  Generator function.  Any Name whose binding resolves
  *  to a Program is evaluated through `_evalValueGen`, which delegates
  *  to `evalRange` via `yield*` — so HALT inside a named sub-program
  *  (reached by variable lookup) now yields cleanly up to the top-level
@@ -6830,13 +6824,7 @@ register('OBJ→', (s) => {
     // Users who want format-specific splits should reach for MANT /
     // XPON (Real, AUR p.3-6 / p.3-9) or B→R (BinaryInteger → Real,
     // AUR p.3-46).  All those ops are wired separately and unaffected
-    // by this branch.  Prior versions did the mantissa/exponent split
-    // for Real here; that was an HP50-divergence noted in REVIEW.md
-    // R-008 and closed session 155.  BinaryInteger and Rational
-    // formerly fell through to the trailing `Bad argument type` throw
-    // — a divergence from the AUR-fidelity choice the Real/Integer
-    // branch already made; closed by extending the same branch to
-    // cover all four numeric-scalar shapes.
+    // by this branch.
     s.push(v);
     return;
   }
@@ -9467,14 +9455,14 @@ register('ORDER', (s) => {
               Composite containers (List / Vector / Matrix / Program) are
               rebuilt shallowly via their factories — outer object is a
               fresh `Object.freeze`d wrapper, inner-element identities
-              are preserved (the session-146 nested-Program pin and the
-              session-167 List-of-Rational pin both codify this contract).
+              are preserved (nested-Program and List-of-Rational pins
+              both codify this contract).
               Scalar atoms (Real / Integer / BinaryInteger / Rational /
               Complex) are re-wrapped via their constructor to produce a
               new frozen object.  Tagged / Unit / String / Name / Symbolic
               go through the same single-arg constructor path.  Every
               enumerated branch produces an `Object.isFrozen() === true`
-              result — pinned by the session-172 freeze-parity sweep.
+              result — pinned by the freeze-parity test assertions.
               Directory and Grob fall through the enumerated branches
               and return identity — Directories are live mutable
               containers (NEWOB has no useful semantics there) and Grobs
@@ -9523,31 +9511,13 @@ function _newObCopy(v) {
   // is meaningless (a Directory is a live mutable container, not a
   // pass-by-reference value the way HP50 NEWOB is meant to "decouple").
   // Grob is also intentionally not enumerated — graphics objects flow
-  // through the dedicated Grob ops, not the value-copy machinery.  The
-  // Rational branch above closes a session-167 audit-driven asymmetry:
-  // every other numeric-scalar shape (Real, Integer, BinaryInteger) was
-  // already enumerated, so a Rational reaching this fall-through and
-  // sharing identity with the input was the lone outlier vs. the
-  // session-163 OBJ→ widening that brought BinInt and Rational into
-  // the OBJ→ push-back branch.  NEWOB's contract per HP50 AUR §3-130
-  // is "force a new copy"; for an immutable frozen Rational this is
-  // observable only through `===` identity, which is what the test
-  // suite pins below.
-  //
-  // Session-172 audit-driven asymmetry close (sibling to session 167):
-  // the Program branch above used to construct an inline object literal
-  // — `{ type: 'program', tokens: Object.freeze([...v.tokens]) }` —
-  // with the inner tokens array frozen but the *outer* wrapper NOT
-  // frozen.  Every other composite (List / Vector / Matrix) and every
-  // other shape goes through its factory (`RList` / `Vector` / `Matrix`
-  // / etc.), each of which `Object.freeze`s the outer wrapper.  Program
-  // alone violated `Object.isFrozen(copy) === true`.  The fix is the
-  // one-line switch to `Program(v.tokens)`; the factory's
-  // `Object.freeze({ type, tokens: Object.freeze([...]) })` pair gives
-  // matched outer + inner freezing, so a NEWOB'd Program now satisfies
-  // the same invariant every other enumerated shape already met.
-  // Pinned by the freeze-parity assertions in
-  // `tests/test-reflection.mjs` covering every NEWOB-handled shape.
+  // through the dedicated Grob ops, not the value-copy machinery.
+  // Every enumerated shape uses its factory function so that
+  // `Object.isFrozen(copy) === true` holds for the returned value,
+  // matching the invariant of the input.  NEWOB's contract per HP50
+  // AUR §3-130 is "force a new copy"; for immutable frozen scalars
+  // (e.g. Rational) this is observable only through `===` identity.
+  // Freeze-parity is pinned in `tests/test-reflection.mjs`.
   return v;
 }
 
@@ -14298,7 +14268,7 @@ register('LAMBERT', _withTaggedUnary(_withListUnary((s) => {
        x  > 4          → Re(-E1(i·x)) via the same Lentz CF as Si
 
    Relative error verified against Abramowitz & Stegun Tables 5.1/5.3 at
-   machine precision — see utils/@ei_si_ci_probe.mjs.
+   machine precision.
 
    Symbolic / Name input lifts to `Ei(x)` / `Si(x)` / `Ci(x)`.  Tagged
    transparent; List / Vector / Matrix distribute element-wise.

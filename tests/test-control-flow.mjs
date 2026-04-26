@@ -2608,7 +2608,7 @@ import { assert, assertThrows } from './helpers.mjs';
 /* ---- RUN immediately after DBUG (no SST in between) — session185 re-land of session177 ----
  * The most common user-side debugging flow: DBUG suspends at the first token, then the
  * user inspects the stack and presses RUN to drain the remainder in one shot without
- * ever pressing SST.  Session 177 authored these 5 pins on ship-day but the write did
+ * ever pressing SST. authored these 5 pins on ship-day but the write did
  * not persist (T-003 in REVIEW.md).  Re-landed with session185: labels.
  *
  * Program: « 1 2 + 10 * »  (5 tokens; result = (1+2)*10 = 30)
@@ -2636,7 +2636,7 @@ import { assert, assertThrows } from './helpers.mjs';
 /* ---- RUN drains past an embedded HALT keyword — session185 re-land of session177 ----
  * Pins RUN's ability to resume a generator suspended by an in-program HALT token
  * (as opposed to the external DBUG-suspension cases covered by session178).
- * HALT's evalRange-yield substrate has been live since session 083.
+ * HALT's evalRange-yield substrate has been live since .
  *
  * Program: « 1 2 + HALT 10 * »
  * EVAL runs the pre-HALT fold (1+2=3), then suspends on the HALT token.
@@ -2863,7 +2863,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 101 — SST / SST↓ / DBUG single-step debugger
+   SST / SST↓ / DBUG single-step debugger
    ================================================================ */
 
 /* ---- SST drives a halted program one token at a time ---- */
@@ -3065,7 +3065,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 102 — additional SST / DBUG regression guards
+   additional SST / DBUG regression guards
    ================================================================ */
 
 /* ---- DBUG on a single-token program runs that token then yields,
@@ -3136,7 +3136,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 106 — HALT-inside-named-sub-program lift + SST↓ step-into
+   HALT-inside-named-sub-program lift + SST↓ step-into
    ================================================================ */
 
 /* ---- HALT inside a Name-reached sub-program suspends cleanly.
@@ -3540,15 +3540,15 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 116 — EVAL handler drives _evalValueGen so HALT lifts
+   EVAL handler drives _evalValueGen so HALT lifts
    through Tagged-wrapped Programs and through Name-on-stack EVALs.
 
    Pre-116 the EVAL handler had a Program-direct fast path and
    anything else (Tagged, Name, …) fell through to _evalValueSync,
    which rejected HALT via _driveGen with the
-   "cannot suspend inside a sub-program call" message.  Session 106
-   had already lifted HALT for sub-programs reached via evalToken's
-   Name-binding branch (mid-program Name resolution).  Session 116
+   "cannot suspend inside a sub-program call" message.  HALT was
+   already lifted for sub-programs reached via evalToken's
+   Name-binding branch (mid-program Name resolution).
    completes that work for the *entry* of EVAL: anything semantically
    transparent — Tagged, Name on the stack, Name pointing at a Tagged
    Program — now suspends cleanly when its body HALTs.
@@ -3745,7 +3745,7 @@ import { assert, assertThrows } from './helpers.mjs';
 }
 
 /* ================================================================
-   Session 121 — PROMPT op + HALT lift through IFT/IFTE body.
+   PROMPT op + HALT lift through IFT/IFTE body.
 
    Three pieces:
      1. PROMPT (HP50 AUR p.2-160): pop level 1 as the prompt banner,
@@ -4048,7 +4048,7 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ================================================================
-   Session 126 — HALT / PROMPT lift through SEQ + MAP bodies.
+   HALT / PROMPT lift through SEQ + MAP bodies.
 
    evalRange now intercepts the SEQ and MAP tokens and delegates to
    `runSeq` / `runMap` generators, so a HALT or PROMPT inside the
@@ -4676,7 +4676,7 @@ const { getPromptMessage, clearPromptMessage }
     'session131: ENDSUB outside DOSUBS throws after KILL teardown');
 }
 
-/* ---- DOSUBS: sync fallback still rejects HALT with session-111 label ---- */
+/* ---- DOSUBS: sync fallback still rejects HALT with label ---- */
 {
   resetHome(); clearAllHalted(); clearPromptMessage();
   const s = new Stack();
@@ -5653,7 +5653,7 @@ const { getPromptMessage, clearPromptMessage }
 }
 
 /* ================================================================
-   Session 146 — HALT / CONT / KILL through nested `→` (compiled
+   HALT / CONT / KILL through nested `→` (compiled
    local environment) frames.
 
    Single-level `→` HALT is pinned by sessions 088 (HALT-inside-→
@@ -5676,7 +5676,7 @@ const { getPromptMessage, clearPromptMessage }
          the local visible during a HALT inside the inner body is
          the inner binding, not the outer.
 
-   Session 068 already pins outer/inner shadowing without HALT
+   already pins outer/inner shadowing without HALT
    (the « 1 2 → a b « 10 20 → a b « a b » » » nesting test).  This
    block adds the HALT-aware variants.
    ================================================================ */

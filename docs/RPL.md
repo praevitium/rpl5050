@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 209)
+## Current implementation status (as of session 245)
 
 
 ### Program value — parser & round-trip
@@ -309,7 +309,27 @@ open, and the next-session queue.
 
 ---
 
-## Session 209 (this run) — what shipped
+## Session 213 (this run) — what shipped
+
+Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
+~1/3 workload per the scheduled-task guardrail.  All R-bucket findings
+in `docs/REVIEW.md` remain fully closed at run-entry (R-001 — R-012
+all resolved; O-011 + O-012 `[deferred - post-ship]`).
+
+**Verification-only run — no source or test change.**  Confirmed
+5503 / 0 clean baseline (Δ+10 from session 209's 5493 — entirely from
+sibling lanes: session 210-code-review, session 211-command-support,
+session 212-data-type-support).  The RPL programming substrate remains
+in the fully-documented, zero-drift condition established by session 180.
+
+Session-209 `(this run)` heading demoted to plain past tense below
+(per the recurring R-005 discipline — each rpl-programming-lane run
+that adds a `(this run)` chapter must also demote its predecessor).
+Status stamp bumped from "as of session 209" to "as of session 213".
+
+---
+
+## Session 209 — what shipped
 
 Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
 ~1/3 workload per the scheduled-task guardrail.  All R-bucket findings
@@ -2897,12 +2917,70 @@ lane 204-data-type-support (erfc L/V/M/T+L stale-cell promotion);
 RPL programming substrate undisturbed; no source or test change;
 status stamp bumped from "as of session 201" to "as of session 205");
 log file is `logs/session-205.md`.
-Session 209 is this run (post-ship verification pass — confirmed
+Session 209 was this lane (post-ship verification pass — confirmed
 5493 / 0 clean baseline; Δ+1 from session 205 entirely from sibling
 lane 208-data-type-support (erf M-cell pin promotion, +1 test);
 RPL programming substrate undisturbed; no source or test change;
 status stamp bumped from "as of session 205" to "as of session 209");
 log file is `logs/session-209.md`.
+Session 213 was this lane (post-ship verification pass — confirmed
+5503 / 0 clean baseline; Δ+10 from session 209 entirely from sibling
+lanes 210-code-review / 211-command-support / 212-data-type-support;
+RPL programming substrate undisturbed; all RPL-bucket REVIEW.md
+findings remain fully closed; no source or test change; status stamp
+bumped from "as of session 209" to "as of session 213");
+log file is `logs/session-213.md`.
+Session 217 was this lane (post-ship verification pass — confirmed
+5508 / 0 clean baseline; Δ+5 from session 213 entirely from sibling
+lanes 214-unit-tests / 215-command-support / 216-data-type-support;
+RPL programming substrate undisturbed; all RPL-bucket REVIEW.md
+findings remain fully closed; no source or test change; status stamp
+bumped from "as of session 213" to "as of session 217");
+log file is `logs/session-217.md`.
+Session 241 is this run (post-ship verification pass — confirmed
+5541 / 0 clean baseline; Δ+16 from session 237 entirely from sibling
+lane 240-data-type-support (240 added 16 test assertions: Q-cell
+audit for stat-dist family GAMMA/LNGAMMA/ERF/ERFC/BETA/UTPC/UTPF/
+UTPT/HEAVISIDE/DIRAC and combinatorial family COMB/PERM/IQUOT/
+IREMAINDER/XROOT); RPL programming substrate undisturbed; all
+RPL-bucket REVIEW.md findings remain fully closed; no source or test
+change; status stamp bumped from "as of session 237" to "as of
+session 241");
+log file is `logs/session-241.md`.
+Session 237 was this lane (post-ship verification pass — confirmed
+5525 / 0 clean baseline; Δ+6 from session 232 entirely from sibling
+lane 236-data-type-support (236 added 6 test assertions: Q-cell
+audit for LNP1 / EXPM / TRUNC / ZETA / LAMBERT / PSI); RPL
+programming substrate undisturbed; all RPL-bucket REVIEW.md findings
+remain fully closed; no source or test change; status stamp bumped
+from "as of session 232" to "as of session 237");
+log file is `logs/session-237.md`.
+Session 232 was this lane (post-ship verification pass — confirmed
+5519 / 0 clean baseline; Δ+8 from session 227 entirely from sibling
+lanes 230-command-support / 231-data-type-support (231 added 8 test
+assertions: CONJ/RE/IM Rational widening acceptance pins + Q-cell
+audit cluster for ARG / % / %T / %CH / GCD / LCM); RPL programming
+substrate undisturbed; all RPL-bucket REVIEW.md findings remain fully
+closed; no source or test change; status stamp bumped from "as of
+session 227" to "as of session 232");
+log file is `logs/session-232.md`.
+Session 227 was this lane (post-ship verification pass — confirmed
+5511 / 0 clean baseline; Δ+3 from session 222 entirely from sibling
+lanes 223-unit-tests / 224-code-review / 225-command-support /
+226-data-type-support (226 added 3 test assertions: CONJ/RE/IM
+Rational rejection pins); RPL programming substrate undisturbed;
+all RPL-bucket REVIEW.md findings remain fully closed; no source
+or test change; status stamp bumped from "as of session 222"
+to "as of session 227");
+log file is `logs/session-227.md`.
+Session 222 was this lane (post-ship verification pass — confirmed
+5508 / 0 clean baseline; Δ+0 from session 217 entirely from sibling
+lanes 218-unit-tests / 219-code-review / 220-command-support /
+221-data-type-support (all doc-only); RPL programming substrate
+undisturbed; all RPL-bucket REVIEW.md findings remain fully closed;
+no source or test change; status stamp bumped from "as of session
+217" to "as of session 222");
+log file is `logs/session-222.md`.
 
 (Footnote — sessions 074 / 078 / 088 / 106 / 116 / 121 / 126 / 131
 / 141 / 146 / 151 / 155 / 159 / 163 / 167 used the historical "is
@@ -2926,7 +3004,15 @@ bundled into session 201; demotion of session 201's own
 `(this run)` wording in the Session log pointer prose was
 bundled into session 205; demotion of session 205's own
 `(this run)` wording in the Session log pointer prose was
-bundled into session 209.  Sessions 172 / 180 / 184 / 188 /
+bundled into session 209; demotion of session 209's own
+`(this run)` wording in the Session log pointer prose was
+bundled into session 213; demotion of session 213's own
+`(this run)` wording in the Session log pointer prose was
+bundled into session 217; demotion of session 217's own
+`(this run)` wording in the Session log pointer prose was
+bundled into session 222; demotion of session 222's own
+`(this run)` wording in the Session log pointer prose was
+bundled into session 227.  Sessions 172 / 180 / 184 / 188 /
 192 never carried a `(this run)` marker in the Session log pointer
 prose — they were verification-only or audit-only runs that did
 not extend this prose section.  This is the recurring R-005 drift

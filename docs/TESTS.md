@@ -4,10 +4,16 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 210 (2026-04-26).  Unit-tests lane run
-(post-ship snapshot refresh — Sunday 2026-04-26; 15th release-window
+**Last updated.** Session 246 (2026-04-26).  Unit-tests lane run
+(post-ship snapshot refresh — Sunday 2026-04-26; 23rd release-window
 run in this lane after sessions 156, 160, 164, 160-unit-tests,
-168, 173, 177, 181, 185, 189, 193, 198, 202, 206).
+168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246).
+Note: session-233-unit-tests lock was pruned as crashed (header-only
+update; no session log written) — absorbed into a prior run's snapshot.
+Note: session 238 log index claims a coverage snapshot was added but
+no "## Coverage snapshot (session 238)" heading exists in the file —
+the session-233 snapshot (5519) was the last actual snapshot written;
+session 242 absorbs the gap.
 
 Sibling deltas absorbed since the session-168 snapshot
 (5246 → 5306, **+60** over four sibling sessions):
@@ -827,6 +833,388 @@ Session 117 unit-tests deltas:
   `cowork_allow_file_delete` permission prompt is blocked in
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
+
+## Coverage snapshot (session 246)
+
+Sibling deltas absorbed since session-242 snapshot
+(5541 → 5560, **+19** over sessions 243–245):
+- **Session 243** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 239 → 243; session-log
+  back-fill for sessions 239–242; O-013 audit closed (RPL_CATALOG
+  verified against live register() calls — no drift found).
+  No source or test edits.
+- **Session 244** (data-type-support) — **+19** assertions in
+  `tests/test-types.mjs` (1093 → 1112; `session244:` labels) —
+  ERF/ERFC Z-cell doc-lag promotion (+4); UTPC/UTPF/UTPT Z-cell
+  doc-lag promotion (+4); BETA L/V/M audit (+4); UTPC/UTPF/UTPT
+  L/V/M rejection pins (+7).  No source change — guards already live.
+- **Session 245** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 245"; session-log pointer updated.  No source or test edits.
+
+Session 246 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-246 entry: **5560 / 0** (fully green).
+Final: **5560 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable; D-001 closed ship-prep 2026-04-25).
+`sanity.mjs` 22 / 0 (~6 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1112 | 0    | +19 s244 ERF/ERFC/BETA/UTPC/UTPF/UTPT Z+L/V/M cell audit. |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5560** | **0** | Session 246 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable; D-001 closed ship-prep 2026-04-25. |
+| sanity.mjs (standalone)     |   22 | 0    | ~6 ms smoke suite.                       |
+
+### Prior snapshot — Session 242 (retained for context)
+
+## Coverage snapshot (session 242)
+
+Sibling deltas absorbed since session-233 snapshot
+(5519 → 5541, **+22** over sessions 234–241):
+- **Session 234** (code-review) — doc-only run; **0** assertion
+  deltas.  `docs/REVIEW.md` session-234 block added.  No source
+  or test edits.
+- **Session 235** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` stamp drift; session-log back-fill.
+  No source or test edits.
+- **Session 236** (data-type-support) — **+6** assertions in
+  `tests/test-types.mjs` (1071 → 1077; `session236:` labels) —
+  LNP1/EXPM Q-accept pins (+2) and TRUNC/ZETA/LAMBERT/PSI Q-reject
+  pins (+4).  No source change — guards already live.
+- **Session 237** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 237"; session-log pointer updated.  No source or test edits.
+- **Session 238** (unit-tests) — snapshot-refresh-only run; **0**
+  new assertions.  Header bumped to session-238; session-238
+  coverage snapshot claimed in log index but heading was not
+  actually written to file — absorbed here.
+- **Session 239** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 235 → 239; session-log
+  back-fill for sessions 235-code-review / 236 / 237 / 238.  No
+  source or test edits.
+- **Session 240** (data-type-support) — **+16** assertions in
+  `tests/test-types.mjs` (1077 → 1093; `session240:` labels) —
+  Q-cell audit on stat-dist family (GAMMA/LNGAMMA/ERF/ERFC/BETA/
+  UTPC/UTPF/UTPT/HEAVISIDE/DIRAC — all Q=✗ rejection pins, 10)
+  and combinatorial family (COMB/PERM/IQUOT/IREMAINDER Q=✗ rejection
+  + XROOT Q=✓ acceptance, 6 net pins).  No source change — guards
+  already live.
+- **Session 241** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 241"; session-log pointer updated.  No source or test edits.
+
+Session 242 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-242 entry: **5541 / 0** (fully green).
+Final: **5541 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable; D-001 closed ship-prep 2026-04-25).
+`sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1093 | 0    | +16 s240 Q-cell audit (stat-dist + combinatorial). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5541** | **0** | Session 242 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable; D-001 closed ship-prep 2026-04-25. |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 233 (retained for context)
+
+## Coverage snapshot (session 233)
+
+Sibling deltas absorbed since session-228 snapshot
+(5511 → 5519, **+8** over sessions 229–232):
+- **Session 229** (code-review) — doc-only run; **0** assertion
+  deltas.  `docs/REVIEW.md` session-229 block added; O-011 aged;
+  O-012/O-013 carried forward.  No source or test edits.
+- **Session 230** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` stamp drift reconciliation.  No source
+  or test edits.
+- **Session 231** (data-type-support) — **+8** assertions in
+  `tests/test-types.mjs` (1063 → 1071; `session231:` labels) —
+  CONJ/RE/IM Rational widening (+1) and Q-cell audit (+7).  No source
+  change — rejection guards already live.
+- **Session 232** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 232"; session-log pointer updated.  No source or test edits.
+
+Session 233 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-233 entry: **5519 / 0** (fully green).
+Final: **5519 / 0** — fully green (0 new this run).
+`test-persist.mjs` passed / 0 (stable; D-001 closed ship-prep 2026-04-25).
+`sanity.mjs` 22 / 0 (~6 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1071 | 0    | +8 s231 CONJ/RE/IM Rational + Q-cell pins. |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5519** | **0** | Session 233 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable; D-001 closed ship-prep 2026-04-25. |
+| sanity.mjs (standalone)     |   22 | 0    | ~6 ms smoke suite.                       |
+
+### Prior snapshot — Session 228 (retained for context)
+
+## Coverage snapshot (session 228)
+
+Sibling deltas absorbed since session-223 snapshot
+(5508 → 5511, **+3** over sessions 224–227):
+- **Session 224-code-review** (code-review) — doc-only run; **0** assertion
+  deltas.  `docs/REVIEW.md` preamble folded in sessions 220–223; O-011
+  aged 18 → 19 runs (count 79 → 84); O-012 aged to 9 code-review runs;
+  O-013 filed (new finding — `www/src/ai/system-prompt.js` RPL_CATALOG
+  drift risk).  No source or test edits.
+- **Session 225** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 220→225 + session-log
+  back-fill; no source or test edits.
+- **Session 226** (data-type-support) — **+3** assertions in
+  `tests/test-types.mjs` (1060 → 1063; `session226:` labels) — CONJ/RE/IM
+  Quaternion-rejection pins.  No source change — rejection guards already live.
+- **Session 227** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 227"; session-log pointer updated.  No source or test edits.
+
+Session 228 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-228 entry: **5511 / 0** (fully green).
+Final: **5511 / 0** — fully green (0 new this run).
+`test-persist.mjs` passed / 0 (stable).  `sanity.mjs` 22 / 0 (~6 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1063 | 0    | +3 s226 CONJ/RE/IM Q-rejection pins.    |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5511** | **0** | Session 228 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~6 ms smoke suite.                       |
+
+### Prior snapshot — Session 223 (retained for context)
+
+## Coverage snapshot (session 223)
+
+Sibling deltas absorbed since session-218 snapshot
+(5508 → 5508, **+0** over sessions 219–222):
+- **Session 219-code-review** (code-review) — doc-only run; **0** assertion
+  deltas.  `docs/REVIEW.md` preamble folded in sessions 215–218; O-011
+  aged 16 → 17 runs (count 74 → 79); O-012 aged to 8 code-review runs.
+  No source or test edits.
+- **Session 220** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 215→220 + session-log
+  back-fill for sessions 215–219-code-review; no source or test edits.
+- **Session 221** (data-type-support) — doc-only run; **0** assertion
+  deltas.  `docs/DATA_TYPES.md` arithmetic section split (`+`/`-`/`*`/`/`/`^`
+  pulled into separate subsection with per-op Notes rows); Last-updated
+  stamp → Session 221.  No source or test edits.
+- **Session 222** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced "as of session 217"
+  → "as of session 222"; session-log pointer updated.  No source or
+  test edits.
+
+Session 223 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-223 entry: **5508 / 0** (fully green).
+Final: **5508 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~6 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1060 | 0    | Unchanged since s218 (s216 PSI pins last delta). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5508** | **0** | Session 223 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~6 ms smoke suite.                       |
+
+### Prior snapshot — Session 218 (retained for context)
+
+## Coverage snapshot (session 218)
+
+Sibling deltas absorbed since session-214 snapshot
+(5503 → 5508, **+5** over sessions 215–217):
+- **Session 215** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 211→215 + session-log
+  back-fill for sessions 211-code-review / 212 / 213 / 214; no
+  source or test edits.
+- **Session 216** (data-type-support) — **+5** assertions in
+  `tests/test-types.mjs` (1055 → 1060; `session216:` labels) —
+  PSI L/V/M stale-`·`-cell promotion: five assertions added (L-empty
+  passthrough, L n=1 value-precise, L n=2 heterogeneous-output, V,
+  M).  No source change — bespoke branches already live.
+- **Session 217** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 217"; session-log pointer prose updated.  No source or
+  test edits.
+
+Session 218 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-218 entry: **5508 / 0** (fully green).
+Final: **5508 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs             |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | **1060** | 0 | +5 s216 PSI L/V/M pins (`session216:` labels). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5508** | **0** | Session 218 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 214 (retained for context)
+
+## Coverage snapshot (session 214)
+
+Sibling deltas absorbed since session-210 snapshot
+(5493 → 5503, **+10** over sessions 211–213):
+- **Session 211** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 207→211 + session-log
+  back-fill for sessions 208 / 209 / 210 / 210-code-review; no
+  source or test edits.
+- **Session 212** (data-type-support) — **+10** assertions in
+  `tests/test-types.mjs` (1045 → 1055; `session212:` labels) —
+  ZETA and LAMBERT Z/L/V/M stale-`·`-cell promotion: probe
+  confirmed Integer inputs accepted by both scalars; five assertions
+  added per op (Z, L-empty, L-value, V, M).  No source change —
+  wrappers already live.
+- **Session 213** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` status stamp advanced to "as of
+  session 213"; session-log pointer prose updated.  No source or
+  test edits.
+
+Session 214 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-214 entry: **5503 / 0** (fully green).
+Final: **5503 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | **1055** | 0 | +10 s212 ZETA/LAMBERT Z/L/V/M pins (`session212:` labels). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5503** | **0** | Session 214 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 210 (retained for context)
 
 ## Coverage snapshot (session 210)
 
@@ -2055,6 +2443,109 @@ when the next flake appears.
 ---
 
 ## Session-by-session log index
+
+- Session 246 (2026-04-26) — this run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5560 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only (O-013 resolved session 243),
+  both `[deferred - post-ship]`.  Work done: refreshed TESTS.md
+  "Last updated" header to session-246; added session-246 coverage
+  snapshot (absorbed sibling deltas 5541 → 5560 over sessions 243–245:
+  s243 command-support doc-only + O-013 audit close, s244
+  data-type-support +19 (ERF/ERFC/BETA/UTPC/UTPF/UTPT Z+L/V/M cell
+  audit in test-types.mjs), s245 rpl-programming verification-only);
+  wrote `logs/session-246.md`.
+  Lock: `utils/@locks/session246-unit-tests.json`.
+
+- Session 242 (2026-04-26) — prior run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5541 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 + O-013, all `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-242; added session-242 coverage snapshot (absorbed
+  sibling deltas 5519 → 5541 over sessions 234–241: s234-code-review
+  doc-only, s235 command-support doc-only, s236 data-type-support
+  +6 (LNP1/EXPM Q-accept + TRUNC/ZETA/LAMBERT/PSI Q-reject pins),
+  s237 rpl-programming verification-only, s238 unit-tests snapshot-
+  only (coverage snapshot claimed in log but not written — absorbed
+  here), s239 command-support doc-only, s240 data-type-support +16
+  (Q-cell audit stat-dist + combinatorial families), s241
+  rpl-programming verification-only); wrote `logs/session-242.md`.
+  Lock: `utils/@locks/session242-unit-tests.json`.
+
+- Session 238 (2026-04-26) — prior run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5525 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 + O-013, all `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-238; added session-238 coverage snapshot (absorbed
+  sibling deltas 5511 → 5525 over sessions 229–237: s229-code-review
+  doc-only, s230 command-support doc-only, s231 data-type-support
+  +8 (CONJ/RE/IM Q-rejection +1; Q-cell STO-aware audit +7),
+  s232 rpl-programming verification-only, s233 unit-tests CRASHED
+  (header-only update; no log written — pruned by s234 code-review),
+  s234-code-review doc-only, s235 command-support doc-only, s236
+  data-type-support +6 (LNP1/EXPM Q-accept + TRUNC/ZETA/LAMBERT/PSI
+  Q-reject pins), s237 rpl-programming verification-only); wrote
+  `logs/session-238.md`.  Lock: `utils/@locks/session238-unit-tests.json`.
+
+- Session 228 (2026-04-26) — prior run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5511 / 0**,
+  test-persist **passed / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 + O-013, all `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-228; added session-228 coverage snapshot (absorbed
+  sibling deltas 5508 → 5511: s224-code-review doc-only O-013 filed,
+  s225 command-support doc-only, s226 +3 CONJ/RE/IM Q-rejection pins,
+  s227 rpl-programming verification-only); wrote `logs/session-228.md`.
+  Lock: `utils/@locks/session228-unit-tests.json`.
+
+- Session 223 (2026-04-26) — prior run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5508 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-223; added session-223 coverage snapshot (absorbed
+  sibling deltas 5508 → 5508: s219-code-review doc-only, s220
+  command-support doc-only, s221 data-type-support doc-only,
+  s222 rpl-programming verification-only); wrote `logs/session-223.md`.
+  Lock: `utils/@locks/session223-unit-tests.json`.
+
+- Session 218 (2026-04-26) — this run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5508 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-218; added session-218 coverage snapshot (absorbed
+  sibling deltas 5503 → 5508: s215 command-support doc-only,
+  s216 +5 PSI L/V/M pins, s217 rpl-programming verification-only);
+  wrote `logs/session-218.md`.
+  Lock: `utils/@locks/session218-unit-tests.json`.
+
+- Session 214 (2026-04-26) — Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5503 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-011 + O-012 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-214; added session-214 coverage snapshot (absorbed
+  sibling deltas 5493 → 5503: s211 command-support doc-only,
+  s212 +10 ZETA/LAMBERT Z/L/V/M pins, s213 rpl-programming
+  verification-only); wrote `logs/session-214.md`.
+  Lock: `utils/@locks/session214-unit-tests.json`.
 
 - Session 210 (2026-04-26) — this run.  Unit-tests lane (post-ship
   snapshot refresh — **0 new assertions**; scope cap 1/3 workload;

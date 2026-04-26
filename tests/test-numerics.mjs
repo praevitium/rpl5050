@@ -3468,8 +3468,8 @@ setAngle('RAD');
   assertThrows(() => { lookup('PERM').fn(s); }, /Bad argument type/, 'session153: PERM(Int 7, Rat 3/2) throws Bad argument type (C-011)');
 }
 
-/* ---- session 156 — C-011 follow-up: COMB / PERM rejection-arm
-   composition pins.  Session 153 closed the bare-Rational arm
+/* ---- — C-011 follow-up: COMB / PERM rejection-arm
+   composition pins. closed the bare-Rational arm
    (positive integer-valued + genuinely-fractional × COMB/PERM ×
    level-2/level-1/both).  This block closes:
      (a) Tagged-of-Rational composition — Tagged transparency
@@ -3478,7 +3478,7 @@ setAngle('RAD');
          that would silently coerce the Rational into a Real and
          bypass the type narrowing.
      (b) BinaryInteger arm — BinInt does not satisfy isInteger or
-         isReal, so the new guard rejects.  Session 115 widened
+         isReal, so the new guard rejects. widened
          FLOOR/CEIL/IP/FP for BinInt; this pin guards against a
          well-meaning future widening that would do the same for
          COMB/PERM (HP50 AUR §3-29 is explicit that COMB / PERM
@@ -3493,7 +3493,7 @@ setAngle('RAD');
 */
 {
   /* (a) Tagged(Rational(5,1)) on level 2 — Tagged transparency
-     unwraps the tag (per session-065 Tagged-Integer pin), the
+ unwraps the tag, the
      inner Rational then fails the C-011 narrow guard. */
   const s = new Stack();
   s.push(Tagged('a', Rational(5n, 1n)));
@@ -3528,7 +3528,7 @@ setAngle('RAD');
 }
 {
   /* (c) Vector arm — no V/M distribution for COMB; only List ×
-     scalar per session-065 pin.  Pin Vector rejection so a
+ scalar Pin Vector rejection so a
      future "uniform broadcast" refactor doesn't silently extend
      this surface. */
   const s = new Stack();
@@ -5950,7 +5950,7 @@ function _arrayEq(a, b) {
 }
 
 /* =====================================================================
-   session 109 — Ei / Si / Ci — exponential / sine / cosine integrals
+ — Ei / Si / Ci — exponential / sine / cosine integrals
 
    HP50 AUR §2 (CAS-SPECIAL).  Native numeric evaluators:
      Ei   power series for 0 < x < 40; asymptotic for x ≥ 40;
@@ -5959,9 +5959,8 @@ function _arrayEq(a, b) {
      Ci   power series for 0 < x ≤ 4; complex-Lentz CF for x > 4.
           Ci(x < 0) rejected in HP50 real mode (Bad argument value).
 
-   Reference values sourced from Abramowitz & Stegun Tables 5.1 / 5.3
-   and independently cross-checked against the probe in
-   utils/@ei_si_ci_probe.mjs (all 30 cases at machine precision).
+   Reference values sourced from Abramowitz & Stegun Tables 5.1 / 5.3;
+   all 30 cases verified at machine precision.
    ===================================================================== */
 
 // ---- Ei — representative values spanning series, near-cutover, asymptotic.

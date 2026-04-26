@@ -251,6 +251,60 @@ const STARTER_CHIPS = [
   'Solve for x: x^2-5*x+6=0',
 ];
 
+/* ---- Model catalog ------------------------------------------------
+   Curated subset of WebLLM's prebuiltAppConfig.model_list (see
+   https://github.com/mlc-ai/web-llm/blob/main/src/config.ts) chosen
+   to span small-fast → large-smart so users with different hardware
+   can pick what fits.  All entries are q4f16_1 quantization (the
+   standard for WebGPU); all are instruction-tuned (no base models).
+
+   Adding/removing models: paste a `model_id:` line from the WebLLM
+   config and fill in label / size / note.  Sizes are approximate
+   download size (≈ on-disk Cache Storage size after download), not
+   VRAM requirement — VRAM is similar for q4f16_1 but exact numbers
+   live on each prebuiltAppConfig entry's vram_required_MB field if
+   you need them.
+   ------------------------------------------------------------------ */
+const MODELS = [
+  // ---- 0.4-0.7 GB — fastest, weakest ----
+  { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC',          label: 'SmolLM2 360M',           size: '~370 MB',  note: 'Fastest, weakest — fluent but unreliable on math / structured output' },
+  { id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',          label: 'Qwen2.5 0.5B',           size: '~400 MB',  note: 'Tiny, surprisingly good at JSON / tool calls' },
+  { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 0.5B',     size: '~400 MB',  note: 'Code-tuned 0.5B — handles RPL syntax better than the base 0.5B' },
+  { id: 'Qwen3-0.6B-q4f16_1-MLC',                     label: 'Qwen3 0.6B',             size: '~500 MB',  note: 'Newer Qwen generation' },
+  { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',       label: 'TinyLlama 1.1B',         size: '~700 MB',  note: 'Classic small chat model' },
+
+  // ---- 0.9-1.5 GB — small / sweet spot ----
+  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 1B',           size: '~880 MB',  note: 'Recommended default — solid balance', isDefault: true },
+  { id: 'stablelm-2-zephyr-1_6b-q4f16_1-MLC',         label: 'StableLM 2 Zephyr 1.6B', size: '~1.0 GB',  note: 'Stability AI chat-tuned' },
+  { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC',          label: 'SmolLM2 1.7B',           size: '~1.0 GB',  note: 'Larger SmolLM2 — better follow-through than 360M' },
+  { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  note: 'Code-tuned 1.5B — strong at structured output' },
+  { id: 'Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC',     label: 'Qwen2.5 Math 1.5B',      size: '~1.3 GB',  note: 'Math-tuned — better at calc-style reasoning' },
+  { id: 'Qwen3-1.7B-q4f16_1-MLC',                     label: 'Qwen3 1.7B',             size: '~1.4 GB',  note: 'Newer Qwen, mid-size' },
+
+  // ---- 1.9-2.4 GB — mid-tier ----
+  { id: 'gemma-2-2b-it-q4f16_1-MLC',                  label: 'Gemma 2 2B',             size: '~1.9 GB',  note: 'Google instruction-tuned 2B' },
+  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 3B',           size: '~2.3 GB',  note: 'Much smarter than 1B — needs ~3 GB VRAM' },
+  { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC',          label: 'Hermes 3 (Llama 3.2 3B)', size: '~2.3 GB', note: 'NousResearch fine-tune of Llama 3.2 3B — strong tool calling' },
+  { id: 'Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC',      label: 'Qwen2.5 Coder 3B',       size: '~2.4 GB',  note: 'Code-tuned 3B' },
+  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',          label: 'Phi 3.5 mini',           size: '~2.4 GB',  note: 'Microsoft — strong on tool / structured output' },
+
+  // ---- 3.0+ GB — premium, needs a beefy GPU ----
+  { id: 'Qwen3-4B-q4f16_1-MLC',                       label: 'Qwen3 4B',               size: '~3.2 GB',  note: 'Premium Qwen3 mid-tier' },
+  { id: 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC',       label: 'Mistral 7B v0.3',        size: '~4.5 GB',  note: 'Premium — needs ≥6 GB VRAM' },
+  { id: 'Qwen2.5-7B-Instruct-q4f16_1-MLC',            label: 'Qwen2.5 7B',             size: '~5.0 GB',  note: 'Premium — needs ≥6 GB VRAM' },
+  { id: 'Llama-3.1-8B-Instruct-q4f16_1-MLC',          label: 'Llama 3.1 8B',           size: '~5.4 GB',  note: 'Top-tier — needs ≥6 GB VRAM' },
+];
+
+const DEFAULT_MODEL_ID  = MODELS.find((m) => m.isDefault)?.id ?? MODELS[0].id;
+const MODEL_STORAGE_KEY = 'rpl5050.chatbot.modelId';
+
+function loadSavedModelId() {
+  try { return localStorage.getItem(MODEL_STORAGE_KEY); } catch { return null; }
+}
+function saveModelId(id) {
+  try { localStorage.setItem(MODEL_STORAGE_KEY, id); } catch { /* private mode */ }
+}
+
 /* ================================================================
    ChatBot class
    ================================================================ */
@@ -376,22 +430,33 @@ export class ChatBot {
 
   /* ---- Lifecycle ---- */
 
-  /** Render the chat UI into `el`.  Call once.  Kicks off the model
-   *  download automatically — the model only weighs ~460 MB once and
-   *  HuggingFace caches it locally, so subsequent loads are instant.
-   *  The Load button stays available as a "Retry" affordance if the
-   *  download fails. */
+  /** Render the chat UI into `el`.  Call once.
+   *
+   *  Model load policy:
+   *   - First-ever mount with no saved model → show the picker;
+   *     don't auto-download anything.  The user picks explicitly so
+   *     they're not surprised by a several-hundred-MB download on
+   *     opening the panel.
+   *   - Mount with a saved model id in localStorage → auto-load
+   *     that model.  Subsequent loads of the same id hit Cache
+   *     Storage and complete in seconds.
+   *   - Saved id no longer in MODELS (e.g. user wiped their setting,
+   *     or we removed a model) → fall back to picker.
+   */
   mount(el) {
     this._container = el;
     el.innerHTML = '';
     el.classList.add('cb-root');
     el.appendChild(this._buildUI());
 
-    // Auto-load on first mount.  Subsequent mounts are no-ops because
-    // _startLoad short-circuits when the model is already loading or
-    // ready.
     if (this._llm.status === 'idle') {
-      this._startLoad();
+      const saved = loadSavedModelId();
+      const known = saved && MODELS.some((m) => m.id === saved);
+      if (known) {
+        this._startLoad(saved);
+      } else {
+        this._showPicker();
+      }
     }
   }
 
@@ -443,13 +508,30 @@ export class ChatBot {
     this._progressEl.appendChild(progressBar);
     this._progressEl.appendChild(this._progressLabel);
 
-    // Load button — only surfaced if the auto-load on mount() fails.
-    // Hidden by default; _onStatus('error') unhides it as "Retry".
+    // Load button — surfaced if a load fails.  Hidden by default;
+    // _onStatus('error') unhides it as "Retry".  Re-running the same
+    // model id retries; the picker is the way to switch models.
     this._loadBtn = document.createElement('button');
     this._loadBtn.className = 'cb-load-btn hidden';
-    this._loadBtn.textContent = 'Retry download';
-    this._loadBtn.title = 'Loads Llama-3.2-1B-Instruct (q4f16_1) via WebLLM from the bundled copy under www/models/mlc-ai/, falling back to HuggingFace + binary-mlc-llm-libs if not present. Cached afterward in the browser for instant subsequent loads.';
-    this._loadBtn.addEventListener('click', () => this._startLoad());
+    this._loadBtn.textContent = 'Retry';
+    this._loadBtn.title = 'Retry loading the selected model.';
+    this._loadBtn.addEventListener('click', () => {
+      const id = loadSavedModelId() ?? DEFAULT_MODEL_ID;
+      this._startLoad(id);
+    });
+
+    // "Pick a different model" affordance — visible alongside Retry
+    // on error, and also surfaced from the header once a model is
+    // ready so the user can switch later.
+    this._switchModelBtn = document.createElement('button');
+    this._switchModelBtn.className = 'cb-switch-model-btn hidden';
+    this._switchModelBtn.textContent = '⇄ Pick a different model';
+    this._switchModelBtn.title = 'Show the model picker.';
+    this._switchModelBtn.addEventListener('click', () => this._showPicker());
+
+    // — Picker (hidden by default; populated by _showPicker())
+    this._pickerEl = document.createElement('div');
+    this._pickerEl.className = 'cb-picker hidden';
 
     // — Messages list
     this._messagesEl = document.createElement('div');
@@ -501,12 +583,126 @@ export class ChatBot {
     root.appendChild(header);
     root.appendChild(this._progressEl);
     root.appendChild(this._loadBtn);
+    root.appendChild(this._switchModelBtn);
+    root.appendChild(this._pickerEl);
     root.appendChild(this._messagesEl);
     root.appendChild(this._stopBtn);
     root.appendChild(inputRow);
 
     this._setUIState('idle');
     return root;
+  }
+
+  /* ---- Model picker --------------------------------------------------
+     Renders MODELS as a vertical list.  Clicking a row picks + loads
+     that model and persists the selection to localStorage.  The
+     picker hides itself once loading begins; _showPicker() can be
+     called again from the header / error state to change models. */
+
+  _showPicker() {
+    if (!this._pickerEl) return;
+    this._pickerEl.innerHTML = '';
+    this._pickerEl.classList.remove('hidden');
+
+    // Header row with the blurb and a close button so the user can
+    // back out without selecting.  Dismiss is always allowed — even
+    // before any model has been loaded — but in that case the chat
+    // input stays disabled and the "Pick a model" button stays
+    // surfaced so they can re-open the picker.
+    const head = document.createElement('div');
+    head.className = 'cb-picker-head';
+
+    const blurb = document.createElement('p');
+    blurb.className = 'cb-picker-blurb';
+    blurb.textContent =
+      'Pick a model. Each runs entirely on your device via WebGPU. '
+      + 'First load downloads the weights (one-time per model) and caches them in the browser.';
+    head.appendChild(blurb);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'cb-picker-close';
+    closeBtn.title = 'Dismiss the picker';
+    closeBtn.setAttribute('aria-label', 'Dismiss the picker');
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', () => this._dismissPicker());
+    head.appendChild(closeBtn);
+
+    this._pickerEl.appendChild(head);
+
+    const list = document.createElement('ul');
+    list.className = 'cb-picker-list';
+
+    const activeId = this._llm.loadedModelId ?? loadSavedModelId();
+
+    for (const m of MODELS) {
+      const li = document.createElement('li');
+      li.className = 'cb-picker-row';
+      if (m.id === activeId) li.classList.add('cb-picker-row-active');
+
+      const top = document.createElement('div');
+      top.className = 'cb-picker-row-top';
+
+      const name = document.createElement('span');
+      name.className = 'cb-picker-name';
+      name.textContent = m.label;
+
+      const size = document.createElement('span');
+      size.className = 'cb-picker-size';
+      size.textContent = m.size;
+
+      top.appendChild(name);
+      top.appendChild(size);
+
+      const note = document.createElement('div');
+      note.className = 'cb-picker-note';
+      note.textContent = m.note;
+      if (m.id === activeId) note.textContent += ' · loaded';
+
+      li.appendChild(top);
+      li.appendChild(note);
+
+      li.addEventListener('click', () => {
+        if (this._generating) return; // can't switch mid-generation
+        if (m.id === this._llm.loadedModelId) {
+          // Already loaded — just hide the picker.
+          this._pickerEl.classList.add('hidden');
+          return;
+        }
+        saveModelId(m.id);
+        this._pickerEl.classList.add('hidden');
+        // Reset the visible conversation when switching models —
+        // the new model has different priors and the prior chat
+        // history would be confusing in that context.
+        this._history = [];
+        if (this._messagesEl) this._messagesEl.innerHTML = '';
+        this._removeActiveChips();
+        this._startLoad(m.id);
+      });
+
+      list.appendChild(li);
+    }
+    this._pickerEl.appendChild(list);
+  }
+
+  _hidePicker() {
+    this._pickerEl?.classList.add('hidden');
+  }
+
+  /** User-driven dismiss of the picker.  Hides the list and surfaces
+   *  the "Pick a model" button so they can re-open it.  Differs from
+   *  _hidePicker() (called as part of normal load flow) only in that
+   *  it always exposes the re-open button, even when no model is
+   *  loaded yet — otherwise the user could end up looking at an empty
+   *  panel with no way to bring the picker back. */
+  _dismissPicker() {
+    this._hidePicker();
+    if (this._switchModelBtn) {
+      this._switchModelBtn.classList.remove('hidden');
+      // Adapt the label to match what's loaded.
+      this._switchModelBtn.textContent =
+        this._llm.loadedModelId ? '⇄ Pick a different model' : '⇄ Pick a model';
+    }
   }
 
   /** Wipe the conversation and start fresh.  Aborts any in-flight
@@ -546,14 +742,18 @@ export class ChatBot {
 
   /* ---- Model loading ---- */
 
-  async _startLoad() {
+  async _startLoad(modelId) {
+    if (!modelId) modelId = loadSavedModelId() ?? DEFAULT_MODEL_ID;
     this._loadBtn.disabled = true;
     this._loadBtn.textContent = 'Loading…';
+    this._loadBtn.classList.add('hidden');
+    this._switchModelBtn.classList.add('hidden');
+    this._hidePicker();
     try {
-      await this._llm.load();
+      await this._llm.load(modelId);
     } catch (err) {
       this._loadBtn.disabled = false;
-      this._loadBtn.textContent = 'Retry download';
+      this._loadBtn.textContent = 'Retry';
     }
   }
 
@@ -563,18 +763,26 @@ export class ChatBot {
       this._statusEl.className = 'cb-status cb-status-loading';
       this._progressEl.classList.remove('hidden');
       this._loadBtn.classList.add('hidden');
+      this._switchModelBtn.classList.add('hidden');
+      this._hidePicker();
     } else if (status === 'ready') {
-      this._statusEl.textContent = `● ${msg || 'Ready'}`;
+      const id    = this._llm.loadedModelId;
+      const entry = MODELS.find((m) => m.id === id);
+      const label = entry?.label ?? id ?? '';
+      this._statusEl.textContent = `● ${label || 'Ready'}`;
       this._statusEl.className = 'cb-status cb-status-ready';
       this._progressEl.classList.add('hidden');
       this._loadBtn.classList.add('hidden');
+      this._switchModelBtn.classList.remove('hidden');
+      this._switchModelBtn.textContent = '⇄ Pick a different model';
       this._sendBtn.disabled = false;
+      this._hidePicker();
       // Greet on first ready, with starter chips so the user can jump
       // straight into a representative task.
       if (this._history.length === 0) {
         const greeting = this._addAssistantBubble(
-          'Model ready! I can answer questions about RPL, commands, and ' +
-          'maths, and I can suggest calculator actions for you to confirm. ' +
+          `${label || 'Model'} ready. I can answer questions about RPL, commands, and ` +
+          'maths, and suggest calculator actions for you to confirm. ' +
           'Pick a starter or type your own:',
         );
         this._renderChips(STARTER_CHIPS, greeting);
@@ -584,8 +792,9 @@ export class ChatBot {
       this._statusEl.className = 'cb-status cb-status-error';
       this._progressEl.classList.add('hidden');
       this._loadBtn.disabled = false;
-      this._loadBtn.textContent = 'Retry download';
+      this._loadBtn.textContent = 'Retry';
       this._loadBtn.classList.remove('hidden');
+      this._switchModelBtn.classList.remove('hidden');
     }
   }
 
@@ -703,25 +912,55 @@ export class ChatBot {
   /** Phase 2 — silent tool decision.  Returns the parsed tool call or
    *  null (NO_TOOL / unparseable / aborted).  No streaming bubble; a
    *  small inline pill below the last reply tells the user we're
-   *  thinking. */
+   *  thinking.
+   *
+   *  WebLLM enforces OpenAI's "last message must be user/tool" rule
+   *  (MessageOrderError otherwise), so we append a trailing user
+   *  message that asks for the tool decision.  This trailing message
+   *  also doubles as the action prompt — pulling "now emit the tool
+   *  call" out of the system message and into a user turn makes
+   *  small chat-tuned models more reliably follow the instruction. */
   async _phaseTool(turnId, iter, lastBubble) {
     const stale = () => this._runId !== turnId;
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT_TOOL },
       ...this._history,
+      { role: 'user', content:
+        'Now output ONE LINE — either the JSON tool call that fulfils my request above, '
+        + 'or the literal word NO_TOOL if my request is purely conceptual. '
+        + 'No prose, no code fences.' },
     ];
     this._logPhase(`tool (iter ${iter})`, messages);
 
     const pill = this._renderInlinePill(lastBubble, '⚙ deciding next step…');
     let fullText = '';
+    // eslint-disable-next-line no-console
+    console.groupCollapsed('[ChatBot] Phase 2 stream');
     try {
+      // Phase 2 outputs at most one line of JSON or the literal
+      // NO_TOOL — 80 tokens is plenty.  Capping low keeps the
+      // worst-case latency bounded if the model loops.
       await this._llm.generate(messages, {
-        onToken: (t) => { if (typeof t === 'string') fullText += t; },
+        maxTokens: 80,
+        onToken: (t) => {
+          if (typeof t === 'string') {
+            fullText += t;
+            // Live per-token visibility — so a stuck-looking Phase 2
+            // is debuggable in real time without having to wait for
+            // the final summary log.
+            // eslint-disable-next-line no-console
+            console.log('  tok:', JSON.stringify(t));
+          }
+        },
       });
     } catch (err) {
+      // eslint-disable-next-line no-console
+      console.groupEnd();
       pill?.remove?.();
       return null;
     }
+    // eslint-disable-next-line no-console
+    console.groupEnd();
     pill?.remove?.();
     if (stale()) return null;
 
@@ -734,25 +973,47 @@ export class ChatBot {
 
   /** Phase 3 — silent follow-up chip generation.  Renders a placeholder
    *  beneath the last reply that gets replaced by chips when ready, or
-   *  removed silently on failure. */
+   *  removed silently on failure.
+   *
+   *  Same trailing-user-message trick as Phase 2 — WebLLM rejects
+   *  message arrays whose last entry isn't user/tool, and the
+   *  trailing instruction keeps small models on-task. */
   async _phaseSuggest(turnId, lastBubble) {
     const stale = () => this._runId !== turnId;
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT_SUGGEST },
       ...this._history,
+      { role: 'user', content:
+        'Now suggest three short follow-up questions I might ask next, '
+        + 'as a JSON array of three strings. Output only the array.' },
     ];
     this._logPhase('suggest', messages);
 
     const placeholder = this._renderInlinePill(lastBubble, '⏳ thinking of follow-ups…');
     let fullText = '';
+    // eslint-disable-next-line no-console
+    console.groupCollapsed('[ChatBot] Phase 3 stream');
     try {
+      // Phase 3 outputs a 3-element JSON array of short strings;
+      // 120 tokens is more than enough.
       await this._llm.generate(messages, {
-        onToken: (t) => { if (typeof t === 'string') fullText += t; },
+        maxTokens: 120,
+        onToken: (t) => {
+          if (typeof t === 'string') {
+            fullText += t;
+            // eslint-disable-next-line no-console
+            console.log('  tok:', JSON.stringify(t));
+          }
+        },
       });
     } catch (err) {
+      // eslint-disable-next-line no-console
+      console.groupEnd();
       placeholder?.remove?.();
       return;
     }
+    // eslint-disable-next-line no-console
+    console.groupEnd();
     placeholder?.remove?.();
     if (stale()) return;
 

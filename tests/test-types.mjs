@@ -1920,9 +1920,9 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Session 105 — Sy round-trip hardening for HP50 two-arg ops.
+   Sy round-trip hardening for HP50 two-arg ops.
 
-   Session 100 closed the Sy axis for eleven arity-1 ops via
+   closed the Sy axis for eleven arity-1 ops via
    KNOWN_FUNCTIONS entries and hard tests in tests/test-algebra.mjs.
    That file is lock-held this session, so we mirror the pattern in
    tests/test-types.mjs and extend coverage to the arity-2 (and
@@ -2071,7 +2071,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // pinned the "expects 2 argument" prefix; the actual-count
     // tail was uncovered, so a refactor that broke the `got N`
     // template would have silently slipped through.  Splitting
-    // gives one assertion per invariant.  Precedent: session 112
+    // gives one assertion per invariant. Precedent:
     // LOG(-10)-CMPLX-OFF split (message vs. non-TypeError guard).
     const err = assertThrows(
       () => parseEntry("`TRUNC(X)`"),
@@ -2102,12 +2102,12 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 110 — data-type-support lane.
+ — data-type-support lane.
 
    Three substantive widening clusters this session.  Hard user-
    reachable assertions that pin behavior the matrix treated as
    "already ✓" but that had no direct test on file.  (test-algebra.mjs,
-   ops.js, and COMMANDS.md are lock-held by the concurrent session 109
+ ops.js, and COMMANDS.md are lock-held by the concurrent
    command-support run.)
 
      Cluster 1 — BinInt × Real/Integer mixed-scalar arithmetic audit.
@@ -2470,15 +2470,15 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 115 — data-type-support lane.
+ — data-type-support lane.
 
    Three substantive widening clusters, all pinning contracts the
    DATA_TYPES.md matrix treated as "✓" but that had no direct test.
    ops.js + test-algebra.mjs + test-numerics.mjs + test-matrix.mjs +
    docs/COMMANDS.md + docs/REVIEW.md + logs/ are lock-held by the
-   concurrent session 114 command-support lane, so the new
-   assertions live in `tests/test-types.mjs` (end-of-file session 115
-   block) — same pattern as session 110 and session 105.
+ concurrent command-support lane, so the new
+ assertions live in `tests/test-types.mjs` (end-of-file
+ block) — same pattern as and.
 
      Cluster 1 — Binary Tagged tag-drop contract on +, -, *, /, ^ and
        the binary-numeric family (MOD/MIN/MAX/COMB/PERM/IQUOT/
@@ -2808,7 +2808,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Q ^ Z integer exponent — exact-stays-exact path via Fraction.pow.
   // Resolves DATA_TYPES.md "next-session candidate 4" stale claim that
   // Rational^Integer is real-promoted: it has not been since at least
-  // session 092.  Q(3/2)^Z(3) = 27/8.
+  // . Q(3/2)^Z(3) = 27/8.
   {
     const s = new Stack();
     s.push(Rational(3n, 2n));
@@ -3057,7 +3057,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    Cluster 1 — Hyperbolic family (`SINH`/`COSH`/`TANH`/`ASINH`/`ACOSH`/
      `ATANH`) Tagged transparency, List distribution, and Symbolic-lift
      through Tagged.  The matrix has all six ops at `T ✓ / L ✓ / N ✓ /
-     Sy ✓` since session 063 (under "Unary — invert / square / sqrt /
+ Sy ✓` since (under "Unary — invert / square / sqrt /
      elementary functions") but no direct test pin existed.  This
      cluster also catches the principal-branch promotion of
      `ATANH(:v:Real(2))` to `Tagged(v, Complex)` (|x|>1 lifts to
@@ -3067,18 +3067,18 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
      unwrap, and the outer re-tag doesn't care about the inner type.
 
    Cluster 2 — Tagged tag-drop on the percent family (`%` / `%T` /
-     `%CH`).  All three list `T ✓` since session 064 with the comment
-     "Session 064 added L/T", but no direct test pinned the
+ `%CH`). All three list `T ✓` since with the comment
+     but no direct test pinned the
      `_withTaggedBinary` tag-drop contract on these specific ops.
-     Symmetric with the binary-numeric tag-drop pinned in session 115
+ Symmetric with the binary-numeric tag-drop pinned
      (Cluster 1) but on the percent family which routes through a
      different inner handler than the arithmetic family.  Also pins
-     the V/M ✗ rejection that session 072 flipped from blank to ✗.
+ the V/M ✗ rejection that flipped from blank to ✗.
 
    Cluster 3 — Rational unary stay-exact contract on
      `NEG`/`INV`/`SQ`/`ABS`/`SQRT`/`SIGN`/`FLOOR`/`CEIL`/`IP`/`FP`
      plus the APPROX-mode collapse and out-of-domain rejection on
-     `FACT`/`XPON`/`MANT`.  The "Rational (`Q`) — session 092"
+ `FACT`/`XPON`/`MANT`. The "Rational (`Q`) — "
      convention text describes the EXACT-mode stay-exact dispatch and
      APPROX-mode Real collapse but no per-op row carries a Q column,
      and no direct test pinned the integer-collapse boundaries
@@ -3183,7 +3183,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Tagged-outer-of-List: :lbl:{0 1} SINH → :lbl:{SINH(0) SINH(1)}
   // The Tagged wrapper unwraps first, then the List wrapper distributes,
   // then the outer Tagged re-applies — same recursion order as the
-  // session 115 Cluster 3 NEG variant, but on a transcendental op that
+  // NEG variant, but on a transcendental op that
   // reaches a different inner handler.
   {
     const s = new Stack();
@@ -3243,7 +3243,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       `session120: Real(80) :p:Real(25) % → Real(20) — right tag drops`);
   }
 
-  // List distribution on % is row L ✓ since session 064.  Pin the
+  // List distribution on % is row L ✓ since . Pin the
   // List × scalar broadcast on the percent base.  HP50 AUR §3-1: %
   // distributes over the *first* (base) argument when the second is
   // a scalar; we verify the broadcast shape.
@@ -3260,9 +3260,9 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       `session120: {80 40} 25 % → {20 10} (% distributes over base)`);
   }
 
-  // V/M rejection on the percent family — session 072 flipped V/M from
+  // V/M rejection on the percent family — flipped V/M from
   // blank to ✗.  Pin the rejection.  HP50 AUR §3-1 percent family is
-  // scalar-only, mirroring MOD/MIN/MAX (pinned in session 068).
+  // scalar-only, mirroring MOD/MIN/MAX (pinned ).
   assertThrows(
     () => {
       const s = new Stack();
@@ -3482,7 +3482,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // APPROX-mode collapse: Q unary ops drop to Real regardless of
   // exactness.  Pins the flag -3 "give me decimals" contract on the
-  // rational unary surface (mirrors the session 115 Cluster 2
+  // rational unary surface (mirrors the
   // APPROX collapse pin on the binary `+`).
   setApproxMode(true);
   try {
@@ -3550,15 +3550,9 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Session 187 — XPON / MANT L/V/M/T wrapper-add coverage pins.
+   XPON / MANT L/V/M/T wrapper-add coverage pins.
 
-   Both ops were registered as bare scalar handlers (Real/Integer/Sy
-   only) since their introduction.  The ship-prep 2026-04-25 audit
-   downgraded their L/V/M/T cells from aspirational ✓ to blank
-   (candidate) after `utils/@probe-special-fns-vm.mjs` confirmed the
-   bare handler throws `Bad argument type` on every collection type.
-
-   Session 187 wraps both in
+   Both ops are wrapped in
    `_withTaggedUnary(_withListUnary(_withVMUnary(...)))` — the same
    3-deep composition used by FACT / LNP1 / EXPM / SINH / etc.
 
@@ -3760,9 +3754,9 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    Cluster 1 — List distribution on the arity-2 numeric family
      (COMB / PERM / IQUOT / IREMAINDER / GCD / LCM / XROOT / MOD /
      MIN / MAX).  All ten ops are wrapped in `_withListBinary` and
-     show `L ✓` in their matrix rows since session 064 / 105, but
+ show `L ✓` in their matrix rows since / 105, but
      no direct test pinned scalar×List, List×scalar, or pairwise
-     distribution on this sub-family — session 115 Cluster 3 did
+ distribution on this sub-family — did
      pin these axes on `+` / `-` / `*` and the rounding family but
      not on the combinatorial / divmod / GCD / LCM / XROOT / MOD /
      MIN / MAX surface, where the inner handler routes through a
@@ -3773,12 +3767,12 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
      (FLOOR / CEIL / IP / FP / SIGN / ABS) — the wrapper composition
      `_withTaggedUnary(_withListUnary(handler))` causes `:lbl:{a b}`
      to unwrap Tagged, distribute across the list, then re-tag the
-     resulting list.  Session 110 / 120 pinned bare-Tagged on these
-     ops and session 115 pinned bare-List on NEG / FLOOR; this
+     resulting list. pinned bare-Tagged on these
+ ops and pinned bare-List on NEG / FLOOR; this
      cluster pins the composition on a *different* unary subfamily
      (rounding / sign-magnitude) and adds the negative-case
      deliberate-inner-Tagged rejection (`:lbl:{:x:1 :y:-2} NEG` →
-     'Bad argument type', mirror of session 115 Cluster 3 on a
+ 'Bad argument type', mirror of on a
      different op) and the bespoke ABS-Tagged-Vector pin
      (`:v:Vector(3,4) ABS` → `:v:Real(5)` — the Frobenius bespoke
      handler runs *inside* `_withTaggedUnary`, so the outer tag is
@@ -3972,7 +3966,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // FLOOR :lbl:{7.2 -1.5} → :lbl:{Real(7) Real(-2)} — Tagged unwraps
   // first, list distributes inside, outer tag re-applies on the
-  // resulting list (mirror of session 115 Cluster 3 NEG variant on
+  // resulting list (mirror of NEG variant on
   // a different unary inner handler).
   {
     const s = new Stack();
@@ -4012,7 +4006,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // FP :a:{7.2} → :a:{Real(0.2 ± IEEE drift)}.  FP uses the
-  // `x - Math.trunc(x)` real path (matches session 110 Cluster 2
+  // `x - Math.trunc(x)` real path (matches
   // tolerance — the value is approximately 0.2 with sub-1e-12 drift).
   {
     const s = new Stack();
@@ -4028,7 +4022,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // SIGN :u:{Real(-3) Real(0) Real(5)} → :u:{Real(-1) Real(0) Real(1)}.
   // The Real branch of SIGN emits Real (NOT Integer) — distinct from
-  // the Q→Z collapse path pinned in session 120 Cluster 3.
+  // the Q→Z collapse path pinned.
   {
     const s = new Stack();
     s.push(Tagged('u', RList([Real(-3), Real(0), Real(5)])));
@@ -4096,7 +4090,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // throws 'Bad argument type' because `_withTaggedUnary` sits OUTSIDE
   // `_withListUnary` in the wrapper composition: the list distributes
   // first, then the inner scalar handler runs *without* a Tagged
-  // unwrapper in scope.  Mirror of session 115 Cluster 3 final pin
+  // unwrapper in scope. Mirror of final pin
   // but on a Tagged-wrapped *outer* (:v:{...}) — verifies the wrapper
   // composition order both ways.  When the Tagged is OUTSIDE the
   // List, things work (every test above); when it's INSIDE the List,
@@ -4118,7 +4112,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // `isInteger(a) && isInteger(b)` for the integer fast path and
   // falls through `toRealOrThrow` for everything else, including Q.
   // Result: Real(1/3 ≈ 0.333…), NOT Rational(1, 3).  Distinct from
-  // the arithmetic family (session 115 Cluster 2) which preserves Q.
+  // the arithmetic family which preserves Q.
   {
     const s = new Stack();
     s.push(Rational(1n, 2n));
@@ -4255,7 +4249,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     'session125: MOD Rational(1,2) Complex(0,2) → Bad argument type (C rejection wins on MOD too)'
   );
 
-  // Contrast pin — `+` on Q×Q stays-exact (session 115 Cluster 2 pin
+  // Contrast pin — `+` on Q×Q stays-exact ( pin
   // mirrored here for the contrast).  This is the *arithmetic*
   // family's Q-preserving behavior versus the MIN/MAX/MOD family's
   // Q-degrading behavior.  Single assertion documenting the contrast
@@ -4273,7 +4267,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 130 — Cluster 1: Tagged-of-Vector / Tagged-of-Matrix
+ — Cluster 1: Tagged-of-Vector / Tagged-of-Matrix
    composition through `_withTaggedUnary(_withListUnary(
    _withVMUnary(handler)))` for the wrapper-VM-using unary family.
 
@@ -4289,7 +4283,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
      (5) `_withTaggedUnary` re-tags the resulting V/M with the same
          label.
 
-   Session 125 Cluster 2 pinned the bespoke ABS-of-Tagged-Vector
+   pinned the bespoke ABS-of-Tagged-Vector
    path (where ABS does NOT route through `_withVMUnary` — it has a
    bespoke isVector/isMatrix branch in the handler that emits a
    scalar Frobenius norm).  This cluster covers the OTHER code
@@ -4298,13 +4292,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    ABS / SIGN / INV uses.
 
    ALSO covered here: Matrix axis on the bespoke ABS branch
-   (session 125 only pinned Vector); the inner V → R kind change
+; the inner V → R kind change
    composes with the outer Tagged identically for Matrix → R
    (Frobenius on Matrix is also a Real scalar).  And NEG on
    Tagged-Matrix — NEG has its own bespoke V/M branch (does not
    use `_withVMUnary`) that maps element-wise — pinning the
    Tagged-Matrix path on NEG closes the bespoke-V/M-with-Tagged
-   surface that wasn't covered in session 125. */
+   surface that wasn't covered . */
 {
   // SQRT on Tagged-Vector: wrapper-VM composition with the principal-
   // branch transcendental.  Pins that the inner `_withVMUnary` runs
@@ -4389,7 +4383,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ABS on Tagged-Matrix: bespoke Matrix → Real (Frobenius norm)
-  // path, mirror of session 125's bespoke ABS-Tagged-Vector pin
+  // path, mirror of 's bespoke ABS-Tagged-Vector pin
   // but on the Matrix axis.  Pins that the M → R kind change at
   // the inner handler still preserves the outer tag.
   // Frobenius of [[3,0],[0,4]] = √(9 + 16) = √25 = 5.
@@ -4421,7 +4415,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 130 — Cluster 2: BinaryInteger × Rational cross-family
+ — Cluster 2: BinaryInteger × Rational cross-family
    on `==` / `≠` / `<` / `>` / `≤` / `≥` and SAME's strict no-coerce
    contract.
 
@@ -4434,12 +4428,12 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    equality (`n1 * d2 == n2 * d1`) and for ordered compare it's a
    cross-multiply (no Real round-trip — preserves exactness).
 
-   Session 110 Cluster 3 pinned Q × Z, Q × R, Q × C and the
+   pinned Q × Z, Q × R, Q × C and the
    ordered-compare rational branch, but stopped short of B × Q —
    which exercises a *composition* of two cross-family widenings
    (BinInt → Integer in `_binIntCrossNormalize` / `comparePair`,
    then Integer × Rational in `promoteNumericPair`'s rational
-   kind).  Session 074 added BinInt to the comparator widening
+   kind). added BinInt to the comparator widening
    directly but only pinned B × Z / B × R / B × C, not B × Q.
 
    SAME deliberately stays strict (ops.js:4477) — `_binIntCrossNormalize`
@@ -4487,7 +4481,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // SAME deliberately does NOT cross-normalize BinInt — types
   // differ after the no-op normalize, so SAME returns 0 even when
-  // `==` returns 1.  Pin (mirror of session 074's BinInt × Integer
+  // `==` returns 1. Pin (mirror of 's BinInt × Integer
   // SAME pin extended to BinInt × Rational).
   {
     const s = new Stack();
@@ -4539,7 +4533,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // `≥` equality boundary: Rational(2,1) (= Integer(2) by canonical
   // form) ≥ #2h.  At the rational branch, 2*1 ≥ 2*1 → 2 ≥ 2 → true.
   // Note: Rational(2,1) is constructed as { n: 2n, d: 1n } per
-  // session 092 — does NOT auto-collapse to Integer at the
+  // — does NOT auto-collapse to Integer at the
   // constructor (collapse happens at op-level result).
   {
     const s = new Stack();
@@ -4568,7 +4562,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Wordsize-mask edge case on `==`: at ws=8, #100h masks to 0,
   // and Rational(0,1) compares equal.  Pins that the mask in
   // `_binIntCrossNormalize` fires before the rational kind compare
-  // (cf. session 074's similar pin on B × Z).  Restored ws=64 in
+  // (cf. 's similar pin on B × Z). Restored ws=64 in
   // a try/finally to avoid leaking state.
   {
     setWordsize(8);
@@ -4609,7 +4603,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // = true.  Pin that the mask happens BEFORE the compare —
   // without masking, #1FFh = 511 would be > 300, flipping the
   // result.  This is the same masking discipline pinned on B × Z
-  // ordered compare in session 074.
+  // ordered compare.
   {
     setWordsize(8);
     try {
@@ -4627,7 +4621,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 130 — Cluster 3: Tagged-of-List composition on binary
+ — Cluster 3: Tagged-of-List composition on binary
    ops via `_withTaggedBinary(_withListBinary(handler))`.
 
    The percent family (`%` / `%T` / `%CH`) and the binary-numeric
@@ -4645,15 +4639,15 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
      (4) Result is the un-Tagged List (binary tag-drop — no
          re-tag, since binary ops have no single obvious label).
 
-   Session 120 Cluster 2 pinned both-side / left-only / right-only
+   pinned both-side / left-only / right-only
    tag-drop on the percent family with bare-scalar operands.
-   Session 125 Cluster 1 pinned the `_withListBinary` distribution
+   pinned the `_withListBinary` distribution
    axes on the combinatorial / divmod / GCD / LCM / MOD / MIN /
    MAX surface with bare-list operands.  This cluster covers the
    *composition* — Tagged outside List on one or both operands —
    on a representative sample of the binary-list family, plus the
    deliberate inner-Tagged-inside-List rejection on the binary
-   surface (a binary mirror of session 125 Cluster 2's unary
+ surface (a binary mirror of 's unary
    inner-Tagged-inside-List rejection on NEG).  10 hard
    assertions. */
 {
@@ -4728,7 +4722,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // unwraps both tags, `_withListBinary` pairs `{10 mod 3, 7 mod 2} = {1, 1}`.
   // Pin through MOD's integer fast path (both Integer operands
   // ⇒ Integer result, contrast with MOD's Q→R degradation pinned
-  // in session 125 Cluster 3).
+  // ).
   {
     const s = new Stack();
     s.push(Tagged('a', RList([Integer(10n), Integer(7n)])));
@@ -4758,7 +4752,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Tagged-of-Tagged scalar on `MIN` — both tags drop, integer
   // fast path: min(5, 3) = 3.  Pins the bare-scalar both-Tagged
   // path on a binary-numeric op that's distinct from the percent
-  // family pinned in session 120 Cluster 2.
+  // family pinned.
   {
     const s = new Stack();
     s.push(Tagged('a', Integer(5n)));
@@ -4776,7 +4770,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // INNER `handler` directly (NOT back through the wrapped
   // function — see ops.js:519).  So the inner handler sees a
   // bare Tagged scalar, calls `toRealOrThrow`, and rejects.  This
-  // is the binary mirror of session 125 Cluster 2's unary
+  // is the binary mirror of 's unary
   // inner-Tagged-inside-List rejection on NEG.
   assertThrows(
     () => {
@@ -4793,7 +4787,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // List).  `_withTaggedBinary` unwraps the tag → `80 25 %` =
   // `Real(20)`, no Tagged envelope (binary tag-drop).  Single
   // assertion documenting that bare-scalar both-side tag-drop
-  // (already pinned in session 120) still composes here as
+  // (already pinned ) still composes here as
   // expected — useful as the contrast with the List-recursion
   // rejection above.
   {
@@ -4808,7 +4802,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // Tagged on right-only with scalar × Tagged-of-List on `LCM` —
   // pins the right-side Tagged-of-List + left-scalar variant on
-  // a combinatorial-adjacent op (LCM).  Pairs with session 125
+  // a combinatorial-adjacent op (LCM). Pairs with
   // Cluster 1's bare-scalar × bare-List LCM pin (which used `4
   // {6 9} LCM` → `{12, 36}`); here the same answer is reached
   // via the Tagged-unwrap path.
@@ -4825,21 +4819,21 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 135 — Cluster 1: Rational × Vector / Rational × Matrix
+ — Cluster 1: Rational × Vector / Rational × Matrix
    arithmetic broadcast on `+ - * /`.
 
    The compact reference rows for `+ - * /` carry `V ✓ M ✓` and
-   `Q ✓` (via the session-092 convention text and session-115
+ `Q ✓` (via the convention text and
    Cluster 2 arithmetic pin), but no direct test had pinned the
    *broadcast* of a Rational scalar onto a Vector or Matrix, nor
    the per-element type contract.  The relevant code path is
    `_scalarBinaryMixed → _binaryMathMixed → _arithmeticOnArrays`,
    which calls the inner per-element arithmetic via
    `promoteNumericPair` — and that helper has a `'rational'` kind
-   branch (session 115 Cluster 2) that stays-exact through
+ branch that stays-exact through
    `Fraction.js` arithmetic.  So Q × Q-element stays Rational
    (with d=1 collapse to Integer at the result layer); Q × R-element
-   degrades to Real per element (mirror of session 125 Cluster 3's
+ degrades to Real per element (mirror of 's
    MIN/MAX/MOD Q→R degradation, but on V/M arithmetic instead);
    Q × Z-element stays-exact through the rational kind and may
    collapse to Integer when d=1.  Closes the V/M-axis on the Q
@@ -4865,7 +4859,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Q + Vector with Real-typed elements (operand-order symmetric):
   // `Rational(1,2) + Vec[Real(1), Real(2)]` → `Vec[Real(1.5), Real(2.5)]`.
   // Pins that left-Q × right-V broadcast composes the same way as
-  // right-Q (session 115 only pinned scalar Q+R, not V-broadcast).
+  // right-Q.
   {
     const s = new Stack();
     s.push(Rational(1n, 2n));
@@ -4882,7 +4876,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // the rational kind.  `Q(1/2) + Vec[Q(1/3), Q(1/4)]` →
   // `Vec[Q(5/6), Q(3/4)]`.  Pins that the V/M broadcast preserves
   // the Q-stay-exact dispatch through `_rationalBinary` per element
-  // (session 115 Cluster 2 pinned this on scalar arithmetic — this
+  // ( pinned this on scalar arithmetic — this
   // is the V-broadcast extension).
   {
     const s = new Stack();
@@ -4899,7 +4893,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Q × Vector with Q-typed elements collapses to Integer per
   // element when d=1 result: `Q(1/2) * Vec[Q(2,1), Q(4,1)]` →
   // `Vec[Integer(1), Integer(2)]`.  Pins the d=1 collapse (which
-  // session 115 Cluster 2 pinned on scalar `Q*Q` → Integer) survives
+  // pinned on scalar `Q*Q` → Integer) survives
   // the V-broadcast.
   {
     const s = new Stack();
@@ -4984,11 +4978,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 135 — Cluster 2: Tagged-of-Vector / Tagged-of-Matrix
+ — Cluster 2: Tagged-of-Vector / Tagged-of-Matrix
    composition on BINARY arithmetic via
    `_withTaggedBinary(_withListBinary(handler))` for `+ - * /`.
 
-   Session 130 Cluster 1 pinned the UNARY surface (SQRT, FACT,
+   pinned the UNARY surface (SQRT, FACT
    LNP1, NEG, ABS) on Tagged-of-V/M with the 3-deep wrapper
    `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`.
    This cluster covers the BINARY surface, where the wrapper is
@@ -5009,7 +5003,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    Pins both-sides, left-only, right-only Tagged on V/M operands;
    pins the bespoke V·V dot product (kind change V → R through
    the tag-drop wrapper, mirror of the bespoke ABS-of-Tagged-Vector
-   pin from session 125 Cluster 2 but on the binary surface);
+ pin from but on the binary surface);
    pins the inner-Tagged-inside-Vector rejection (mirror of session
    130 Cluster 3's inner-Tagged-inside-List); pins that the
    pre-existing dimension-mismatch rejection survives the Tagged
@@ -5077,7 +5071,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // Bespoke V·V dot product through tag-drop: `:a:Vec[1, 2] *
   // :b:Vec[3, 4]` → `Real(11)` (1·3 + 2·4 = 11).  Kind change V →
-  // R survives the binary tag-drop wrapper — mirror of session 125
+  // R survives the binary tag-drop wrapper — mirror of
   // Cluster 2's bespoke ABS-of-Tagged-Vector V → R kind-change pin
   // but on the binary surface.
   {
@@ -5160,7 +5154,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // The Vector at level 2 is NOT Tagged at the top level, so
   // `_withTaggedBinary` doesn't intercept it; the inner handler
   // sees a Vector with Tagged elements and the per-element
-  // arithmetic helper rejects.  Mirror of session 130 Cluster 3's
+  // arithmetic helper rejects. Mirror of 's
   // inner-Tagged-inside-List rejection on the percent family,
   // here on the V-axis of the binary arithmetic surface.
   assertThrows(
@@ -5191,7 +5185,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 135 — Cluster 3: Tag-identity contract on `==` / `SAME`
+ — Cluster 3: Tag-identity contract on `==` / `SAME`
    plus BinInt base-agnostic equality contract.
 
    The Tagged row in the `==` / `SAME` block of the matrix carries
@@ -5199,7 +5193,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    test had pinned the *different-tag* failure mode, the
    *missing-tag-on-one-side* mismatch (Tagged ≠ bare even at the
    same payload value), or the same-tag + different-value
-   mismatch.  Session 074 added BinInt × BinInt to `==` / `SAME`,
+   mismatch. added BinInt × BinInt to `==` / `SAME`
    and the matrix Notes mention "BinInt × BinInt (masked against
    current wordsize)" — but no direct test had pinned the
    base-agnostic contract: `#5h SAME #5d` = 1 (value matters,
@@ -5327,7 +5321,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // SAME mirrors `==` on base-agnostic BinInt: `SAME #5h #5d` →
-  // 1.  Distinct contract from session 074's "SAME does not
+  // 1. Distinct contract from 's "SAME does not
   // type-coerce" — base difference is NOT a type difference for
   // BinInt × BinInt (both operands are still type
   // `'binaryInteger'`); only the cosmetic `.base` field differs.
@@ -5356,8 +5350,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // BinInt cross-base ordered compare: `#5h < #6d` → 1.  Pins
   // that ordered compare also ignores the formatter base — just
   // compares masked values.  Closes the cross-base contract on
-  // the ordered comparator family; session 074 pinned BinInt × Z
-  // ordered compare and session 130 pinned BinInt × Q, but the
+  // the ordered comparator family; pinned BinInt × Z
+  // ordered compare and pinned BinInt × Q, but the
   // BinInt × BinInt cross-base path was unpinned.
   {
     const s = new Stack();
@@ -5371,7 +5365,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 140 — Cluster 1: Hyperbolic family Tagged-of-Vector /
+ — Cluster 1: Hyperbolic family Tagged-of-Vector /
    Tagged-of-Matrix wrapper-VM composition (SINH / COSH / TANH /
    ASINH / ACOSH / ATANH).
 
@@ -5385,14 +5379,14 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    `_withVMUnary` distributes element-wise; (4) `_withTaggedUnary`
    re-tags the resulting V/M with the SAME label.
 
-   Session 120 Cluster 1 pinned bare-scalar Tagged transparency
+   pinned bare-scalar Tagged transparency
    and List distribution on this family ("Hyperbolic family
    Tagged transparency, List distribution, and Symbolic-lift
-   through Tagged"), and session 130 Cluster 1 pinned the
+ through Tagged"), and pinned the
    wrapper-VM composition for SQRT / FACT / LNP1 / SIN — but
    the hyperbolic 3-deep wrapper-VM composition was unpinned.
    This cluster closes that surface, plus the deliberate inner-
-   Tagged-inside-Vector rejection (mirror of session 130 Cluster
+ Tagged-inside-Vector rejection (mirror of Cluster
    3's inner-Tagged-inside-List rejection on the V-axis), and
    the `_exactUnaryLift` integer-stay-exact path on Tagged-V
    (SINH(Integer(0)) → Integer(0) inside the Tagged Vector,
@@ -5518,7 +5512,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Tagged scalars, and the inner per-element handler is NOT
   // Tagged-aware (the `_withTaggedUnary` wrapper sits OUTSIDE
   // `_withVMUnary` in the wrapper composition chain).  Mirror
-  // of session 130 Cluster 3's inner-Tagged-inside-List rejection
+  // of 's inner-Tagged-inside-List rejection
   // on the binary surface, extended to the hyperbolic unary V
   // surface.
   {
@@ -5530,7 +5524,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 140 — Cluster 2: Inverse-trig family Tagged-of-V/M
+ — Cluster 2: Inverse-trig family Tagged-of-V/M
    wrapper-VM composition (ASIN / ACOS / ATAN) plus EXPM
    Tagged-of-V/M.
 
@@ -5541,11 +5535,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    wrapper.  All three inverse-trig ops emit results in the
    active angle mode (RAD by default).
 
-   Session 130 Cluster 1 pinned LNP1 Tagged-of-Vector wrapper-VM
-   composition; session 120 Cluster 1 pinned hyperbolic List/
+   pinned LNP1 Tagged-of-Vector wrapper-VM
+ composition; pinned hyperbolic List/
    Tagged transparency on bare scalars; but the inverse-trig
    Tagged-of-V/M composition was unpinned, and EXPM Tagged-of-
-   V/M was unpinned (only LNP1 was covered in session 130 — they
+ V/M was unpinned (only LNP1 was covered — they
    share the same wrapper shape but EXPM is a distinct registration
    at `ops.js:7249`).  Closes the inverse-trig surface plus the
    EXPM/LNP1 pair on the Tagged-V/M axis. */
@@ -5681,7 +5675,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 140 — Cluster 3: ARG bare V/M axis + ARG / CONJ / RE /
+ — Cluster 3: ARG bare V/M axis + ARG / CONJ / RE /
    IM Tagged-of-V/M composition with bespoke V/M dispatch INSIDE
    the 2-deep wrapper.
 
@@ -5700,7 +5694,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
    The matrix carries `V ✓ M ✓` for these ops since session
    064 (CONJ / RE / IM via `_<op>Scalar` element-wise dispatch)
-   and `T ✓` since session 068; session 110 pinned ARG Tagged
+ and `T ✓` since ; pinned ARG Tagged
    transparency on bare Complex (`ARG(:v:Complex(3,4))`); session
    100 pinned Sy round-trip on CONJ / RE / IM via `defaultFnEval`
    folds — but the bare V/M axis on ARG was unpinned, and the
@@ -5738,7 +5732,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // ARG on bare Vector with Complex elements: ARG(3+4i) =
     // atan2(4, 3) ≈ 0.9273; ARG(0+1i) = π/2.  Pins the Complex
     // axis on bare-V — closes the bare-V/M axis (matrix shows V✓
-    // since session 063 but no direct test had pinned the bare-V
+    // since but no direct test had pinned the bare-V
     // path independently of Tagged).
     {
       const s = new Stack();
@@ -5863,10 +5857,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 142 — Cluster 1: Inverse-trig + inverse-hyp family
+ — Cluster 1: Inverse-trig + inverse-hyp family
    EXACT-mode `_exactUnaryLift` Integer-stay-exact path.
 
-   Surfaced as a candidate at the end of session 140's log:
+ Surfaced as a candidate at the end of 's log:
 
      "EXACT-mode `_exactUnaryLift` Integer-stay-exact path on the
       inverse-trig family — Cluster 1 pinned the SINH(Integer(0))
@@ -5887,7 +5881,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    stay-exact path on each of the six functions, plus the Rational
    input variant (Q stay-exact via `Number(n)/Number(d)` → Math.fn
    → fromRadians + integer-clean check), plus the stay-symbolic
-   branch when the result is NOT integer-clean.  The session-140
+ branch when the result is NOT integer-clean. The
    Cluster 1 SINH pin only covered the hyperbolic family (SINH /
    COSH / TANH / ASINH / ACOSH / ATANH all share `_unaryCx`-via-
    _exactUnaryLift) but only the SINH variant under Tagged-V — bare-
@@ -6024,8 +6018,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // Inverse-hyperbolic Integer-stay-exact: ASINH(Integer(0)) →
     // Integer(0).  asinh(0)=0; no angle-mode involvement on the
     // hyperbolic family — `_exactUnaryLift` directly applies to
-    // the asinh result.  Mirror of session-140 Cluster 1's SINH
-    // pin but on the inverse-hyp axis (which session 140
+    // the asinh result. Mirror of 's SINH
+    // pin but on the inverse-hyp axis (which
     // explicitly only pinned on Tagged-V, not bare-scalar).
     {
       const s = new Stack();
@@ -6064,19 +6058,19 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 142 — Cluster 2: CONJ / RE / IM / ARG on Tagged-of-
+ — Cluster 2: CONJ / RE / IM / ARG on Tagged-of-
    Symbolic — wrapper composition through the 2-deep
    `_withTaggedUnary(_withListUnary(handler))` shape on the Sy axis.
 
-   Surfaced as a candidate at the end of session 140's log:
+ Surfaced as a candidate at the end of 's log:
 
      "CONJ/RE/IM on Tagged-of-Symbolic — matrix lists `T ✓` and
       `Sy ✓` independently but the composition wasn't pinned."
 
-   The matrix gives `T ✓` and `Sy ✓` per op since session 100 / 110
+ The matrix gives `T ✓` and `Sy ✓` per op since / 110
    landed Tagged transparency and Symbolic round-trip via
    `defaultFnEval` folds, but the COMPOSITION (Tagged-of-Symbolic)
-   was not pinned.  Distinct from session 140 Cluster 3, which
+ was not pinned. Distinct from, which
    pinned Tagged-of-V/M with bespoke V/M dispatch INSIDE the
    wrapper — Tagged-of-Symbolic exercises the `_isSymOperand`
    branch in the bespoke handler, which lifts to
@@ -6153,10 +6147,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 142 — Cluster 3: Inner-Tagged-inside-Vector / Matrix
+ — Cluster 3: Inner-Tagged-inside-Vector / Matrix
    rejection on bespoke V/M handlers (ARG / CONJ / RE / IM).
 
-   Surfaced as a candidate at the end of session 140's log:
+ Surfaced as a candidate at the end of 's log:
 
      "Inner-Tagged-inside-Vector rejection on bespoke V/M handlers
       (ARG/CONJ/RE/IM) — the Cluster 1 inner-Tagged-inside-Vector
@@ -6175,10 +6169,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    `v.items.map(_argScalar)`; the per-element handlers receive
    Tagged scalars and reject with 'Bad argument type' since they're
    not Tagged-aware (in contrast to the wrapper-VM handlers in
-   session 140 Clusters 1 / 2 where `_withVMUnary` sat between the
+ Clusters 1 / 2 where `_withVMUnary` sat between the
    per-element handler and the wrapper-Tagged unwrap).
 
-   Mirror of session 140 Cluster 1's `Vec[:x:Real(0), :y:Real(0)]
+ Mirror of 's `Vec[:x:Real(0), :y:Real(0)]
    SINH` rejection but on the four bespoke-V/M ops, plus the
    Matrix-axis variant for completeness. */
 {
@@ -6243,11 +6237,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 145 — Cluster 1: Forward trig SIN / COS / TAN EXACT-mode
+ — Cluster 1: Forward trig SIN / COS / TAN EXACT-mode
    `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic
    contract on bare scalars.
 
-   Surfaced as a candidate at the end of session 142's log:
+ Surfaced as a candidate at the end of 's log:
 
      "EXACT-mode Integer-stay-exact path for trig forward family
       (SIN/COS/TAN) on the bare-scalar axis — `SIN(Integer(0))` →
@@ -6278,7 +6272,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    fall-through, the angle-mode flip on the same operand, the
    APPROX-mode bypass (which routes through the Real-result path
    instead of `_exactUnaryLift`), and the Rational stay-symbolic
-   contract.  Mirror of session 142 Cluster 1's inverse-trig +
+ contract. Mirror of 's inverse-trig +
    inverse-hyp pattern, extended to the forward-trig axis. */
 {
   const _prevAngle = calcState.angle;
@@ -6411,7 +6405,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // numeric primitive, but the SYMBOLIC payload built by
     // `_exactUnaryLift` carries the AST shape `Bin('/', Num(1),
     // Num(2))` so the rational survives in the symbolic result.
-    // Mirror of session 142 Cluster 1's `ASIN(Rational(1,3)) DEG`
+    // Mirror of 's `ASIN(Rational(1,3)) DEG`
     // pin but on the forward-trig axis where the rational stays
     // symbolic in RAD too (sin(0.5) ≈ 0.479 is not integer-clean).
     {
@@ -6449,11 +6443,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 145 — Cluster 2: LN / LOG / EXP / ALOG EXACT-mode
+ — Cluster 2: LN / LOG / EXP / ALOG EXACT-mode
    `_exactUnaryLift` Integer-stay-exact / Rational-stay-symbolic
    contract on bare scalars.
 
-   Surfaced as a candidate at the end of session 142's log:
+ Surfaced as a candidate at the end of 's log:
 
      "EXACT-mode Integer-stay-exact for `LN(Integer(1))` /
       `EXP(Integer(0))` / `ALOG(Integer(0))` / `LOG(Integer(1))`
@@ -6635,7 +6629,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // → Integer(0).  Pins that the Rational arm of the EXACT-mode
   // path can produce an Integer result via `_exactUnaryLift` when
   // the underlying numeric value happens to be integer-clean.
-  // Distinct from session 142 Cluster 1's ASIN(Rational(1,2))=30
+  // Distinct from 's ASIN(Rational(1,2))=30
   // pin — there the angle-mode `fromRadians` produced the integer-
   // clean output; here it's the Rational value itself collapsing
   // to 1.0 before the numeric primitive runs.
@@ -6701,13 +6695,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 145 — Cluster 3: SIN / COS / TAN EXACT-mode integer-
+ — Cluster 3: SIN / COS / TAN EXACT-mode integer-
    stay-exact path under Tagged-V/M wrapper composition + RE / IM
    M-axis inner-Tagged rejection (closes the ARG/CONJ/RE/IM × V/M
-   inner-Tagged-rejection grid that session 142 Cluster 3 left
+ inner-Tagged-rejection grid that left
    half-open).
 
-   Surfaced as a candidate at the end of session 142's log:
+ Surfaced as a candidate at the end of 's log:
 
      "Inner-Tagged-inside-Vector rejection on the M-axis for RE
       and IM — Cluster 3 above pinned ARG and CONJ on the M-axis
@@ -6719,9 +6713,9 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    Two halves:
 
    (a) **Forward trig EXACT-mode integer-stay-exact under
-       Tagged-V/M wrapper composition.**  Session 140 Cluster 1
+       Tagged-V/M wrapper composition.**
        pinned `:v:Vector(0, 0) SIN` → `:v:Vector(0, 0)` (Real
-       inputs, transcendental zero-fold) and session 140 Cluster 1
+ inputs, transcendental zero-fold) and
        extension also pinned the `_exactUnaryLift` Integer-stay-
        exact path under Tagged-V on SINH (`:h:Vector(Integer(0),
        Integer(0)) SINH` → `:h:Vector(Integer(0), Integer(0))`).
@@ -6736,10 +6730,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
        composes element-wise across V/M under outer Tagged.
 
    (b) **RE / IM M-axis inner-Tagged-inside-Matrix rejection.**
-       Session 142 Cluster 3 pinned ARG and CONJ on the M-axis;
+       pinned ARG and CONJ on the M-axis;
        the per-element handlers `_reScalar` / `_imScalar` are
        distinct from `_argScalar` / `_conjScalar` so the V-axis
-       pins from session 142 don't transitively cover the M-axis
+ pins from don't transitively cover the M-axis
        (the bespoke V/M handler for RE / IM dispatches via
        `v.rows.map(r => r.map(_reScalar))` / `_imScalar`, distinct
        from the `_argScalar` / `_conjScalar` chains in the ARG /
@@ -6757,7 +6751,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // `_withVMUnary`, and at each Integer(0) leaf the EXACT-mode
     // arm of `_trigFwdCx` calls `_exactUnaryLift('SIN', 0, v)` →
     // Integer(0).  Outer tag preserved across the per-element
-    // EXACT-mode integer-clean fold.  Mirror of session 140
+    // EXACT-mode integer-clean fold. Mirror of
     // Cluster 1's SINH(Integer(0)) Tagged-V pin on the forward-
     // trig axis.
     {
@@ -6852,7 +6846,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // EXACT-mode integer-clean fold under Tagged composition.
     // Per-entry sin(0°)=0 and sin(180°)→1.22e-16→0 all fold to
     // Integer(0); outer tag preserved + Matrix kind preserved.
-    // Mirror of session 140 Cluster 1's SINH Tagged-Matrix pin
+    // Mirror of 's SINH Tagged-Matrix pin
     // on the forward-trig axis.
     {
       const s = new Stack();
@@ -6872,13 +6866,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     setAngle('RAD');
 
     // ---- (b) RE / IM M-axis inner-Tagged-inside-Matrix rejection.
-    // Closes the 4-op × 2-axis grid that session 142 Cluster 3
+    // Closes the 4-op × 2-axis grid that
     // half-opened. ----
 
     // RE on a Matrix containing a Tagged scalar inside an entry —
     // the bespoke handler iterates `v.rows.map(r => r.map(
     // _reScalar))`; `_reScalar` is not Tagged-aware and rejects
-    // with 'Bad argument type'.  M-axis mirror of session 142
+    // with 'Bad argument type'. M-axis mirror of
     // Cluster 3's V-axis RE pin and ARG / CONJ M-axis pins.
     {
       const s = new Stack();
@@ -6926,24 +6920,64 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       assertThrows(() => lookup('IM').fn(s), /Bad argument type/i,
         `session145: Matrix([[Real(5)],[:x:Complex(3,4)]]) IM → 'Bad argument type' (Tagged at row[1][0] still rejects — pins multi-row iteration reaches the per-element rejection on the IM arm)`);
     }
+
+    // session231: CONJ / RE / IM Q (Rational) widening.
+    // session226 filed rejection pins for CONJ/RE/IM on Rational (Q ⊂ R).
+    // session231 adds `isRational(v)` branches to all three scalars:
+    //   _conjScalar: returns v unchanged (conjugate of a real is itself)
+    //   _reScalar:   returns v unchanged (real part of a real is itself)
+    //   _imScalar:   returns Integer(0n) (imaginary part of a real is 0)
+    // Flips DATA_TYPES.md Q ✗ → ✓ for CONJ / RE / IM.
+    {
+      const s = new Stack();
+      s.push(Rational(1n, 2n));
+      lookup('CONJ').fn(s);
+      const r = s.pop();
+      assert(isRational(r) && r.n === 1n && r.d === 2n,
+        `session231: CONJ Rational(1,2) → Rational(1,2) (conjugate of real rational is identity)`);
+    }
+    {
+      const s = new Stack();
+      s.push(Rational(-3n, 4n));
+      lookup('CONJ').fn(s);
+      const r = s.pop();
+      assert(isRational(r) && r.n === -3n && r.d === 4n,
+        `session231: CONJ Rational(-3,4) → Rational(-3,4) (negative rational: conjugate is identity)`);
+    }
+    {
+      const s = new Stack();
+      s.push(Rational(1n, 2n));
+      lookup('RE').fn(s);
+      const r = s.pop();
+      assert(isRational(r) && r.n === 1n && r.d === 2n,
+        `session231: RE Rational(1,2) → Rational(1,2) (real part of real rational is itself)`);
+    }
+    {
+      const s = new Stack();
+      s.push(Rational(1n, 2n));
+      lookup('IM').fn(s);
+      const r = s.pop();
+      assert(isInteger(r) && r.value === 0n,
+        `session231: IM Rational(1,2) → Integer(0) (imaginary part of real rational is 0)`);
+    }
   } finally {
     setAngle(_prevAngle);
   }
 }
 
 /* ================================================================
-   session 150 — Cluster 1: Inverse-trig (ASIN / ACOS / ATAN) DEG-
+ — Cluster 1: Inverse-trig (ASIN / ACOS / ATAN) DEG-
    mode `_exactUnaryLift` Integer-stay-exact / Rational-collapse-
    clean under Tagged-V/M wrapper composition.
 
-   Session 142 Cluster 1 pinned the inverse-trig bare-scalar
+   pinned the inverse-trig bare-scalar
    `_exactUnaryLift` axis under DEG (e.g. `ASIN(Integer(1))` DEG →
    `Integer(90)`, `ATAN(Integer(1))` DEG → `Integer(45)`,
-   `ASIN(Rational(1,2))` DEG → `Integer(30)`).  Session 140
+   `ASIN(Rational(1,2))` DEG → `Integer(30)`).
    Cluster 2 pinned the inverse-trig Tagged-of-V/M wrapper-VM
    composition under RAD with non-integer-clean output values
    (`ASIN :a:V[0,1]` RAD → `:a:V[0, π/2]` — π/2 is a Real, not an
-   Integer).  Session 145 Cluster 3a closed the parallel pin on
+   Integer). Cluster 3a closed the parallel pin on
    the FORWARD-trig axis (`SIN/COS/TAN` DEG-mode integer-clean
    folds under Tagged-V/M).  This cluster closes the inverse-trig
    dual: DEG-mode `_exactUnaryLift` Integer-stay-exact composes
@@ -6961,16 +6995,16 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    falls under `_exactUnaryLift`'s 1e-12 tolerance and folds to
    Integer(90)).  Under RAD the same operand produces π/2 ≈
    1.5708, which is NOT integer-clean — that's why the
-   session-140 RAD pins observed `:a:V[0, Real(π/2)]` rather
+ RAD pins observed `:a:V[0, Real(π/2)]` rather
    than `:a:V[Integer(0), Integer(?)]`.  The Tagged-V/M wrapper-
    VM composition therefore observably differs between angle
    modes on the same operand, and pinning the DEG-mode integer-
    clean composition closes the wrapper-composition × angle-mode
    matrix for the inverse-trig family.
 
-   Mirror of session 145 Cluster 3a's `:m:Matrix([[0,180],[0,0]])
+ Mirror of Cluster 3a's `:m:Matrix([[0,180],[0,0]])
    SIN` DEG → `:m:Matrix([[0,0],[0,0]])` pin on the inverse-trig
-   axis.  Distinct from session 142 Cluster 1's bare-scalar pin
+ axis. Distinct from 's bare-scalar pin
    in that the wrapper composition is exercised here. */
 {
   const _prevAngle = calcState.angle;
@@ -6979,7 +7013,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // ASIN :a:Vector(Integer(0), Integer(1)) DEG → :a:Vector(
     // Integer(0), Integer(90)).  asin(0)=0 exact, asin(1)=π/2;
     // fromRadians(π/2) DEG = 90 ± 1e-15 → integer-clean.  Mirror
-    // of session 142 Cluster 1's bare-scalar `ASIN(Integer(1))`
+    // of 's bare-scalar `ASIN(Integer(1))`
     // DEG → `Integer(90)` pin, lifted into the 3-deep Tagged-V
     // wrapper composition.  Pins that the angle-mode-aware
     // integer-clean fold runs per element AND that the outer
@@ -7000,7 +7034,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // Integer(0), Integer(90)).  Operand-symmetric to the ASIN
     // pin above (acos(1)=0, acos(0)=π/2 → 90° in DEG).  Pins
     // that ACOS shares the same `_trigInvCx` wrapper-composition
-    // path as ASIN — mirror of session 142 Cluster 1's
+    // path as ASIN — mirror of 's
     // `ACOS(Integer(0))` DEG → `Integer(90)` pin.
     {
       const s = new Stack();
@@ -7039,7 +7073,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // inverse-trig DEG-mode integer-clean fold under Tagged
     // composition.  Per-entry asin(0)=0 / asin(1)=90° all fold
     // to Integer; outer tag preserved + Matrix kind preserved.
-    // Mirror of session 145 Cluster 3a's SIN `:m:Matrix([[0,180]
+    // Mirror of Cluster 3a's SIN `:m:Matrix([[0,180]
     // ,[0,0]])` DEG → `:m:Matrix([[0,0],[0,0]])` pin on the
     // inverse-trig axis.  Pins that the wrapper-VM composition
     // dispatches `_trigInvCx`'s inner handler per Matrix entry
@@ -7064,11 +7098,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // Rational(1,2), Integer(1)) DEG → :a:Vector(Integer(30),
     // Integer(90)).  Rational(1,2)=0.5; asin(0.5)=π/6;
     // fromRadians(π/6) DEG = 30.0 ± drift → integer-clean.
-    // Distinct contract from forward-trig (session 145 Cluster
+    // Distinct contract from forward-trig ( Cluster
     // 3a only exercised Integer operands within Vector / Matrix);
     // the inverse-trig Rational-arm CAN produce Integer outputs
     // when fromRadians turns the radian value into an integer
-    // multiple of degrees.  Mirror of session 142 Cluster 1's
+    // multiple of degrees. Mirror of 's
     // bare-scalar `ASIN(Rational(1,2))` DEG → `Integer(30)` pin
     // lifted into the wrapper composition.  Pins that the
     // Rational arm of `_trigInvCx` composes through the Tagged-V
@@ -7093,7 +7127,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     // π/2 ≈ 1.5708 is NOT integer-clean under RAD; the EXACT-
     // mode integer-stay arm of `_trigInvCx` therefore returns
     // `Symbolic(AstFn('ASIN', [_toAst(Integer(1))]))` for that
-    // element.  Distinct from session 140's `:a:Vector(Real(0
+    // element. Distinct from 's `:a:Vector(Real(0
     // ), Real(1)) ASIN` RAD → `:a:Vector(Real(0), Real(π/2))`
     // pin, which used Real operands and BYPASSED the EXACT-
     // mode integer-stay arm entirely (Real input is not
@@ -7109,7 +7143,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     //      mixed Integer + Symbolic per element under EXACT
     //      mode).
     // Heterogeneous-kind output under wrapper composition —
-    // mirror of session 145 Cluster 1's `SIN(Integer(180))`
+    // mirror of 's `SIN(Integer(180))`
     // RAD/DEG operand-flip pin on the inverse-trig wrapper-
     // composition axis, with the additional contrast against
     // the Real-operand bypass path.
@@ -7124,7 +7158,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       const okItem0 = okShape && isInteger(v.value.items[0]) && v.value.items[0].value === 0n;
       // item[1] should be Symbolic ASIN(1) — π/2 ≈ 1.5708 NOT
       // integer-clean under RAD, so `_exactUnaryLift` falls
-      // through to stay-symbolic.  Distinct from session 140's
+      // through to stay-symbolic. Distinct from 's
       // ASIN :a:V(Real(0), Real(1)) RAD pin which used Real
       // operands and bypassed the EXACT-mode integer-stay arm
       // entirely (Real input → Real(π/2) output).
@@ -7139,16 +7173,16 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 150 — Cluster 2: Forward-hyperbolic family (SINH /
+ — Cluster 2: Forward-hyperbolic family (SINH /
    COSH / TANH / ASINH / ACOSH / ATANH) `_exactUnaryLift`
    Integer-stay-exact / Rational-stay-symbolic contract on bare
    scalars + ACOSH / ATANH out-of-domain Integer→Complex lift on
    the bespoke handlers.
 
-   Session 142 Cluster 1 pinned the INVERSE-trig + INVERSE-hyp
+   pinned the INVERSE-trig + INVERSE-hyp
    bare-scalar `_exactUnaryLift` axis (ASIN/ACOS/ATAN/ASINH/
    ACOSH/ATANH).  Wait — ACOSH/ATANH are inverse hyperbolic;
-   they were pinned in 142.  Session 145 Cluster 1 covered
+   they were pinned in 142. covered
    forward-trig SIN/COS/TAN bare-scalar; Cluster 2 covered LN/
    LOG/EXP/ALOG bare-scalar.  The FORWARD-hyperbolic bare-scalar
    axis (SINH / COSH / TANH on Integer/Rational under
@@ -7169,14 +7203,14 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    skipped and the input lifts to Complex via the principal
    branch).
 
-   Mirror of session 145 Cluster 1 / Cluster 2 on the FORWARD-
+ Mirror of / Cluster 2 on the FORWARD-
    hyperbolic + ACOSH-domain-aware axes.  Closes the
    transcendental bare-scalar `_exactUnaryLift` matrix:
    forward-trig (s145), inverse-trig + inverse-hyp (s142),
    forward-hyperbolic (this cluster), LN/LOG/EXP/ALOG (s145). */
 {
   // SINH(Integer(0)) → Integer(0).  Trivial integer-clean fold:
-  // sinh(0) = 0 exact in IEEE-double.  Mirror of session 145
+  // sinh(0) = 0 exact in IEEE-double. Mirror of
   // Cluster 1's `SIN(Integer(0))` RAD → `Integer(0)` pin on
   // the forward-hyperbolic axis (no angle-mode conversion since
   // hyperbolic is not angle-mode-sensitive).
@@ -7231,7 +7265,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ASINH(Integer(0)) → Integer(0).  Inverse-hyperbolic was
-  // already pinned by session 142 Cluster 1 on the bare-Integer
+  // already pinned by on the bare-Integer
   // scalar axis, but ASINH was specifically pinned at
   // ASINH(Integer(1)) and ASINH(Rational(...)) — the trivial
   // zero pin is added here for consistency with the SINH/COSH/
@@ -7252,11 +7286,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // EXACT-mode arm only fires when x≥1, and outside that range
   // the input lifts to Complex via the principal branch.  Pins
   // the in-domain integer-clean path of the bespoke handler.
-  // Distinct from session 142 Cluster 1's ACOSH(Integer(2)) and
+  // Distinct from 's ACOSH(Integer(2)) and
   // ACOSH(Integer(1)) DEG pins — those exercised the Z(2) input
   // (acosh(2)≈1.317 stay-symbolic) and the angle-mode side of
   // a different pin family.  Wait — ACOSH is hyperbolic, no
-  // angle mode — session 142 in fact pinned ACOSH(Integer(1))
+  // angle mode — in fact pinned ACOSH(Integer(1))
   // → Integer(0); this assertion is a consistency pin in the
   // forward-hyperbolic family rather than a new contract.  Kept
   // for the sake of the SINH/COSH/TANH/ASINH/ACOSH/ATANH zero-
@@ -7294,7 +7328,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //      `_exactUnaryLift` against Math.atanh(2)=NaN).
   //   2. The fall-through correctly lifts to Complex
   //      (atanh(2) = 0.5493 - i·π/2 principal branch).
-  // Distinct from any prior pin: session 142 Cluster 1's
+  // Distinct from any prior pin: 's
   // ATANH(Integer(...)) pins exercised in-domain folds; the
   // out-of-domain Integer→Complex bypass was unpinned.
   {
@@ -7339,7 +7373,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // `_unaryCx` preserves the Rational AST node (`Bin('/', Num(1
   // ), Num(2))`) inside the Symbolic so the rational survives in
   // the expression rather than being silently coerced to Real.
-  // Mirror of session 145 Cluster 1's `SIN(Rational(1,2))` RAD
+  // Mirror of 's `SIN(Rational(1,2))` RAD
   // pin and Cluster 2's `LN(Rational(1,2))` pin on the forward-
   // hyperbolic axis.
   {
@@ -7358,7 +7392,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Rational arm CAN produce Integer (collapse via numeric):
   // SINH(Rational(0,1)) → Integer(0).  Rational(0,1) → 0.0;
   // sinh(0) = 0 → integer-clean → Integer(0).  Mirror of
-  // session 145 Cluster 2's `LN(Rational(1,1))` → `Integer(0)`
+  // 's `LN(Rational(1,1))` → `Integer(0)`
   // pin on the forward-hyperbolic axis.  Pins that the
   // Rational arm is NOT a Symbolic-only branch when the
   // underlying numeric value is integer-clean.
@@ -7375,7 +7409,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Integer).  `setApproxMode(true)` flips `getApproxMode()` so
   // the EXACT-mode Integer/Rational arm in `_unaryCx` is
   // skipped and the input falls through into the standard
-  // Real-output path.  Mirror of session 145 Cluster 1's
+  // Real-output path. Mirror of 's
   // `SIN(Integer(0))` APPROX bypass and Cluster 2's `LN(Integer
   // (1))` APPROX bypass on the forward-hyperbolic axis.  Pins
   // that `_exactUnaryLift` is gated by the `!getApproxMode()`
@@ -7417,21 +7451,21 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 150 — Cluster 3: LN / LOG / EXP / ALOG `_exactUnaryLift`
+ — Cluster 3: LN / LOG / EXP / ALOG `_exactUnaryLift`
    Integer-stay-exact under Tagged-V/M wrapper composition
    (3-deep `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`
    composing per element under outer Tagged).
 
-   Session 145 Cluster 2 pinned LN/LOG/EXP/ALOG bare-scalar
+   pinned LN/LOG/EXP/ALOG bare-scalar
    `_exactUnaryLift` — `LN(Integer(1)) → Integer(0)`,
-   `LOG(Integer(100)) → Integer(2)`, etc.  Session 145 Cluster 3a
+   `LOG(Integer(100)) → Integer(2)`, etc.
    pinned the FORWARD-trig (`SIN/COS/TAN`) wrapper-VM composition
    under DEG (`:m:Matrix([[0,180],[0,0]]) SIN` DEG → `:m:Matrix([
    [0,0],[0,0]])`).  The LN/LOG/EXP/ALOG wrapper-VM composition
    with the EXACT-mode Integer-stay-exact fold composing element-
-   wise was unpinned: session 130 Cluster 1 pinned the wrapper
+ wise was unpinned: pinned the wrapper
    composition for SQRT/FACT/LNP1/SIN under non-integer-output,
-   and session 140 Cluster 1 pinned the hyperbolic family
+ and pinned the hyperbolic family
    wrapper-VM composition under Tagged-V/M with EXACT-mode
    integer-stay folds — but no direct pin on the LN/LOG/EXP/ALOG
    wrapper composition with integer-clean Integer outputs at
@@ -7450,7 +7484,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    distinct from a Real fall-through path the way `_unaryCx`'s
    non-EXACT real branch behaves.
 
-   Mirror of session 145 Cluster 3a's forward-trig wrapper
+ Mirror of Cluster 3a's forward-trig wrapper
    composition pin on the LN/LOG/EXP/ALOG axis.  Closes the
    transcendental wrapper-VM-under-Tagged matrix:  forward-trig
    (s145 c3a), forward-hyperbolic (s140 c1), inverse-trig (s140
@@ -7458,7 +7492,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 {
   // LN :v:Vector(Integer(1), Integer(1)) → :v:Vector(Integer(0),
   // Integer(0)).  Both entries integer-clean (ln(1)=0).  Mirror
-  // of session 145 Cluster 3a's `:v:Vector(0,0) SIN` RAD pin
+  // of Cluster 3a's `:v:Vector(0,0) SIN` RAD pin
   // on the LN axis.  Pins that LN's `_unaryCx` EXACT-mode arm
   // composes through the 3-deep wrapper for the all-integer-
   // clean case.
@@ -7479,7 +7513,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // distinct integer-clean output values at three distinct V
   // positions — pins that the wrapper-composition dispatches
   // per-element with each `_exactUnaryLift` call producing a
-  // distinct integer output.  Mirror of session 145 Cluster 3a's
+  // distinct integer output. Mirror of Cluster 3a's
   // `:v:V(Integer(0),Integer(90)) COS` DEG pin on the LOG axis.
   {
     const s = new Stack();
@@ -7517,7 +7551,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // output is a different non-trivial integer (1, 100, 1000),
   // pinning that `_exactUnaryLift`'s BigInt-round-trip fires
   // correctly per element at high magnitudes.  Mirror of
-  // session 145 Cluster 2's bare-scalar ALOG positive-integer
+  // 's bare-scalar ALOG positive-integer
   // trio pin lifted into the wrapper composition.
   {
     const s = new Stack();
@@ -7536,7 +7570,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // Integer(1000)]]) → :m:Matrix([[Integer(0), Integer(1)], [
   // Integer(2), Integer(3)]]).  Matrix-axis closure of the
   // wrapper-VM composition with all-integer-clean outputs.
-  // Mirror of session 145 Cluster 3a's `:m:Matrix([[0,180],
+  // Mirror of Cluster 3a's `:m:Matrix([[0,180],
   // [0,0]]) SIN` DEG → `:m:Matrix([[0,0],[0,0]])` pin on the
   // LOG axis.  Distinct from the V-axis pin above in that
   // Matrix kind is preserved across per-entry dispatch — pins
@@ -7585,7 +7619,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // APPROX-mode bypass under wrapper composition: LOG :v:Vector(
   // Integer(1), Integer(100)) APPROX → :v:Vector(Real(0),
-  // Real(2)).  Composes the APPROX-mode bypass (session 145
+  // Real(2)). Composes the APPROX-mode bypass (
   // Cluster 2's bare-scalar pin) with the wrapper composition
   // (this cluster).  Pins that the APPROX-mode flag flips the
   // result KIND (Real not Integer) per element under the
@@ -7612,43 +7646,43 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 158 — Cluster 1: ACOSH / ATANH on bare List + Tagged-of-
+ — Cluster 1: ACOSH / ATANH on bare List + Tagged-of-
    List composition.
 
-   Session 120's hyperbolic-family pin (`tests/test-types.mjs:3153`)
+   's hyperbolic-family pin (`tests/test-types.mjs:3153`)
    only iterated `SINH / COSH / TANH / ASINH` for List distribution
    — those four route through `_unaryCx`.  ACOSH and ATANH are
    registered with the bespoke direct shape `_withTaggedUnary(
-   _withListUnary(_withVMUnary(handler)))` (per session 140 Cluster
+ _withListUnary(_withVMUnary(handler)))` (
    1 comment at `tests/test-types.mjs:5266-5278`) so the bare-List
    and Tagged-of-List composition was never directly pinned; only
-   the Tagged-of-Vector composition was (session 140 Cluster 1).
+ the Tagged-of-Vector composition was.
    The matrix Notes claim L ✓ for the row covering "SIN..ASIN..ATAN
    ..ACOSH..ATANH (elementary)" but the L ✓ on the ACOSH / ATANH
    sub-axes was inherited from the convention text rather than from
    a hard-assertion pin on the direct-registered shape.
 
-   Session 150 closed the LN/LOG/EXP/ALOG and forward-/inverse-trig
+   closed the LN/LOG/EXP/ALOG and forward-/inverse-trig
    wrapper-VM composition under Tagged-V/M.  This cluster closes
    the **dual** axis: the L/T axis (bare List + Tagged-of-List)
    on the direct-registered ACOSH / ATANH handlers, including the
    EXACT-mode Integer-stay-exact composition per element and the
    out-of-domain Integer→Complex bypass per element (mirror of
-   session 150 Cluster 2's bare-scalar out-of-domain pin lifted
+ 's bare-scalar out-of-domain pin lifted
    into the List axis).
 
-   Same code path as session 140 Cluster 1's Tagged-of-Vector
+ Same code path as 's Tagged-of-Vector
    (`acoshTaggedV` / `atanhTaggedV`), but exercises the inner
    `_withListUnary` instead of `_withVMUnary`.  Distinct from
-   session 120's SINH-only Tagged-List pin (`SINH` routes through
+ 's SINH-only Tagged-List pin (`SINH` routes through
    `_unaryCx` — wrapped externally; ACOSH/ATANH bypass `_unaryCx`
    so the wrapper composition shape is registered directly). */
 {
   // ---- ACOSH bare List, Real in-domain boundary (acosh(1)=0).
   // Pins that the bare-List wrapper distributes per element on
-  // the direct-registered ACOSH handler; mirror of session 120
+  // the direct-registered ACOSH handler; mirror of
   // line :3153's SINH/COSH/TANH/ASINH for-loop on the ACOSH axis
-  // which the session 120 loop deliberately excluded (ACOSH /
+  // which the loop deliberately excluded (ACOSH /
   // ATANH dispatch through a bespoke shape, not `_unaryCx`).
   {
     const s = new Stack();
@@ -7677,7 +7711,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // ---- ACOSH Tagged-of-List composition: outer Tagged unwraps,
   // inner List distributes per element, outer Tagged re-applies.
-  // Mirror of session 140 Cluster 1's Tagged-of-Vector ACOSH pin
+  // Mirror of 's Tagged-of-Vector ACOSH pin
   // on the LIST axis — pins that the same direct-registered
   // wrapper composition `_withTaggedUnary(_withListUnary(_with
   // VMUnary(...)))` threads correctly through the LIST inner
@@ -7709,10 +7743,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
   // ---- ACOSH bare List with Integer operands, in-domain.  Pins
   // that the EXACT-mode Integer-stay-exact arm of the bespoke
-  // ACOSH handler (`ops.js:8309` per session 150 Cluster 2 doc)
+  // ACOSH handler (`ops.js:8309` 2 doc)
   // composes per element through `_withListUnary` — each element
   // independently routes through `_exactUnaryLift` and emerges
-  // as Integer.  Mirror of session 150 Cluster 2's bare-scalar
+  // as Integer. Mirror of 's bare-scalar
   // `ACOSH(Integer(1)) → Integer(0)` pin lifted into the List
   // axis on the direct-registered shape.
   {
@@ -7742,7 +7776,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ---- ACOSH bare List, OUT-OF-DOMAIN Real→Complex bypass per
-  // element.  Session 150 Cluster 2 pinned `ACOSH(Integer(0))`
+  // element. pinned `ACOSH(Integer(0))`
   // → Complex(0, ±π/2) bare-scalar (in-domain check `x ≥ 1`
   // fails for Integer(0); EXACT-mode integer-stay arm falls
   // through into the Complex principal-branch lift).  Pins that
@@ -7763,7 +7797,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ---- ATANH bare List, OUT-OF-DOMAIN bypass per element.
-  // Session 150 Cluster 2 pinned `ATANH(Integer(2))` → Complex
+  // pinned `ATANH(Integer(2))` → Complex
   // principal branch bare-scalar.  Pins per-element out-of-domain
   // bypass through the bare-List wrapper on the ATANH axis;
   // mirror of ACOSH out-of-domain List pin above.  atanh(2)
@@ -7787,7 +7821,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // elements through the out-of-domain Complex-principal-branch
   // bypass (Real(0) → Complex(0, π/2)) — closes the per-element
   // domain-check independence on the List axis.  Mirror of
-  // session 150 Cluster 3's heterogeneous LOG mixed integer-
+  // 's heterogeneous LOG mixed integer-
   // clean / stay-symbolic Tagged-V pin on the ACOSH heterogeneous
   // domain-axis.
   {
@@ -7825,7 +7859,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // session160 — Empty-List (n=0) boundary closure on the direct-
-  // registered ACOSH wrapper composition.  Pair with the session-160
+  // registered ACOSH wrapper composition. Pair with the
   // LN n=0 pin in Cluster 2 below: lifts the empty-List boundary onto
   // the inverse-hyp pair direct-registered ops too (ACOSH/ATANH dispatch
   // through a bespoke registration shape, not _unaryCx — see s158
@@ -7846,29 +7880,29 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   session 158 — Cluster 2: LN / LOG / EXP / ALOG bare-List
+ — Cluster 2: LN / LOG / EXP / ALOG bare-List
    distribution + Tagged-of-List composition with EXACT-mode
    `_exactUnaryLift` Integer-stay-exact folds composing per
    element.
 
-   Session 145 Cluster 2 pinned bare-scalar EXACT-mode Integer-
-   stay-exact / Rational-stay-symbolic.  Session 150 Cluster 3
+   pinned bare-scalar EXACT-mode Integer-
+   stay-exact / Rational-stay-symbolic.
    lifted that into the wrapper-VM-under-Tagged composition
    (Tagged-of-V and Tagged-of-M).  This cluster closes the dual:
    bare-List + Tagged-of-List, the LIST axis of the wrapper
    composition.
 
    These four ops dispatch through `_unaryCx` (`ops.js:7984` per
-   session 145 doc) which wraps in the standard 3-deep
+ doc) which wraps in the standard 3-deep
    `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`.
    The inner `_withListUnary` runs the inner handler per element;
    when each element is integer-clean under EXACT mode, the per-
    element results are Integer (via `_exactUnaryLift`); when
    mixed, the result is a heterogeneous Integer + Symbolic List.
 
-   Same code path as session 150 Cluster 3's Tagged-V/M pin, but
+ Same code path as 's Tagged-V/M pin, but
    on the LIST inner-wrapper instead of V/M.  Distinct from
-   session 130 Cluster 1's LNP1 Tagged-of-Vector pin (which only
+ 's LNP1 Tagged-of-Vector pin (which only
    covered LNP1 — not the LN/LOG/EXP/ALOG quartet — and only on
    V, not on List). */
 {
@@ -7878,7 +7912,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // ---- LN bare List, both Integer(1).  ln(1)=0 integer-clean
   // per element.  Pins that EXACT-mode `_exactUnaryLift` Integer-
   // stay-exact composes through the bare `_withListUnary` on
-  // every position; mirror of session 150 Cluster 3's `:v:V(Z(1)
+  // every position; mirror of 's `:v:V(Z(1)
   // ,Z(1)) LN` Tagged-of-Vector pin on the LIST axis.
   {
     const s = new Stack();
@@ -7894,7 +7928,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // ---- LOG bare List, three distinct integer-clean outputs at
   // three distinct positions: 1/10/100 → 0/1/2.  Pins per-element
   // wrapper dispatch with distinct integer outputs at each List
-  // position; mirror of session 150 Cluster 3's :v:V(Z(1),Z(10),
+  // position; mirror of 's :v:V(Z(1),Z(10),
   // Z(100)) LOG pin on the LIST axis.
   {
     const s = new Stack();
@@ -7926,7 +7960,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // ---- ALOG bare List, high-magnitude integer trio: 0/2/3 →
   // 1/100/1000.  High-magnitude non-zero integer outputs pin
   // `_exactUnaryLift`'s BigInt round-trip per element through the
-  // bare-List wrapper; mirror of session 150 Cluster 3's
+  // bare-List wrapper; mirror of 's
   // `:v:V(Z(0),Z(2),Z(3)) ALOG` Tagged-of-Vector pin on the LIST
   // axis.
   {
@@ -7944,7 +7978,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // ---- LN Tagged-of-List composition: outer Tagged unwraps,
   // inner List distributes per element, integer-clean fold per
   // element, outer Tagged re-applies.  Closes the LN axis on
-  // the T+L composition; mirror of session 150 Cluster 3's
+  // the T+L composition; mirror of 's
   // :v:V LN pin on the LIST instead of the V wrapper.
   {
     const s = new Stack();
@@ -7980,7 +8014,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // `_exactUnaryLift`'s stay-symbolic fall-through and integer-
   // clean fold both operate per element under the BARE List
   // wrapper WITHOUT collapsing the whole List to a uniform
-  // output kind.  Mirror of session 150 Cluster 3's mixed-kind
+  // output kind. Mirror of 's mixed-kind
   // `:v:V(Z(2),Z(10)) LOG` pin on the bare-List axis.
   {
     const s = new Stack();
@@ -7999,7 +8033,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // variant on the T+L axis — pins outer Tagged unwrap + inner
   // List per-element dispatch + per-element EXACT branch
   // (integer-clean OR stay-symbolic) + tag re-apply, all in one
-  // observable result.  Mirror of session 150 Cluster 3's mixed-
+  // observable result. Mirror of 's mixed-
   // kind Tagged-V LOG pin on the Tagged-of-List axis.
   {
     const s = new Stack();
@@ -8020,7 +8054,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // not Integer) per element under the bare-List wrapper —
   // distinct from the EXACT-mode all-Integer output of the LOG
   // {1, 10, 100} pin above on the same wrapper.  Mirror of
-  // session 150 Cluster 3's APPROX-bypass-under-Tagged-V pin
+  // 's APPROX-bypass-under-Tagged-V pin
   // on the bare-List axis.
   {
     setApproxMode(true);
@@ -8040,10 +8074,10 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // session160 — Empty-List (n=0) boundary closures for the bare-List +
-  // Tagged-of-List wrapper composition.  Mirror of session 156's empty-
+  // Tagged-of-List wrapper composition. Mirror of 's empty-
   // V/L/P n=0 boundary closures on AUR §3-149 OBJ→ rows; this lifts the
   // n=0 boundary onto the transcendental wrapper-LIST composition the
-  // session-158 pins (n=2 / n=3) and the session-160 single-element
+  // pins (n=2 / n=3) and the single-element
   // pins (n=1, below) bracket.  Pins that the inner `_withListUnary`
   // pass-through preserves an empty-List shell unchanged on every code
   // path, AND that the outer Tagged wrapper preserves the tag across the
@@ -8072,7 +8106,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ---- Single-element bare List (n=1) boundary on LN: { Integer(1) }
-  // LN → { Integer(0) }.  Distinct from session 158's n=2 pin (which is
+  // LN → { Integer(0) }. Distinct from 's n=2 pin (which is
   // homogeneous-zero output) — the n=1 case guards against a refactor
   // that special-cases n=1 to the bare-scalar code path and bypasses the
   // _withListUnary wrapper.  Closes the n=1 shoulder between the s160
@@ -8090,21 +8124,21 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // ============================================================
   // session162 — LNP1 / EXPM bare-List + Tagged-of-List composition.
   //
-  // Cluster 1.  Session 130 Cluster 1 pinned LNP1 Tagged-of-Vector
+  // Cluster 1. pinned LNP1 Tagged-of-Vector
   // composition through the 3-deep wrapper `_withTaggedUnary(
-  // _withListUnary(_withVMUnary(handler)))`.  Session 140 Cluster 2
+  // _withListUnary(_withVMUnary(handler)))`.
   // pinned EXPM Tagged-of-Vector and Tagged-of-Matrix on the same
   // wrapper, closing the V/M axis on the LNP1/EXPM dual pair.
-  // Session 158 closed the bare-List + Tagged-of-List composition
+  // closed the bare-List + Tagged-of-List composition
   // axis on the LN / LOG / EXP / ALOG quartet.  But the LNP1/EXPM
   // L+T composition was not specifically pinned: the matrix carried
-  // L ✓ T ✓ on both ops since session 063 / 130, but no direct
+  // L ✓ T ✓ on both ops since / 130, but no direct
   // assertion on (a) per-element bare-List dispatch under
   // `_withListUnary`, (b) Tagged-of-List composition outer-tag
   // preservation, or (c) the n=0 / n=1 boundary closures (which
-  // session 160 added for LN but not for the LNP1/EXPM duals).
+  // added for LN but not for the LNP1/EXPM duals).
   //
-  // CONTRAST with session 158 LN/LOG/EXP/ALOG L+T pins: those four
+  // CONTRAST with LN/LOG/EXP/ALOG L+T pins: those four
   // ops dispatch through `_unaryCx` which has an EXACT-mode
   // `_exactUnaryLift` Integer-stay-exact arm — Integer(1) input
   // lands as Integer output when the result is integer-clean.
@@ -8120,7 +8154,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // integer-clean).  Pins also: bare-List Real-input pass-through,
   // Tagged-of-List composition tag preservation, n=0 empty-List
   // boundary on both bare and Tagged-of-List, and n=1 single-
-  // element boundary (mirror of session 160's LN n=0 / n=1 pins
+  // element boundary (mirror of 's LN n=0 / n=1 pins
   // lifted onto the LNP1/EXPM duals).
   //
   // The mixed-input pin (LNP1 { Real(-0.5) Real(0) } → { Real(ln(
@@ -8131,7 +8165,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // ---- LNP1 bare-List Real-element pass-through.  Pins per-element
   //      `Math.log1p` fold under bare `_withListUnary`: log1p(0)=0
   //      lands as Real(0) per element (NOT Integer-stay; LNP1 has
-  //      no `_exactUnaryLift` arm — distinct from LN's session 158
+  // no `_exactUnaryLift` arm — distinct from LN's
   //      pin where Integer(1) → Integer(0) integer-stay).
   {
     const s = new Stack();
@@ -8145,7 +8179,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ---- LNP1 bare-List Integer-input → Real-output per element.
-  //      DISTINCT from session 158 LN { Integer(1) Integer(1) } →
+  // DISTINCT from LN { Integer(1) Integer(1) } →
   //      { Integer(0) Integer(0) } where the EXACT-mode integer-
   //      stay arm fires.  LNP1 routes directly through
   //      `Real(Math.log1p(toRealOrThrow(v)))` — Integer is silently
@@ -8227,7 +8261,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //      Same `_exactUnaryLift`-bypass contract as LNP1 (Integer-
   //      stay-exact arm DOES NOT FIRE on EXPM — Integer is coerced
   //      to Real per element via `toRealOrThrow`).  DISTINCT from
-  //      session 158 EXP { Integer(0) Integer(0) } → { Integer(1)
+  // EXP { Integer(0) Integer(0) } → { Integer(1)
   //      Integer(1) } where EXP routes through `_unaryCx`'s EXACT-
   //      mode arm.
   {
@@ -8242,7 +8276,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ---- EXPM Tagged-of-List composition: outer tag preserved.
-  //      Closes T+L composition on EXPM — mirror of session 140
+  // Closes T+L composition on EXPM — mirror of
   //      Cluster 2's EXPM Tagged-of-V/M pin lifted onto the L axis
   //      of the dual (LNP1 closed on T+L just above; this closes
   //      the dual pair on T+L).
@@ -8277,11 +8311,11 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // session162 — LNP1 / EXPM n=0 empty-List + n=1 single-element
   // boundary closures.
   //
-  // Cluster 2.  Session 160 added n=0 empty-List and n=1 single-
+  // Cluster 2. added n=0 empty-List and n=1 single-
   // element boundary pins on the LN axis (`{ } LN → { }`,
   // `:l:{ } LN → :l:{ }`, `{ Integer(1) } LN → { Integer(0) }`).
   // The same boundary closures on the LNP1/EXPM dual pair were
-  // not added in session 160 (single-cluster scope).  This
+  // not added (single-cluster scope). This
   // cluster lifts the n=0 / n=1 boundary closures onto LNP1 and
   // EXPM — pins that the inner `_withListUnary` `apply` loop
   // preserves an empty-List shell unchanged AND that the n=1
@@ -8294,7 +8328,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // return []` short-circuit) would still pass the n=2 pin but
   // would miss the wrapper's `RList(items.map(...))` shell-
   // preservation contract.  Pinning n=0 explicitly closes that
-  // gap (mirror of session 160's reasoning for the LN axis).
+  // gap (mirror of 's reasoning for the LN axis).
 
   // ---- LNP1 n=0 empty-List boundary: { } LNP1 → { }.
   {
@@ -8368,7 +8402,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ============================================================
-  // session164 — LNP1 / EXPM session-162 follow-up edges that the
+  // session164 — LNP1 / EXPM follow-up edges that the
   // s162 cluster-1 pin-set did not enumerate.  Three pins:
   //
   //   (1) LNP1 boundary-throw under Tagged-of-List composition —
@@ -8449,24 +8483,24 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // single-element boundary closures on the bare-List + Tagged-of-List
   // wrapper composition.
   //
-  // Session 160 added n=0 / n=1 boundary pins on the LN axis only —
-  // explicit single-cluster scope.  Session 162 lifted those n=0 / n=1
+  // added n=0 / n=1 boundary pins on the LN axis only —
+  // explicit single-cluster scope. lifted those n=0 / n=1
   // boundary closures onto the LNP1 / EXPM dual pair (which bypasses
   // `_unaryCx` entirely — different code path).  But the LOG / EXP /
-  // ALOG trio (the remaining three ops in the session-158 `_unaryCx`-
+  // ALOG trio (the remaining three ops in the `_unaryCx`-
   // routed quartet) was never explicitly pinned for n=0 / n=1.  The
-  // matrix has carried L ✓ T ✓ on these ops since session 100/105's
-  // wrapper-VM cleanup, but session 158's L+T pin set used n=2 / n=3
+  // matrix has carried L ✓ T ✓ on these ops since /105's
+  // wrapper-VM cleanup, but 's L+T pin set used n=2 / n=3
   // homogeneous + heterogeneous cases without enumerating the n=0
   // empty-List shoulder or the n=1 single-element shoulder.
   //
   // This cluster closes the LOG / EXP / ALOG trio on the n=0 / n=1
-  // boundary axes — same code path as the session-160 LN n=0 / n=1
+  // boundary axes — same code path as the LN n=0 / n=1
   // pins, lifted onto the remaining three ops in the quartet that
   // routes through `_unaryCx` (`ops.js:7984`).  Pure pinning: no
-  // source-side change.  Mirror of session 162 Cluster 2's structure.
+  // source-side change. Mirror of 's structure.
   //
-  // Why these boundary pins matter: the session-158 n=2 / n=3 pins
+  // Why these boundary pins matter: the n=2 / n=3 pins
   // can't catch a refactor that special-cases n=0 (e.g. early-return
   // an empty list to bypass the wrapper) or n=1 (e.g. unwrap to bare
   // scalar before dispatch).  The n=0 / n=1 pins guard those
@@ -8621,23 +8655,23 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // closures + ACOSH/ATANH Tagged-of-List n=0 closures on the
   // direct-registered (non-`_unaryCx`) wrapper shape.
   //
-  // Session 160 added an n=0 boundary pin on ACOSH (`{ } ACOSH →
+  // added an n=0 boundary pin on ACOSH (`{ } ACOSH →
   // { }`) but did NOT pin (a) the symmetric ATANH n=0 case, (b)
   // either op's Tagged-of-List n=0 case (`:h:{ } ACOSH/ATANH`),
   // or (c) the n=1 single-element shoulder on either op.  These
   // ops dispatch through a bespoke direct-registered composition
   // shape (not `_unaryCx`), so the n=0 / n=1 boundary closures
   // need explicit pinning on this shape — they aren't covered by
-  // the session-160 LN-axis pins or the session-162 LNP1/EXPM
+  // the LN-axis pins or the LNP1/EXPM
   // pins, which run through different code paths.
   //
-  // This cluster mirrors the structure of session 162 Cluster 2
+  // This cluster mirrors the structure of
   // (the LNP1 / EXPM n=0 / n=1 closures on a different
   // direct-registered wrapper) onto the inverse-hyp pair —
   // closing the n=0 / n=1 boundary axes on ACOSH / ATANH.
 
   // ---- ATANH bare-List n=0: { } ATANH → { } ----
-  // Symmetric to session 160's ACOSH n=0 pin lifted onto ATANH.
+  // Symmetric to 's ACOSH n=0 pin lifted onto ATANH.
   {
     const s = new Stack();
     s.push(RList([]));
@@ -8648,7 +8682,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ---- ACOSH Tagged-of-List n=0: :h:{ } ACOSH → :h:{ } ----
-  // Lifts session 160's bare-List ACOSH n=0 pin onto Tagged-of-
+  // Lifts 's bare-List ACOSH n=0 pin onto Tagged-of-
   // List composition on the direct-registered wrapper shape.
   {
     const s = new Stack();
@@ -8672,7 +8706,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 
   // ---- ACOSH bare-List n=1 (Real): { Real(1) } ACOSH → { Real(0) } ----
-  // acosh(1)=0 boundary value — the same value session 158's bare-List
+  // acosh(1)=0 boundary value — the same value 's bare-List
   // ACOSH pin uses but at the n=1 shoulder (singleton, distinct from
   // s158's n=2 pin).  Pins per-element wrapper dispatch fires for n=1
   // and does NOT bypass the wrapper to scalar handler.
@@ -8728,17 +8762,17 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // session168 — LOG / EXP / ALOG heterogeneous-output mixed-input
   // pinning under bare-List + Tagged-of-List composition.
   //
-  // Session 166 closed the n=0 empty-List + n=1 single-element
-  // boundary on LOG / EXP / ALOG.  Session 162 (LNP1 / EXPM dual
-  // pair) and session 164 (LNP1 / EXPM Tagged-of-List heterogeneous
+  // closed the n=0 empty-List + n=1 single-element
+  // boundary on LOG / EXP / ALOG. (LNP1 / EXPM dual
+  // pair) and (LNP1 / EXPM Tagged-of-List heterogeneous
   // edges) closed the heterogeneous-output mixed-input axis on
   // their respective dual pair.  The same heterogeneous-output
   // axis on the LOG / EXP / ALOG trio was deliberately deferred
-  // by session 166 (its scope was n=0 / n=1 boundary closures
+  // by (its scope was n=0 / n=1 boundary closures
   // only).
   //
-  // This cluster lifts session 162's bare-List heterogeneous
-  // mixed-input pattern + session 164's Tagged-of-List
+  // This cluster lifts 's bare-List heterogeneous
+  // mixed-input pattern + 's Tagged-of-List
   // heterogeneous mixed-input pattern onto the LOG / EXP / ALOG
   // trio.  Each pin uses a 2-element input where the elements
   // have distinct values (NOT a uniform-output short-circuit) so
@@ -8754,7 +8788,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //      { Real(10) Real(1) } LOG → { Real(1) Real(0) }.
   //      LOG(10) = 1, LOG(1) = 0 — distinct values per List
   //      position.  Pins per-element wrapper dispatch under bare
-  //      _withListUnary on the LOG axis; mirror of session 162's
+  // _withListUnary on the LOG axis; mirror of 's
   //      EXPM heterogeneous-output bare-List pin lifted onto LOG.
   {
     const s = new Stack();
@@ -8771,7 +8805,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //      :l:{ Real(10) Real(1) } LOG → :l:{ Real(1) Real(0) }.
   //      Outer tag preserved + per-element distinct-value output
   //      via per-element wrapper dispatch under Tagged composition.
-  //      Mirror of session 164's LNP1 T+L heterogeneous pin onto LOG.
+  // Mirror of 's LNP1 T+L heterogeneous pin onto LOG.
   {
     const s = new Stack();
     s.push(Tagged('l', RList([Real(10), Real(1)])));
@@ -8852,16 +8886,16 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //   (SINH / COSH / TANH / ASINH) n=0 empty-List + n=1 single-element
   //   boundary closures on bare-List + Tagged-of-List composition.
   //
-  // Session 120 pinned SINH/COSH/TANH/ASINH bare-List dispatch on n=2
+  // pinned SINH/COSH/TANH/ASINH bare-List dispatch on n=2
   // (`{Real(0) Real(1)} OP → 2-element Real list`), and additionally
   // pinned the SINH-only Tagged-of-List composition on n=2.  Sessions
   // 130/140/150 lifted the wrapper-VM composition onto the same family
   // under Tagged-of-Vector / Tagged-of-Matrix.  But the n=0 empty-List
   // and n=1 single-element shoulders on the bare-List + T+L axes — the
-  // boundary axis that session 160 closed on LN, session 162 closed on
-  // LNP1/EXPM, session 166 closed on LOG/EXP/ALOG and ACOSH/ATANH —
+  // boundary axis that closed on LN, closed on
+  // LNP1/EXPM, closed on LOG/EXP/ALOG and ACOSH/ATANH —
   // were never pinned on the forward-hyperbolic four-op family.  This
-  // cluster mirrors session 166 Cluster 1's structure (LOG/EXP/ALOG
+  // cluster mirrors 's structure (LOG/EXP/ALOG
   // n=0/n=1 closures on bare-List + T+L) onto the SINH/COSH/TANH/ASINH
   // forward-hyperbolic family, which routes through the same 3-deep
   // wrapper `_withTaggedUnary(_withListUnary(_withVMUnary(handler)))`
@@ -8933,14 +8967,14 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //   ASINH) heterogeneous-output mixed-input value pins on bare-List
   //   + Tagged-of-List composition.
   //
-  // Session 120 pinned SINH bare-List heterogeneous-output values
+  // pinned SINH bare-List heterogeneous-output values
   // (`SINH({0 1}) → {0 sinh(1)}` with both values asserted, including
   // the Tagged-of-List `:lbl:{0 1} SINH → :lbl:{0 sinh(1)}` shape).
   // For COSH/TANH/ASINH the s120 sweep only pinned type+length
   // (both items are Real, list-length is 2) but did NOT pin the
   // distinct output values per List position.  The sibling
   // `LOG/EXP/ALOG` quartet got the heterogeneous-output value-pin
-  // treatment in session 168; the dual `LNP1/EXPM` got it in session
+  // treatment ; the dual `LNP1/EXPM` got it in session
   // 162/164.  This cluster lifts that same heterogeneous-output value-
   // pin pattern onto COSH/TANH/ASINH on both bare-List and T+L
   // composition — the s120 pin's type+length-only structure left these
@@ -8994,12 +9028,12 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //   (SIN / COS / TAN) n=0 empty-List + n=1 single-element
   //   boundary closures on bare-List + Tagged-of-List composition.
   //
-  // Session 171's "Open queue items" block flagged this gap
+  // 's "Open queue items" block flagged this gap
   // explicitly: "Forward-trig family (SIN / COS / TAN) bare-List +
   // T+L axes — only the wrapper-V/M composition (s145) and
   // Tagged-of-Vector (s130) pins exist on this family; the bare-
   // List + T+L axes are unpinned even on n=2."  This release-mode
-  // wrap-up cluster lifts session 171 Cluster 1's n=0/n=1 boundary
+  // wrap-up cluster lifts 's n=0/n=1 boundary
   // pin shape (forward-hyperbolic SINH/COSH/TANH/ASINH) onto the
   // forward-trig SIN/COS/TAN trio that routes through the same
   // 3-deep wrapper `_withTaggedUnary(_withListUnary(_withVMUnary(
@@ -9012,7 +9046,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   // setAngle/restore guard is needed — the outputs are clean
   // integer-clean Reals across every mode.  COSH-style outlier
   // pattern: COS is the only forward-trig op with a non-identity
-  // fold at zero (matching session 171's COSH n=1 outlier).
+  // fold at zero (matching 's COSH n=1 outlier).
   //
   // 12 hard assertions (3 ops × 4 boundary cases = bare-n=0 +
   // T+L-n=0 + bare-n=1 + T+L-n=1).
@@ -9076,7 +9110,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   //   (ASIN / ACOS / ATAN) n=0 empty-List + n=1 single-element
   //   boundary closures on bare-List + Tagged-of-List composition.
   //
-  // Companion to Cluster 1 — session 171's "Open queue items" block
+  // Companion to Cluster 1 — 's "Open queue items" block
   // flagged this gap as well: "Inverse-trig family (ASIN / ACOS /
   // ATAN) bare-List + T+L axes — same gap as SIN/COS/TAN."  Lifts
   // the same n=0/n=1 boundary pin shape onto the inverse-trig trio.
@@ -9128,8 +9162,8 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
         // n=1 bare-List: `{ Real(0) } OP → { Real(<expected>) }`
         //   asin(0)=0, acos(0)=π/2 in RAD, atan(0)=0.
         // ACOS is the only inverse-trig op with a non-identity
-        // fold at zero (matching session 171's COSH outlier and
-        // session 173 Cluster 1's COS outlier).
+        // fold at zero (matching 's COSH outlier and
+        // 's COS outlier).
         {
           const s = new Stack();
           s.push(RList([Real(0)]));
@@ -9174,13 +9208,13 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 // ---- session175 (re-land): forward-trig + inverse-trig heterogeneous-output value pins -----
-// Originally authored session 175 (ship-day T-0 wrap-up); the write did not persist
-// to the shared filesystem (T-003 in REVIEW.md).  Re-landed verbatim in session 183
+// Originally authored (ship-day T-0 wrap-up); the write did not persist
+// to the shared filesystem (T-003 in REVIEW.md). Re-landed verbatim
 // using session175r: labels so the lineage is traceable without colliding with the
 // lost session175: label namespace.
 //
-// Session 171 Cluster 2 pinned COSH/TANH/ASINH heterogeneous-output mixed-input values
-// (bare-List + T+L).  Session 175 lifts that same pattern onto the forward-trig trio
+// pinned COSH/TANH/ASINH heterogeneous-output mixed-input values
+// (bare-List + T+L). lifts that same pattern onto the forward-trig trio
 // (SIN/COS/TAN) and the inverse-trig trio (ASIN/ACOS/ATAN).  All six ops were already
 // covered on n=0/n=1 boundary by sessions 171/173; this adds the {0,1} heterogeneous-
 // output value-precise axis that the boundary pins leave unexercised.
@@ -9403,7 +9437,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 // ---- session185 (re-land of session177 Cluster 1): EXACT-mode Integer-stay-exact
 // composition pins for forward-trig + inverse-trig on bare-List + Tagged-of-List axes.
 //
-// Session 177 authored these 14 pins on ship-day but the write did not persist to the
+// authored these 14 pins on ship-day but the write did not persist to the
 // shared filesystem (T-003 in REVIEW.md).  Re-landed here verbatim using session185:
 // labels so the lineage is traceable without colliding with the lost session177: namespace.
 //
@@ -9519,9 +9553,9 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
-   Session 191 — HEAVISIDE / DIRAC  L / V / M / T wrapper-add
+   HEAVISIDE / DIRAC L / V / M / T wrapper-add
    Both ops wrapped with _withTaggedUnary(_withListUnary(_withVMUnary(…)))
-   matching the same 3-deep composition used by XPON/MANT (session 187).
+ matching the same 3-deep composition used by XPON/MANT.
    HEAVISIDE: step function — scalar arm returns Real(1)/Real(0) or
    Integer(1)/Integer(0) depending on input type.  DIRAC: impulse —
    non-zero scalar folds to Real(0)/Integer(0); x=0 lifts to Symbolic.
@@ -9958,7 +9992,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
    _erfcScalar(Integer(0)) = Real(1)  (zero special-case, no series).
    _erfcScalar(Integer(1)) = Real(_regGammaQ(0.5, 1)) ≈ Real(0.1573) — distinct
    from _erfcScalar(Integer(0)), giving heterogeneous output on a 2-element list.
-   Session 200 pinned the T scalar path only; this cluster pins the three
+   pinned the T scalar path only; this cluster pins the three
    remaining collection axes: bare-List (n=0, n=1, n=2 heterogeneous),
    Tagged-of-List (n=0 T+L, n=1 T+L), Vector, Matrix.
    ================================================================ */
@@ -10035,6 +10069,744 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1 &&
            isReal(cell) && cell.value.toNumber() === 0,
       `session208: [[ Integer(0) ]] erf → [[ Real(0) ]] (M; erf(0)=0; got ${cell?.value?.toNumber()})`);
+  }
+
+  // ----------------------------------------------------------------
+  // session212: ZETA / LAMBERT Z/L/V/M stale-·-cell promotion.
+  // Both are registered as _withTaggedUnary(_withListUnary(bespoke-V/M handler)).
+  // Their scalar functions accept isInteger(v) — the Z column was also stale.
+  // Anchor values: ζ(0) = -1/2 (exact fp); W(0) = 0 (exact branch in _lambertW0).
+  // ----------------------------------------------------------------
+
+  // ---- ZETA ----
+
+  // Z axis: Integer(0) ZETA → Real(-0.5)  (ζ(0) = -1/2, exact fp)
+  {
+    const v = runOp('ZETA', Integer(0n));
+    assert(isReal(v) && v.value.toNumber() === -0.5,
+      `session212: Integer(0) ZETA → Real(-0.5) (Z; ζ(0)=-1/2 exact; got ${v?.value?.toNumber()})`);
+  }
+
+  // L{}: { } ZETA → { }  (empty-list passthrough)
+  {
+    const v = runOp('ZETA', RList([]));
+    assert(isList(v) && v.items.length === 0,
+      `session212: { } ZETA → { } (bare empty-List passthrough; got ${v?.type})`);
+  }
+
+  // L{Integer(2)}: { Integer(2) } ZETA → { Real(ζ(2)) }
+  {
+    const v = runOp('ZETA', RList([Integer(2n)]));
+    const a = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 &&
+           isReal(a) && Math.abs(a.value.toNumber() - Math.PI ** 2 / 6) < 1e-12,
+      `session212: { Integer(2) } ZETA → { Real(ζ(2)) } (bare-List; got ${a?.value?.toNumber()})`);
+  }
+
+  // V: [ Integer(2) Integer(0) ] ZETA → [ Real(ζ(2)) Real(-0.5) ]
+  {
+    const v = runOp('ZETA', Vector([Integer(2n), Integer(0n)]));
+    const a = v?.items?.[0], b = v?.items?.[1];
+    assert(isVector(v) && v.items.length === 2 &&
+           isReal(a) && Math.abs(a.value.toNumber() - Math.PI ** 2 / 6) < 1e-12 &&
+           isReal(b) && b.value.toNumber() === -0.5,
+      `session212: [ Integer(2) Integer(0) ] ZETA → [ Real(ζ(2)) Real(-0.5) ] (V; got [${a?.value?.toNumber()}, ${b?.value?.toNumber()}])`);
+  }
+
+  // M: [[ Integer(2) ]] ZETA → [[ Real(ζ(2)) ]]
+  {
+    const v = runOp('ZETA', Matrix([[Integer(2n)]]));
+    const cell = v?.rows?.[0]?.[0];
+    assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1 &&
+           isReal(cell) && Math.abs(cell.value.toNumber() - Math.PI ** 2 / 6) < 1e-12,
+      `session212: [[ Integer(2) ]] ZETA → [[ Real(ζ(2)) ]] (M; got ${cell?.value?.toNumber()})`);
+  }
+
+  // ---- LAMBERT ----
+
+  // Z axis: Integer(0) LAMBERT → Real(0)  (W(0) = 0, exact branch in _lambertW0)
+  {
+    const v = runOp('LAMBERT', Integer(0n));
+    assert(isReal(v) && v.value.toNumber() === 0,
+      `session212: Integer(0) LAMBERT → Real(0) (Z; W(0)=0 exact; got ${v?.value?.toNumber()})`);
+  }
+
+  // L{}: { } LAMBERT → { }  (empty-list passthrough)
+  {
+    const v = runOp('LAMBERT', RList([]));
+    assert(isList(v) && v.items.length === 0,
+      `session212: { } LAMBERT → { } (bare empty-List passthrough; got ${v?.type})`);
+  }
+
+  // L{Integer(0)}: { Integer(0) } LAMBERT → { Real(0) }
+  {
+    const v = runOp('LAMBERT', RList([Integer(0n)]));
+    const a = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 && isReal(a) && a.value.toNumber() === 0,
+      `session212: { Integer(0) } LAMBERT → { Real(0) } (bare-List; W(0)=0; got ${a?.value?.toNumber()})`);
+  }
+
+  // V: [ Integer(0) Integer(1) ] LAMBERT → [ Real(0) Real(Ω) ]  (Ω ≈ 0.5671)
+  {
+    const v = runOp('LAMBERT', Vector([Integer(0n), Integer(1n)]));
+    const a = v?.items?.[0], b = v?.items?.[1];
+    const OMEGA = 0.5671432904097838;
+    assert(isVector(v) && v.items.length === 2 &&
+           isReal(a) && a.value.toNumber() === 0 &&
+           isReal(b) && Math.abs(b.value.toNumber() - OMEGA) < 1e-12,
+      `session212: [ Integer(0) Integer(1) ] LAMBERT → [ Real(0) Real(Ω) ] (V; got [${a?.value?.toNumber()}, ${b?.value?.toNumber()}])`);
+  }
+
+  // M: [[ Integer(1) ]] LAMBERT → [[ Real(Ω) ]]
+  {
+    const v = runOp('LAMBERT', Matrix([[Integer(1n)]]));
+    const cell = v?.rows?.[0]?.[0];
+    const OMEGA = 0.5671432904097838;
+    assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1 &&
+           isReal(cell) && Math.abs(cell.value.toNumber() - OMEGA) < 1e-12,
+      `session212: [[ Integer(1) ]] LAMBERT → [[ Real(Ω) ]] (M; got ${cell?.value?.toNumber()})`);
+  }
+}
+
+/* ================================================================
+ — data-type-support lane.
+
+   PSI L/V/M stale-`·`-cell promotion — documentation-only fix
+   (pin additions only).
+
+   The 1-arg digamma handler dispatches bespoke branches for
+   List, Vector, and Matrix (parallel to the GAMMA/LNGAMMA shape);
+   the DATA_TYPES.md matrix carried `·` for L/V/M as a
+   documentation lag.  No source changes.
+
+   Note: Tagged-of-List/Vector/Matrix is NOT covered — the bespoke
+   `isTagged` branch calls `_psiScalar` directly on `v.value`,
+   which throws when `v.value` is a List/Vector/Matrix.  Only bare
+   scalar Tagged inputs route correctly.  T=✓ in the matrix reflects
+   the scalar-Tagged path only.
+
+   +5 `session216:` pins: L-empty passthrough; L {Integer(1)} value-
+   precise (ψ(1) = −γ, tolerance 1e-12); L {Integer(1) Integer(2)}
+   heterogeneous-output; V [Integer(1) Integer(2)]; M [[Integer(1)]].
+   PSI matrix row: L/V/M `·`→`✓`.
+   ================================================================ */
+{
+  const PSI_1 = -0.5772156649015329; // ψ(1) = −γ (Euler-Mascheroni constant)
+  const PSI_2 =  0.4227843350984671; // ψ(2) =  1 − γ
+
+  // L-empty: {} PSI → {}  (empty-list passthrough)
+  {
+    const v = runOp('PSI', RList([]));
+    assert(isList(v) && v.items.length === 0,
+      `session216: {} PSI → {} (bare empty-List passthrough; got ${v?.type})`);
+  }
+
+  // L{Integer(1)}: { Integer(1) } PSI → { Real(ψ(1)) }  (value-precise)
+  {
+    const v = runOp('PSI', RList([Integer(1n)]));
+    const a = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 &&
+           isReal(a) && Math.abs(a.value.toNumber() - PSI_1) < 1e-12,
+      `session216: { Integer(1) } PSI → { Real(ψ(1)) } (bare-List; ψ(1)=−γ; got ${a?.value?.toNumber()})`);
+  }
+
+  // L{Integer(1) Integer(2)}: heterogeneous-output (two distinct values per element)
+  {
+    const v = runOp('PSI', RList([Integer(1n), Integer(2n)]));
+    const a = v?.items?.[0], b = v?.items?.[1];
+    assert(isList(v) && v.items.length === 2 &&
+           isReal(a) && Math.abs(a.value.toNumber() - PSI_1) < 1e-12 &&
+           isReal(b) && Math.abs(b.value.toNumber() - PSI_2) < 1e-12,
+      `session216: { Integer(1) Integer(2) } PSI → { Real(ψ(1)) Real(ψ(2)) } (bare-List 2-elem; got [${a?.value?.toNumber()}, ${b?.value?.toNumber()}])`);
+  }
+
+  // V: [ Integer(1) Integer(2) ] PSI → [ Real(ψ(1)) Real(ψ(2)) ]
+  {
+    const v = runOp('PSI', Vector([Integer(1n), Integer(2n)]));
+    const a = v?.items?.[0], b = v?.items?.[1];
+    assert(isVector(v) && v.items.length === 2 &&
+           isReal(a) && Math.abs(a.value.toNumber() - PSI_1) < 1e-12 &&
+           isReal(b) && Math.abs(b.value.toNumber() - PSI_2) < 1e-12,
+      `session216: [ Integer(1) Integer(2) ] PSI → [ Real(ψ(1)) Real(ψ(2)) ] (V; got [${a?.value?.toNumber()}, ${b?.value?.toNumber()}])`);
+  }
+
+  // M: [[ Integer(1) ]] PSI → [[ Real(ψ(1)) ]]
+  {
+    const v = runOp('PSI', Matrix([[Integer(1n)]]));
+    const cell = v?.rows?.[0]?.[0];
+    assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1 &&
+           isReal(cell) && Math.abs(cell.value.toNumber() - PSI_1) < 1e-12,
+      `session216: [[ Integer(1) ]] PSI → [[ Real(ψ(1)) ]] (M; got ${cell?.value?.toNumber()})`);
+  }
+}
+
+/* ================================================================
+ — session231: Q-cell audit — ARG / % / %T / %CH / GCD / LCM
+
+   Closes six `·` (untested) cells in the DATA_TYPES.md Q column.
+
+   ARG: `_argScalar` handles isReal and isInteger only; isRational
+   falls through to `throw new RPLError('Bad argument type')`.
+   ARG of a rational is mathematically well-defined (0 for positive,
+   π for negative) but the implementation rejects it.  Q=✗.
+
+   % / %T / %CH: all three dispatch through `toRealOrThrow`, which
+   has an explicit `isRational(v)` branch returning Number(n)/Number(d).
+   Rational inputs are accepted; result is Real (Q→R degradation,
+   same as MOD/MIN/MAX from session 125).  Q=✓.
+
+   GCD / LCM: dispatch through `_toBigIntOrThrow`, which handles only
+   Integer and integer-valued Real.  Rational falls through to
+   `throw new RPLError('Bad argument type')`.  Correct by design —
+   GCD/LCM are integer-domain ops.  Q=✗.
+
+   +7 session231 pins.
+   ================================================================ */
+{
+  // ---- ARG Q=✗ (rejection) ----
+  // _argScalar has no isRational branch; Rational falls through to throw.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('ARG').fn(s), /Bad argument type/i,
+      `session231: ARG Rational(1,2) → 'Bad argument type' (_argScalar has no isRational branch)`);
+  }
+  {
+    const s = new Stack();
+    s.push(Rational(-1n, 2n));
+    assertThrows(() => lookup('ARG').fn(s), /Bad argument type/i,
+      `session231: ARG Rational(-1,2) → 'Bad argument type' (negative rational also rejected by _argScalar)`);
+  }
+
+  // ---- % Q=✓ (acceptance, Q→R degradation) ----
+  // toRealOrThrow handles isRational: Number(v.n)/Number(v.d).
+  // x = Rational(1,2) = 0.5, y (percent) = Real(50) → 0.5*50/100 = 0.25.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Real(50));
+    lookup('%').fn(s);
+    const r = s.pop();
+    assert(isReal(r) && Math.abs(r.value.toNumber() - 0.25) < 1e-12,
+      `session231: Rational(1,2) Real(50) % → Real(0.25) (Q→R degradation; got ${r?.value?.toNumber()})`);
+  }
+
+  // ---- %T Q=✓ (acceptance, Q→R degradation) ----
+  // %T formula: 100*y/x.  x = Rational(1,4) = 0.25, y = Real(1) → 100*1/0.25 = 400.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 4n));
+    s.push(Real(1));
+    lookup('%T').fn(s);
+    const r = s.pop();
+    assert(isReal(r) && Math.abs(r.value.toNumber() - 400) < 1e-12,
+      `session231: Rational(1,4) Real(1) %T → Real(400) (Q→R degradation; got ${r?.value?.toNumber()})`);
+  }
+
+  // ---- %CH Q=✓ (acceptance, Q→R degradation) ----
+  // %CH formula: 100*(y-x)/x.  x = Rational(1,2) = 0.5, y = Real(1) → 100*(1-0.5)/0.5 = 100.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Real(1));
+    lookup('%CH').fn(s);
+    const r = s.pop();
+    assert(isReal(r) && Math.abs(r.value.toNumber() - 100) < 1e-12,
+      `session231: Rational(1,2) Real(1) %CH → Real(100) (Q→R degradation; got ${r?.value?.toNumber()})`);
+  }
+
+  // ---- GCD Q=✗ (rejection) ----
+  // _toBigIntOrThrow has no isRational branch; Rational → Bad argument type.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Integer(2n));
+    assertThrows(() => lookup('GCD').fn(s), /Bad argument type/i,
+      `session231: Rational(1,2) Integer(2) GCD → 'Bad argument type' (_toBigIntOrThrow rejects Rational; GCD is integer-domain)`);
+  }
+
+  // ---- LCM Q=✗ (rejection) ----
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    s.push(Integer(2n));
+    assertThrows(() => lookup('LCM').fn(s), /Bad argument type/i,
+      `session231: Rational(1,2) Integer(2) LCM → 'Bad argument type' (_toBigIntOrThrow rejects Rational; LCM is integer-domain)`);
+  }
+}
+
+/* ================================================================
+ — session236: Q-cell audit — LNP1 / EXPM / TRUNC / ZETA / LAMBERT / PSI
+
+   Closes six `·` (untested) cells in the DATA_TYPES.md Q column.
+
+   LNP1 / EXPM: inner handlers call `toRealOrThrow(v)` which has an
+   explicit `isRational(v)` branch returning Number(n)/Number(d).
+   Rational input accepted; result is Real (Q→R degradation).  Q=✓.
+
+   TRUNC (x operand, level 2): `_roundingOp` checks
+   `if (!isReal(xv) && !isInteger(xv)) throw new RPLError('Bad argument type')`.
+   Rational x → rejected.  Q=✗.  The n operand (level 1) goes through
+   `toRealOrThrow` and would accept a Rational n (integer-valued Q
+   gives Bad argument value rather than Bad argument type), but the
+   primary Q question concerns the value operand.
+
+   ZETA / LAMBERT / PSI: scalar handlers use the pattern
+   `const x = isInteger(v) ? … : isReal(v) ? … : null; if null throw`.
+   Rational falls through to null → Bad argument type.  Q=✗.
+
+   +6 session236 pins.
+   ================================================================ */
+{
+  // ---- LNP1 Q=✓ (acceptance, Q→R degradation) ----
+  // toRealOrThrow handles isRational; log1p(0.5) is the expected value.
+  {
+    const v = runOp('LNP1', Rational(1n, 2n));
+    assert(isReal(v) && Math.abs(v.value.toNumber() - Math.log1p(0.5)) < 1e-12,
+      `session236: LNP1 Rational(1,2) → Real(log1p(0.5)) (Q→R degradation; got ${v?.value?.toNumber()})`);
+  }
+
+  // ---- EXPM Q=✓ (acceptance, Q→R degradation) ----
+  // toRealOrThrow handles isRational; expm1(0.5) is the expected value.
+  {
+    const v = runOp('EXPM', Rational(1n, 2n));
+    assert(isReal(v) && Math.abs(v.value.toNumber() - Math.expm1(0.5)) < 1e-12,
+      `session236: EXPM Rational(1,2) → Real(expm1(0.5)) (Q→R degradation; got ${v?.value?.toNumber()})`);
+  }
+
+  // ---- TRUNC x=Q → ✗ (rejection on value operand) ----
+  // _roundingOp checks `!isReal(xv) && !isInteger(xv)` → Bad argument type.
+  {
+    const s = new Stack();
+    s.push(Rational(3n, 2n));
+    s.push(Integer(1n));
+    assertThrows(() => lookup('TRUNC').fn(s), /Bad argument type/i,
+      `session236: Rational(3,2) Integer(1) TRUNC → 'Bad argument type' (_roundingOp rejects non-Real/non-Integer x)`);
+  }
+
+  // ---- ZETA Q=✗ (rejection) ----
+  // _zetaScalar: isInteger/isReal only; Rational → null → Bad argument type.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('ZETA').fn(s), /Bad argument type/i,
+      `session236: ZETA Rational(1,2) → 'Bad argument type' (_zetaScalar has no isRational branch)`);
+  }
+
+  // ---- LAMBERT Q=✗ (rejection) ----
+  // _lambertScalar: isInteger/isReal only; Rational → null → Bad argument type.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('LAMBERT').fn(s), /Bad argument type/i,
+      `session236: LAMBERT Rational(1,2) → 'Bad argument type' (_lambertScalar has no isRational branch)`);
+  }
+
+  // ---- PSI Q=✗ (rejection) ----
+  // _psiScalar: isInteger/isReal only; Rational → null → Bad argument type.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('PSI').fn(s), /Bad argument type/i,
+      `session236: PSI Rational(1,2) → 'Bad argument type' (_psiScalar has no isRational branch)`);
+  }
+}
+
+/* ================================================================
+   Session 240 — Q-cell audit: stat-dist + combinatorial families.
+
+   Inspected each scalar handler and pinned ✓/✗ for Rational input:
+
+   Stat-dist (all Q=✗):
+     GAMMA/LNGAMMA: `x = isInteger ? … : isReal ? … : null; if null throw`
+     ERF/ERFC:      same pattern in _erfScalar / _erfcScalar
+     BETA:          aNum/bNum = isInteger ? … : isReal ? … : null
+     UTPC/UTPF/UTPT: local `asReal` only accepts Integer and Real
+     HEAVISIDE/DIRAC: explicit isReal/isInteger/isBinaryInteger/isSym branches only
+
+   Combinatorial (Q=✗ except XROOT):
+     COMB/PERM:      _combPermArgs guard: `!isInteger && !isReal → throw`
+     IQUOT/IREMAINDER: _intQuotientArg: only Integer/Real
+     XROOT:          degree x uses `toRealOrThrow` (accepts Rational, Q→R);
+                     radicand y goes through `^` which accepts Rational.
+                     Both sides Q=✓ (Q→R degradation to Real).
+
+   15 new assertions (5525 → 5540).
+   ================================================================ */
+{
+  // ---- GAMMA Q=✗ ----
+  // _gammaScalar: `x = isInteger ? … : isReal ? … : null` → Rational → null → throw.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('GAMMA').fn(s), /Bad argument type/i,
+      `session240: GAMMA Rational(1,2) → 'Bad argument type' (_gammaScalar has no isRational branch)`);
+  }
+
+  // ---- LNGAMMA Q=✗ ----
+  // _lngammaScalar: same isInteger/isReal/null pattern.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('LNGAMMA').fn(s), /Bad argument type/i,
+      `session240: LNGAMMA Rational(1,2) → 'Bad argument type' (_lngammaScalar has no isRational branch)`);
+  }
+
+  // ---- ERF Q=✗ ----
+  // _erfScalar: `x = isInteger ? … : isReal ? … : null` → Rational → null → throw.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('erf').fn(s), /Bad argument type/i,
+      `session240: erf Rational(1,2) → 'Bad argument type' (_erfScalar has no isRational branch)`);
+  }
+
+  // ---- ERFC Q=✗ ----
+  // _erfcScalar: same isInteger/isReal/null pattern.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('erfc').fn(s), /Bad argument type/i,
+      `session240: erfc Rational(1,2) → 'Bad argument type' (_erfcScalar has no isRational branch)`);
+  }
+
+  // ---- BETA Q=✗ ----
+  // _betaScalar: aNum = isInteger ? … : isReal ? … : null; if null → throw.
+  // Rational on level 2 (a-arg) is rejected before bNum is even evaluated.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));  // a (level 2)
+    s.push(Integer(1n));       // b (level 1)
+    assertThrows(() => lookup('Beta').fn(s), /Bad argument type/i,
+      `session240: Beta Rational(1,2) Integer(1) → 'Bad argument type' (_betaScalar has no isRational branch)`);
+  }
+
+  // ---- UTPC Q=✗ ----
+  // local asReal: only Integer and Real → throw for Rational.
+  // Testing Rational on the ν (degree-of-freedom) arg.
+  {
+    const s = new Stack();
+    s.push(Rational(3n, 2n));  // ν — Rational (level 2)
+    s.push(Real(1));           // x (level 1)
+    assertThrows(() => lookup('UTPC').fn(s), /Bad argument type/i,
+      `session240: UTPC Rational(3,2) Real(1) → 'Bad argument type' (asReal has no isRational branch)`);
+  }
+
+  // ---- UTPF Q=✗ ----
+  // Same asReal helper used for all three args (n, d, F); Rational on n triggers immediately.
+  {
+    const s = new Stack();
+    s.push(Rational(3n, 2n));  // n — Rational (level 3)
+    s.push(Integer(2n));       // d (level 2)
+    s.push(Real(1));           // F (level 1)
+    assertThrows(() => lookup('UTPF').fn(s), /Bad argument type/i,
+      `session240: UTPF Rational(3,2) Integer(2) Real(1) → 'Bad argument type' (asReal rejects Rational on n)`);
+  }
+
+  // ---- UTPT Q=✗ ----
+  // Same asReal helper; Rational on ν triggers immediately.
+  {
+    const s = new Stack();
+    s.push(Rational(3n, 2n));  // ν — Rational (level 2)
+    s.push(Real(1));           // t (level 1)
+    assertThrows(() => lookup('UTPT').fn(s), /Bad argument type/i,
+      `session240: UTPT Rational(3,2) Real(1) → 'Bad argument type' (asReal rejects Rational on ν)`);
+  }
+
+  // ---- HEAVISIDE Q=✗ ----
+  // Handler checks isReal / isInteger / isBinaryInteger / _isSymOperand only — no isRational branch.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('HEAVISIDE').fn(s), /Bad argument type/i,
+      `session240: HEAVISIDE Rational(1,2) → 'Bad argument type' (no isRational branch in scalar handler)`);
+  }
+
+  // ---- DIRAC Q=✗ ----
+  // Same handler structure as HEAVISIDE — no isRational branch.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 2n));
+    assertThrows(() => lookup('DIRAC').fn(s), /Bad argument type/i,
+      `session240: DIRAC Rational(1,2) → 'Bad argument type' (no isRational branch in scalar handler)`);
+  }
+
+  // ---- COMB Q=✗ ----
+  // _combPermArgs guard: `!isInteger(a) && !isReal(a) → throw 'Bad argument type'`.
+  // Rational on level 2 (n-arg) triggers immediately.
+  {
+    const s = new Stack();
+    s.push(Rational(5n, 1n));  // n — Rational (integer-valued but still Q-typed)
+    s.push(Integer(2n));       // m
+    assertThrows(() => lookup('COMB').fn(s), /Bad argument type/i,
+      `session240: COMB Rational(5,1) Integer(2) → 'Bad argument type' (_combPermArgs rejects Rational even when integer-valued)`);
+  }
+
+  // ---- PERM Q=✗ ----
+  // Same _combPermArgs guard as COMB.
+  {
+    const s = new Stack();
+    s.push(Rational(5n, 1n));  // n — Rational
+    s.push(Integer(2n));       // m
+    assertThrows(() => lookup('PERM').fn(s), /Bad argument type/i,
+      `session240: PERM Rational(5,1) Integer(2) → 'Bad argument type' (_combPermArgs rejects Rational even when integer-valued)`);
+  }
+
+  // ---- IQUOT Q=✗ ----
+  // _intQuotientArg: only isInteger and isReal branches → Rational → throw.
+  {
+    const s = new Stack();
+    s.push(Rational(7n, 2n));  // a (level 2)
+    s.push(Integer(2n));       // b (level 1)
+    assertThrows(() => lookup('IQUOT').fn(s), /Bad argument type/i,
+      `session240: IQUOT Rational(7,2) Integer(2) → 'Bad argument type' (_intQuotientArg has no isRational branch)`);
+  }
+
+  // ---- IREMAINDER Q=✗ ----
+  // Same _intQuotientArg guard as IQUOT.
+  {
+    const s = new Stack();
+    s.push(Rational(7n, 2n));  // a (level 2)
+    s.push(Integer(2n));       // b (level 1)
+    assertThrows(() => lookup('IREMAINDER').fn(s), /Bad argument type/i,
+      `session240: IREMAINDER Rational(7,2) Integer(2) → 'Bad argument type' (_intQuotientArg has no isRational branch)`);
+  }
+
+  // ---- XROOT Q=✓ (Q→R degradation) ----
+  // Degree x uses `toRealOrThrow` which accepts Rational (Number(n)/Number(d)).
+  // Radicand y goes through '^' which accepts Rational.
+  // Both sides Q→R via toRealOrThrow / ^ dispatch; result is always Real.
+  // (1) degree=Rational(3,1): XROOT(Integer(8), Rational(3,1)) = 8^(1/3) = Real(2).
+  {
+    const s = new Stack();
+    s.push(Integer(8n));        // y (radicand, level 2)
+    s.push(Rational(3n, 1n));   // x (degree, level 1) — Rational accepted via toRealOrThrow
+    lookup('XROOT').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && Math.abs(v.value.toNumber() - 2) < 1e-12,
+      `session240: XROOT Integer(8) Rational(3,1) → Real(2) (degree Q→R via toRealOrThrow; got ${v.value})`);
+  }
+  // (2) radicand=Rational(1,4), degree=Integer(2): XROOT(Rational(1,4), Integer(2)) = (1/4)^(1/2) = 0.5.
+  {
+    const s = new Stack();
+    s.push(Rational(1n, 4n));   // y (radicand, level 2) — Rational accepted via ^
+    s.push(Integer(2n));        // x (degree, level 1)
+    lookup('XROOT').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && Math.abs(v.value.toNumber() - 0.5) < 1e-12,
+      `session240: XROOT Rational(1,4) Integer(2) → Real(0.5) (radicand Q accepted via ^; got ${v.value})`);
+  }
+}
+
+/* ================================================================
+   Session 244 — Z-cell doc-lag audit: ERF / ERFC / UTPC / UTPF /
+   UTPT + BETA L/V/M + UTPC/UTPF/UTPT L/V/M rejection pins.
+
+   Background: sessions 200/204/208 added List/Vector/Matrix pins for
+   erf/erfc using Integer(0) as the operand — but these were always
+   routed through the wrappers (_withListUnary / bespoke V/M).  The
+   bare-scalar Z column for erf and erfc was never independently
+   pinned.  The scalar handlers (_erfScalar / _erfcScalar) both
+   contain `const x = isInteger(v) ? Number(v.value) : ...`, so
+   Integer is accepted at the scalar level — a documentation lag.
+
+   Similarly, UTPC / UTPF / UTPT share a local `asReal` helper
+   (`if (isInteger(v)) return Number(v.value)`) but no Z-axis pin
+   existed, despite the handler accepting Integer on every argument.
+
+   BETA has a `_withListBinary` wrapper (registered as
+   `_withTaggedBinary(_withListBinary(handler))`), so bare-List
+   distribution should work — L=· is a documentation lag.  V and M
+   have no `_withVMBinary` wrapper; `_betaScalar` rejects Vector /
+   Matrix with 'Bad argument type'.
+
+   UTPC / UTPF / UTPT are registered as bare handlers (no list /
+   vector / matrix wrappers), so List / Vector / Matrix inputs reach
+   `asReal`, which rejects them.
+   ================================================================ */
+{
+  // ---- ERF Z=✓ (doc lag: _erfScalar has isInteger branch) ----
+  // erf(Integer(0)) = 0 (zero special-case, exact Real).
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('erf').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && v.value.toNumber() === 0,
+      `session244: erf Integer(0) → Real(0) (Z bare scalar; zero special-case; got ${v.value})`);
+  }
+  // erf(Integer(1)) → Real(erf(1)) ≈ 0.8427.  Pins the non-zero Integer path.
+  {
+    const s = new Stack();
+    s.push(Integer(1n));
+    lookup('erf').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && Math.abs(v.value.toNumber() - 0.8427007929497154) < 1e-12,
+      `session244: erf Integer(1) → Real(erf(1)) (Z bare scalar; non-zero integer path; got ${v.value})`);
+  }
+
+  // ---- ERFC Z=✓ (doc lag: _erfcScalar has isInteger branch) ----
+  // erfc(Integer(0)) = 1 (zero special-case, exact Real).
+  {
+    const s = new Stack();
+    s.push(Integer(0n));
+    lookup('erfc').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && v.value.toNumber() === 1,
+      `session244: erfc Integer(0) → Real(1) (Z bare scalar; zero special-case; got ${v.value})`);
+  }
+  // erfc(Integer(2)) → Real(erfc(2)) ≈ 0.00468.  Pins the positive-x Integer path
+  // (routes through _regGammaQ(0.5, 4), distinct from the x=0 shortcut).
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    lookup('erfc').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && Math.abs(v.value.toNumber() - 0.004677734981047287) < 1e-12,
+      `session244: erfc Integer(2) → Real(erfc(2)) (Z bare scalar; positive-x integer path; got ${v.value})`);
+  }
+
+  // ---- UTPC Z=✓ (doc lag: asReal helper has isInteger branch) ----
+  // UTPC(Integer(3), Integer(0)) — X≤0 branch returns Real(1) exactly.
+  // Push order: ν (level 2) then x (level 1).
+  {
+    const s = new Stack();
+    s.push(Integer(3n));   // ν — degrees of freedom
+    s.push(Integer(0n));   // x — X≤0 short-circuit → tail = 1
+    lookup('UTPC').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && v.value.toNumber() === 1,
+      `session244: UTPC Integer(3) Integer(0) → Real(1) (Z×Z; X≤0 short-circuit; got ${v.value})`);
+  }
+  // UTPC(Integer(2), Integer(2)) — for df=2, UTPC = exp(−x/2) = exp(−1) ≈ 0.3679.
+  {
+    const s = new Stack();
+    s.push(Integer(2n));   // ν = 2
+    s.push(Integer(2n));   // x = 2
+    lookup('UTPC').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && Math.abs(v.value.toNumber() - Math.exp(-1)) < 1e-10,
+      `session244: UTPC Integer(2) Integer(2) → Real(exp(-1)) (Z×Z; df=2 tail; tol 1e-10; got ${v.value})`);
+  }
+
+  // ---- UTPF Z=✓ (doc lag: same asReal helper accepts Integer on all three args) ----
+  // UTPF(n=Integer(2), d=Integer(2), F=Integer(1)).
+  // Push order: n (level 3), d (level 2), F (level 1).
+  // w = d/(d+n·F) = 2/(2+2·1) = 0.5; I_{0.5}(1, 1) = 0.5 — clean half-integer.
+  {
+    const s = new Stack();
+    s.push(Integer(2n));   // n
+    s.push(Integer(2n));   // d
+    s.push(Integer(1n));   // F
+    lookup('UTPF').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && Math.abs(v.value.toNumber() - 0.5) < 1e-12,
+      `session244: UTPF Integer(2) Integer(2) Integer(1) → Real(0.5) (Z×Z×Z; I_0.5(1,1)=0.5; got ${v.value})`);
+  }
+
+  // ---- UTPT Z=✓ (doc lag: same asReal helper accepts Integer on both args) ----
+  // UTPT(ν=Integer(5), t=Integer(0)) — t=0 exact branch returns Real(0.5).
+  // Push order: ν (level 2), t (level 1).
+  {
+    const s = new Stack();
+    s.push(Integer(5n));   // ν
+    s.push(Integer(0n));   // t = 0 → exact short-circuit → 0.5
+    lookup('UTPT').fn(s);
+    const v = s.peek();
+    assert(v.type === 'real' && v.value.toNumber() === 0.5,
+      `session244: UTPT Integer(5) Integer(0) → Real(0.5) (Z×Z; t=0 exact branch; got ${v.value})`);
+  }
+
+  // ---- BETA L=✓ (doc lag: _withListBinary wrapper distributes element-wise) ----
+  // { Integer(1) Integer(2) } { Integer(1) Integer(3) } Beta
+  //   → { Real(B(1,1)) Real(B(2,3)) }
+  //   = { Real(≈1.0)   Real(≈0.0833) }
+  // B(1,1) = Γ(1)Γ(1)/Γ(2) = 1.  B(2,3) = Γ(2)Γ(3)/Γ(5) = 1·2/24 = 1/12.
+  // Push order: left operand (level 2 = "a" arg), right operand (level 1 = "b" arg).
+  {
+    const s = new Stack();
+    s.push(RList([Integer(1n), Integer(2n)]));   // a-list (level 2)
+    s.push(RList([Integer(1n), Integer(3n)]));   // b-list (level 1)
+    lookup('Beta').fn(s);
+    const result = s.peek();
+    assert(isList(result) && result.items.length === 2,
+      `session244: Beta({Z(1),Z(2)},{Z(1),Z(3)}) → List of 2 (L×L pairwise; got ${result?.type})`);
+    const b11 = result.items[0].value.toNumber();
+    const b23 = result.items[1].value.toNumber();
+    assert(Math.abs(b11 - 1) < 1e-12,
+      `session244: Beta({Z(1),...},{Z(1),...})[0] = B(1,1) ≈ 1 (got ${b11})`);
+    assert(Math.abs(b23 - 1 / 12) < 1e-12,
+      `session244: Beta({...,Z(2)},{...,Z(3)})[1] = B(2,3) = 1/12 (got ${b23})`);
+  }
+
+  // ---- BETA V=✗ / M=✗ (no _withVMBinary wrapper; _betaScalar rejects non-scalar) ----
+  // Vector input: _betaScalar receives Vector as the 'a' arg — isInteger/isReal both
+  // false → aNum = null → throws 'Bad argument type'.
+  {
+    const s = new Stack();
+    s.push(Vector([Real(2), Real(1)]));
+    s.push(Integer(1n));
+    assertThrows(() => lookup('Beta').fn(s), /Bad argument type/i,
+      `session244: Beta(Vector, Integer) → 'Bad argument type' (no _withVMBinary; V=✗)`);
+  }
+  // Matrix input: same rejection path.
+  {
+    const s = new Stack();
+    s.push(Matrix([[Real(2)]]));
+    s.push(Integer(1n));
+    assertThrows(() => lookup('Beta').fn(s), /Bad argument type/i,
+      `session244: Beta(Matrix, Integer) → 'Bad argument type' (no _withVMBinary; M=✗)`);
+  }
+
+  // ---- UTPC L=✗ / V=✗ (bare handler; asReal rejects non-scalar x arg) ----
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    s.push(RList([Real(1)]));
+    assertThrows(() => lookup('UTPC').fn(s), /Bad argument type/i,
+      `session244: UTPC Integer(2) List({Real(1)}) → 'Bad argument type' (asReal rejects List; L=✗)`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    s.push(Vector([Real(1)]));
+    assertThrows(() => lookup('UTPC').fn(s), /Bad argument type/i,
+      `session244: UTPC Integer(2) Vector([Real(1)]) → 'Bad argument type' (asReal rejects Vector; V=✗)`);
+  }
+
+  // ---- UTPF L=✗ (bare handler; asReal rejects List on F arg) ----
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    s.push(Integer(2n));
+    s.push(RList([Real(1)]));
+    assertThrows(() => lookup('UTPF').fn(s), /Bad argument type/i,
+      `session244: UTPF Integer(2) Integer(2) List({Real(1)}) → 'Bad argument type' (asReal rejects List; L=✗)`);
+  }
+  // UTPF V=✗
+  {
+    const s = new Stack();
+    s.push(Integer(2n));
+    s.push(Integer(2n));
+    s.push(Vector([Real(1)]));
+    assertThrows(() => lookup('UTPF').fn(s), /Bad argument type/i,
+      `session244: UTPF Integer(2) Integer(2) Vector([Real(1)]) → 'Bad argument type' (asReal rejects Vector; V=✗)`);
+  }
+
+  // ---- UTPT L=✗ / V=✗ (bare handler; asReal rejects non-scalar t arg) ----
+  {
+    const s = new Stack();
+    s.push(Integer(3n));
+    s.push(RList([Real(1)]));
+    assertThrows(() => lookup('UTPT').fn(s), /Bad argument type/i,
+      `session244: UTPT Integer(3) List({Real(1)}) → 'Bad argument type' (asReal rejects List; L=✗)`);
+  }
+  {
+    const s = new Stack();
+    s.push(Integer(3n));
+    s.push(Vector([Real(1)]));
+    assertThrows(() => lookup('UTPT').fn(s), /Bad argument type/i,
+      `session244: UTPT Integer(3) Vector([Real(1)]) → 'Bad argument type' (asReal rejects Vector; V=✗)`);
   }
 }
 

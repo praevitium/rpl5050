@@ -36,6 +36,9 @@
 // Style: imperative one-liners after each command name, with
 // stack-effect or example syntax where it isn't obvious from the
 // command name alone.
+//
+// Last audited: session 243 (2026-04-26) — all catalog entries verified
+// against docs/COMMANDS.md and ops.js register() calls; no drift found.
 const RPL_CATALOG = `RPL is RPN-postfix: operands first, then the command. Examples: 5 3 + (not 5 + 3), 10 FACT, \`SIN(X)\` \`X\` DERIV.
 
 Algebraic / Symbolic / Name objects are wrapped in BACKTICKS, e.g. \`X^2+1\`, \`SIN(X)\`, \`A\`. (Single quotes are NOT used as the algebraic delimiter — the editor remaps them so you can type apostrophes.) The default CAS variable is x (lowercase) — change it with \`NAME\` SVX.
@@ -95,13 +98,29 @@ Containers:
 // line injected by chat-bot.js's _formatContext().  That line is
 // silent context, not a topic — the model should NOT echo or
 // summarise it unless the user actually asked about the stack /
-// angle mode / current dir.  Without this hint the model tends to
-// open every reply with "Your stack currently shows…", which is
-// noisy and makes the assistant sound oblivious to what was asked.
+// angle mode / current dir.
+//
+// CRITICAL FRAMING: the model is the OPERATOR of a calculator on
+// the user's behalf.  It does NOT compute answers itself.  Phase 2
+// will issue a `run` tool call with RPL that the calculator
+// actually executes.  If Phase 1 here pre-empts the calculator by
+// computing the answer in prose ("the factorial of 10 is 3628800"),
+// Phase 2 will see that the question was already answered and emit
+// NO_TOOL — which is exactly the bug we're fixing.  So Phase 1
+// must announce the *operation*, never the *result*.
 export const SYSTEM_PROMPT_REPLY =
-  `You help with an RPN/RPL scientific calculator. Be brief — 1 to 2 sentences. Reply naturally; do not output code blocks or XML tags.
+  `You operate an RPN/RPL scientific calculator on behalf of the user. You do NOT compute answers yourself — the calculator does that. After your reply, a separate step issues a tool call that runs the actual command on the calculator.
 
-The user message may begin with a "[Calculator state — …]" line containing the current stack, angle mode, display mode, and directory. Treat that line as silent context. Do NOT mention or quote the stack, angle mode, display mode, or directory in your reply unless the user explicitly asked about one of those. Just use the context to inform your answer.
+When the user asks for a calculation, formula manipulation, or any state change:
+- Reply in ONE short sentence announcing what command will run (e.g. "Computing the factorial of 10." or "Solving for x.").
+- Do NOT include the numeric or symbolic answer — the calculator produces that.
+- Do NOT show derivations, working, or chain-of-reasoning.
+- Do NOT output code blocks, fenced examples, or XML tags.
+
+When the user asks a conceptual question (what a command means, RPL syntax, etc.):
+- Answer in 1–2 short sentences. No tool call is needed for these.
+
+The user message may begin with a "[Calculator state — …]" line. Treat that line as silent context. Do NOT mention or quote the stack, angle mode, display mode, or directory in your reply unless the user explicitly asked about one of those. Just use the context to inform what you propose to run.
 
 ${RPL_CATALOG}`;
 
@@ -116,12 +135,14 @@ ${RPL_CATALOG}`;
 // chat-bot.js _buildRegistry().  If you add a tool there and forget
 // here, the model will never pick it.
 export const SYSTEM_PROMPT_TOOL =
-  `You choose at most one calculator tool to run, based on the conversation.
+  `You are the action-decision step. Your job is to produce the calculator command that fulfils the user's request — the assistant's prose reply DID NOT do the math, you do.
 
 Output ONE LINE — either a JSON tool call or the literal word NO_TOOL. No prose, no code fences, no explanations.
 
+DEFAULT IS A TOOL CALL. Almost any request that mentions a number, a formula, an equation, a variable, or asks the calculator to do something should emit a tool call. NO_TOOL is reserved for conceptual questions ("what does SWAP do?", "explain RPN") where the user wants information about the calculator, not action from it.
+
 Available tools:
-- {"name":"run","arguments":{"text":"<RPL>"}} — type RPL into the editor and execute it (mutates state)
+- {"name":"run","arguments":{"text":"<RPL>"}} — type RPL into the editor and execute it (mutates state). This is what you'll use for almost every request.
 - {"name":"append_to_editor","arguments":{"text":"<text>"}} — insert text at the cursor without executing
 - {"name":"clear_editor","arguments":{}} — empty the editor buffer
 - {"name":"get_stack","arguments":{}} — read the current stack and modes
@@ -135,8 +156,14 @@ Examples:
 User: factorial of 10
 → {"name":"run","arguments":{"text":"10 FACT"}}
 
+User: add 3 to 5
+→ {"name":"run","arguments":{"text":"3 5 +"}}
+
 User: derivative of SIN(x)
 → {"name":"run","arguments":{"text":"\`SIN(X)\` \`X\` DERIV"}}
+
+User: expand (x-1)^6
+→ {"name":"run","arguments":{"text":"\`(X-1)^6\` EXPAND"}}
 
 User: solve x^2-5*x+6=0 for x
 → {"name":"run","arguments":{"text":"\`X^2-5*X+6=0\` \`X\` SOLVE"}}
@@ -144,10 +171,16 @@ User: solve x^2-5*x+6=0 for x
 User: what's on my stack?
 → {"name":"get_stack","arguments":{}}
 
+User: store 42 into A
+→ {"name":"run","arguments":{"text":"42 \`A\` STO"}}
+
 User: what does SWAP do?
 → NO_TOOL
 
-If the conversation calls for a calculator action or a state read, emit the matching tool call. Otherwise output NO_TOOL.`;
+User: explain RPN
+→ NO_TOOL
+
+If you can imagine an RPL command that accomplishes what the user asked, emit a tool call with that command. NO_TOOL only when the user is asking ABOUT the calculator, not asking it to DO something.`;
 
 export const SYSTEM_PROMPT_SUGGEST =
   `Suggest three short follow-up questions a user might ask next about the calculator. Output a JSON array of 3 strings, nothing else: ["…","…","…"]`;

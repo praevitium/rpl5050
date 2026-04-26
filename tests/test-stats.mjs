@@ -185,7 +185,7 @@ function makeXYMatrix() {
 /* ================================================================
    session127: stats-op rejection-path coverage.
 
-   The session-064 block has thorough rejection coverage for ΣY (the
+ The block has thorough rejection coverage for ΣY (the
    third op in the file) but the symmetric Y-family ops ΣY2 and
    ΣXY share its rejection contract and were not pinned.  Likewise
    ΣX2 has a positive pin only — its non-Vector/non-Matrix reject
@@ -338,20 +338,20 @@ function makeXYMatrix() {
    The file's top-of-file comment promises that SX, SX2, SY, SY2,
    SXY, MAXS, MINS are ASCII aliases that route to the same
    backend.  Today only **5 of 7** have an end-to-end positive pin
-   under their alias name (SX session-064; SY2 session-064; MAXS
-   session-064; SXY session-127).  **SX2, SY, and MINS have no
+ under their alias name (SX ; SY2 ; MAXS
+ ; SXY ). **SX2, SY, and MINS have no
    `lookup(<alias>)` exercise anywhere in the test tree** — verified
    by `grep -rn "lookup\\('SX2\\|lookup\\('SY'\\|lookup\\('MINS\\)"
-   tests/` returning no matches at session-132 entry.  A future
+ tests/` returning no matches at entry. A future
    refactor that accidentally drops one of those ASCII names from
    the registration block would not be caught by any assertion;
    pinning them here closes that gap.
 
-   The session-127 block also added a 3-column positive pin for
+ The block also added a 3-column positive pin for
    MINΣ but stopped short of the symmetric MAXΣ multi-column case;
    the existing MAXΣ tests only exercise 2-col Matrix and a bare
    Vector, leaving the column-iteration loop's general-N max
-   coverage thin.  Mirroring the session-127 MINΣ 3-col pin closes
+ coverage thin. Mirroring the MINΣ 3-col pin closes
    that asymmetry.
 
    Adds:
@@ -364,10 +364,10 @@ function makeXYMatrix() {
        inherits the same 2-col guard — pin it through the alias).
      • MINS on XY matrix → Vector [1, 2] (alias of MINΣ end-to-end).
      • MINS on bare Vector → 1-elem Vector of the min (the
-       symmetric counterpart to the session-064 MAXS Matrix pin
-       and the session-064 MAXΣ-on-Vector pin).
+ symmetric counterpart to the MAXS Matrix pin
+ and the MAXΣ-on-Vector pin).
      • MAXΣ on 3-col Matrix returns 3-element per-column Vector
-       (multi-column positive coverage; mirrors session-127 MINΣ).
+ (multi-column positive coverage; mirrors MINΣ).
      • MAXΣ 3-col per-column maxes [3, 8, 4] (all-distinct columns
        so a column-iteration drop or duplicate would surface).
      • MAXΣ on a Vector of all-negative entries returns the
@@ -421,7 +421,7 @@ function makeXYMatrix() {
     'session132: MINS (ASCII) on XY matrix → Vector [1, 2] (alias of MINΣ)');
 }
 {
-  // MINS on bare Vector — symmetric to the session-064 MAXΣ-on-Vector
+  // MINS on bare Vector — symmetric to the MAXΣ-on-Vector
   // 1-elem-Vector pin.  The single-element-Vector return shape is the
   // same end-to-end contract.
   const s = new Stack();
@@ -432,8 +432,8 @@ function makeXYMatrix() {
     'session132: MINS (ASCII) on plain Vector → 1-elem Vector of the min (-2)');
 }
 
-/* ---- MAXΣ multi-column positive case (session-127 symmetry close) ---- *
- * Mirrors the session-127 MINΣ 3-col pin: a 3-column Matrix with
+/* ---- MAXΣ multi-column positive case ---- *
+ * Mirrors the MINΣ 3-col pin: a 3-column Matrix with
  * per-column maxes that are all distinct, so a regression that
  * drops/duplicates a column surfaces immediately. */
 {
@@ -468,31 +468,31 @@ function makeXYMatrix() {
 /* ================================================================
    session137: stats-op ASCII-alias rejection-path coverage closure.
 
-   The session-127 block pinned ΣX2 / ΣXY / MAXΣ / MINΣ rejection
-   branches under their canonical Unicode names, and session 132
+ The block pinned ΣX2 / ΣXY / MAXΣ / MINΣ rejection
+ branches under their canonical Unicode names, and
    added the symmetric POSITIVE alias coverage for SX2 / SY / MINS
-   (mirrors of session-064's SX / SY2 / MAXS positive aliases).
+ (mirrors of 's SX / SY2 / MAXS positive aliases).
    But the alias branches' REJECTION paths are still untested for
    SX / SY2 / SXY / MAXS / MINS — a refactor that special-cases
    one of these aliases and accidentally bypasses the type-/dim-
    guards in the canonical backend would silently slip through.
 
    Pinning each alias's analogous reject branch (the same one the
-   canonical name has under session-064 / session-127):
+ canonical name has under / ):
 
-     • SX on Real → Bad argument type (mirror of session-064 ΣX).
+ • SX on Real → Bad argument type (mirror of ΣX).
      • SY2 on 1-col Matrix → Invalid dimension (mirror of
-       session-127 ΣY2 + the existing session-064 ΣY pin).
-     • SXY on Real → Bad argument type (mirror of session-127
+ ΣY2 + the existing ΣY pin).
+ • SXY on Real → Bad argument type (mirror of
        ΣXY-on-Real reject).
-     • MAXS on Real → Bad argument type (mirror of session-127
+ • MAXS on Real → Bad argument type (mirror of
        MAXΣ-on-Real reject).
      • MAXS on empty Vector → Bad argument value (mirror of
-       session-127 MAXΣ-on-empty-Vector reject).
-     • MINS on Real → Bad argument type (mirror of session-127
+ MAXΣ-on-empty-Vector reject).
+ • MINS on Real → Bad argument type (mirror of
        MAXΣ-on-Real reject; MINS shares the same dispatcher).
      • MINS on empty Matrix → Bad argument value (mirror of
-       session-127 MAXΣ-on-empty-Matrix reject).
+ MAXΣ-on-empty-Matrix reject).
    ================================================================ */
 
 /* ---- SX (alias of ΣX) rejects Real ---- */
@@ -555,7 +555,7 @@ function makeXYMatrix() {
    session147: NSIGMA / NΣ + MEAN / VAR / SDEV rejection-path closure
    + canonical ΣX / ΣX2 col-0-routing positive coverage closure.
 
-   The session-064 / session-127 / session-132 / session-137 sweep
+ The / / / sweep
    between them pin ΣX / ΣX2 / ΣY / ΣY2 / ΣXY / MAXΣ / MINΣ
    rejection branches under both their canonical Unicode names and
    the SX/SY/SY2/SXY/MAXS/MINS ASCII aliases.  Three holes remain:
@@ -569,7 +569,7 @@ function makeXYMatrix() {
        past every existing pin in the file.
      • NΣ on empty Vector → Bad argument value (ops.js:12168) —
        only the empty-Matrix branch (ops.js:12173) was pinned at
-       session-064 line 153 (`s.push(Matrix([]))`); the empty-
+ line 153 (`s.push(Matrix([]))`); the empty-
        Vector branch is its own conditional and was untested.
      • MEAN / VAR / SDEV bottom-of-fn `Bad argument type`
        fall-through is unpinned.  These three ops share a Vector-
@@ -580,8 +580,8 @@ function makeXYMatrix() {
        *canonical-name* positive path was never pinned.  The file
        pins `ΣX on Vector → 10` and `ΣX2 on Vector → 30`, and
        pins the *alias-routed* SX/SX2 on the XY matrix (`SX
-       (ASCII) on XY matrix col-0 → 10` at session-064 line 80,
-       `SX2 (ASCII) on XY matrix col-0 → 30` at session-132 line
+ (ASCII) on XY matrix col-0 → 10` at line 80,
+ `SX2 (ASCII) on XY matrix col-0 → 30` at line
        391).  A refactor that special-cased the alias backend and
        bypassed canonical ΣX/ΣX2's `_statsVectorOrMatrixCol0`
        dispatch would slip past both today.  Mirror of session

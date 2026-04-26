@@ -197,7 +197,7 @@ export const state = {
   // describes this stack-of-halted-programs behaviour.
   halted: null,
   haltedStack: [],
-  // PROMPT message slot.  Session 121: PROMPT (HP50 AUR p.2-160) is
+  // PROMPT message slot.  PROMPT (HP50 AUR p.2-160) is
   // HALT-with-display-message — the program pops level 1, stashes the
   // value here so a UI subscriber can render it in the status area, and
   // suspends via the same generator-yield mechanism HALT uses.  CONT
@@ -554,7 +554,7 @@ export function clearAllHalted() {
 export function haltedDepth() { return state.haltedStack.length; }
 
 /* ----------------------- PROMPT message slot -----------------------
-   Session 121.  HP50 AUR p.2-160: PROMPT pops level 1, displays it in
+   HP50 AUR p.2-160: PROMPT pops level 1, displays it in
    the status area, and halts the program (resumable via CONT — same
    substrate HALT uses).  Without UI integration, the "display in the
    status area" half lands here as an observable state slot — `state

@@ -5,9 +5,15 @@
      const llm = new LLM();
      llm.onStatus((status, msg) => ...);
      llm.onProgress((info) => ...);     // { file, progress, loaded, total }
-     await llm.load();
+     await llm.load(modelId);
      await llm.generate(messages, { onToken: (t) => ... });
      llm.abort();
+
+   Switching models: call load(differentModelId) — the worker will
+   re-run CreateMLCEngine with the new id, replacing the WebGPU
+   pipeline.  The first time a given model is requested it gets
+   downloaded (~0.4-5 GB depending on model); subsequent loads of
+   the same model hit the browser's Cache Storage and are instant.
    ================================================================= */
 
 export class LLM {
@@ -27,6 +33,13 @@ export class LLM {
     this._genResolve    = null;
     this._genReject     = null;
     this._genOnToken    = null;
+
+    // Which modelId the load() call is targeting, vs. which one
+    // finished loading.  loadedModelId = null until the worker
+    // posts its first 'ready' status; it then sticks until a new
+    // load() resolves.  Used by chat-bot.js's picker UI.
+    this._loadingModelId = null;
+    this._loadedModelId  = null;
   }
 
   /* ---- Public API ---- */
@@ -48,35 +61,67 @@ export class LLM {
     return () => this._progressListeners.delete(fn);
   }
 
-  /** Load the model.  Safe to call multiple times — subsequent calls
-   *  return the same in-flight promise or resolve immediately if ready. */
-  load() {
-    if (this._status === 'ready')   return Promise.resolve();
-    if (this._loadPromise)          return this._loadPromise;
+  /** Load (or switch to) a model.  Calling with the same id while
+   *  ready resolves immediately; calling with a different id while
+   *  ready re-loads.  Calling concurrently returns the same
+   *  in-flight promise. */
+  load(modelId) {
+    if (!modelId) {
+      return Promise.reject(new Error('load() requires a modelId'));
+    }
+    if (this._status === 'ready' && this._loadedModelId === modelId) {
+      return Promise.resolve();
+    }
+    if (this._loadPromise && this._loadingModelId === modelId) {
+      return this._loadPromise;
+    }
 
-    this._worker = new Worker(
-      new URL('./llm-worker.js', import.meta.url),
-      { type: 'module' },
-    );
-    this._worker.onmessage = (e) => this._onWorkerMessage(e);
-    this._worker.onerror   = (e) => {
-      this._setStatus('error', e.message ?? 'Worker error');
-      this._loadReject?.(new Error(e.message ?? 'Worker error'));
-      this._loadReject = null;
-    };
+    if (!this._worker) {
+      // Cache-buster query param.  Module workers in Chromium-based
+      // browsers + live-server's headers + the HTTP cache combine in
+      // ways that survive most cache-clear actions; bumping
+      // WORKER_VERSION below is the surest way to force a fresh
+      // fetch on the next full page reload.  Bump this any time
+      // llm-worker.js changes in a way users need to see.
+      const WORKER_VERSION = '7';
+      const workerUrl = new URL('./llm-worker.js', import.meta.url);
+      workerUrl.searchParams.set('v', WORKER_VERSION);
+      this._worker = new Worker(workerUrl, { type: 'module' });
+      this._worker.onmessage = (e) => this._onWorkerMessage(e);
+      this._worker.onerror   = (e) => {
+        this._setStatus('error', e.message ?? 'Worker error');
+        this._loadReject?.(new Error(e.message ?? 'Worker error'));
+        this._loadReject = null;
+      };
+    }
 
+    this._loadingModelId = modelId;
     this._loadPromise = new Promise((resolve, reject) => {
+      // _loadedModelId is updated in _onWorkerMessage *before*
+      // _setStatus fires, so listeners observing the 'ready' status
+      // see the correct id.  Don't try to update it here — that
+      // would run after the status listener and you'd get a stale
+      // pill label until the next render.
       this._loadResolve = resolve;
       this._loadReject  = reject;
     });
 
-    this._worker.postMessage({ type: 'load' });
+    this._worker.postMessage({ type: 'load', modelId });
     return this._loadPromise;
   }
 
+  /** The model id the worker most recently finished loading, or
+   *  null if no model is loaded yet.  Useful for the picker UI to
+   *  highlight the active row and skip a no-op re-load. */
+  get loadedModelId() { return this._loadedModelId ?? null; }
+
   /** Run inference on a messages array (OpenAI chat format).
-   *  Streams tokens via onToken callback.  Resolves when done. */
-  generate(messages, { onToken } = {}) {
+   *  Streams tokens via onToken callback.  Resolves when done.
+   *  `maxTokens` caps generation length — small values keep the
+   *  worst case bounded if the model falls into a repetition loop
+   *  (greedy decoding on small models can do that even at
+   *  temperature:0).  Defaults to the worker's own default (256). */
+  generate(messages, { onToken, maxTokens } = {}) {
     if (this._status !== 'ready') {
       return Promise.reject(new Error('Model not ready'));
     }
@@ -87,7 +132,7 @@ export class LLM {
     return new Promise((resolve, reject) => {
       this._genResolve = resolve;
       this._genReject  = reject;
-      this._worker.postMessage({ type: 'generate', id, messages });
+      this._worker.postMessage({ type: 'generate', id, messages, maxTokens });
     });
   }
 
@@ -109,6 +154,17 @@ export class LLM {
     const { type, ...rest } = data;
 
     if (type === 'status') {
+      // CRITICAL ORDERING: update _loadedModelId BEFORE firing the
+      // status listeners.  chat-bot.js's _onStatus reads
+      // this.loadedModelId synchronously during the 'ready' fan-out
+      // to pick the active row in the picker and to label the
+      // status pill — if we updated _loadedModelId after _setStatus,
+      // those reads would see the previous model's id (or null on
+      // first load), and the UI would lag by one status cycle.
+      if (rest.status === 'ready' && this._loadingModelId) {
+        this._loadedModelId  = this._loadingModelId;
+        this._loadingModelId = null;
+      }
       this._setStatus(rest.status, rest.message ?? '');
       if (rest.status === 'ready') {
         this._loadResolve?.();

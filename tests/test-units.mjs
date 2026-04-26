@@ -442,7 +442,7 @@ import { assert, assertThrows } from './helpers.mjs';
 
    The session-prior block has the canonical happy-path pins for
    `+ - * / ^ NEG ABS INV SQ`, plus error pins for `+` mixed dims
-   (m vs s) and `CONVERT` mixed dims, and session 137 added `-`
+ (m vs s) and `CONVERT` mixed dims, and added `-`
    positive coverage (same-unit + cross-scale).  Four gaps remain:
 
      • `-` (subtraction) mixed-dim reject was never pinned.
@@ -461,7 +461,7 @@ import { assert, assertThrows } from './helpers.mjs';
        ABS pin at line 207 is `-5_m` (single-atom uexpr); ABS
        on a Newton-shaped uexpr exercises the path where the
        value is signed but the multi-factor uexpr stays
-       intact.  Mirror of session 137's `NEG -1_N` composite-
+ intact. Mirror of 's `NEG -1_N` composite-
        NEG pin on the ABS arm.
      • `Unit ^ negative integer` (`2_m ^ -1`) and `Unit ^ 0`
        (`2_m ^ 0`).  The existing `^` pin uses a positive

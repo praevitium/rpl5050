@@ -340,11 +340,8 @@ import { assert, assertThrows } from './helpers.mjs';
     'SORT does not mutate the original List');
 }
 
-/* ---- SORT: negative reals (regression — session 151b user report).
-   Pre-fix: _rplCompare returned `a.value < b.value` on raw Decimal
-   instances; Decimal.valueOf() returns a string so "-3.5" > "-1.5"
-   lexicographically and the comparator gave the wrong sign for
-   negative-vs-negative pairs.  Post-fix routes both operands through
+/* ---- SORT: negative reals (regression guard).
+   _rplCompare routes both operands through
    Number() so the comparator always works on JS numbers. ---- */
 {
   const s = new Stack();

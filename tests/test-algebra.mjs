@@ -5685,7 +5685,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 }
 
 /* ==================================================================
-   session 104 — PROPFRAC / PARTFRAC / COSSIN
+ — PROPFRAC / PARTFRAC / COSSIN
    Three CAS ops routed through Giac.  Tests register the caseval
    fixture the op emits, then verify the Symbolic output.  Rejection
    paths check Name/Real pass-through and non-CAS types throw
@@ -5917,7 +5917,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 }
 
 /* ==================================================================
-   session 114 — PCAR / CHARPOL / EGVL / PA2B2
+ — PCAR / CHARPOL / EGVL / PA2B2
    PCAR + CHARPOL + EGVL are Giac-backed matrix ops (use fixtures on
    the mock engine); PA2B2 is native-BigInt (no CAS dependency).
    ================================================================== */
@@ -6058,7 +6058,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 }
 
 // Reset VX after the PCAR/CHARPOL/EGVL cluster — see the setCasVx('X')
-// at the top of session 114 above.  PA2B2 doesn't touch VX so it can
+// at the top of above. PA2B2 doesn't touch VX so it can
 // run with whatever the next cluster expects.
 {
   const { resetCasVx } = await import('../www/src/rpl/state.js');
@@ -6175,7 +6175,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 
 
 /* ==================================================================
-   session 119 — EGV / RSD / GREDUCE
+ — EGV / RSD / GREDUCE
    EGV + GREDUCE are Giac-backed (use mock fixtures); RSD is pure
    native linear algebra (no CAS dependency).
    ================================================================== */
@@ -6495,7 +6495,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 
 
 /* ==================================================================
-   session 124 — LNAME / GBASIS
+ — LNAME / GBASIS
    LNAME is a native AST walker (no Giac dependency); GBASIS is
    Giac-backed (uses fixture mocks).
    ================================================================== */
@@ -6741,9 +6741,9 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 
 
 // ==================================================================
-// session127: LNAME edge cases — extending the session-124 cluster
+// session127: LNAME edge cases — extending the cluster
 //
-// The session-124 LNAME tests cover: 5-name AUR worked example, lone
+// The LNAME tests cover: 5-name AUR worked example, lone
 // var, dedup, alpha tiebreak, walk-under-Neg/Bin, plus reject paths
 // for Real and Vector.  The gaps closed here:
 //   • cross-type rejection coverage for non-numeric / non-vector
@@ -6838,7 +6838,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
  *
  * Note: this can't be expressed via parseAlgebra() because the parser
  * treats unknown multi-letter calls strictly — built manually with
- * AstFn / AstVar matching the session-124 5-name worked example pattern. */
+ * AstFn / AstVar matching the 5-name worked example pattern. */
 {
   const s = new Stack();
   s.push(Symbolic(AstFn('COS', [AstFn('MYFUNC', [AstVar('X')])])));
@@ -6856,7 +6856,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 }
 
 /* ==================================================================
-   session 139 — LIN / LIMIT / lim
+ — LIN / LIMIT / lim
    Three Giac-backed CAS ops (use mock fixtures).  LIN is single-arg;
    LIMIT / lim are 2-arg with both equation-form and bare-value
    point arguments accepted.  No-fallback policy.
@@ -7024,7 +7024,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 }
 
 // ==================================================================
-// session 144 — MODSTO + ADDTMOD / SUBTMOD / MULTMOD / POWMOD
+// — MODSTO + ADDTMOD / SUBTMOD / MULTMOD / POWMOD
 // HP50 AUR §3-150 / §3-9 / §3-243 / §3-153 / §3-175
 // ==================================================================
 {
@@ -7301,7 +7301,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
 }
 
 // ==================================================================
-// session 149 — EXPANDMOD / FACTORMOD / GCDMOD / DIVMOD / DIV2MOD
+// — EXPANDMOD / FACTORMOD / GCDMOD / DIVMOD / DIV2MOD
 // HP50 AUR §3-80 / §3-83 / §3-96 / §3-63 / §3-62.
 // User Guide p.5-14 / p.5-15 worked examples mod 12.
 // ==================================================================
@@ -7596,11 +7596,11 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
   }
 
   /* ===============================================================
-     session 156 — MODULO ARITH cluster follow-up.  Closes branches
-     left by session 149's pin set.  Five clusters:
-       (a) DIV2MOD rejects Vector — mirror of session-149 DIVMOD
+ — MODULO ARITH cluster follow-up. Closes branches
+ left by 's pin set. Five clusters:
+ (a) DIV2MOD rejects Vector — mirror of DIVMOD
            Vector pin (the two-result sibling was unpinned).
-       (b) DIVMOD rejects Complex / String — extends the session-149
+ (b) DIVMOD rejects Complex / String — extends the
            Vector pin onto the per-arg type-check fall-throughs in
            the integer-path guard at ops.js:_modDivBigInt sites.
        (c) GCDMOD with one zero argument — gcd(a, 0) = a is the
@@ -7609,14 +7609,14 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
            a refactor that special-cases the (0,0) reject without
            preserving the (a,0) and (0,a) accept paths.
        (d) EXPANDMOD on a negative integer — `-7 mod 12 = 5`
-           centered.  Session 149 pinned positives only; this
+           centered. pinned positives only; this
            guards the negative branch of `_centerMod`.
        (e) FACTORMOD prime modulus boundary cases — m=2 (smallest
            prime; previously unpinned), m=99 (largest composite
            below the >=100 cutoff; previously unpinned — closes
-           the boundary opposite to session-149's m=101 prime
+ the boundary opposite to 's m=101 prime
            reject).
-       (f) DIVMOD MODSTO consultation — symmetric to session-149's
+ (f) DIVMOD MODSTO consultation — symmetric to 's
            EXPANDMOD MODSTO consultation pin (the only modular op
            whose MODSTO sensitivity was pinned).  Changing MODSTO
            changes the DIVMOD result.
@@ -7694,7 +7694,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
            `session156: 5 FACTORMOD (m=2 smallest prime) → Integer(1) (m=2 accepted; got ${s.peek() && s.peek().value})`);
   }
 
-  /* ---- (e cont) FACTORMOD m=99 (composite, opposite boundary from session-149's m=101 prime reject) ---- */
+ /* ---- (e cont) FACTORMOD m=99 (composite, opposite boundary from 's m=101 prime reject) ---- */
   setCasModulo(99n);
   {
     const s = new Stack();
@@ -7710,7 +7710,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
     s.push(Integer(64n));
     s.push(Integer(13n));
     lookup('DIVMOD').fn(s);
-    // 13 mod 12 = 1; 64 / 1 = 64; centered mod 12 = 4 (per session-149 pin).
+    // 13 mod 12 = 1; 64 / 1 = 64; centered mod 12 = 4.
     assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 4n,
            `session156: DIVMOD baseline 64 13 (m=12) → Integer(4) (got ${s.peek() && s.peek().value})`);
   }
@@ -7727,7 +7727,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
   }
 
   /* ---- (g) session160: DIV2MOD MODSTO consultation pair (mirror of
-     the DIVMOD pair above on the two-result sibling).  Session 156
+     the DIVMOD pair above on the two-result sibling).
      pinned DIVMOD's MODSTO sensitivity but DIV2MOD — which returns
      both quotient AND remainder per AUR §3-62 — was unpinned.  Same
      {64, 13} input, two distinct moduli (12 + 7), two distinct
@@ -7761,7 +7761,7 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
            `session160: DIV2MOD MODSTO 7 then 64 13 → q=Integer(-1) r=Integer(0) (q matches s156 DIVMOD m=7 pin; pair-with-baseline pin pattern — q-arm tracks DIVMOD across MODSTO change while r-arm independently routes through the two-result return); got depth=${s.depth} q=${s.peek(2)?.value} r=${s.peek(1)?.value}`);
   }
 
-  /* ---- (h) session160: GCDMOD(0, 0) — both-zero edge.  Session 156
+  /* ---- (h) session160: GCDMOD(0, 0) — both-zero edge.
      pinned the gcd-with-one-zero identity in both directions
      (GCDMOD(15, 0) and GCDMOD(0, 15) → gcd(15, 0) = 15 ≡ 2 mod 13);
      the both-zero corner is mathematically undefined (gcd(0, 0) is
