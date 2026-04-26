@@ -264,13 +264,16 @@ export class CommandHelp {
       return;
     }
     this._histSel.disabled = false;
-    this._history.forEach((name, i) => {
+    // Newest entries first so the dropdown reads top-down most-recent.
+    // `value` keeps its underlying-array index so the change handler
+    // still maps directly to `_history[idx]`.
+    for (let i = this._history.length - 1; i >= 0; i--) {
       const opt = document.createElement('option');
       opt.value = String(i);
-      opt.textContent = name;
+      opt.textContent = this._history[i];
       if (i === this._historyIdx) opt.selected = true;
       this._histSel.appendChild(opt);
-    });
+    }
   }
 
   /** Hide the popup.  Used by the close button, Esc, backdrop click,
