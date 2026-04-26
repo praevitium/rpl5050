@@ -3550,6 +3550,209 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 }
 
 /* ================================================================
+   Session 187 — XPON / MANT L/V/M/T wrapper-add coverage pins.
+
+   Both ops were registered as bare scalar handlers (Real/Integer/Sy
+   only) since their introduction.  The ship-prep 2026-04-25 audit
+   downgraded their L/V/M/T cells from aspirational ✓ to blank
+   (candidate) after `utils/@probe-special-fns-vm.mjs` confirmed the
+   bare handler throws `Bad argument type` on every collection type.
+
+   Session 187 wraps both in
+   `_withTaggedUnary(_withListUnary(_withVMUnary(...)))` — the same
+   3-deep composition used by FACT / LNP1 / EXPM / SINH / etc.
+
+   Pinning clusters:
+     Cluster 1 — XPON: n=0 empty-List (bare + T+L), n=1 single-element
+       bare List, n=2 heterogeneous bare List + Tagged-of-List,
+       Vector, Matrix, and bare-Tagged scalar path.
+     Cluster 2 — MANT: n=0 empty-List (bare + T+L), n=1 single-element
+       bare List, n=2 heterogeneous bare List + Tagged-of-List,
+       Vector, Matrix.
+   ================================================================ */
+{
+  /* ---- Cluster 1: XPON L/V/M/T ---- */
+
+  // n=0 empty-List — bare axis
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session187: { } XPON → { } (n=0 bare List passthrough; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // n=0 empty-List — Tagged-of-List axis
+  {
+    const s = new Stack();
+    s.push(Tagged('t', RList([])));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 't' && isList(v.value) && v.value.items.length === 0,
+      `session187: :t:{ } XPON → :t:{ } (n=0 Tagged-of-List; got tag=${v?.tag} type=${v?.value?.type})`);
+  }
+
+  // n=1 bare List — value-precise: XPON(100) = 2
+  {
+    const s = new Stack();
+    s.push(RList([Real(100)]));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    const item = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 && isReal(item) && item.value.toNumber() === 2,
+      `session187: { Real(100) } XPON → { Real(2) } (n=1 bare List; got item=${item?.value?.toString()})`);
+  }
+
+  // n=2 heterogeneous bare List — XPON(100)=2, XPON(10)=1 distinct per slot
+  {
+    const s = new Stack();
+    s.push(RList([Real(100), Real(10)]));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 2
+        && isReal(b) && b.value.toNumber() === 1,
+      `session187: { Real(100) Real(10) } XPON → { Real(2) Real(1) } (n=2 bare List heterogeneous output; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // n=2 Tagged-of-List — re-tags outer label
+  {
+    const s = new Stack();
+    s.push(Tagged('e', RList([Real(100), Real(10)])));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.value?.items ?? [];
+    assert(isTagged(v) && v.tag === 'e' && isList(v.value) && v.value.items.length === 2
+        && isReal(a) && a.value.toNumber() === 2
+        && isReal(b) && b.value.toNumber() === 1,
+      `session187: :e:{ Real(100) Real(10) } XPON → :e:{ Real(2) Real(1) } (Tagged-of-List; got tag=${v?.tag} a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Vector — element-wise: XPON(100)=2, XPON(1000)=3
+  {
+    const s = new Stack();
+    s.push(Vector([Real(100), Real(1000)]));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isVector(v) && v.items.length === 2
+        && isReal(a) && a.value.toNumber() === 2
+        && isReal(b) && b.value.toNumber() === 3,
+      `session187: [Real(100) Real(1000)] XPON → [Real(2) Real(3)] (Vector element-wise; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Matrix — element-wise: 1×2 row [[100 10]] → [[2 1]]
+  {
+    const s = new Stack();
+    s.push(Matrix([[Real(100), Real(10)]]));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    const row = v?.rows?.[0] ?? [];
+    assert(isMatrix(v) && v.rows.length === 1 && row.length === 2
+        && isReal(row[0]) && row[0].value.toNumber() === 2
+        && isReal(row[1]) && row[1].value.toNumber() === 1,
+      `session187: [[Real(100) Real(10)]] XPON → [[Real(2) Real(1)]] (Matrix element-wise; got r00=${row[0]?.value?.toString()} r01=${row[1]?.value?.toString()})`);
+  }
+
+  // bare Tagged-of-Real scalar path — tag preserved, inner Real folded
+  {
+    const s = new Stack();
+    s.push(Tagged('x', Real(250)));
+    lookup('XPON').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'x' && isReal(v.value) && v.value.value.toNumber() === 2,
+      `session187: :x:Real(250) XPON → :x:Real(2) (scalar Tagged path; XPON(250)=2; got tag=${v?.tag} val=${v?.value?.value?.toString()})`);
+  }
+
+  /* ---- Cluster 2: MANT L/V/M/T ---- */
+
+  // n=0 empty-List — bare axis
+  {
+    const s = new Stack();
+    s.push(RList([]));
+    lookup('MANT').fn(s);
+    const v = s.peek();
+    assert(isList(v) && v.items.length === 0,
+      `session187: { } MANT → { } (n=0 bare List passthrough; got type=${v?.type} len=${v?.items?.length})`);
+  }
+
+  // n=0 empty-List — Tagged-of-List axis
+  {
+    const s = new Stack();
+    s.push(Tagged('m', RList([])));
+    lookup('MANT').fn(s);
+    const v = s.peek();
+    assert(isTagged(v) && v.tag === 'm' && isList(v.value) && v.value.items.length === 0,
+      `session187: :m:{ } MANT → :m:{ } (n=0 Tagged-of-List; got tag=${v?.tag} type=${v?.value?.type})`);
+  }
+
+  // n=1 bare List — value-precise: MANT(250) = 2.5
+  {
+    const s = new Stack();
+    s.push(RList([Real(250)]));
+    lookup('MANT').fn(s);
+    const v = s.peek();
+    const item = v?.items?.[0];
+    assert(isList(v) && v.items.length === 1 && isReal(item)
+        && Math.abs(item.value.toNumber() - 2.5) < 1e-12,
+      `session187: { Real(250) } MANT → { Real(2.5) } (n=1 bare List; MANT(250)=2.5; got item=${item?.value?.toString()})`);
+  }
+
+  // n=2 heterogeneous bare List — MANT(250)=2.5, MANT(10)=1 distinct per slot
+  {
+    const s = new Stack();
+    s.push(RList([Real(250), Real(10)]));
+    lookup('MANT').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isList(v) && v.items.length === 2
+        && isReal(a) && Math.abs(a.value.toNumber() - 2.5) < 1e-12
+        && isReal(b) && Math.abs(b.value.toNumber() - 1) < 1e-12,
+      `session187: { Real(250) Real(10) } MANT → { Real(2.5) Real(1) } (n=2 bare List heterogeneous; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // n=2 Tagged-of-List — re-tags outer label
+  {
+    const s = new Stack();
+    s.push(Tagged('k', RList([Real(250), Real(10)])));
+    lookup('MANT').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.value?.items ?? [];
+    assert(isTagged(v) && v.tag === 'k' && isList(v.value) && v.value.items.length === 2
+        && isReal(a) && Math.abs(a.value.toNumber() - 2.5) < 1e-12
+        && isReal(b) && Math.abs(b.value.toNumber() - 1) < 1e-12,
+      `session187: :k:{ Real(250) Real(10) } MANT → :k:{ Real(2.5) Real(1) } (Tagged-of-List; got tag=${v?.tag} a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Vector — element-wise: MANT(2500)=2.5, MANT(100)=1
+  {
+    const s = new Stack();
+    s.push(Vector([Real(2500), Real(100)]));
+    lookup('MANT').fn(s);
+    const v = s.peek();
+    const [a, b] = v?.items ?? [];
+    assert(isVector(v) && v.items.length === 2
+        && isReal(a) && Math.abs(a.value.toNumber() - 2.5) < 1e-12
+        && isReal(b) && Math.abs(b.value.toNumber() - 1) < 1e-12,
+      `session187: [Real(2500) Real(100)] MANT → [Real(2.5) Real(1)] (Vector element-wise; got a=${a?.value?.toString()} b=${b?.value?.toString()})`);
+  }
+
+  // Matrix — element-wise: [[2500]] → [[2.5]]
+  {
+    const s = new Stack();
+    s.push(Matrix([[Real(2500)]]));
+    lookup('MANT').fn(s);
+    const v = s.peek();
+    const cell = v?.rows?.[0]?.[0];
+    assert(isMatrix(v) && v.rows.length === 1 && v.rows[0].length === 1
+        && isReal(cell) && Math.abs(cell.value.toNumber() - 2.5) < 1e-12,
+      `session187: [[Real(2500)]] MANT → [[Real(2.5)]] (Matrix element-wise; got cell=${cell?.value?.toString()})`);
+  }
+}
+
+/* ================================================================
    Three widening clusters pinning under-tested contracts on the
    List-distributing arity-2 numeric family, the unary surface, and
    the Tagged-of-Vector composition.
@@ -8970,6 +9173,121 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
   }
 }
 
+// ---- session175 (re-land): forward-trig + inverse-trig heterogeneous-output value pins -----
+// Originally authored session 175 (ship-day T-0 wrap-up); the write did not persist
+// to the shared filesystem (T-003 in REVIEW.md).  Re-landed verbatim in session 183
+// using session175r: labels so the lineage is traceable without colliding with the
+// lost session175: label namespace.
+//
+// Session 171 Cluster 2 pinned COSH/TANH/ASINH heterogeneous-output mixed-input values
+// (bare-List + T+L).  Session 175 lifts that same pattern onto the forward-trig trio
+// (SIN/COS/TAN) and the inverse-trig trio (ASIN/ACOS/ATAN).  All six ops were already
+// covered on n=0/n=1 boundary by sessions 171/173; this adds the {0,1} heterogeneous-
+// output value-precise axis that the boundary pins leave unexercised.
+//
+// Input pair {Real(0) Real(1)} in RAD is the canonical identity-then-non-identity
+// shape matching s171's {0,1} choice:
+//   SIN:  {0, sin(1)}  — sin(0)=0 (identity), sin(1)≈0.8414709848078965
+//   COS:  {1, cos(1)}  — cos(0)=1 (OUTLIER, not 0), cos(1)≈0.5403023058681398
+//   TAN:  {0, tan(1)}  — tan(0)=0 (identity), tan(1)≈1.5574077246549023
+//   ASIN: {0, asin(1)} — asin(0)=0 (identity), asin(1)=π/2≈1.5707963267948966
+//   ACOS: {π/2, 0}     — FLIPPED: acos(0)=π/2, acos(1)=0 (strongest pin — BOTH positions)
+//   ATAN: {0, atan(1)} — atan(0)=0 (identity), atan(1)=π/4≈0.7853981633974483
+//
+// All six ops are angle-mode-dependent for non-zero inputs, so the entire block is
+// wrapped in a try/finally that restores the prior angle mode (mirror of s173 Cluster 2).
+// Tolerance 1e-12 for Decimal .toNumber() vs. Math.* double comparisons on π/2 and π/4.
+//
+// 12 hard assertions (6 ops × 2 axes = bare-List + Tagged-of-List).
+{
+  const _prevAngle = calcState.angle;
+  setAngle('RAD');
+  try {
+
+    // -- Cluster 1: forward-trig SIN / COS / TAN --
+    for (const op of ['SIN', 'COS', 'TAN']) {
+      const expect0 = op === 'COS' ? 1 : 0;
+      const expect1 = op === 'SIN' ? Math.sin(1)
+                    : op === 'COS' ? Math.cos(1)
+                    : Math.tan(1);
+      const opLower = op.toLowerCase();
+
+      // bare-List heterogeneous-output value pin.
+      {
+        const s = new Stack();
+        s.push(RList([Real(0), Real(1)]));
+        lookup(op).fn(s);
+        const v = s.peek();
+        assert(isList(v) && v.items.length === 2
+            && isReal(v.items[0]) && v.items[0].value.eq(expect0)
+            && isReal(v.items[1])
+            && Math.abs(v.items[1].value.toNumber() - expect1) < 1e-12,
+          `session175r: { Real(0) Real(1) } ${op} RAD → { Real(${expect0}) Real(${opLower}(1)) } (heterogeneous-output-value pin under bare _withListUnary on forward-trig ${op} — distinct values per List position; COS is the outlier with expect0=1 not 0; mirror of s171 COSH/TANH/ASINH pattern lifted onto the forward-trig trio; re-land of session175 pin that did not persist — T-003); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+      }
+
+      // Tagged-of-List heterogeneous-output value pin.
+      {
+        const s = new Stack();
+        s.push(Tagged('h', RList([Real(0), Real(1)])));
+        lookup(op).fn(s);
+        const v = s.peek();
+        assert(isTagged(v) && v.tag === 'h'
+            && isList(v.value) && v.value.items.length === 2
+            && isReal(v.value.items[0]) && v.value.items[0].value.eq(expect0)
+            && isReal(v.value.items[1])
+            && Math.abs(v.value.items[1].value.toNumber() - expect1) < 1e-12,
+          `session175r: :h:{ Real(0) Real(1) } ${op} RAD → :h:{ Real(${expect0}) Real(${opLower}(1)) } (T+L heterogeneous-output-value pin — outer tag preserved + distinct values per List position via 3-deep wrapper; closes forward-trig ${op} on the T+L heterogeneous-output value-pin axis; re-land T-003); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+      }
+    }
+
+    // -- Cluster 2: inverse-trig ASIN / ACOS / ATAN --
+    // ACOS is the strongest pin: item[0]=acos(0)=π/2, item[1]=acos(1)=0 — both
+    // List positions carry non-trivial value-precise checks, and item order is FLIPPED
+    // relative to the identity-then-non-identity pattern all other ops follow.
+    for (const op of ['ASIN', 'ACOS', 'ATAN']) {
+      const opLower = op.toLowerCase();
+      // ACOS: expect0 = acos(0) = π/2, expect1 = acos(1) = 0 (FLIPPED).
+      // ASIN/ATAN: expect0 = 0 (identity), expect1 = asin(1)/atan(1) = π/2 / π/4.
+      const expect0 = op === 'ACOS' ? Math.PI / 2 : 0;
+      const expect1 = op === 'ASIN' ? Math.PI / 2
+                    : op === 'ACOS' ? 0
+                    : Math.PI / 4;  // atan(1)
+
+      // bare-List heterogeneous-output value pin.
+      {
+        const s = new Stack();
+        s.push(RList([Real(0), Real(1)]));
+        lookup(op).fn(s);
+        const v = s.peek();
+        assert(isList(v) && v.items.length === 2
+            && isReal(v.items[0])
+            && Math.abs(v.items[0].value.toNumber() - expect0) < 1e-12
+            && isReal(v.items[1])
+            && Math.abs(v.items[1].value.toNumber() - expect1) < 1e-12,
+          `session175r: { Real(0) Real(1) } ${op} RAD → { Real(${opLower}(0)) Real(${opLower}(1)) } (heterogeneous-output-value pin under bare _withListUnary on inverse-trig ${op} — ACOS is FLIPPED: item[0]=π/2, item[1]=0; re-land of session175 pin that did not persist — T-003); got items=${v?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+      }
+
+      // Tagged-of-List heterogeneous-output value pin.
+      {
+        const s = new Stack();
+        s.push(Tagged('i', RList([Real(0), Real(1)])));
+        lookup(op).fn(s);
+        const v = s.peek();
+        assert(isTagged(v) && v.tag === 'i'
+            && isList(v.value) && v.value.items.length === 2
+            && isReal(v.value.items[0])
+            && Math.abs(v.value.items[0].value.toNumber() - expect0) < 1e-12
+            && isReal(v.value.items[1])
+            && Math.abs(v.value.items[1].value.toNumber() - expect1) < 1e-12,
+          `session175r: :i:{ Real(0) Real(1) } ${op} RAD → :i:{ Real(${opLower}(0)) Real(${opLower}(1)) } (T+L heterogeneous-output-value pin — outer tag preserved; ACOS FLIPPED pattern preserved under Tagged dispatch; closes inverse-trig ${op} on the T+L heterogeneous-output value-pin axis; re-land T-003); got tag=${v?.tag} items=${v?.value?.items?.map(x => `${x.type}(${x.value?.toString?.()})`).join(',')}`);
+      }
+    }
+
+  } finally {
+    setAngle(_prevAngle);
+  }
+}
+
 // ---- session179: String lex compare pins for < > ≤ ≥ ----------------------------
 // ops.js `comparePair` has a String branch (HP50 User Guide App. J: char-code
 // lexicographic order) that predates this session.  The matrix shows ✓ on S for
@@ -9080,5 +9398,123 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
     'Bad argument type',
     'session179: Integer < Str → Bad argument type (cross-type numeric/String mix rejected)'
   );
+}
+
+// ---- session185 (re-land of session177 Cluster 1): EXACT-mode Integer-stay-exact
+// composition pins for forward-trig + inverse-trig on bare-List + Tagged-of-List axes.
+//
+// Session 177 authored these 14 pins on ship-day but the write did not persist to the
+// shared filesystem (T-003 in REVIEW.md).  Re-landed here verbatim using session185:
+// labels so the lineage is traceable without colliding with the lost session177: namespace.
+//
+// Implementation path: all six ops route Integer/Rational input through
+// `_exactUnaryLift` (ops.js). The lift applies `fromRadians` to the primitive result
+// and then checks `Math.abs(result - Math.round(result)) < 1e-12`; if integer-clean it
+// returns Integer(round), otherwise Symbolic(AstFn(name, [_toAst(v)])).
+//
+// Pin logic:
+//   SIN(0)=0,  COS(0)=1 (the outlier — non-zero clean fold),  TAN(0)=0,
+//   ASIN(0)=0, ATAN(0)=0 — all angle-mode-independent integer-clean folds.
+//   ACOS(0)=π/2: in RAD mode fromRadians(π/2)≈1.5707 is NOT integer-clean → Symbolic;
+//                in DEG mode fromRadians(π/2)=90 IS integer-clean → Integer(90n).
+//
+// 10 assertions: five ops × (bare-List + Tagged-of-List).
+// 4 assertions: ACOS × 2 axes × 2 angle modes (RAD + DEG).
+// Total: 14 hard assertions.
+{
+  const _prevAngle = calcState.angle;
+  const _prevApprox = calcState.approxMode;
+  setAngle('RAD');
+  setApproxMode(false);
+  try {
+    // ---- Cluster A: SIN / COS / TAN / ASIN / ATAN — integer-clean zero-input folds ----
+    // All five ops produce integer-clean results on Integer(0) input regardless of angle mode.
+    // COS(0)=1 is the non-zero outlier; the others produce 0.
+    for (const op of ['SIN', 'COS', 'TAN', 'ASIN', 'ATAN']) {
+      const expectVal = op === 'COS' ? 1n : 0n;
+
+      // bare-List axis
+      {
+        const s = new Stack();
+        s.push(RList([Integer(0n)]));
+        lookup(op).fn(s);
+        const v = s.peek();
+        const item = v?.items?.[0];
+        assert(isList(v) && v.items.length === 1 && isInteger(item) && item.value === expectVal,
+          `session185: { Integer(0) } ${op} RAD → { Integer(${expectVal}) } (EXACT-mode _exactUnaryLift integer-stay-exact fold through bare _withListUnary on ${op}; re-land T-003); got item type=${item?.type} val=${item?.value?.toString?.()}`);
+      }
+
+      // Tagged-of-List axis
+      {
+        const s = new Stack();
+        s.push(Tagged('z', RList([Integer(0n)])));
+        lookup(op).fn(s);
+        const v = s.peek();
+        const item = v?.value?.items?.[0];
+        assert(isTagged(v) && v.tag === 'z' && isList(v.value) && v.value.items.length === 1
+            && isInteger(item) && item.value === expectVal,
+          `session185: :z:{ Integer(0) } ${op} RAD → :z:{ Integer(${expectVal}) } (EXACT-mode integer-stay-exact through 3-deep wrapper under Tagged peel; re-land T-003); got tag=${v?.tag} item type=${item?.type} val=${item?.value?.toString?.()}`);
+      }
+    }
+
+    // ---- Cluster B: ACOS — angle-mode-dependent outlier ----
+    // ACOS(Integer(0)) RAD: acos(0)=π/2; fromRadians(π/2)≈1.5707, |1.5707-2|≈0.43 >> 1e-12
+    //   → Symbolic arm of _exactUnaryLift.
+    // ACOS(Integer(0)) DEG: acos(0)=π/2; fromRadians(π/2)=90 → integer-clean → Integer(90n).
+
+    // RAD — bare-List axis
+    {
+      const s = new Stack();
+      s.push(RList([Integer(0n)]));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      const item = v?.items?.[0];
+      assert(isList(v) && v.items.length === 1 && isSymbolic(item)
+          && item.expr?.kind === 'fn' && item.expr?.name === 'ACOS',
+        `session185: { Integer(0) } ACOS RAD → { Symbolic(ACOS(0)) } (acos(0)=π/2; fromRadians(π/2)≈1.5707 not integer-clean → Symbolic arm; re-land T-003); got item type=${item?.type} expr=${JSON.stringify(item?.expr)}`);
+    }
+
+    // DEG — bare-List axis
+    setAngle('DEG');
+    {
+      const s = new Stack();
+      s.push(RList([Integer(0n)]));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      const item = v?.items?.[0];
+      assert(isList(v) && v.items.length === 1 && isInteger(item) && item.value === 90n,
+        `session185: { Integer(0) } ACOS DEG → { Integer(90) } (acos(0)=π/2; fromRadians(π/2)=90 integer-clean under DEG; re-land T-003); got item type=${item?.type} val=${item?.value?.toString?.()}`);
+    }
+    setAngle('RAD');
+
+    // RAD — Tagged-of-List axis
+    {
+      const s = new Stack();
+      s.push(Tagged('z', RList([Integer(0n)])));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      const item = v?.value?.items?.[0];
+      assert(isTagged(v) && v.tag === 'z' && isList(v.value) && v.value.items.length === 1
+          && isSymbolic(item) && item.expr?.kind === 'fn' && item.expr?.name === 'ACOS',
+        `session185: :z:{ Integer(0) } ACOS RAD → :z:{ Symbolic(ACOS(0)) } (angle-mode Symbolic arm preserved through Tagged peel/rewrap; re-land T-003); got tag=${v?.tag} item type=${item?.type} expr=${JSON.stringify(item?.expr)}`);
+    }
+
+    // DEG — Tagged-of-List axis
+    setAngle('DEG');
+    {
+      const s = new Stack();
+      s.push(Tagged('z', RList([Integer(0n)])));
+      lookup('ACOS').fn(s);
+      const v = s.peek();
+      const item = v?.value?.items?.[0];
+      assert(isTagged(v) && v.tag === 'z' && isList(v.value) && v.value.items.length === 1
+          && isInteger(item) && item.value === 90n,
+        `session185: :z:{ Integer(0) } ACOS DEG → :z:{ Integer(90) } (DEG integer-clean arm preserved through Tagged peel/rewrap; closes ACOS angle-mode × List+Tagged axes; re-land T-003); got tag=${v?.tag} item type=${item?.type} val=${item?.value?.toString?.()}`);
+    }
+
+  } finally {
+    setAngle(_prevAngle);
+    setApproxMode(_prevApprox);
+  }
 }
 

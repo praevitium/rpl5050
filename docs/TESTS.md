@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 181 (2026-04-26).  Unit-tests lane run
-(ship-day final snapshot refresh — Sunday 2026-04-26; 8th
-release-window run in this lane after sessions 156, 160, 164,
-160-unit-tests, 168, 173, 177).
+**Last updated.** Session 189 (2026-04-26).  Unit-tests lane run
+(post-ship snapshot refresh — Sunday 2026-04-26; 10th release-window
+run in this lane after sessions 156, 160, 164, 160-unit-tests,
+168, 173, 177, 181, 185).
 
 Sibling deltas absorbed since the session-168 snapshot
 (5246 → 5306, **+60** over four sibling sessions):
@@ -827,6 +827,110 @@ Session 117 unit-tests deltas:
   `cowork_allow_file_delete` permission prompt is blocked in
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
+
+## Coverage snapshot (session 189)
+
+Sibling deltas absorbed since session-185 snapshot
+(5433 → 5448, **+15** over sessions 186–188):
+- **Session 186** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp advanced to "as of session
+  186"; session-183/184/185/185-code-review sibling-delta narrative
+  appended.  No source or test edits.
+- **Session 187** (data-type-support) — **+15** assertions in
+  `tests/test-types.mjs` (985 → 1000; `session187:` labels) —
+  XPON and MANT L/V/M/T wrapper additions (+8 XPON, +7 MANT);
+  corresponding `ops.js` source edits; `docs/DATA_TYPES.md` stamped.
+- **Session 188** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` stamp advanced to "as of session
+  188".  All RPL-bucket findings confirmed closed.
+
+Session 189 unit-tests deltas (this run):
+- **0** new assertions.  Snapshot-refresh-only run under scope cap.
+
+Baseline at session-189 entry: **5448 / 0** (fully green).
+Final: **5448 / 0** — fully green (0 new this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | **1000** | 0 | +15 s187 XPON/MANT L/V/M/T wrappers (`session187:` labels). |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5448** | **0** | Session 189 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 185 (retained for context)
+
+## Coverage snapshot (session 185)
+
+Sibling deltas absorbed since session-181 snapshot
+(5389 → 5409, **+20** over sessions 182–184):
+- **Session 182** (command-support) — exact delta not logged here;
+  confirmed by per-file diff between s181 and s184 entry baselines.
+  `test-numerics.mjs` grew 701 → 709 (+8).
+- **Session 183** (data-type-support) — **+12** assertions in
+  `tests/test-types.mjs` (959 → 971; `session175r:` labels) —
+  re-land of the session-175 T-003 portion that did not persist.
+- **Session 184** (rpl-programming) — doc-only/verification run;
+  **0** assertion deltas.  Verified baseline **5401 / 0** at close.
+
+Session 185 unit-tests deltas (this run):
+- **+14** assertions in `tests/test-types.mjs` (971 → 985) —
+  re-land of session-177 Cluster 1: EXACT-mode Integer-stay-exact
+  composition pins for SIN/COS/TAN/ASIN/ATAN/ACOS on bare-List +
+  Tagged-of-List axes.  ACOS angle-mode-dependent outlier pinned
+  across RAD (→ Symbolic) and DEG (→ Integer(90)) × both wrapper
+  axes.  Labels: `session185:`.  Closes T-003 session-177 portion.
+- **+10** assertions in `tests/test-control-flow.mjs` (789 → 799) —
+  re-land of session-177 Cluster 2: RUN edge pins (DBUG → RUN
+  immediately with no SST; embedded-HALT EVAL + RUN drain).
+  Labels: `session185:`.  Closes T-003 session-177 portion.
+
+Baseline at session-185 entry: **5409 / 0** (fully green).
+Final: **5433 / 0** — fully green (+24 this run).
+`test-persist.mjs` 66 / 0 (stable).  `sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1061 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  **799** | 0 | +10 s185 (RUN edge: DBUG→RUN immediately + embedded-HALT resume; `session185:` labels). |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  **709** | 0 | +8 s182 (command-support additions).     |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              |  **985** | 0 | +14 s185 EXACT Integer trig List/Tagged re-land (T-003). Also +12 s183 session175r re-land. |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5433** | **0** | Session 185 close.  Fully green. |
+| test-persist.mjs (separate) |   66 | 0    | Stable since ship-prep (D-001 closed 2026-04-25). |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 181 (retained for context)
 
 ## Coverage snapshot (session 181)
 
@@ -1693,7 +1797,23 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 181 (2026-04-26) — this run.  Unit-tests lane (ship-day
+- Session 189 (2026-04-26) — this run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5448 / 0**,
+  test-persist **66 / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  T-003 remains `[resolved - session 185]`.  Open
+  REVIEW.md findings: O-009 + O-011 only, both `[deferred -
+  post-ship]`.  Work done: refreshed TESTS.md "Last updated" header
+  to session-189; added session-189 coverage snapshot (absorbed
+  sibling deltas 5433 → 5448: s186 doc-only, s187 +15 XPON/MANT
+  pins, s188 verification-only); wrote `logs/session-189.md`.
+  Lock: `utils/@locks/session189-unit-tests.json`.
+
+- Session 185 (2026-04-26) — earlier run.  Unit-tests lane (post-ship
+  T-003 re-land — **+24 assertions**, fully green).  See prior index
+  entry below.
+
+- Session 181 (2026-04-26) — earlier run.  Unit-tests lane (ship-day
   final snapshot refresh — **0 new assertions**; scope cap 1/3
   workload; snapshot-only run).  Gates at entry: test-all
   **5389 / 0**, test-persist **66 / 0**, sanity **22 / 0** —

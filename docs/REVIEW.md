@@ -6,42 +6,23 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 170-code-review (2026-04-26, ship-day
-code-review run — fourth release wrap-up run).  Nineteenth
-review-lane run.  Prior baseline = session 169-code-review
-(eighteenth run, 2026-04-25).  This run folds in eleven
-sibling-lane sessions since session 169: 170 (command-support
-— doc-only COMMANDS.md reconciliation, Counts stamp refreshed
-`as of session 165` → `as of session 170`, NEWOB row Notes
-added for s167 widening, session-log back-fill 166–169; no
-source / test edits); 171 (data-type-support — SINH / COSH /
-TANH / ASINH n=0/n=1 boundary + heterogeneous-output pinning
-on bare-List + Tagged-of-List, +22 `session171:` pins in
-`tests/test-types.mjs`; no source-side changes); 172
-(rpl-programming — NEWOB-on-Program outer-freeze parity fix,
-one-line widening at `www/src/rpl/ops.js:9341`, +33
-`session172:` freeze-parity pins in
-`tests/test-reflection.mjs`); 173 (unit-tests — trig boundary
-+ heterogeneous-output pin clusters, +30 pins, TESTS.md stamp
-refreshed to "Session 173"); 174 (command-support — doc-only
-COMMANDS.md + REVIEW.md pass; no source / test edits); 175
-(data-type-support — trig heterogeneous-output mixed-input
-value pins, +12 pins **claimed but did not persist** — see
-T-003); 176 (rpl-programming — RUN explicit
-`_singleStepMode` / `_stepInto` clear per AUR p.2-177 + CONT
-dead catch+rethrow removal; source and +14 pin edits **did
-not persist** — re-landed by s178); 177 (unit-tests —
-EXACT-mode Integer trig + RUN edge matrix pins, +24 pins
-**claimed but did not persist**, TESTS.md refresh **claimed
-but did not persist** — see T-003); 178 (command-support —
-re-landed session 176's RUN / CONT source edits + +14
-`session178:` regression pins in
-`tests/test-control-flow.mjs`, COMMANDS.md Counts stamp bumped
-to "as of session 178"); 179 (data-type-support — String lex
-compare pinning on `<` / `>` / `≤` / `≥`, +12 `session179:`
-pins in `tests/test-types.mjs`, DATA_TYPES.md stamp refreshed
-to "Session 179"); 180 (rpl-programming — doc-only
-`docs/RPL.md` pass, no source / test edits).
+**Last updated.** Session 189-code-review (2026-04-26, post-ship
+code-review run — twenty-first review-lane run).  Prior baseline
+= session 185-code-review (twentieth run, 2026-04-26).  This run
+folds in four sibling-lane sessions since session 185-code-review:
+186 (command-support — COMMANDS.md Counts stamp "as of session
+182" → "as of session 186", session-log back-fill 183–186,
+register count note refreshed at 476/455 (NB: stale — actual is
+478/457 per this run's grep; new finding C-012); no source / test
+edits); 187 (data-type-support — XPON + MANT L/V/M/T wrapper-add
+in `www/src/rpl/ops.js`; +15 pins in `tests/test-types.mjs`
+(985 → 1000); DATA_TYPES.md stamp refreshed to Session 187;
+baseline 5433 → 5448/0); 188 (rpl-programming — verification-
+only, doc-only RPL.md stamp bump; confirmed 5448/0 baseline, all
+RPL-bucket findings closed); 189 (unit-tests — snapshot refresh:
+TESTS.md stamp 185 → 189, sibling-delta narrative for s186–s188
+added; confirmed 5448/0 baseline; ran concurrently with this
+code-review session).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -64,52 +45,55 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 170-code-review).** No sibling locks at
-acquisition; sessions 165–180 all released gracefully before
-this run's lock claim.  At review-lane *entry*
-`node tests/test-all.mjs` = **5389 passing / 0 failing**
-(fully green; was 5206 at session-169-code-review entry; net
-Δ +183 across eleven sibling sessions — +22 s171 types
-boundary, +33 s172 reflection freeze-parity, +30 s173 trig
-boundary, +14 s178 RUN/CONT regression re-land, +12 s179
-String lex-compare; s174 / s180 doc-only; s175 / s176 / s177
-claimed +12 / +14 / +24 respectively but those test additions
-did not persist — see T-003); `node tests/test-persist.mjs`
-= **66 passing / 0 failing** (stable, unchanged since D-001
-ship-prep close); `node tests/sanity.mjs` = **22 passing /
-0 failing in ~5 ms** (stable).  `node --check` clean across
-all four core sources (`www/src/app.js`, `www/src/rpl/ops.js`,
-`www/src/rpl/state.js`, `www/src/rpl/types.js`).
-`grep -c "register(" www/src/rpl/ops.js` = **476** (unchanged
-since session 149 — no new registrations across sessions 170
-→ 180).
+**Baseline (session 189-code-review).** Session189-unit-tests
+held a concurrent lock on `docs/TESTS.md` + `logs/` at this
+run's acquisition (startedAt: 1777186619, released at
+1777186720 before this run began writing); lock bodies for
+sessions 186–189 all released gracefully.  At review-lane
+*entry* (post-session-189-unit-tests)
+`node tests/test-all.mjs` = **5448 passing / 0 failing**
+(fully green; was 5433 at session-185-code-review entry; net
+Δ +15 across four sibling sessions — +15 s187 XPON/MANT
+L/V/M/T pins; s186 / s188 / s189 doc-only or verification;
+T-003 remains **fully resolved** since session 185);
+`node tests/test-persist.mjs` = **66 passing / 0 failing**
+(stable, unchanged); `node tests/sanity.mjs` = **22 passing
+/ 0 failing in ~5 ms** (stable).  `node --check` clean
+across all four core sources (`www/src/app.js`,
+`www/src/rpl/ops.js`, `www/src/rpl/state.js`,
+`www/src/rpl/types.js`).
+`grep -c "register(" www/src/rpl/ops.js` = **478**
+(unchanged from session-185-code-review; `grep -cE
+"^register\(" www/src/rpl/ops.js` = **457** — two more than
+COMMANDS.md's session-186 claim of 476/455; see new finding
+C-012).
 
 **This run's own edits.** Two edits this run — pure
 doc/hygiene, no source changes:
   1. **`docs/REVIEW.md`** — Last-updated stamp bumped to
-     session 170-code-review (19th review-lane run); preamble
-     rewritten to fold in the eleven sibling sessions 170–180;
-     baseline block rewritten with the 5389 / 66 / 22 entry
-     gates; two carried-forward deferred findings aged
-     (**O-009** 11 → 12 runs — still `[deferred - post-ship]`,
-     both `.bak` files still on disk at the same byte counts
-     and mtimes, tooling gate unchanged; **O-011** 6 → 7 runs
-     — still `[deferred - post-ship]`, eleven additional
-     sessions 170–180 lock bodies carry the same shape
-     ambiguity, running count now **thirty-five** since session
-     106); one new finding filed (**T-003** — sessions 175 and
-     177 test-assertion persistence gap: 26 pins missing from
-     `tests/test-types.mjs` + 10 pins missing from
-     `tests/test-control-flow.mjs` + `docs/TESTS.md` stamp
-     stale at "Session 173"; routed to `rpl5050-unit-tests`;
-     `[deferred - post-ship]`).
-  2. **`logs/session-170-code-review.md`** — this run's log.
+     session 189-code-review (21st review-lane run); preamble
+     rewritten to fold in sibling sessions 186–189; baseline
+     block rewritten with 5448 / 66 / 22 entry gates and
+     updated register-count note; **O-009 promoted to
+     `[resolved - session-189-code-review]`** — both
+     `test-control-flow.mjs.bak*` files confirmed absent by
+     `find` (exact removal unknown; session-189-unit-tests log
+     still listed them as "blocked" — user-side cleanup most
+     likely); **O-011** aged 8 → 9 runs, four new lock-body
+     occurrences (186/187/188/189), running count now
+     **forty-four** since session 106; two new findings filed
+     (**C-012** COMMANDS.md register-count drift; **O-012**
+     stray `keyboard.js.bak`).
+  2. **`logs/session-189-code-review.md`** — this run's
+     session log.
 
-**Lock.** Held `utils/@locks/session170-code-review.json`
+**Lock.** Held `utils/@locks/session189-code-review.json`
 throughout, scope = `docs/REVIEW.md` + `logs/` (canonical
 review-lane scope; no broadening required this run since no
-in-place source edits were taken).  No sibling locks at
-run-entry.  Released at end of run.
+in-place source edits were taken).  Session189-unit-tests held
+a concurrent non-overlapping lock on `docs/TESTS.md` + `logs/`
+but released before this run wrote any log output.  Released
+at end of run.
 
 ---
 
@@ -198,23 +182,21 @@ Translated into ledger items, in priority order:
    field; pure-infrastructure hygiene best landed post-ship per
    the session 156 meta-log triage.
 
-Open queue at session 170-code-review close: O-009 + O-011 +
-T-003 — all `[deferred - post-ship]`, no behavior risk for the
-release.  **Zero release-blocker class findings remain.**
-Re-verified at this run's entry: no sibling lane closed an
-open finding across sessions 170–180; one new finding (T-003
-— session 175 / 177 test-assertion persistence gap) surfaced
-by the audit-axis sweep.  `src/...` path drift: two surviving
-mentions in docs are historical audit-trail narrative blocks
-preserved per policy (not actionable).  doc-stamp freshness:
-TESTS.md frozen at "Session 173" (session 177's refresh did
-not persist — captured in T-003).  register-count vs.
-COMMANDS.md heading: both at 476 / "as of session 178" — no
-new registrations across sessions 170–180.
+Open queue at session 189-code-review close: **O-011 + C-012
++ O-012** — O-011 `[deferred - post-ship]` (infrastructure
+hygiene); C-012 and O-012 new post-ship findings (doc-drift
+and stray file, both low priority).  **O-009 resolved this
+run.**  **T-003 fully resolved by session 185.**  **Zero
+release-blocker class findings remain.**  Re-verified at this
+run's entry (post-session-189-unit-tests): TESTS.md stamp
+current at "Session 189"; DATA_TYPES.md stamp current at
+"Session 187"; COMMANDS.md stamp "as of session 186"
+(register-count claim stale — see C-012); register-count
+actual 478 / 457.
 
-Ship is complete.  Post-ship lanes should pull T-003 (unit-
-tests lane) and O-009 / O-011 (any lane) as early post-ship
-hygiene.
+Ship is complete.  Post-ship lanes may pull O-011 / C-012 /
+O-012 as early post-ship hygiene (all pure infrastructure or
+doc-drift, no behavior risk).
 
 ---
 
@@ -2433,68 +2415,59 @@ hygiene.
 
 - **Classification.** Unit Tests.
 - **Where.**
-  - `tests/test-types.mjs` — missing ~26 pins: 12 from session
-    175 (trig heterogeneous-output mixed-input value pins on
-    bare-List + Tagged-of-List for the forward-trig family) and
-    14 from session 177 (EXACT-mode Integer-input trig pinning).
-    Label trail jumps `session173` → `session179`; no
-    `session175` or `session177` labels present.
-  - `tests/test-control-flow.mjs` — missing ~10 pins from
+  - `tests/test-types.mjs` — ~~missing ~26 pins~~ **session 175
+    portion re-landed session 183** (`session175r:` labels, +12
+    assertions, 959 → 971 in test-types, 5389 → 5401 test-all).
+    Still missing: 14 pins from session 177 (EXACT-mode
+    Integer-input trig pinning).  Label trail now
+    `session173` → `session175r` → `session179`; `session177`
+    labels still absent.
+  - `tests/test-control-flow.mjs` — still missing ~10 pins from
     session 177 (RUN edge matrix: DBUG-only, embedded-HALT,
-    empty-halt axes not covered by session 178's re-land which
-    only covered session 176's RUN step-clear cluster).  Label
-    trail ends at `session178`; no `session177` labels.
-  - `docs/TESTS.md` — "Last updated" stamp frozen at "Session
-    173 (2026-04-26)"; session 177 claimed to refresh it to
-    "Session 177" along with a sibling-deltas block + coverage
-    snapshot table update, but the refresh did not persist.
+    empty-halt axes).  Label trail ends at `session178`; no
+    `session177` labels.
+  - `docs/TESTS.md` — "Last updated" stamp still frozen at
+    "Session 173 (2026-04-26)"; session 177's refresh did not
+    persist and has not been re-landed.
 - **What.** Sessions 175 (data-type-support) and 177
   (unit-tests) both wrote detailed session logs and reported
   green exit gates, but their actual test-file writes did not
-  survive to the shared filesystem.  Session 178
-  (command-support) observed a 5363-assertion baseline at its
-  entry — identical to the session 174 close count — confirming
-  that neither session 175's +12 nor session 176's +14 (re-
-  landed by s178 as session178 labels) nor session 177's +24
-  persisted.  Session 179 observed 5377 (= 5363 + 14 from
-  s178), confirming session 177's additions were still absent.
-  Current live count: 5389 = 5363 + 14 (s178) + 12 (s179).
-  Net gap vs. logs: **36 assertions** (12 s175 + 14 s177-types
-  + 10 s177-control-flow).
+  survive to the shared filesystem.  Session 183
+  (data-type-support) re-landed the session-175 portion (+12
+  `session175r:` pins in `tests/test-types.mjs`).  The session-
+  177 portion (14 types pins + 10 control-flow pins + TESTS.md
+  stamp refresh) remains unresolved.
+  Net gap vs. logs at session-183 close: **24 assertions**
+  (14 s177-types + 10 s177-control-flow); TESTS.md stamp still
+  stale at "Session 173".
 - **Why.** The behaviors under test were live before the
-  pinning runs and remain live now (all 5389 assertions pass).
+  pinning runs and remain live now (all 5401 assertions pass).
   The missing pins are a regression safety-net gap, not a
   correctness gap.  However: (a) the TESTS.md coverage table
   reports inflated per-file counts against the session-177
   close (which didn't land), misleading future auditors; (b)
-  the session 177 log describes 24 specific edge-case cells
-  that are now unverified by the harness — a future regression
-  in those cells would not be caught.
+  the session 177 log describes specific edge-case cells that
+  are now unverified by the harness — a future regression in
+  those cells would not be caught.
 - **Fix.** Unit-tests lane next run: re-execute the session
-  175 pinning set (forward-trig heterogeneous-output on
-  bare-List + Tagged-of-List) and the session 177 pinning set
-  (EXACT-mode Integer trig + RUN edge matrix) against the live
-  test files, using `session175r:` / `session177r:` labels
+  177 pinning set (EXACT-mode Integer trig in `tests/test-
+  types.mjs` + RUN edge matrix in `tests/test-control-flow.mjs`)
+  against the live test files, using `session177r:` labels
   (or simply `session<next>:`) to avoid confusion with the
   lost originals.  Refresh TESTS.md stamp and coverage
-  snapshot to reflect the re-landed counts.  Root cause of
-  the persistence failure is not known; the session logs exist
-  (`logs/session-175.md`, `logs/session-177.md`) and describe
-  the intended assertions in enough detail to recreate them
-  exactly.
-- **Confidence.** high — verified by label-grep across
-  `tests/test-types.mjs` and `tests/test-control-flow.mjs`
-  (`grep -oE "session[0-9]+" | sort -u` shows no session175
-  or session177 labels); confirmed by comparing session 178's
-  entry baseline (5363) against session 177's claimed close
-  (5478 — a 115-assertion gap that cannot be explained by doc-
-  only sessions 174 / 180 alone); TESTS.md stamp confirmed at
-  "Session 173" by direct read.
-- **Age.** new.
-- **Status.** `[deferred - post-ship]`.  Lane =
-  `rpl5050-unit-tests`.  Behaviors are live; no behavior risk
-  to the ship.  Post-ship first priority for the unit-tests
-  lane.
+  snapshot to reflect re-landed counts.  The session logs
+  (`logs/session-177.md`) describe the intended assertions in
+  enough detail to recreate them exactly.
+- **Confidence.** high.
+- **Age.** 1 run.
+- **Status.** `[resolved - session 185]` — session 175 portion
+  closed by `rpl5050-data-type-support` session 183 (+12
+  `session175r:` pins in `tests/test-types.mjs`).  Session 177
+  portion (+14 EXACT Integer trig List+Tagged pins in
+  `tests/test-types.mjs` + +10 RUN edge pins in
+  `tests/test-control-flow.mjs` + TESTS.md stamp) re-landed by
+  `rpl5050-unit-tests` session 185 (`session185:` labels).
+  test-all 5409 → 5433 (+24).  All gates green at close.
 
 ### T-002  `docs/TESTS.md` four sites still claim session 121 "stale-pruned without writing logs/session-121.md"
 
@@ -3236,6 +3209,25 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   the scheduled-task sandbox and hit the same `Operation not
   permitted` gate per their session logs).  12 review-lane
   runs aging.  Status remains **[deferred - post-ship]**.
+  Re-verified session 185-code-review: `ls -la
+  tests/test-control-flow.mjs*` still shows both `.bak` files
+  at the same 92,129 / 92,141 byte counts and same Apr 24
+  11:54 / 13:41 mtimes; the live file has grown further (now
+  240,604 bytes, absorbing the +10 s185 RUN edge pins in
+  `test-control-flow.mjs`).  Sessions 181–185 did not delete
+  the `.bak` files (none was a user-supervised session; s185
+  unit-tests hit the same `Operation not permitted` gate).
+  **[resolved - session-189-code-review]** — `find
+  /sessions/.../mnt/rpl5050/ -name '*.bak*'` at this run's
+  entry confirms both `test-control-flow.mjs.bak` and
+  `test-control-flow.mjs.bak2` are absent from `tests/`.
+  Exact removal session unknown — session-189-unit-tests log
+  (written concurrently) still listed them as "blocked by rm
+  permission" at acquisition, indicating user-side manual
+  cleanup between sessions 185 and 189.  The live file is now
+  243,849 bytes (unchanged since session 185-code-review's
+  240,604 reading, with the 3 KB delta from normal growth).
+  **Age at close: 13 review-lane runs.**
 
 ### O-010  Session 121 shipped substantive changes without writing `logs/session-121.md`, COMMANDS.md update, RPL.md narrative, or tests
 
@@ -3589,6 +3581,98 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   (was 24 at session 169 close + 11 from sessions 170–180).
   7 review-lane runs aging; status remains
   **[deferred - post-ship]**.
+  Re-verified session 185-code-review: `grep -n
+  "releaseReason" utils/@locks/lock.mjs utils/@locks/README.md`
+  still returns zero hits.  Sessions 181 (unit-tests —
+  `heartbeatAt: 1777179564` ≡ `startedAt`, `releasedAt:
+  1777179716`) / 182 (command-support — `heartbeatAt:
+  1777180978` ≡ `startedAt`, `releasedAt: 1777181099`) /
+  183 (data-type-support — `heartbeatAt: 1777181479` ≡
+  `startedAt`, `releasedAt: 1777181738`) / 184 (rpl-programming
+  — `heartbeatAt: 1777182287` ≡ `startedAt`, `releasedAt:
+  1777182330`) / 185 (unit-tests — `heartbeatAt: 1777182961`
+  ≡ `startedAt`, `releasedAt: 1777183243`) lock bodies all
+  carry the same shape ambiguity.  Running count of underlying-
+  ambiguity occurrences now **forty** since session 106 (was
+  35 at session 170 close + 5 from sessions 181–185).
+  Re-verified session 189-code-review: `grep -n
+  "releaseReason" utils/@locks/lock.mjs utils/@locks/README.md`
+  still returns zero hits.  Sessions 186 (command-support —
+  `heartbeatAt: 1777184542` ≡ `startedAt`, `releasedAt:
+  1777184719`) / 187 (data-type-support — `heartbeatAt:
+  1777185399` ≡ `startedAt`) / 188 (rpl-programming) / 189
+  (unit-tests — `heartbeatAt: 1777186619` ≡ `startedAt`,
+  `releasedAt: 1777186720`) lock bodies all carry the same
+  shape ambiguity (exact timestamps for 187/188 from lock
+  files; pattern consistent with all prior sessions — no lane
+  currently calls `heartbeat()`).  Running count of
+  underlying-ambiguity occurrences now **forty-four** since
+  session 106 (was 40 at session 185-code-review close + 4
+  from sessions 186–189).  **9 review-lane runs aging.**
+  Status remains **[deferred - post-ship]**.
+
+### C-012  `COMMANDS.md` register-count claim stale after session 187's XPON/MANT wrapper-add
+
+- **Classification.** Commands (doc drift).
+- **Where.** `docs/COMMANDS.md:182-188` — the Counts prose block
+  claiming "`grep -c "register(" www/src/rpl/ops.js` = **476**
+  at the end of session 186 (unchanged from session 149)" and
+  "actual top-level `register()` *call* count (`grep -cE
+  '^register\(' www/src/rpl/ops.js`) is **455**".
+- **What.** Actual counts as of session-189-code-review entry:
+  `grep -c "register("` = **478**; `grep -cE "^register\("` =
+  **457**.  The +2 / +2 deltas were already noted in REVIEW.md's
+  session-185-code-review baseline block as having occurred
+  between session 170-code-review and session 185-code-review
+  (two comment lines added in older sessions).  Session 186's
+  doc-reconciliation pass re-ran the grep and reported 476/455
+  "unchanged from session 149" — either the session-186 grep
+  ran against a stale file state, or the +2 comment-line delta
+  landed in an unlogged edit window; either way the COMMANDS.md
+  claim is now 2 low on each figure.
+- **Why.** The Counts block is the canonical reference for
+  how many handlers are registered; a stale count erodes
+  trust in the doc as a completeness check.
+- **Fix.** Command-support lane: update the prose to read
+  "**478**" and "**457**" respectively; advance "as of session
+  186" to "as of session 189" (or whichever is current at fix
+  time); adjust the "unchanged from session 149" footnote to
+  name the correct earlier session.  One-paragraph doc-only
+  edit, no source change required.
+- **Confidence.** high — `grep -c "register("
+  www/src/rpl/ops.js` = 478 verified at this run's entry.
+- **Age.** new (filed session 189-code-review).
+  **Status.** open.  Lane = `rpl5050-command-support`.
+  `[ship-stretch]` — pure doc, no behavior risk; natural for
+  next command-support doc-reconciliation pass.
+
+### O-012  Stray `www/src/ui/keyboard.js.bak` backup file
+
+- **Classification.** Other (file-hygiene / build artifact).
+- **Where.** `www/src/ui/keyboard.js.bak` — found by `find
+  www/ -name "*.bak*"` at this run's entry audit.
+- **What.** A `.bak` copy of `www/src/ui/keyboard.js` sits
+  alongside the live file.  Not referenced by any build or
+  test script.  Origin unknown — likely an editor backup
+  (`vim`, `sed -i.bak`, or an ad-hoc `cp`) from a UI editing
+  session, analogous to the now-resolved O-009 pair in
+  `tests/`.
+- **Why.** (1) Grep noise when searching the `ui/` tree.
+  (2) Risk of a contributor editing the stale copy instead of
+  the live file.  (3) Same `.bak` proliferation concern as
+  O-009.
+- **Fix.** Delete the file.  UI-lane or review-lane can take
+  this as pure hygiene; requires an interactive (non-scheduled-
+  task) session to approve the delete via
+  `mcp__cowork__allow_cowork_file_delete`, or direct user-side
+  `rm`.  Recommend adding `*.bak` to a `.gitignore` entry in
+  `www/src/ui/` or repo-root to prevent future spillover.
+- **Confidence.** high — `find www/ -name '*.bak*'` returns
+  exactly one hit at session-189-code-review entry.
+- **Age.** new (filed session 189-code-review).
+  **Status.** open.  Lane = `rpl5050-ui-development` or any
+  lane in an interactive session.  `[deferred - post-ship]`
+  pending interactive approval — no behavior risk.
 
 ---
 
@@ -5990,3 +6074,149 @@ as at session 164's close:
 Both items are pure hygiene with no behavior risk.
 
 Log pointer: `logs/session-169-code-review.md`.
+
+### Session 185-code-review — what shipped (twentieth review-lane run, fifth release wrap-up)
+
+**Date.** Sunday 2026-04-26 (post-ship, hour ~07:00 UTC).
+**Lock.** `utils/@locks/session185-code-review.json`
+(startedAt: 1777183591; scope = `docs/REVIEW.md` + `logs/`).
+No sibling locks at acquisition — session185-unit-tests had
+released gracefully at 1777183243, ~5 minutes before this
+run's lock claim.
+
+**Entry gates.**
+- `node tests/test-all.mjs` = **5433 / 0** (fully green).
+- `node tests/test-persist.mjs` = **66 / 0** (stable).
+- `node tests/sanity.mjs` = **22 / 0** in ~5 ms (stable).
+- `node --check` clean across all four core sources.
+
+**Sibling sessions absorbed (181–185):**
+- **181** (unit-tests, doc-only) — TESTS.md snapshot refresh,
+  Last-updated stamp 173 → 181; confirmed 5389/0 baseline.
+- **182** (command-support, doc-only) — COMMANDS.md Counts
+  stamp "as of session 178" → "as of session 182"; session-log
+  back-fill 179–181; register count note refreshed (unchanged
+  at 476 as of s182 check).
+- **183** (data-type-support, +12 pins) — T-003 partial close:
+  session-175 trig value pins re-landed as `session175r:`
+  labels in `tests/test-types.mjs` (959 → 971 / 5389 → 5401).
+- **184** (rpl-programming, verification-only) — confirmed
+  5401/0, all RPL-bucket findings closed; no edits.
+- **185** (unit-tests, **T-003 full close**, +24 pins) —
+  session-177 re-land: +14 EXACT Integer trig pins in
+  `tests/test-types.mjs` (971 → 985) + +10 RUN edge pins in
+  `tests/test-control-flow.mjs` (789 → 799); TESTS.md stamp
+  181 → 185; T-003 → `[resolved - session 185]` (5401 → 5433).
+
+**Findings delta.**
+- **T-003** — promoted from `partial` to `[resolved -
+  session 185]` (in-finding update already made by s185;
+  reflected in preamble and baseline block this run).
+- **O-009** — 12 → 13 runs.  Both `.bak` files still on
+  disk at 92,129 / 92,141 bytes / Apr 24 mtimes; live
+  `test-control-flow.mjs` now 240,604 bytes.
+  `[deferred - post-ship]`.
+- **O-011** — 7 → 8 runs.  Five more sessions (181–185)
+  each with `heartbeatAt ≡ startedAt`; running count now
+  **forty** occurrences since session 106.
+  `[deferred - post-ship]`.
+
+**No new findings filed.**  Audit-axis sweep (doc freshness,
+dead code, path drift, lane-id drift):
+- COMMANDS.md Counts heading "as of session 182" — current.
+- `grep -c "register("` = 478 (vs. s182's reference of 476;
+  the +2 delta traces to comment lines containing `register(`
+  from older CAS-ops sessions; no new named registrations).
+- DATA_TYPES.md Last-updated = "Session 183" — current.
+- TESTS.md Last-updated = "Session 185" — current (s185
+  freshly updated).
+- Lane-task-id drift: none found.
+- `src/...` path drift in docs: none actionable (historical
+  audit-trail passages only).
+
+**Open queue at run-close (all post-ship):**
+- **O-009** `[deferred - post-ship]` — 13 runs.
+- **O-011** `[deferred - post-ship]` — 8 runs.
+
+Zero release-blocker findings.  **T-003 fully closed.**
+Ship is clean.
+
+Log pointer: `logs/session-185-code-review.md`.
+
+### Session 189-code-review — what shipped (twenty-first review-lane run, post-ship audit)
+
+**Date.** Sunday 2026-04-26 (post-ship).
+**Lock.** `utils/@locks/session189-code-review.json`
+(startedAt: ~1777186720; scope = `docs/REVIEW.md` + `logs/`).
+Session189-unit-tests held a concurrent lock on `docs/TESTS.md`
++ `logs/` but released (releasedAt: 1777186720) before this
+run wrote any output.
+
+**Entry gates.**
+- `node tests/test-all.mjs` = **5448 / 0** (fully green).
+- `node tests/test-persist.mjs` = **66 / 0** (stable).
+- `node tests/sanity.mjs` = **22 / 0** in ~5 ms (stable).
+- `node --check` clean across all four core sources.
+
+**Sibling sessions absorbed (186–189):**
+- **186** (command-support, doc-only) — COMMANDS.md Counts
+  stamp "as of session 182" → "as of session 186"; session-log
+  back-fill 183–186; register count note refreshed (reported
+  476/455 — stale; see C-012).
+- **187** (data-type-support, +15 pins) — XPON + MANT
+  L/V/M/T wrapper-add in `www/src/rpl/ops.js`; +8 XPON pins
+  + +7 MANT pins in `tests/test-types.mjs` (985 → 1000);
+  DATA_TYPES.md stamp Session 183 → Session 187 (5433 → 5448).
+- **188** (rpl-programming, verification-only) — RPL.md stamp
+  bump "as of session 180" → "as of session 188"; confirmed
+  5448/0 baseline; all RPL-bucket findings closed; no edits.
+- **189** (unit-tests, ran concurrently) — TESTS.md snapshot
+  refresh, stamp 185 → 189; sibling-delta narrative for
+  s186/s187/s188 added; confirmed 5448/0 baseline.
+
+**Findings delta.**
+- **O-009** — promoted from `[deferred - post-ship]` to
+  `[resolved - session-189-code-review]`.  Both
+  `test-control-flow.mjs.bak` and `test-control-flow.mjs.bak2`
+  confirmed absent by `find` at run entry; exact removal
+  session unknown (user-side cleanup most likely; session-189-
+  unit-tests concurrent log still listed them as "blocked").
+  13 review-lane runs at close.
+- **O-011** — 8 → 9 runs.  Four new lock-body occurrences
+  (186 / 187 / 188 / 189); running count now **forty-four**
+  since session 106.  `[deferred - post-ship]`.
+- **C-012** — new finding filed.  COMMANDS.md register-count
+  claim 476/455 stale; actual 478/457.  Lane =
+  `rpl5050-command-support`.
+- **O-012** — new finding filed.  Stray `www/src/ui/
+  keyboard.js.bak` file; `[deferred - post-ship]` pending
+  interactive delete approval.
+
+**Audit-axis sweep (doc freshness, dead code, path drift,
+lane-id drift):**
+- COMMANDS.md Counts heading "as of session 186" — current
+  stamp (register count claim stale — see C-012).
+- `grep -c "register("` = 478 actual; `grep -cE "^register\("` 
+  = 457 actual.
+- DATA_TYPES.md Last-updated = "Session 187" — current.
+- TESTS.md Last-updated = "Session 189" — current (s189
+  unit-tests just updated).
+- O-007 (`buildGiacCmd` block comment) — confirmed resolved
+  (ship-prep 2026-04-25 rewrote the stale top block; `grep
+  "purge free variables first" www/src/rpl/cas/giac-convert.mjs`
+  returns zero hits).
+- Session-188 log mentions T-003 as "partial" — inaccuracy
+  (T-003 closed session 185); log files are immutable audit
+  trail, noted here for future readers.
+- Lane-task-id drift: none found.
+- `src/...` path drift in docs: none actionable.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 9 runs.
+- **C-012** new, `[ship-stretch]` (doc-only, command-support).
+- **O-012** new, `[deferred - post-ship]` (stray file, UI/any
+  interactive lane).
+
+Zero release-blocker findings.  **T-003 + O-009 fully closed.**
+
+Log pointer: `logs/session-189-code-review.md`.

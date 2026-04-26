@@ -186,13 +186,15 @@ function formatCmpxComp(n, d) {
 }
 
 export function formatReal(n, d) {
-  // Accept either a JS number or a Decimal instance.  The Real stack
-  // payload carries a Decimal; Complex, Unit, and Vector component
-  // renderers still hand us JS numbers since those types haven't been
-  // widened yet.  Collapse to Number here since the HP50 STD display
-  // crops to 12 sig digits anyway — Decimal precision past that point
-  // has no visible effect.
-  const num = (n instanceof Decimal) ? n.toNumber() : n;
+  // Two paths:
+  //   Decimal  — Real stack payload.  Use Decimal's own string methods
+  //              so values beyond IEEE-754 range (|exp| > 308) render
+  //              correctly instead of collapsing to Infinity.
+  //   JS number — Complex, Unit and Vector component renderers; these
+  //              types haven't been widened to Decimal yet.  JS path
+  //              stays unchanged.
+  if (n instanceof Decimal) return _formatRealDecimal(n, d);
+  const num = n;
   if (!Number.isFinite(num)) return num > 0 ? '∞' : '-∞';
   switch (d.mode) {
     case 'FIX': return num.toFixed(d.digits);
@@ -200,10 +202,64 @@ export function formatReal(n, d) {
     case 'ENG': return formatEng(num, d.digits);
     case 'STD':
     default:
-      // HP50 STD mode: up to 12 significant digits, no trailing zeros.
       return formatStd(num);
   }
 }
+
+/* ---- Decimal-native formatting (Real stack payload) ---- */
+
+function _formatRealDecimal(d, display) {
+  if (!d.isFinite()) return d.isPositive() ? '∞' : '-∞';
+  switch (display.mode) {
+    case 'FIX': return d.toFixed(display.digits);
+    case 'SCI': return _sciDecimal(d, display.digits);
+    case 'ENG': return _engDecimal(d, display.digits);
+    case 'STD':
+    default:
+      return _stdDecimal(d);
+  }
+}
+
+/** Converts Decimal's `e+N` / `e-N` notation to HP50-style `EN` / `E-N`. */
+function _normExp(s) {
+  return s.replace(/e\+0*(\d)/, 'E$1').replace(/e-0*(\d)/, 'E-$1');
+}
+
+function _stdDecimal(d) {
+  if (d.isZero()) return '0.';
+  const exp = d.e; // integer: 5 for 1.23e5, -3 for 1.23e-3
+  if (exp >= -11 && exp < 12) {
+    // Fixed range — render with enough decimal places for 12 sig figs.
+    const places = Math.max(0, 11 - exp);
+    let s;
+    if (places === 0) {
+      // toFixed(0) omits the dot; add it explicitly (HP50 style: 42.)
+      s = d.toSignificantDigits(12).toFixed(0) + '.';
+    } else {
+      s = d.toSignificantDigits(12).toFixed(places);
+      if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '.');
+    }
+    return s;
+  }
+  // Scientific — 11 decimal places = 12 sig figs.
+  let s = d.toSignificantDigits(12).toExponential();
+  // Strip trailing zeros in mantissa (decimal.js keeps them in toExponential).
+  s = s.replace(/\.?0+(e)/, '$1');
+  return _normExp(s);
+}
+
+function _sciDecimal(d, digits) {
+  return _normExp(d.toExponential(digits));
+}
+
+function _engDecimal(d, digits) {
+  if (d.isZero()) return new Decimal(0).toFixed(digits) + 'E0';
+  const exp3 = Math.floor(d.e / 3) * 3;
+  const mant = d.dividedBy(Decimal.pow(10, exp3));
+  return `${mant.toFixed(digits)}E${exp3}`;
+}
+
+/* ---- JS-number formatting (Complex / Vector components) ---- */
 
 function formatStd(n) {
   if (n === 0) return '0.';

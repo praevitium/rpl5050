@@ -601,6 +601,23 @@ export class Entry {
   enter() {
     this.error = '';
     const raw = this.buffer.trim();
+    // Bare UNDO / REDO / LASTSTACK route straight to performUndo /
+    // performRedo (matching the UNDO keypad key when not editing).
+    // The normal path's pre-snap would otherwise capture the current
+    // stack the very instant we're about to step back — making typed
+    // UNDO a no-op — and the registered `s.undo()` op skips the
+    // var-state half, so redo would also go out of sync.
+    if (raw === 'UNDO' || raw === 'LASTSTACK' || raw === 'REDO') {
+      try {
+        if (raw === 'REDO') this.performRedo();
+        else this.performUndo();
+      } catch (e) { this.flashError(e); return; }
+      this._recordHistory(raw);
+      this.buffer = '';
+      this.cursor = 0;
+      this._emit();
+      return;
+    }
     // Snapshot BEFORE any stack mutation so HIST SHIFT-R UNDO can
     // restore the pre-ENTER stack AND variable/directory state —
     // covers "oops, I pushed the wrong thing", "oops, I ran the

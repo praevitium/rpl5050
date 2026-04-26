@@ -2605,6 +2605,61 @@ import { assert, assertThrows } from './helpers.mjs';
     'session178: RUN error path leaves both step flags cleared (finally restores prior=false)');
 }
 
+/* ---- RUN immediately after DBUG (no SST in between) — session185 re-land of session177 ----
+ * The most common user-side debugging flow: DBUG suspends at the first token, then the
+ * user inspects the stack and presses RUN to drain the remainder in one shot without
+ * ever pressing SST.  Session 177 authored these 5 pins on ship-day but the write did
+ * not persist (T-003 in REVIEW.md).  Re-landed with session185: labels.
+ *
+ * Program: « 1 2 + 10 * »  (5 tokens; result = (1+2)*10 = 30)
+ * DBUG suspends after the first token (push 1); haltedDepth() === 1.
+ * RUN (without SST) drains the remaining 4 tokens to completion.
+ */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([Integer(1n), Integer(2n), Name('+'), Integer(10n), Name('*')]));
+  lookup('DBUG').fn(s);
+  assert(getHalted() !== null,
+    'session185: DBUG → RUN immediately: DBUG suspends after first token (halt slot populated); re-land T-003');
+  assert(haltedDepth() === 1,
+    'session185: DBUG → RUN immediately: haltedDepth()===1 after DBUG pushes Integer(1); re-land T-003');
+  lookup('RUN').fn(s);
+  assert(getHalted() === null,
+    'session185: DBUG → RUN immediately: RUN drains halt slot (no SST in between); re-land T-003');
+  assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 30n,
+    `session185: DBUG → RUN immediately: program completes to 30 ((1+2)*10); re-land T-003; got depth=${s.depth} top=${s.peek()?.value?.toString?.()}`);
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session185: DBUG → RUN immediately: both step flags cleared at RUN exit; re-land T-003');
+}
+
+/* ---- RUN drains past an embedded HALT keyword — session185 re-land of session177 ----
+ * Pins RUN's ability to resume a generator suspended by an in-program HALT token
+ * (as opposed to the external DBUG-suspension cases covered by session178).
+ * HALT's evalRange-yield substrate has been live since session 083.
+ *
+ * Program: « 1 2 + HALT 10 * »
+ * EVAL runs the pre-HALT fold (1+2=3), then suspends on the HALT token.
+ * RUN drains the post-HALT continuation (3*10=30) to completion.
+ */
+{
+  resetHome(); clearAllHalted();
+  const s = new Stack();
+  s.push(Program([Integer(1n), Integer(2n), Name('+'), Name('HALT'), Integer(10n), Name('*')]));
+  lookup('EVAL').fn(s);
+  assert(getHalted() !== null,
+    'session185: embedded-HALT EVAL+RUN: EVAL suspends on HALT token (halt slot populated); re-land T-003');
+  assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 3n,
+    `session185: embedded-HALT EVAL+RUN: pre-HALT fold complete (stack top = 3 = 1+2); re-land T-003; got depth=${s.depth} top=${s.peek()?.value?.toString?.()}`);
+  lookup('RUN').fn(s);
+  assert(getHalted() === null,
+    'session185: embedded-HALT EVAL+RUN: RUN drains the post-HALT continuation; re-land T-003');
+  assert(s.depth === 1 && isInteger(s.peek()) && s.peek().value === 30n,
+    `session185: embedded-HALT EVAL+RUN: post-HALT continuation completes to 30 (3*10); re-land T-003; got depth=${s.depth} top=${s.peek()?.value?.toString?.()}`);
+  assert(singleStepMode() === false && stepIntoMode() === false,
+    'session185: embedded-HALT EVAL+RUN: both step flags cleared at RUN exit; re-land T-003');
+}
+
 /* ================================================================
    Generator-based evalRange: HALT at any structural depth
    ================================================================

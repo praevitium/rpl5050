@@ -241,8 +241,8 @@ export const CHAR_GROUPS = {
     ['e',   'e',    'Euler — folds to 2.71828… under APPROX / →NUM'],
     ['i',   'i',    'imaginary unit — folds to (0, 1) under APPROX / →NUM'],
     ['∞',   '∞',    'infinity'],
-    ['MAXR','MAXR', 'maximum real (≈ 1.8e308)'],
-    ['MINR','MINR', 'minimum real (≈ 5e-324)'],
+    ['MAXR','MAXR', 'maximum real (9.99999999999e499)'],
+    ['MINR','MINR', 'minimum real (1e-499)'],
     // --- HP50 CONSTANTS library (symbolic insertion only for now) ---
     ['c',   'c',    'speed of light in vacuum'],
     ['h',   'h',    'Planck constant'],

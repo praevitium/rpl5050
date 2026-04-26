@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 182 — 2026-04-26)
+## Counts (as of session 186 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -142,10 +142,37 @@ touched the row, and any known caveats worth carrying forward.
   (`rpl5050-unit-tests`) refreshed `docs/TESTS.md`: "Last updated"
   stamp advanced from session 173 to session 181, sibling-deltas-
   absorbed table (5336 → 5389 journey) added, per-file coverage
-  snapshot updated; zero test delta.  Session 182 (this run,
-  `rpl5050-command-support`) is a doc-reconciliation pass: Counts
+  snapshot updated; zero test delta.  Session 182
+  (`rpl5050-command-support`) was a doc-reconciliation pass: Counts
   stamp 178 → 182 and session-log back-fill for sessions 179 / 180
-  / 181 / 182.)
+  / 181.  Session 183 (`rpl5050-data-type-support`) re-landed the
+  session-175 trig heterogeneous-output value-pin assertions that
+  had not persisted to the filesystem (T-003 partial re-land): +12
+  `session175r:` assertions in `tests/test-types.mjs` across two
+  clusters — forward-trig SIN/COS/TAN bare-List + Tagged-of-List
+  mixed-input value pins, and inverse-trig ASIN/ACOS/ATAN same
+  axes; `tests/test-all.mjs` 5389 → **5401** (+12).  T-003 status
+  advanced from `[deferred - post-ship]` to `partial`; remaining
+  T-003 gap (session-177 portion: 14 EXACT-mode Integer trig pins +
+  10 RUN edge pins + TESTS.md stamp) routed to
+  `rpl5050-unit-tests`.  Session 184 (`rpl5050-rpl-programming`)
+  was a verification-only pass — all RPL-bucket findings confirmed
+  fully closed (R-001…R-012; O-009 / O-011 remain
+  `[deferred - post-ship]`); no source or test edits; 5401 / 0 at
+  both entry and close.  An unattributed +8 in
+  `tests/test-numerics.mjs` (701 → 709) is noted by the session
+  185-code-review audit but denied by all session logs in the
+  window — a record-keeping gap; behaviors are live and green.
+  Session 185 (`rpl5050-unit-tests`) fully closed T-003: re-landed
+  session-177's two clusters — Cluster 1 +14 EXACT Integer trig
+  List+Tagged pins in `tests/test-types.mjs`; Cluster 2 +10 RUN
+  edge matrix pins in `tests/test-control-flow.mjs`; TESTS.md
+  "Last updated" stamp 181 → 185; T-003 status →
+  `[resolved - session 185]`; `tests/test-all.mjs`
+  5409 → **5433** (+24).  Session 186 (this run,
+  `rpl5050-command-support`) is a doc-reconciliation pass: Counts
+  stamp 182 → 186 and session-log back-fill for sessions
+  183 / 184 / 185.)
 - Partially shipped (~): 0
 - Not yet implemented (✗): 1 (only the `JORDAN` / `SCHUR`
   matrix-decomp row remains — the entire MODULO-family is ✓.)
@@ -153,8 +180,8 @@ touched the row, and any known caveats worth carrying forward.
 
 The registry lives at `www/src/rpl/ops.js` and is enumerated by `allOps()`.
 `grep -c "register(" www/src/rpl/ops.js` = **476** at the end of session
-182 (unchanged from session 149 — no new registrations across sessions
-150 → 182; was 471 at the end of session 144, was 466 at the end of
+186 (unchanged from session 149 — no new registrations across sessions
+150 → 186; was 471 at the end of session 144, was 466 at the end of
 session 139, was 463 at the end of session 134, was 458 at the end of
 session 129, was 455 at the end of session 124, was 448 at the end of
 session 119).  The actual top-level `register()` *call* count
@@ -741,6 +768,60 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 186** (2026-04-26) — `rpl5050-command-support` lane.
+  Post-ship doc-reconciliation pass.  Counts stamp refreshed from
+  session 182 → 186; session-log back-fill for sessions 183 / 184
+  / 185 added below (most-recent-first order maintained); sibling
+  deltas absorbed into the Counts narrative.  No source-side or
+  test-side edits.  No ✗ → ✓ row transitions.  `register()` count
+  unchanged at 476 / 455.  No new `docs/REVIEW.md` findings;
+  Commands bucket still fully closed (`C-001`…`C-011` all
+  resolved).  Open queue = `O-009` + `O-011` only, both
+  `[deferred - post-ship]`.
+  Run-entry: 5433 / 66 / 22.  Run-close: **5433 / 66 / 22**.
+  Lock = `utils/@locks/session186-command-support.json`, scope
+  `[docs/COMMANDS.md, logs/]`, released at end of run.
+
+- **session 185-code-review** (2026-04-26) — `rpl5050-code-review`
+  lane.  Twentieth review-lane run; fifth release wrap-up pass.
+  Audit-only: no source edits, no test additions.  Sibling-delta
+  audit absorbed sessions 181–185 (net +44 assertions,
+  5389 → 5433).  Noted unattributed +8 in `tests/test-numerics.mjs`
+  (701 → 709) — behaviors live and green, record-keeping gap only.
+  Observed prior concurrent-run artifact
+  `logs/meta-2026-04-26-code-review.md`.
+  Run-entry: 5433 / 66 / 22.  Run-close: **5433 / 66 / 22**.
+  Lock = `utils/@locks/session185-code-review.json`.
+
+- **session 185** (2026-04-26) — `rpl5050-unit-tests` lane.
+  T-003 full close: re-landed session-177's two clusters.
+  Cluster 1 (+14): EXACT-mode Integer trig List+Tagged pins in
+  `tests/test-types.mjs` (SIN/COS/TAN/ASIN/ATAN at n=0 × 2 axes;
+  ACOS RAD/DEG × 2 axes).  Cluster 2 (+10): RUN edge matrix pins
+  in `tests/test-control-flow.mjs` (DBUG→RUN-immediately; embedded
+  HALT+RUN-drain).  TESTS.md "Last updated" 181 → 185; new
+  session-185 coverage snapshot added.  T-003 status →
+  `[resolved - session 185]`.
+  Run-entry: 5409 / 66 / 22.  Run-close: **5433 / 66 / 22** (+24).
+  Lock = `utils/@locks/session185-unit-tests.json`.
+
+- **session 184** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Verification-only pass.  All RPL-bucket REVIEW.md findings
+  confirmed closed (R-001…R-012); O-009 / O-011 remain
+  `[deferred - post-ship]`.  No source or test edits.
+  Run-entry: 5401 / 66 / 22.  Run-close: **5401 / 66 / 22**.
+  Lock = `utils/@locks/session184-rpl-programming.json`.
+
+- **session 183** (2026-04-26) — `rpl5050-data-type-support` lane.
+  T-003 partial re-land (session-175 portion).  +12 `session175r:`
+  assertions in `tests/test-types.mjs`: Cluster 1 — forward-trig
+  SIN/COS/TAN bare-List + Tagged-of-List mixed-input value pins
+  (+6); Cluster 2 — inverse-trig ASIN/ACOS/ATAN same axes (+6).
+  T-003 status `[deferred - post-ship]` → `partial`; remaining gap
+  (session-177 portion) routed to `rpl5050-unit-tests`.
+  Run-entry: 5389 / 66 / 22.  Run-close: **5401 / 66 / 22** (+12).
+  Lock = `utils/@locks/session183-data-type-support.json`.
 
 - **session 182** (2026-04-26) — `rpl5050-command-support` lane.
   Ship-day doc-reconciliation pass.  Counts stamp refreshed from

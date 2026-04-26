@@ -21,20 +21,14 @@ import Decimal from '../vendor/decimal.js/decimal.mjs';
 import Complex$ from '../vendor/complex.js/complex.mjs';
 
 /* -------------------------------------------------------------
-   Decimal.js — configured once at module load.
+   Decimal.js — precision and rounding configured once at module load.
+   MAX_EXP / MIN_EXP are set by state.js (it imports Decimal from
+   types.js and calls Decimal.set there at boot) and kept in sync by
+   setRealMaxExp().  This call only sets precision + rounding so it
+   cannot reset the exponent limits state.js already established.
 
-   We use decimal.js to carry Real arithmetic at 15 significant digits
-   internally (one guard digit above the HP50's 12-digit STD display).
-   This heals the classic IEEE-754 gotchas without changing the Real
-   type's shape on the stack: Real stays a `{ type: 'real', value: <JS
-   number> }` — we just do the arithmetic in Decimal space and round
-   back on exit via `.toNumber()`.
-
-   Rounding mode 4 = ROUND_HALF_UP (HP50 rounds .5 away from zero for
-   positive values and toward zero for negative — plain "half-up" here
-   is a close approximation that matches every test case we exercise).
-
-   No-fallback rule applies: if Decimal throws, we let it through.
+   Rounding mode 4 = ROUND_HALF_UP (HP50 rounds .5 away from zero).
+   No-fallback rule: if Decimal throws, we let it through.
    ------------------------------------------------------------- */
 Decimal.set({ precision: 15, rounding: Decimal.ROUND_HALF_UP });
 import {
@@ -86,6 +80,8 @@ import {
   // Session 121: PROMPT op uses these to publish/clear the prompt banner.
   // getPromptMessage is exported from state.js for tests / UI subscribers.
   setPromptMessage, clearPromptMessage,
+  getRealMaxExp, setRealMaxExp,
+  REAL_MAX_EXP_MIN, REAL_MAX_EXP_MAX,
 } from './state.js';
 // Used by OBJ→ on String: re-parse the string as RPL source.  parser.js
 // deliberately does not import ops.js, so this top-level import is safe.
@@ -158,12 +154,14 @@ register('DEPTH', (s) => s.push(Integer(s.depth)));
    canonical name still work; its behavior is indistinguishable from
    single-level LASTSTACK until you press UNDO more than once.
 
-   Note: because `saveForUndo()` fires BEFORE the op runs inside
-   `execOp`, invoking UNDO from the catalog first pushes the current
-   stack onto the history — meaning the *named* invocation peels off
-   that self-push and returns to the original state.  The HIST
-   SHIFT-R key binding bypasses execOp and calls `e.performUndo()`
-   directly so one keystroke genuinely steps back one user action.
+   Note: `saveForUndo()` fires BEFORE the op runs inside `execOp`,
+   which would make the named invocation a no-op (the snap pushes the
+   current stack onto history right before s.undo() pops it back) and
+   would skip the var-state half of the undo.  The HIST SHIFT-R keypad
+   binding bypasses execOp and calls `e.performUndo()` directly, and
+   `Entry.enter()` short-circuits a bare-name UNDO/REDO/LASTSTACK to
+   the same path — so typed and pressed UNDO behave identically.  The
+   registered ops below still exist so user programs can call them.
    -------------------------------------------------------------------- */
 register('UNDO',      (s) => s.undo());
 register('LASTSTACK', (s) => s.undo());
@@ -997,6 +995,17 @@ register('INV', _withTaggedUnary(_withListUnary((s) => {
   } else throw new RPLError('Bad argument type');
 })));
 
+/** Frobenius norm of a flat iterable of RPL numeric values (Real or Integer)
+ *  using Decimal arithmetic throughout so large-exponent vectors work. */
+function _decimalFrobeniusNorm(items) {
+  let sum = new Decimal(0);
+  for (const x of items) {
+    const d = isReal(x) ? x.value : new Decimal(x.value.toString());
+    sum = sum.plus(d.times(d));
+  }
+  return sum.sqrt();
+}
+
 /* ABS has Tagged transparency.  The inner V/M branches compute the
    Frobenius norm (a scalar); the re-tag then wraps that scalar, e.g.
    `v:[3 4] ABS` → `v:5`. */
@@ -1018,18 +1027,11 @@ register('ABS', _withTaggedUnary(_withListUnary((s) => {
   else if (isUnit(v))    s.push(Unit(Math.abs(v.value), v.uexpr));
   else if (isVector(v)) {
     // HP50 Advanced Guide: ABS on an array returns the Frobenius
-    // (Euclidean) norm — identical behavior to NORM.  Bridges the
-    // data-type gap so users can reach for ABS without remembering
-    // the array-specific alias.
-    let sum = 0;
-    for (const x of v.items) { const r = toRealOrThrow(x); sum += r * r; }
-    s.push(Real(Math.sqrt(sum)));
+    // (Euclidean) norm — identical behavior to NORM.  Use Decimal
+    // arithmetic so large-exponent components don't saturate to Infinity.
+    s.push(Real(_decimalFrobeniusNorm(v.items)));
   } else if (isMatrix(v)) {
-    let sum = 0;
-    for (const row of v.rows) {
-      for (const x of row) { const r = toRealOrThrow(x); sum += r * r; }
-    }
-    s.push(Real(Math.sqrt(sum)));
+    s.push(Real(_decimalFrobeniusNorm(v.rows.flat())));
   } else throw new RPLError('Bad argument type');
 })));
 
@@ -1093,7 +1095,10 @@ register('SQRT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     if (sn !== null) s.push(Integer(sn));
     else             s.push(Symbolic(AstFn('SQRT', [_toAst(v)])));
   } else {
-    s.push(Real(Math.sqrt(toRealOrThrow(v))));
+    // Use Decimal.sqrt() so values with |exp| > 308 work correctly.
+    const d = isReal(v) ? v.value : new Decimal(isInteger(v) ? v.value.toString() : toRealOrThrow(v));
+    if (d.isNegative()) throw new RPLError('Bad argument value');
+    s.push(Real(d.sqrt()));
   }
 }))));
 
@@ -1225,10 +1230,13 @@ register('XROOT', _withListBinary((s) => {
     if (yAst && xAst) { s.push(Symbolic(AstFn('XROOT', [yAst, xAst]))); return; }
     throw new RPLError('Bad argument type');
   }
-  const xv = toRealOrThrow(x);
-  if (xv === 0) throw new RPLError('Infinite result');
+  // Promote x to Decimal so 1/x stays in Decimal space (avoids JS Infinity
+  // for large-exponent values).  Then y^(1/x) goes through the Decimal ^ path.
+  const dx = isReal(x) ? x.value
+           : new Decimal(isInteger(x) ? x.value.toString() : toRealOrThrow(x));
+  if (dx.isZero()) throw new RPLError('Infinite result');
   s.push(y);
-  s.push(Real(1 / xv));
+  s.push(Real(new Decimal(1).div(dx)));
   lookup('^').fn(s);
 }));
 
@@ -1271,7 +1279,16 @@ function _rounderScalar(name, realFn, intFn) {
        CEIL/IP return Integer, FP returns Rational (or Integer 0
        when the fractional part is zero). */
     if (isRational(v)) {
-      if (getApproxMode()) return Real(realFn(Number(v.n) / Number(v.d)));
+      if (getApproxMode()) {
+        // Use Decimal so the division doesn't lose precision before rounding.
+        const dr = new Decimal(v.n.toString()).div(new Decimal(v.d.toString()));
+        let d;
+        if      (name === 'FLOOR') d = dr.floor();
+        else if (name === 'CEIL')  d = dr.ceil();
+        else if (name === 'IP')    d = dr.trunc();
+        else /* FP */              d = dr.minus(dr.trunc());
+        return Real(d);
+      }
       const n = v.n, d = v.d;           // d > 0 by Rational invariant
       const q = n / d;                  // BigInt trunc-toward-zero
       const r = n % d;                  // remainder, sign follows n
@@ -1289,8 +1306,16 @@ function _rounderScalar(name, realFn, intFn) {
     if (isBinaryInteger(v))  return name === 'FP'
       ? BinaryInteger(0n, v.base)
       : v;
-    if (isReal(v))           return Real(realFn(v.value.toNumber()));
-    if (isUnit(v))           return Unit(realFn(v.value), v.uexpr);
+    if (isReal(v)) {
+      // Use Decimal methods so values beyond IEEE-754 range round correctly.
+      let d;
+      if      (name === 'FLOOR') d = v.value.floor();
+      else if (name === 'CEIL')  d = v.value.ceil();
+      else if (name === 'IP')    d = v.value.trunc();
+      else /* FP */              d = v.value.minus(v.value.trunc());
+      return Real(d);
+    }
+    if (isUnit(v))           return Unit(realFn(v.value), v.uexpr);  // Unit.value is JS number
     if (_isSymOperand(v))    return Symbolic(AstFn(name, [_toAst(v)]));
     throw new RPLError('Bad argument type');
   };
@@ -1319,7 +1344,8 @@ _registerRounder('FP',    _fpScalar);
 register('SIGN', _withTaggedUnary(_withListUnary((s) => {
   const v = s.pop();
   if (isReal(v)) {
-    s.push(Real(Math.sign(v.value.toNumber())));
+    // Decimal.sign() returns -1, 0, or 1 without a .toNumber() round-trip.
+    s.push(Real(new Decimal(v.value.isNegative() ? -1 : v.value.isZero() ? 0 : 1)));
   } else if (isInteger(v)) {
     if (v.value === 0n) s.push(Integer(0n));
     else s.push(Integer(v.value > 0n ? 1n : -1n));
@@ -1336,17 +1362,19 @@ register('SIGN', _withTaggedUnary(_withListUnary((s) => {
   } else if (isVector(v)) {
     // HP50 Advanced Guide defines SIGN on a vector as v / ||v||
     // (unit vector in the direction of v).  Zero vector stays zero —
-    // matches the scalar-SIGN convention on 0.
-    let sum = 0;
-    for (const x of v.items) { const r = toRealOrThrow(x); sum += r * r; }
-    const mag = Math.sqrt(sum);
-    if (mag === 0) { s.push(v); return; }
-    s.push(Vector(v.items.map(x => Real(toRealOrThrow(x) / mag))));
+    // matches the scalar-SIGN convention on 0.  Use Decimal so
+    // large-exponent components don't saturate to Infinity.
+    const mag = _decimalFrobeniusNorm(v.items);
+    if (mag.isZero()) { s.push(v); return; }
+    s.push(Vector(v.items.map(x => {
+      const d = isReal(x) ? x.value : new Decimal(x.value.toString());
+      return Real(d.div(mag));
+    })));
   } else if (isMatrix(v)) {
     // Matrix: apply SIGN to each scalar entry.  Real/Integer/Complex
     // entries go through the scalar cases above via recursion.
     s.push(Matrix(v.rows.map(r => r.map(x => {
-      if (isReal(x))    return Real(Math.sign(x.value.toNumber()));
+      if (isReal(x))    return Real(new Decimal(x.value.isNegative() ? -1 : x.value.isZero() ? 0 : 1));
       if (isInteger(x)) return x.value === 0n ? Integer(0n) : Integer(x.value > 0n ? 1n : -1n);
       if (isComplex(x)) {
         const m = Math.hypot(x.re, x.im);
@@ -1583,6 +1611,13 @@ register('FACT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
    ------------------------------------------------------------------ */
 
 /** HP50 MOD: result has the sign of the divisor.  (a - b * floor(a/b)) */
+/** HP50 MOD on Decimals — floor-div convention (result has sign of divisor). */
+function _hp50ModDecimal(a, b) {
+  if (b.isZero()) throw new RPLError('Infinite result');
+  // a mod b = a - b * floor(a/b)
+  return a.minus(b.times(a.div(b).floor()));
+}
+
 function _hp50ModReal(a, b) {
   if (b === 0) throw new RPLError('Infinite result');
   return a - b * Math.floor(a / b);
@@ -1615,14 +1650,17 @@ register('MOD', _withTaggedBinary(_withListBinary((s) => {
   if (isInteger(a) && isInteger(b)) {
     s.push(Integer(_hp50ModBigInt(a.value, b.value)));
   } else {
-    s.push(Real(_hp50ModReal(toRealOrThrow(a), toRealOrThrow(b))));
+    // Promote both sides to Decimal so values beyond IEEE-754 range work.
+    const da = isReal(a) ? a.value : new Decimal(isInteger(a) ? a.value.toString() : toRealOrThrow(a));
+    const db = isReal(b) ? b.value : new Decimal(isInteger(b) ? b.value.toString() : toRealOrThrow(b));
+    s.push(Real(_hp50ModDecimal(da, db)));
   }
 })));
 
 /* MIN/MAX have Symbolic lift (leaves MIN(X,3) un-evaluated when X is
    unbound) and Tagged transparency.  Complex is rejected — C has no
    total ordering. */
-function _minMax(s, pick, name) {
+function _minMax(s, wantMin, name) {
   const [a, b] = s.popN(2);
   if (_isSymOperand(a) || _isSymOperand(b)) {
     const l = _toAst(a), r = _toAst(b);
@@ -1633,14 +1671,19 @@ function _minMax(s, pick, name) {
   if (!isNumber(a) || !isNumber(b)) throw new RPLError('Bad argument type');
   if (isComplex(a) || isComplex(b)) throw new RPLError('Bad argument type');
   if (isInteger(a) && isInteger(b)) {
-    s.push(Integer(pick(a.value, b.value) ? a.value : b.value));
+    const aWins = wantMin ? (a.value <= b.value) : (a.value >= b.value);
+    s.push(Integer(aWins ? a.value : b.value));
   } else {
-    const na = toRealOrThrow(a), nb = toRealOrThrow(b);
-    s.push(Real(pick(na, nb) ? na : nb));
+    // Promote to Decimal so large-exponent values compare correctly.
+    const da = isReal(a) ? a.value : new Decimal(isInteger(a) ? a.value.toString() : toRealOrThrow(a));
+    const db = isReal(b) ? b.value : new Decimal(isInteger(b) ? b.value.toString() : toRealOrThrow(b));
+    const cmp = da.comparedTo(db);
+    const aWins = wantMin ? (cmp <= 0) : (cmp >= 0);
+    s.push(Real(aWins ? da : db));
   }
 }
-register('MIN', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x <= y, 'MIN'))));
-register('MAX', _withTaggedBinary(_withListBinary((s) => _minMax(s, (x, y) => x >= y, 'MAX'))));
+register('MIN', _withTaggedBinary(_withListBinary((s) => _minMax(s, true,  'MIN'))));
+register('MAX', _withTaggedBinary(_withListBinary((s) => _minMax(s, false, 'MAX'))));
 
 /* ------------------------------------------------------------------
    Combinatorics + integer div-mod + normal-CDF cluster
@@ -4219,8 +4262,8 @@ const SYM_CONSTANTS = Object.freeze({
   E:    Real(Math.E),
   I:    Complex(0, 1),
   i:    Complex(0, 1),
-  MAXR: Real(Number.MAX_VALUE),
-  MINR: Real(Number.MIN_VALUE),
+  // MAXR / MINR are NOT here — they depend on the runtime realMaxExp
+  // setting and are resolved dynamically in _symConstantRpl() below.
   // --- HP50 CONSTANTS-library physical constants -----------------
   // CODATA-2018 / SI-redefinition-2019 values; no units attached —
   // the fold produces a plain Real, matching how `e` behaves.  If
@@ -4263,12 +4306,22 @@ const SYM_CONSTANTS = Object.freeze({
 });
 function _symConstantRpl(name) {
   if (!name) return undefined;
+  // MAXR / MINR are dynamic — they derive from the current realMaxExp
+  // setting so they can't live in the frozen SYM_CONSTANTS map.
+  const upper = String(name).toUpperCase();
+  if (upper === 'MAXR') {
+    const e = getRealMaxExp();
+    return Real(new Decimal(`9.99999999999e+${e}`));
+  }
+  if (upper === 'MINR') {
+    const e = getRealMaxExp();
+    return Real(new Decimal(`1e-${e}`));
+  }
   if (Object.prototype.hasOwnProperty.call(SYM_CONSTANTS, name)) {
     return SYM_CONSTANTS[name];
   }
-  const key = String(name).toUpperCase();
-  if (Object.prototype.hasOwnProperty.call(SYM_CONSTANTS, key)) {
-    return SYM_CONSTANTS[key];
+  if (Object.prototype.hasOwnProperty.call(SYM_CONSTANTS, upper)) {
+    return SYM_CONSTANTS[upper];
   }
   return undefined;
 }
@@ -6130,24 +6183,12 @@ register('IDN', (s) => {
 register('NORM', (s) => {
   const [v] = s.popN(1);
   if (isVector(v)) {
-    let sum = 0;
-    for (const x of v.items) {
-      const r = toRealOrThrow(x);
-      sum += r * r;
-    }
-    s.push(Real(Math.sqrt(sum)));
+    s.push(Real(_decimalFrobeniusNorm(v.items)));
     return;
   }
   if (isMatrix(v)) {
     // Frobenius norm = √(Σᵢⱼ mᵢⱼ²).
-    let sum = 0;
-    for (const row of v.rows) {
-      for (const x of row) {
-        const r = toRealOrThrow(x);
-        sum += r * r;
-      }
-    }
-    s.push(Real(Math.sqrt(sum)));
+    s.push(Real(_decimalFrobeniusNorm(v.rows.flat())));
     return;
   }
   throw new RPLError('Bad argument type');
@@ -7701,14 +7742,14 @@ function _xponOf(x) {
   if (x === 0) return 0;
   return Math.floor(Math.log10(Math.abs(x)));
 }
-register('XPON', (s) => {
+register('XPON', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('XPON', [_toAst(v)]))); return; }
   if (!isReal(v) && !isInteger(v)) throw new RPLError('Bad argument type');
   const x = Number(isInteger(v) ? v.value : v.value);
   s.push(Real(_xponOf(x)));
-});
-register('MANT', (s) => {
+}))));
+register('MANT', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('MANT', [_toAst(v)]))); return; }
   if (!isReal(v) && !isInteger(v)) throw new RPLError('Bad argument type');
@@ -7716,7 +7757,7 @@ register('MANT', (s) => {
   if (x === 0) { s.push(Real(0)); return; }
   const e = _xponOf(x);
   s.push(Real(x / Math.pow(10, e)));
-});
+}))));
 
 /* --------------- LNP1 / EXPM — stable near zero ---------------
    LNP1(x) = ln(1 + x), evaluated without catastrophic cancellation
@@ -7881,20 +7922,47 @@ register('%CH', _percentOp('PCTCH', (x, y) => 100 * (y - x) / x,    true));
    §10.1 (shift/rotate), §15 (MAP).
    ================================================================= */
 
-/* --------------- MAXR / MINR — real-literal constants ---------------
+/* --------------- MAXR / MINR — real-limit constants ---------------
    HP50 AUR p. 3-1.  MAXR is the largest representable finite real and
-   MINR is the smallest positive normal real.  On a real HP50 these map
-   to the BCD precision limits (9.99999999999E499 / 1E-499).  Our
-   underlying representation is JS number (IEEE-754 double), so we
-   expose the IEEE equivalents — `Number.MAX_VALUE` /
-   `Number.MIN_VALUE` — which are the "largest finite / smallest
-   positive" under the same spec.  This matches HP50 intent (and in
-   practice is where every HP50 user's math bottoms out against overflow
-   / underflow).  No arguments, no symbolic lift — they are literal
-   pushes.
+   MINR is the smallest positive normal real.  These derive from the
+   current `realMaxExp` setting (default 999, configurable via STMXE):
+     MAXR = 9.99999999999e+<realMaxExp>
+     MINR = 1e-<realMaxExp>
+   decimal.js represents them exactly since its exponent range reaches
+   9e15.  No arguments, no symbolic lift — literal pushes.
    ---------------------------------------------------------------- */
-register('MAXR', (s) => { s.push(Real(Number.MAX_VALUE)); });
-register('MINR', (s) => { s.push(Real(Number.MIN_VALUE)); });
+register('MAXR', (s) => {
+  const e = getRealMaxExp();
+  s.push(Real(new Decimal(`9.99999999999e+${e}`)));
+});
+register('MINR', (s) => {
+  const e = getRealMaxExp();
+  s.push(Real(new Decimal(`1e-${e}`)));
+});
+
+/* --------------- STMXE / RCMXE — configure max Real exponent --------
+   rpl5050 extension (no HP50 equivalent).  `STMXE` pops an Integer or
+   Real from level 1, validates it, and sets `realMaxExp` — the exponent
+   magnitude that defines both MAXR/MINR and the Decimal overflow limit.
+   `RCMXE` pushes the current setting as an Integer.
+
+   Legal range: REAL_MAX_EXP_MIN (10) .. REAL_MAX_EXP_MAX (9e15).
+   ---------------------------------------------------------------- */
+register('STMXE', (s) => {
+  const v = s.pop();
+  let n;
+  if (isInteger(v))      n = Number(v.value);
+  else if (isReal(v))    n = v.value.toNumber();
+  else throw new RPLError('Bad argument type');
+  if (!Number.isInteger(n) || n < REAL_MAX_EXP_MIN || n > REAL_MAX_EXP_MAX) {
+    throw new RPLError('Bad argument value');
+  }
+  setRealMaxExp(n);
+});
+
+register('RCMXE', (s) => {
+  s.push(Integer(BigInt(getRealMaxExp())));
+});
 
 /* --------------- HMS family — hours/minutes/seconds ---------------
    HP50 represents a time-of-day / duration value as a decimal number
@@ -8329,6 +8397,26 @@ function _cxAtan(z) {
 
 /* ------------------- Complex-aware op builders ------------------- */
 
+// Decimal-aware angle conversion helpers.  toRadians / fromRadians in
+// state.js operate on JS numbers; these operate on Decimal instances so
+// large or high-precision angles don't lose digits in conversion.
+// π is cached at module-load precision (15 sig figs matches Decimal.set).
+const _PI_D = new Decimal(Math.PI);
+function _toRadiansDecimal(d) {
+  switch (_calcState.angle) {
+    case 'DEG': return d.times(_PI_D).div(180);
+    case 'GRD': return d.times(_PI_D).div(200);
+    default:    return d;
+  }
+}
+function _fromRadiansDecimal(d) {
+  switch (_calcState.angle) {
+    case 'DEG': return d.times(180).div(_PI_D);
+    case 'GRD': return d.times(200).div(_PI_D);
+    default:    return d;
+  }
+}
+
 // Build a unary op that accepts Real/Integer or Complex, falling through
 // to a Symbolic lift for Name/Symbolic operands.
 //
@@ -8340,7 +8428,11 @@ function _cxAtan(z) {
 // re-tags the container; List inside Tagged so list distribution
 // re-enters the scalar handler at each leaf; V/M innermost so a bare
 // Vector/Matrix distributes to per-element scalar handling.
-function _unaryCx(name, realFn, cxFn) {
+//
+// `decimalFn` — a (Decimal) => Decimal function used for Real operands.
+// `realFn`    — kept for the EXACT-mode Integer/Rational fold check only
+//               (those inputs are always small, so JS Math is fine there).
+function _unaryCx(name, realFn, cxFn, decimalFn) {
   return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const v = s.pop();
     if (_isSymOperand(v)) {
@@ -8355,27 +8447,28 @@ function _unaryCx(name, realFn, cxFn) {
     // EXACT-mode transcendental preservation: Integer/Rational inputs to
     // LN/EXP/LOG/ALOG/SINH/COSH/TANH/ASINH stay symbolic unless the fold
     // produces a clean integer (LN(1)=0, EXP(0)=1, etc.).
+    // These inputs are always small so JS Math is safe.
     if (!getApproxMode() && (isInteger(v) || isRational(v))) {
       const x = toRealOrThrow(v);
       const y = realFn(x);
       s.push(_exactUnaryLift(name, y, v));
       return;
     }
-    const x = toRealOrThrow(v);
-    const y = realFn(x);
-    if (!Number.isFinite(y)) {
-      // Out-of-domain real.  Under CMPLX mode (flag -103 SET) lift to
-      // the principal complex branch; otherwise raise a clean RPL
-      // error rather than letting the Real() constructor throw
-      // TypeError.
+    // Real branch: promote to Decimal and apply decimalFn.
+    const d = isReal(v) ? v.value : new Decimal(toRealOrThrow(v));
+    const result = decimalFn(d);
+    if (!result.isFinite()) {
+      // Out-of-domain or overflow.  Under CMPLX mode lift to the
+      // principal complex branch; otherwise raise a clean RPL error.
       if (getComplexMode() && cxFn) {
+        const x = d.toNumber();
         const r = cxFn({ re: x, im: 0 });
         s.push(Complex(r.re, r.im));
         return;
       }
       throw new RPLError('Bad argument value');
     }
-    s.push(Real(y));
+    s.push(Real(result));
   })));
 }
 
@@ -8383,7 +8476,9 @@ function _unaryCx(name, realFn, cxFn) {
 // inputs are treated as radians (the only mathematically well-defined
 // convention) and return a Complex.  Same Tagged / List / V/M wrapping
 // as `_unaryCx`.
-function _trigFwdCx(name, realFn, cxFn) {
+//
+// `decimalFn` — (Decimal radians) => Decimal; applied after angle conversion.
+function _trigFwdCx(name, realFn, cxFn, decimalFn) {
   return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const v = s.pop();
     if (_isSymOperand(v)) {
@@ -8396,13 +8491,15 @@ function _trigFwdCx(name, realFn, cxFn) {
       return;
     }
     // EXACT-mode: Integer/Rational inputs stay symbolic unless the fold
-    // produces a clean integer (e.g. SIN(0)=0 in RAD).
+    // produces a clean integer (e.g. SIN(0)=0 in RAD).  These inputs
+    // are always small so JS Math is safe.
     if (!getApproxMode() && (isInteger(v) || isRational(v))) {
       const y = realFn(toRadians(toRealOrThrow(v)));
       s.push(_exactUnaryLift(name, y, v));
       return;
     }
-    s.push(Real(realFn(toRadians(toRealOrThrow(v)))));
+    const d = isReal(v) ? v.value : new Decimal(toRealOrThrow(v));
+    s.push(Real(decimalFn(_toRadiansDecimal(d))));
   })));
 }
 
@@ -8413,7 +8510,10 @@ function _trigFwdCx(name, realFn, cxFn) {
 // degrees, the imaginary part is scaled the same so angle-mode
 // round-trips through SIN/COS/TAN).  Same Tagged / List / V/M wrapping
 // as `_unaryCx`.
-function _trigInvCx(name, realFn, cxFn) {
+//
+// `decimalFn` — (Decimal) => Decimal returning radians; domain errors
+//               return a non-finite Decimal.
+function _trigInvCx(name, realFn, cxFn, decimalFn) {
   return _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     const v = s.pop();
     if (_isSymOperand(v)) {
@@ -8427,6 +8527,7 @@ function _trigInvCx(name, realFn, cxFn) {
     }
     // EXACT-mode: Integer/Rational inputs stay symbolic unless the fold
     // produces a clean integer in the active angle mode (e.g. ASIN(0)=0).
+    // These inputs are always small so JS Math is safe.
     if (!getApproxMode() && (isInteger(v) || isRational(v))) {
       const x = toRealOrThrow(v);
       const y = realFn(x);
@@ -8437,19 +8538,20 @@ function _trigInvCx(name, realFn, cxFn) {
       // Out-of-domain: fall through so CMPLX-mode or error handling below
       // still applies.
     }
-    const x = toRealOrThrow(v);
-    const y = realFn(x);
-    if (!Number.isFinite(y)) {
+    const d = isReal(v) ? v.value : new Decimal(toRealOrThrow(v));
+    const result = decimalFn(d);
+    if (!result.isFinite()) {
       // |x| > 1 for ASIN/ACOS (or other out-of-domain input) lifts to
       // Complex under CMPLX mode, throws "Bad argument value" otherwise.
       if (getComplexMode() && cxFn) {
+        const x = d.toNumber();
         const r = cxFn({ re: x, im: 0 });
         s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
         return;
       }
       throw new RPLError('Bad argument value');
     }
-    s.push(Real(fromRadians(y)));
+    s.push(Real(_fromRadiansDecimal(result)));
   })));
 }
 
@@ -8458,17 +8560,24 @@ function _trigInvCx(name, realFn, cxFn) {
    `register()` uses Map.set under the hood — last registration wins —
    so every earlier call site (EVAL, parser, catalog lookup) now goes
    through the Complex-aware path automatically.
-   ----------------------------------------------------------------- */
-register('LN',   _unaryCx('LN',   Math.log,   _cxLn));
-register('LOG',  _unaryCx('LOG',  Math.log10, (z) => _cxDiv(_cxLn(z), _cx(Math.LN10, 0))));
-register('EXP',  _unaryCx('EXP',  Math.exp,   _cxExp));
-register('ALOG', _unaryCx('ALOG', (x) => Math.pow(10, x),
-                                       (z) => _cxExp(_cxMul(z, _cx(Math.LN10, 0)))));
 
-register('SINH', _unaryCx('SINH',  Math.sinh,  _cxSinh));
-register('COSH', _unaryCx('COSH',  Math.cosh,  _cxCosh));
-register('TANH', _unaryCx('TANH',  Math.tanh,  _cxTanh));
-register('ASINH', _unaryCx('ASINH', Math.asinh, _cxAsinh));
+   The fourth argument to _unaryCx / _trigFwdCx / _trigInvCx is the
+   Decimal-native implementation used for Real operands.  The third
+   argument (realFn / JS Math) is kept only for the EXACT-mode
+   Integer/Rational fold check where inputs are always small.
+   ----------------------------------------------------------------- */
+register('LN',   _unaryCx('LN',   Math.log,   _cxLn,   d => d.ln()));
+register('LOG',  _unaryCx('LOG',  Math.log10, (z) => _cxDiv(_cxLn(z), _cx(Math.LN10, 0)),
+                                              d => d.ln().div(new Decimal(Math.LN10))));
+register('EXP',  _unaryCx('EXP',  Math.exp,   _cxExp,  d => d.exp()));
+register('ALOG', _unaryCx('ALOG', (x) => Math.pow(10, x),
+                                       (z) => _cxExp(_cxMul(z, _cx(Math.LN10, 0))),
+                                       d => new Decimal(10).pow(d)));
+
+register('SINH',  _unaryCx('SINH',  Math.sinh,  _cxSinh,  d => d.sinh()));
+register('COSH',  _unaryCx('COSH',  Math.cosh,  _cxCosh,  d => d.cosh()));
+register('TANH',  _unaryCx('TANH',  Math.tanh,  _cxTanh,  d => d.tanh()));
+register('ASINH', _unaryCx('ASINH', Math.asinh, _cxAsinh, d => d.asinh()));
 // ACOSH and ATANH preserve their domain checks on the real branch
 // (x ≥ 1 for ACOSH, |x| < 1 for ATANH); Complex input goes to the
 // principal-branch formula without a domain check.
@@ -8484,16 +8593,16 @@ register('ACOSH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     s.push(Complex(r.re, r.im));
     return;
   }
+  // EXACT Integer/Rational: small inputs, JS Math is fine.
   if (!getApproxMode() && (isInteger(v) || isRational(v))) {
     const x = toRealOrThrow(v);
     if (x >= 1) { s.push(_exactUnaryLift('ACOSH', Math.acosh(x), v)); return; }
     // x < 1: fall through to Complex lift below.
   }
-  const x = toRealOrThrow(v);
-  if (x >= 1) { s.push(Real(Math.acosh(x))); return; }
-  // Real x < 1 lifts to Complex (principal branch) — matches HP50's
-  // complex-mode behavior.
-  const r = _cxAcosh({ re: x, im: 0 });
+  const d = isReal(v) ? v.value : new Decimal(toRealOrThrow(v));
+  if (d.gte(1)) { s.push(Real(d.acosh())); return; }
+  // Real x < 1 lifts to Complex (principal branch).
+  const r = _cxAcosh({ re: d.toNumber(), im: 0 });
   s.push(Complex(r.re, r.im));
 }))));
 register('ATANH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
@@ -8504,30 +8613,29 @@ register('ATANH', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     s.push(Complex(r.re, r.im));
     return;
   }
+  // EXACT Integer/Rational: small inputs, JS Math is fine.
   if (!getApproxMode() && (isInteger(v) || isRational(v))) {
     const x = toRealOrThrow(v);
     if (x === 1 || x === -1) throw new RPLError('Infinite result');
     if (x > -1 && x < 1) { s.push(_exactUnaryLift('ATANH', Math.atanh(x), v)); return; }
     // |x| > 1: fall through to Complex lift below.
   }
-  const x = toRealOrThrow(v);
-  if (x > -1 && x < 1) { s.push(Real(Math.atanh(x))); return; }
-  if (x === 1 || x === -1) throw new RPLError('Infinite result');
+  const d = isReal(v) ? v.value : new Decimal(toRealOrThrow(v));
+  const one = new Decimal(1);
+  if (d.abs().eq(one)) throw new RPLError('Infinite result');
+  if (d.abs().lt(one)) { s.push(Real(d.atanh())); return; }
   // |x| > 1 lifts to Complex.
-  const r = _cxAtanh({ re: x, im: 0 });
+  const r = _cxAtanh({ re: d.toNumber(), im: 0 });
   s.push(Complex(r.re, r.im));
 }))));
 
-// SIN/COS/TAN: preserve angle-mode handling on reals; Complex is RAD.
-register('SIN', _trigFwdCx('SIN', Math.sin, _cxSin));
-register('COS', _trigFwdCx('COS', Math.cos, _cxCos));
-register('TAN', _trigFwdCx('TAN', Math.tan, _cxTan));
+// SIN/COS/TAN: Decimal handles angle conversion and trig in full precision.
+register('SIN', _trigFwdCx('SIN', Math.sin, _cxSin, d => d.sin()));
+register('COS', _trigFwdCx('COS', Math.cos, _cxCos, d => d.cos()));
+register('TAN', _trigFwdCx('TAN', Math.tan, _cxTan, d => d.tan()));
 
-// ASIN/ACOS/ATAN: real branch keeps domain checks via Math.asin/Math.acos
-// (NaN becomes Complex); |x|>1 lifts to Complex instead of NaN.
-// ASIN/ACOS get the same Tagged + List + V/M wrapping as `_trigInvCx`
-// for ATAN (which has no bespoke domain logic and so just uses the
-// builder).
+// ASIN/ACOS/ATAN: now use Decimal for real branch; domain handling and
+// Complex lift are identical to before.
 register('ASIN', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
   if (_isSymOperand(v)) { s.push(Symbolic(AstFn('ASIN', [_toAst(v)]))); return; }
@@ -8536,15 +8644,19 @@ register('ASIN', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
     return;
   }
+  // EXACT Integer/Rational: small inputs, JS Math is fine.
   if (!getApproxMode() && (isInteger(v) || isRational(v))) {
     const x = toRealOrThrow(v);
     if (x >= -1 && x <= 1) { s.push(_exactUnaryLift('ASIN', fromRadians(Math.asin(x)), v)); return; }
-    // |x| > 1: fall through to Complex lift below.
   }
-  const x = toRealOrThrow(v);
-  if (x >= -1 && x <= 1) { s.push(Real(fromRadians(Math.asin(x)))); return; }
-  const r = _cxAsin({ re: x, im: 0 });
-  s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+  const d = isReal(v) ? v.value : new Decimal(toRealOrThrow(v));
+  const result = d.asin();
+  if (!result.isFinite()) {
+    const r = _cxAsin({ re: d.toNumber(), im: 0 });
+    s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+    return;
+  }
+  s.push(Real(_fromRadiansDecimal(result)));
 }))));
 register('ACOS', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
   const v = s.pop();
@@ -8554,17 +8666,21 @@ register('ACOS', _withTaggedUnary(_withListUnary(_withVMUnary((s) => {
     s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
     return;
   }
+  // EXACT Integer/Rational: small inputs, JS Math is fine.
   if (!getApproxMode() && (isInteger(v) || isRational(v))) {
     const x = toRealOrThrow(v);
     if (x >= -1 && x <= 1) { s.push(_exactUnaryLift('ACOS', fromRadians(Math.acos(x)), v)); return; }
-    // |x| > 1: fall through to Complex lift below.
   }
-  const x = toRealOrThrow(v);
-  if (x >= -1 && x <= 1) { s.push(Real(fromRadians(Math.acos(x)))); return; }
-  const r = _cxAcos({ re: x, im: 0 });
-  s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+  const d = isReal(v) ? v.value : new Decimal(toRealOrThrow(v));
+  const result = d.acos();
+  if (!result.isFinite()) {
+    const r = _cxAcos({ re: d.toNumber(), im: 0 });
+    s.push(Complex(fromRadians(r.re), fromRadians(r.im)));
+    return;
+  }
+  s.push(Real(_fromRadiansDecimal(result)));
 }))));
-register('ATAN', _trigInvCx('ATAN', Math.atan, _cxAtan));
+register('ATAN', _trigInvCx('ATAN', Math.atan, _cxAtan, d => d.atan()));
 
 /* --------------- List combinators — SEQ, DOLIST, DOSUBS, STREAM ---------------
    HP50 AUR §15 "Lists and sequences".  MAP covers the 1-in/1-out

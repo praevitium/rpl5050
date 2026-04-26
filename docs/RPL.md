@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 180)
+## Current implementation status (as of session 188)
 
 
 ### Program value — parser & round-trip
@@ -309,7 +309,49 @@ open, and the next-session queue.
 
 ---
 
-## Session 180 (this run) — what shipped
+## Session 188 (this run) — what shipped
+
+Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
+1/3 workload per the scheduled-task guardrail.  All R-bucket findings
+in `docs/REVIEW.md` remain fully closed at run-entry (R-001 — R-012
+all resolved; O-009 + O-011 `[deferred - post-ship]`; T-003 partial,
+assigned to `rpl5050-unit-tests`).
+
+**Verification-only run — no source or test change.**  Confirmed
+5448 / 0 clean baseline (Δ+47 from session 184's 5401 — entirely from
+sibling lanes: session 185 unit-tests, session 185 code-review,
+session 186 command-support, session 187 data-type-support).  The RPL
+programming substrate remains in the fully-documented, zero-drift
+condition established by session 180.
+
+Session-184 `(this run)` heading demoted to plain past tense below
+(per the recurring R-005 discipline — each rpl-programming-lane run
+that adds a `(this run)` chapter must also demote its predecessor).
+
+---
+
+## Session 184 — what shipped
+
+Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
+1/3 workload per the scheduled-task guardrail.  All R-bucket findings
+in `docs/REVIEW.md` were fully closed at run-entry (R-001 — R-012
+all resolved; O-009 + O-011 `[deferred - post-ship]`; T-003 partial,
+assigned to `rpl5050-unit-tests`).
+
+**Verification-only run — no source or test change.**  Confirmed
+5401 / 0 clean baseline unchanged from session 183.  Prior session
+(180) completed the suspended-execution substrate audit and left
+the substrate in fully-documented, zero-drift condition; this run
+verifies that sibling sessions 181–183 did not perturb the RPL
+programming substrate.
+
+Session-180 `(this run)` heading demoted to plain past tense below
+(per the recurring R-005 discipline — each rpl-programming-lane run
+that adds a `(this run)` chapter must also demote its predecessor).
+
+---
+
+## Session 180 — what shipped
 
 Ship-day audit-only run on Sunday 2026-04-26.  Scope-capped at 1/3
 workload per the scheduled-task guardrail.  All R-bucket findings

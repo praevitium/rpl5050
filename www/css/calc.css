@@ -1120,24 +1120,60 @@ body.mode-minimal .keypad {
 .cmd-help-popup.hidden {
   display: none;
 }
+.cmd-help-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+.cmd-help-nav,
 .cmd-help-close {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  z-index: 1;
   background: transparent;
   border: 1px solid transparent;
   color: #aab1bd;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
   padding: 2px 10px;
   border-radius: 4px;
   cursor: pointer;
 }
+.cmd-help-nav { font-size: 20px; padding: 2px 8px; }
+.cmd-help-close { margin-left: auto; font-size: 22px; }
+.cmd-help-nav:hover:not(:disabled),
 .cmd-help-close:hover {
   color: #fff;
   background: rgba(255, 255, 255, .08);
   border-color: rgba(255, 255, 255, .12);
+}
+.cmd-help-nav:disabled {
+  opacity: .35;
+  cursor: default;
+}
+.cmd-help-history {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #15181f;
+  color: #cdd3de;
+  border: 1px solid #3a4252;
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.cmd-help-history:disabled { opacity: .4; cursor: default; }
+.cmd-help-history:focus { outline: none; border-color: rgba(103, 232, 249, .5); }
+.cmd-help-link {
+  color: #67e8f9;
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(103, 232, 249, .35);
+  cursor: pointer;
+}
+.cmd-help-link:hover {
+  color: #a5f3fc;
+  border-bottom-color: rgba(165, 243, 252, .7);
 }
 .cmd-help-inner {
   flex: 1 1 auto;
@@ -1194,6 +1230,121 @@ body.mode-minimal .keypad {
   color: #d8dde6;
   white-space: pre;
   overflow-x: auto;
+}
+/* Reflowed per-command body — two-column dt/dd grid.  Mirrors the
+   layout the standalone docs page uses, restyled for the dark calc
+   theme. */
+.cmd-help-inner .cmd-body {
+  display: grid;
+  grid-template-columns: minmax(96px, max-content) 1fr;
+  column-gap: 18px;
+  row-gap: 8px;
+  margin: 8px 0 0;
+}
+.cmd-help-inner .cmd-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #7d8596;
+  padding-top: 3px;
+}
+.cmd-help-inner .cmd-field {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #d8dde6;
+}
+.cmd-help-inner .cmd-field p { margin: 0 0 6px; }
+.cmd-help-inner .cmd-field p:last-child { margin-bottom: 0; }
+.cmd-help-inner .cmd-bullets {
+  margin: 4px 0 6px;
+  padding-left: 18px;
+}
+.cmd-help-inner .cmd-bullets li { margin: 2px 0; }
+.cmd-help-inner .cmd-field pre.cmd-mono {
+  margin: 4px 0;
+  font-size: 11.5px;
+}
+.cmd-help-inner .cmd-field-see-also,
+.cmd-help-inner .cmd-field-see-also p {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+/* Stack-diagram tables for Input/Output. */
+.cmd-help-inner .cmd-io {
+  border-collapse: collapse;
+  margin: 4px 0;
+}
+.cmd-help-inner .cmd-io th,
+.cmd-help-inner .cmd-io td {
+  padding: 4px 12px;
+  border-bottom: 1px solid #2a3142;
+  vertical-align: top;
+}
+.cmd-help-inner .cmd-io th {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #7d8596;
+  text-align: left;
+  font-weight: 600;
+}
+.cmd-help-inner .cmd-io td {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #d8dde6;
+}
+.cmd-help-inner .cmd-io .cmd-io-arrow {
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.cmd-help-inner .cmd-io tbody td.cmd-io-arrow {
+  font-family: var(--font-ui);
+  color: #67e8f9;
+  font-weight: 600;
+}
+.cmd-help-inner .cmd-io tr.cmd-io-span td {
+  background: #1c2230;
+  color: #b6bdcc;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+/* Key-value tables for Example sub-fields. */
+.cmd-help-inner .cmd-kv {
+  border-collapse: collapse;
+  margin: 4px 0;
+}
+.cmd-help-inner .cmd-kv th,
+.cmd-help-inner .cmd-kv td {
+  padding: 3px 12px;
+  border-bottom: 1px solid #2a3142;
+  vertical-align: top;
+  text-align: left;
+}
+.cmd-help-inner .cmd-kv th {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #7d8596;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cmd-help-inner .cmd-kv td {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #d8dde6;
+}
+.cmd-help-inner .cmd-kv tr.cmd-kv-section th {
+  padding-top: 10px;
+  color: #cbe7ff;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  background: #1c2230;
 }
 .cmd-help-empty {
   color: #8a93a4;

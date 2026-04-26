@@ -9,7 +9,7 @@
    subscribers fire exactly once per change.
    ================================================================= */
 
-import { Directory, TYPES, BIN_BASES } from './types.js';
+import { Directory, TYPES, BIN_BASES, Decimal } from './types.js';
 
 // Cycle order is RAD → DEG → GRD → RAD.  RAD is the rpl5050 boot
 // default (deliberate deviation from the HP50 factory DEG default —
@@ -30,6 +30,18 @@ const _home = Directory({ name: 'HOME' });
 export const WORDSIZE_MIN = 1;
 export const WORDSIZE_MAX = 64;
 export const WORDSIZE_DEFAULT = 64;
+
+/** Maximum exponent magnitude for Real values.  Defines the range
+ *  [1e-REAL_MAX_EXP, 9.99…e+REAL_MAX_EXP] that maps to MINR/MAXR,
+ *  and is forwarded to Decimal.set() so arithmetic that exceeds the
+ *  boundary throws rather than silently producing ∞.
+ *
+ *  The HP50 BCD hardware used 499; we default to 999 since decimal.js
+ *  can represent anything up to 9e15.  `STMXE` lets the user change
+ *  this at runtime. */
+export const REAL_MAX_EXP_DEFAULT = 999;
+export const REAL_MAX_EXP_MIN     = 10;          // sanity floor
+export const REAL_MAX_EXP_MAX     = 9e15;        // Decimal.js hard limit
 
 export const state = {
   // 'DEG' | 'RAD' | 'GRD'.  rpl5050 boots in RAD — a deliberate
@@ -157,6 +169,11 @@ export const state = {
   // modulus is always ≥ 2 and positive.  Persisted across reloads via
   // persist.js (encoded as { __t: 'bigint', v: '<digits>' }).
   casModulo: 13n,
+  // Maximum Real exponent magnitude.  MAXR = 9.99…e+realMaxExp,
+  // MINR = 1e-realMaxExp.  Also forwarded to Decimal.set({ MAX_EXP,
+  // MIN_EXP }) so arithmetic overflows match the configured boundary.
+  // Changed by STMXE; read by RCMXE and the MAXR/MINR ops.
+  realMaxExp: REAL_MAX_EXP_DEFAULT,
   // Suspended-execution slots — a LIFO stack of halted records.
   // Each record shape is
   //   { tokens: Array, ip: number, length: number }
@@ -204,6 +221,10 @@ export function subscribe(fn) {
   _listeners.add(fn);
   return () => _listeners.delete(fn);
 }
+
+// Forward the boot realMaxExp to Decimal so arithmetic overflow fires
+// at the right boundary from the first instruction.
+Decimal.set({ MAX_EXP: REAL_MAX_EXP_DEFAULT, MIN_EXP: -REAL_MAX_EXP_DEFAULT });
 
 /** Force a state-change notification without mutating anything.
  *  Used by persist.rehydrate() after a bulk replace of HOME +
@@ -678,6 +699,31 @@ export function clearAllUserFlags() {
   if (state.userFlags.size === 0) return;
   state.userFlags.clear();
   _emit();
+}
+
+/* ------------------------- realMaxExp ---------------------------- */
+
+export function getRealMaxExp() { return state.realMaxExp; }
+
+/** Set the maximum Real exponent magnitude and forward it to Decimal.
+ *  `n` must be a safe integer in [REAL_MAX_EXP_MIN, REAL_MAX_EXP_MAX].
+ *  Throws a plain Error (caller wraps in RPLError if needed) for
+ *  out-of-range values so the error message is consistent whether the
+ *  call comes from STMXE or from a test helper. */
+export function setRealMaxExp(n) {
+  if (!Number.isInteger(n) || n < REAL_MAX_EXP_MIN || n > REAL_MAX_EXP_MAX) {
+    throw new Error(
+      `realMaxExp must be an integer in [${REAL_MAX_EXP_MIN}, ${REAL_MAX_EXP_MAX}], got ${n}`
+    );
+  }
+  state.realMaxExp = n;
+  Decimal.set({ MAX_EXP: n, MIN_EXP: -n });
+  _emit();
+}
+
+/** For tests: reset realMaxExp to the boot default. */
+export function resetRealMaxExp() {
+  setRealMaxExp(REAL_MAX_EXP_DEFAULT);
 }
 
 /** For tests: reset wordsize + binary-base override to defaults so a

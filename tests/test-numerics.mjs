@@ -1,3 +1,4 @@
+import Decimal from '../www/src/vendor/decimal.js/decimal.mjs';
 import { Stack } from '../www/src/rpl/stack.js';
 import { lookup } from '../www/src/rpl/ops.js';
 import {
@@ -17,6 +18,8 @@ import {
   setBinaryBase, getBinaryBase, resetBinaryState,
   setApproxMode,
   setComplexMode, getComplexMode, toggleComplexMode,
+  getRealMaxExp, setRealMaxExp, resetRealMaxExp,
+  REAL_MAX_EXP_DEFAULT, REAL_MAX_EXP_MIN,
 } from '../www/src/rpl/state.js';
 import { clampStackScroll, computeMenuPage } from '../www/src/ui/paging.js';
 import { assert, assertThrows } from './helpers.mjs';
@@ -814,20 +817,80 @@ import { assert, assertThrows } from './helpers.mjs';
 // MAXR / MINR constants and HMS family
 // ------------------------------------------------------------------
 
-// MAXR: largest finite Real
+// MAXR: largest finite Real — derived from current realMaxExp (default 999)
 {
   const s = new Stack();
   lookup('MAXR').fn(s);
-  assert(isReal(s.peek()) && s.peek().value.eq(Number.MAX_VALUE),
-         'session044: MAXR pushes Number.MAX_VALUE');
+  const e = getRealMaxExp();
+  assert(isReal(s.peek()) && s.peek().value.eq(new Decimal(`9.99999999999e+${e}`)),
+         `session044: MAXR pushes 9.99999999999e+${e}`);
 }
 
-// MINR: smallest positive Real
+// MINR: smallest positive Real — derived from current realMaxExp
 {
   const s = new Stack();
   lookup('MINR').fn(s);
-  assert(isReal(s.peek()) && s.peek().value.eq(Number.MIN_VALUE),
-         'session044: MINR pushes Number.MIN_VALUE');
+  const e = getRealMaxExp();
+  assert(isReal(s.peek()) && s.peek().value.eq(new Decimal(`1e-${e}`)),
+         `session044: MINR pushes 1e-${e}`);
+}
+
+// Default realMaxExp is REAL_MAX_EXP_DEFAULT (999)
+assert(getRealMaxExp() === REAL_MAX_EXP_DEFAULT,
+       'session044: default realMaxExp is REAL_MAX_EXP_DEFAULT');
+
+// RCMXE pushes current realMaxExp as Integer
+{
+  const s = new Stack();
+  lookup('RCMXE').fn(s);
+  assert(s.peek().value === BigInt(REAL_MAX_EXP_DEFAULT),
+         'session044: RCMXE pushes REAL_MAX_EXP_DEFAULT');
+}
+
+// STMXE stores a new max exponent; MAXR/MINR then reflect it
+{
+  const s = new Stack();
+  s.push(Integer(1234n));
+  lookup('STMXE').fn(s);
+  assert(getRealMaxExp() === 1234, 'session044: STMXE sets realMaxExp to 1234');
+  const s2 = new Stack();
+  lookup('MAXR').fn(s2);
+  assert(s2.peek().value.eq(new Decimal('9.99999999999e+1234')),
+         'session044: MAXR reflects new realMaxExp after STMXE');
+  resetRealMaxExp(); // restore default so later tests aren't affected
+}
+
+// STMXE with a Real value (e.g. typed as a decimal on the stack)
+{
+  const s = new Stack();
+  s.push(Real(new Decimal('500')));
+  lookup('STMXE').fn(s);
+  assert(getRealMaxExp() === 500, 'session044: STMXE accepts Real integer value');
+  resetRealMaxExp();
+}
+
+// STMXE rejects out-of-range value
+{
+  const s = new Stack();
+  s.push(Integer(BigInt(REAL_MAX_EXP_MIN - 1)));
+  let threw = false;
+  try { lookup('STMXE').fn(s); } catch (e) { threw = true; }
+  assert(threw, 'session044: STMXE rejects value below REAL_MAX_EXP_MIN');
+  resetRealMaxExp();
+}
+
+// Large-exponent formatting: values beyond IEEE-754 range display correctly
+{
+  const big = Real(new Decimal('1.23456789012e+500'));
+  const str = format(big);
+  assert(str === '1.23456789012E500',
+         `session044: format 1.23456789012e+500 → '${str}'`);
+}
+{
+  const tiny = Real(new Decimal('1e-500'));
+  const str = format(tiny);
+  assert(str === '1E-500',
+         `session044: format 1e-500 → '${str}'`);
 }
 
 // MAXR takes no arguments — depth grows by 1
