@@ -448,14 +448,14 @@ const MODELS = [
   { id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',          label: 'Qwen2.5 0.5B',           size: '~400 MB',  contextTokens: 16384, note: 'Tiny, surprisingly good at JSON / tool calls' },
   { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 0.5B',     size: '~400 MB',  contextTokens: 16384, note: 'Code-tuned 0.5B — handles RPL syntax better than the base 0.5B' },
   { id: 'Qwen3-0.6B-q4f16_1-MLC',                     label: 'Qwen3 0.6B',             size: '~500 MB',  contextTokens: 16384, note: 'Newer Qwen generation' },
-  { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',       label: 'TinyLlama 1.1B',         size: '~700 MB',  contextTokens: 2048,  note: 'Native max only 2K — too small for our system prompt; included for completeness, not recommended' },
+  { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',       label: 'TinyLlama 1.1B',         size: '~700 MB',  contextTokens: 2048,  note: '⚠ Native max only 2K — system prompt vastly exceeds context; not usable with current prompt size' },
 
   // ---- 0.9-1.5 GB — small / sweet spot ----
   { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 1B',           size: '~880 MB',  contextTokens: 16384, note: 'Smaller fallback — fast but weaker reasoning (model native max 128K)' },
-  { id: 'stablelm-2-zephyr-1_6b-q4f16_1-MLC',         label: 'StableLM 2 Zephyr 1.6B', size: '~1.0 GB',  contextTokens: 4096,  note: 'Stability AI chat-tuned (native max 4K — tight for our prompt)' },
-  { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC',          label: 'SmolLM2 1.7B',           size: '~1.0 GB',  contextTokens: 8192,  note: 'Larger SmolLM2 — better follow-through than 360M' },
+  { id: 'stablelm-2-zephyr-1_6b-q4f16_1-MLC',         label: 'StableLM 2 Zephyr 1.6B', size: '~1.0 GB',  contextTokens: 4096,  note: '⚠ Native max 4K — system prompt exceeds context; not usable with current prompt size' },
+  { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC',          label: 'SmolLM2 1.7B',           size: '~1.0 GB',  contextTokens: 8192,  note: 'Larger SmolLM2 — works but tight (~2K tokens of history headroom after the system prompt)' },
   { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  contextTokens: 16384, note: 'Code-tuned 1.5B — strong at structured output' },
-  { id: 'Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC',     label: 'Qwen2.5 Math 1.5B',      size: '~1.3 GB',  contextTokens: 4096,  note: 'Math-tuned — native max often 4K; better at calc-style reasoning than length' },
+  { id: 'Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC',     label: 'Qwen2.5 Math 1.5B',      size: '~1.3 GB',  contextTokens: 4096,  note: '⚠ Native max often 4K — system prompt exceeds context; not usable with current prompt size' },
   { id: 'Qwen3-1.7B-q4f16_1-MLC',                     label: 'Qwen3 1.7B',             size: '~1.4 GB',  contextTokens: 16384, note: 'Newer Qwen, mid-size' },
 
   // ---- 1.9-2.4 GB — mid-tier ----

@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 260 (2026-04-26).  Unit-tests lane run
-(snapshot refresh — Sunday 2026-04-26; 26th
+**Last updated.** Session 265 (2026-04-26).  Unit-tests lane run
+(snapshot refresh — Sunday 2026-04-26; 27th
 release-window run in this lane after sessions 156, 160, 164, 160-unit-tests,
-168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246, 250, 256, 260).
+168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246, 250, 256, 260, 265).
 Note: session-233-unit-tests lock was pruned as crashed (header-only
 update; no session log written) — absorbed into a prior run's snapshot.
 Note: session 238 log index claims a coverage snapshot was added but
@@ -833,6 +833,61 @@ Session 117 unit-tests deltas:
   `cowork_allow_file_delete` permission prompt is blocked in
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
+
+## Coverage snapshot (session 265)
+
+Sibling deltas absorbed since session-260 snapshot
+(5621 → 5640, **+19** over sessions 261–264):
+- **Session 261** (code-review) — doc-only run; **0** assertion
+  deltas.  O-011 aged 28 → 29 runs; O-012 aged 16 → 17 runs.
+- **Session 262** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 257 → 262; session-log
+  back-fill for sessions 258–262.  `docs/REVIEW.md` preamble advanced.
+- **Session 263** (data-type-support) — **+19** assertions in
+  `tests/test-types.mjs` (1170 → 1189; `session263:` labels) —
+  U-column rejection-pin pass: 19 ops × one Unit-arg rejection pin
+  each across unary numeric-math, CONJ/RE/IM, and binary-scalar
+  families.  No source change — `toRealOrThrow` already rejects
+  Unit; pins confirm coverage end-to-end.
+- **Session 264** (rpl-programming) — verification-only run; **0**
+  assertion deltas.  `docs/RPL.md` stamp 259 → 264; `docs/REVIEW.md`
+  preamble advanced.
+
+Session 265 unit-tests deltas (this run):
+- **0 new assertions** — scope-cap snapshot-refresh run.  Gates
+  confirmed green on entry; TESTS.md header, snapshot, and
+  session-log index updated.
+
+Baseline at session-265 entry: **5640 / 0** (fully green).
+Final: **5640 / 0** — fully green (+0 from this run).
+`test-persist.mjs` passed / 0 (stable; D-001 closed ship-prep 2026-04-25).
+`sanity.mjs` 22 / 0 (~6 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1064 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1189 | 0    | +19 s263 Unit-column rejection pins.     |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5640** | **0** | Session 265 close.  Fully green. |
+| test-persist.mjs (separate) | passed | 0  | Stable; D-001 closed ship-prep 2026-04-25. |
+| sanity.mjs (standalone)     |   22 | 0    | ~6 ms smoke suite.                       |
+
+### Prior snapshot — Session 260 (retained for context)
 
 ## Coverage snapshot (session 260)
 
@@ -2630,7 +2685,21 @@ when the next flake appears.
 
 ## Session-by-session log index
 
-- Session 260 (2026-04-26) — this run.  Unit-tests lane (post-ship
+- Session 265 (2026-04-26) — this run.  Unit-tests lane (post-ship
+  snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
+  snapshot-only run).  Gates at entry: test-all **5640 / 0**,
+  test-persist **passed / 0**, sanity **22 / 0** — all green.  D-001
+  remains closed.  No open Unit Tests REVIEW.md findings (T-001
+  through T-004 all resolved; O-011 + O-012 deferred post-ship).
+  Work done: refreshed TESTS.md "Last updated" header to session-265;
+  added session-265 coverage snapshot (absorbed sibling deltas
+  5621 → 5640 over sessions 261–264: s261 code-review doc-only,
+  s262 command-support doc-only, s263 data-type-support +19
+  Unit-column rejection pins, s264 rpl-programming verification-only);
+  wrote `logs/session-265.md`.
+  Lock: `utils/@locks/session265-unit-tests.json`.
+
+- Session 260 (2026-04-26) — prior run.  Unit-tests lane (post-ship
   snapshot refresh — **0 new assertions**; scope cap 1/3 workload;
   snapshot-only run).  Gates at entry: test-all **5621 / 0**,
   test-persist **passed / 0**, sanity **22 / 0** — all green.  D-001

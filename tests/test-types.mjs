@@ -11224,3 +11224,131 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       'session258: B(10) B(5) %CH → Bad argument type (B=✗; same toRealOrThrow path as %)');
   }
 }
+
+/* ================================================================
+   Session 263 — Unit (U column) rejection-pin pass
+   19 new rejection pins across the unary numeric-math surface,
+   CONJ/RE/IM, and the binary scalar surface.
+   No source changes — all rejections were already correct behavior,
+   just untested.  Unit values need a normalised uexpr array
+   (the [sym, exp] form from parseUnitExpr); plain-string uexpr
+   would crash inside inverseUexpr/powerUexpr before reaching the
+   type guard, so all pins use Unit(1, [['m', 1]]).
+   ================================================================ */
+{
+  const U1 = Unit(1, [['m', 1]]);   // 1_m  (level 2 / unary arg)
+  const U2 = Unit(2, [['m', 1]]);   // 2_m  (level 1 / second binary arg)
+
+  // ── Cluster 1: Unary numeric-math surface (U=✗) ───────────────
+  // SQRT — toRealOrThrow rejects Unit (no isUnit branch in _sqrtScalar)
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('SQRT').fn(s), /Bad argument type/i,
+      'session263: 1_m SQRT → Bad argument type (U=✗; toRealOrThrow rejects Unit)');
+  }
+  // SIN — representative for trig/hyp group (_unaryCx → toRealOrThrow)
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('SIN').fn(s), /Bad argument type/i,
+      'session263: 1_m SIN → Bad argument type (U=✗; _unaryCx → toRealOrThrow rejects Unit; applies to entire trig/hyp group)');
+  }
+  // FACT — _factScalar isReal/isInteger only
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('FACT').fn(s), /Bad argument type/i,
+      'session263: 1_m FACT → Bad argument type (U=✗; _factScalar isReal/isInteger only)');
+  }
+  // LN — representative for LN/LOG/EXP/ALOG group (_unaryCx → toRealOrThrow)
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('LN').fn(s), /Bad argument type/i,
+      'session263: 1_m LN → Bad argument type (U=✗; _unaryCx → toRealOrThrow rejects Unit; applies to LN/LOG/EXP/ALOG group)');
+  }
+  // LNP1 — toRealOrThrow rejects Unit
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('LNP1').fn(s), /Bad argument type/i,
+      'session263: 1_m LNP1 → Bad argument type (U=✗; toRealOrThrow rejects Unit in LNP1 handler)');
+  }
+  // EXPM — toRealOrThrow rejects Unit
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('EXPM').fn(s), /Bad argument type/i,
+      'session263: 1_m EXPM → Bad argument type (U=✗; toRealOrThrow rejects Unit in EXPM handler)');
+  }
+  // SIGN — _signScalar isReal/isInteger/isRational/isComplex only; no isUnit branch
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('SIGN').fn(s), /Bad argument type/i,
+      'session263: 1_m SIGN → Bad argument type (U=✗; _signScalar no isUnit branch)');
+  }
+  // ARG — _argScalar isReal/isInteger only; no isUnit branch
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('ARG').fn(s), /Bad argument type/i,
+      'session263: 1_m ARG → Bad argument type (U=✗; _argScalar isReal/isInteger only)');
+  }
+
+  // ── Cluster 2: CONJ / RE / IM (U=✗) ──────────────────────────
+  // _conjScalar / _reScalar / _imScalar: isReal/isInteger/isRational/isComplex/isName/isSym
+  // dispatch — no isUnit branch; Unit falls through to final throw.
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('CONJ').fn(s), /Bad argument type/i,
+      'session263: 1_m CONJ → Bad argument type (U=✗; _conjScalar no isUnit branch)');
+  }
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('RE').fn(s), /Bad argument type/i,
+      'session263: 1_m RE → Bad argument type (U=✗; _reScalar no isUnit branch)');
+  }
+  {
+    const s = new Stack(); s.push(U1);
+    assertThrows(() => lookup('IM').fn(s), /Bad argument type/i,
+      'session263: 1_m IM → Bad argument type (U=✗; _imScalar no isUnit branch)');
+  }
+
+  // ── Cluster 3: Binary scalar surface (U=✗) ────────────────────
+  // All binary scalar ops reject Unit on either operand position.
+  // Using U1 (level 2) and U2 (level 1) for consistency.
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('MOD').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m MOD → Bad argument type (U=✗; toRealOrThrow rejects Unit in _modScalar)');
+  }
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('MIN').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m MIN → Bad argument type (U=✗; _minMaxScalar requires isNumber; Unit not in isNumber)');
+  }
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('MAX').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m MAX → Bad argument type (U=✗; same _minMaxScalar guard as MIN)');
+  }
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('GCD').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m GCD → Bad argument type (U=✗; _toBigIntOrThrow no isUnit branch)');
+  }
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('LCM').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m LCM → Bad argument type (U=✗; same _toBigIntOrThrow guard as GCD)');
+  }
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('%').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m % → Bad argument type (U=✗; toRealOrThrow rejects Unit in percent handler)');
+  }
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('%T').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m %T → Bad argument type (U=✗; same toRealOrThrow path as %)');
+  }
+  {
+    const s = new Stack(); s.push(U1); s.push(U2);
+    assertThrows(() => lookup('%CH').fn(s), /Bad argument type/i,
+      'session263: 1_m 2_m %CH → Bad argument type (U=✗; same toRealOrThrow path as %)');
+  }
+}

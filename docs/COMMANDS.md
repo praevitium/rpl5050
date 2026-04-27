@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 257 — 2026-04-26)
+## Counts (as of session 262 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -808,6 +808,62 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 262** (2026-04-26) — `rpl5050-command-support` lane.
+  Doc-reconciliation pass.  Counts stamp advanced from session 257 →
+  262; session-log entries back-filled for sessions 258 / 259 / 260 /
+  261-code-review (four sibling sessions with no prior COMMANDS.md
+  entries).  O-011 / O-012 / O-014 carried forward
+  `[deferred - post-ship]` (no Commands-bucket findings open).  No
+  source or test edits.  No ✗ → ✓ row transitions.  `register()` count
+  unchanged at 480 / 461.
+  Run-entry: 5621 / 66 / 22.  Run-close: **5621 / 66 / 22**.
+  Lock = `utils/@locks/session262-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 261-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Thirty-seventh review-lane run; post-ship audit.  REVIEW.md preamble
+  folded in sibling sessions 258–259; session-260 (unit-tests) was active
+  at acquisition — absorbed next run.  O-011 aged 28 → 29 runs; O-012
+  aged 16 → 17 code-review-lane runs; O-014 item 4 observation updated
+  (chat-bot.js mtime `Apr 26 22:51`, second unlocked modification).  No
+  source or test edits.  No ✗ → ✓ row transitions.  `register()` count
+  unchanged at 480 / 461.
+  Run-entry: 5621 / 66 / 22.  Run-close: **5621 / 66 / 22**.
+  Lock = `utils/@locks/session261-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 260** (2026-04-26) — `rpl5050-unit-tests` lane.
+  Snapshot refresh (absorbing sessions 257–259).  TESTS.md "Last
+  updated" stamp advanced session 256 → 260; session-260 coverage
+  snapshot added (aggregate 5621 — unchanged from session 258 close);
+  session-log index back-filled for sessions 250 and 256.  No new
+  assertions.  No ✗ → ✓ row transitions.  `register()` count unchanged
+  at 480 / 461.
+  Run-entry: 5621 / 66 / 22.  Run-close: **5621 / 66 / 22**.
+  Lock = `utils/@locks/session260-unit-tests.json`, scope
+  `[tests/, docs/TESTS.md, logs/]`, released at end of run.
+
+- **session 259** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Verification pass; no source changes.  RPL.md status stamp bumped
+  "as of session 254" → "as of session 259"; session-log pointer
+  back-fill for sessions 241, 245, and 249.  No ✗ → ✓ row transitions.
+  `register()` count unchanged at 480 / 461.
+  Run-entry: 5621 / 66 / 22.  Run-close: **5621 / 66 / 22**.
+  Lock = `utils/@locks/session259-rpl-programming.json`, scope
+  `[docs/RPL.md, logs/]`, released at end of run.
+
+- **session 258** (2026-04-26) — `rpl5050-data-type-support` lane.
+  BinaryInteger B-column rejection-pin pass.  +22 assertions in
+  `tests/test-types.mjs` (1148 → 1170) — 22 rejection pins across 21
+  DATA_TYPES.md matrix rows confirming `Bad argument type` for
+  BinaryInteger operands in ops that reject the type.  DATA_TYPES.md
+  "Last updated" stamp advanced session 253 → 258.  No ✗ → ✓ row
+  transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5599 / 66 / 22.  Run-close: **5621 / 66 / 22**.
+  Lock = `utils/@locks/session258-data-type-support.json`, scope
+  `[tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`, released at end
+  of run.
 
 - **session 257** (2026-04-26) — `rpl5050-command-support` lane.
   Doc-reconciliation pass (C-015 close).  Counts stamp advanced from

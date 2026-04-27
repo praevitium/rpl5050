@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 259)
+## Current implementation status (as of session 264)
 
 
 ### Program value — parser & round-trip
@@ -309,7 +309,27 @@ open, and the next-session queue.
 
 ---
 
-## Session 213 (this run) — what shipped
+## Session 264 (this run) — what shipped
+
+Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
+~1/3 workload per the scheduled-task guardrail.  All R-bucket findings
+in `docs/REVIEW.md` remain fully closed at run-entry (R-001 — R-012
+all resolved; O-011 + O-012 + O-014 `[deferred - post-ship]`).
+
+**Verification-only run — no source or test change.**  Confirmed
+5640 / 0 clean baseline (Δ+137 from session 213's 5503 — entirely from
+sibling lanes across sessions 214–263).  The RPL programming substrate
+remains in the fully-documented, zero-drift condition established by
+session 180.
+
+Session-213 `(this run)` heading demoted to plain past tense below
+(per the recurring R-005 discipline — each rpl-programming-lane run
+that adds a `(this run)` chapter must also demote its predecessor).
+Status stamp bumped from "as of session 259" to "as of session 264".
+
+---
+
+## Session 213 — what shipped
 
 Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
 ~1/3 workload per the scheduled-task guardrail.  All R-bucket findings
