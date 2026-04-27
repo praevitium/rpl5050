@@ -17,7 +17,7 @@ import {
 import { format } from './rpl/formatter.js';
 import {
   state as calcState, subscribe as subscribeState,
-  cycleAngle, toggleApproxMode, cycleCoordMode, setBinaryBase,
+  cycleAngle, toggleApproxMode, cycleCoordMode, setBinaryBase, setDisplay,
   varOrder, varList, varRecall, varStore, currentPath,
   goInto, goHome, goUp,
 } from './rpl/state.js';
@@ -866,6 +866,16 @@ class App {
       // keypad, so the LCD marker is the same affordance as the
       // physical button.
       case 'alpha': this.setShift('alpha'); return;
+      case 'display': {
+        // STD → FIX 4 → SCI 4 → ENG 4 → STD
+        const m = calcState.displayMode;
+        const d = calcState.displayDigits;
+        if (m === 'STD')            { setDisplay('FIX', 4); return; }
+        if (m === 'FIX' && d === 4) { setDisplay('SCI', 4); return; }
+        if (m === 'SCI' && d === 4) { setDisplay('ENG', 4); return; }
+        setDisplay('STD', 12);
+        return;
+      }
       // Annunciators without a defined click-cycle action just flash a
       // gentle "no-op" — better than a silent miss on a labelled click.
       default:
