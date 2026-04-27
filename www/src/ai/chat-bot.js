@@ -1394,20 +1394,16 @@ export class ChatBot {
      tool call in a single streamed response; the orchestrator
      extracts each part by string-matching the JSON brace-block.
 
-     History (this used to be three calls):
-       v1: REPLY → TOOL → SUGGEST.  Each call rebuilt the full system-
-       prompt + history KV cache from scratch.  In browser WebGPU
-       small/mid models (1B-3B), the second create() reliably wedged
-       in WebLLM's incremental-prefill path, surfacing as "Phase 2
-       silent for minutes, zero GPU usage" — see the worker comment
-       around resetChat().  Tripling the LLM-call count tripled the
-       stall surface area while only marginally improving response
-       quality (the model isn't actually leveraging the separation).
-       v2 (this): one streaming call that does both jobs at once.
-       Three-times less prefill cost, three-times less stall surface,
-       and the model sees its own prose alongside its tool call so
-       the two stay coherent (Phase 1 saying "computing factorial"
-       while Phase 2 picks recall_var was a real symptom of the split).
+     Single-call design: splitting reply, tool dispatch, and suggestion
+     into separate LLM calls would rebuild the full system-prompt +
+     history KV cache from scratch each time.  In browser WebGPU
+     (small/mid models, 1B-3B), each additional create() risks wedging
+     in WebLLM's incremental-prefill path ("Phase 2 silent for minutes,
+     zero GPU usage" — see the worker comment around resetChat()).  A
+     single streaming call avoids that stall surface, reduces prefill
+     cost, and keeps prose and tool call coherent (the model sees both
+     in one context window, preventing mismatches between what it says
+     and what it dispatches).
 
      Format the model emits (enforced by SYSTEM_PROMPT_COMBINED):
          <one short prose sentence>

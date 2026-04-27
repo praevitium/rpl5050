@@ -10910,7 +10910,7 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 // comparePair() accepts: BinaryInteger (promoted), Symbolic-lift, String lex,
 // and isNumber (Real/Integer/Rational/Complex).  Everything else — List, Vector,
 // Matrix, Tagged, Unit — falls through to `!isNumber` throw.  All 20 cells
-// (4 ops × 5 types) verified ✗ by probe (utils/@probe-comparator-types.mjs).
+// (4 ops × 5 types) all verified ✗ — each rejects with Bad argument type.
 {
   const ops = ['<', '>', '≤', '≥'];
   // L=✗ — List is not isNumber; both operands must be scalar numeric.
@@ -11034,21 +11034,17 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
 
 
 /* ================================================================
-   Session 258 — BinaryInteger (B column) rejection pins
+   BinaryInteger (B column) rejection pins
    ---------------------------------------------------------------
-   The coverage matrix carried `·` (untested) in the B column for
-   a wide range of unary and binary scalar ops.  All of these ops
-   dispatch through handlers that require `isReal`, `isInteger`,
-   `isRational`, or `isComplex` — none of which match BinaryInteger.
-   BinaryInteger is accepted on the binary arithmetic surface
-   (add/sub/mul/div via the BinInt fast path) and by the rounding family
-   (FLOOR/CEIL/IP/FP — B=✓ already pinned in session 087), but
-   NOT by the general numeric-math surface.
+   All unary and binary scalar ops that dispatch through handlers
+   requiring `isReal`, `isInteger`, `isRational`, or `isComplex`
+   reject BinaryInteger with Bad argument type.  BinaryInteger is
+   accepted on the binary arithmetic surface (add/sub/mul/div via
+   the BinInt fast path) and by the rounding family
+   (FLOOR/CEIL/IP/FP — B=✓ separately pinned), but NOT by the
+   general numeric-math surface.
 
-   Probe file: `utils/@probe-binary-int.mjs` — all 22 cells
-   returned `Bad argument type` before pinning.
-
-   Matrix cells updated: 22 cells, all `·`→`✗`:
+   22 ops all return `Bad argument type`:
      INV / SQ / SQRT / ABS / SIN..ATANH (group) /
      FACT / LN..ALOG (group) / LNP1 / EXPM /
      SIGN / ARG /

@@ -312,14 +312,12 @@ import { assert } from './helpers.mjs';
   }
 
  /* — OBJ→ on Unit (HP50 AUR §3-149: `x_unit → x 1_unit`).
-     Closes R-012 — the Unit branch was previously missing, so OBJ→ on
-     a Unit value rejected with `Bad argument type` instead of pushing
-     the bare numeric value (level 2) and the unit prototype `1_unit`
-     (level 1).  Eight new pins covering the basic decomposition,
-     multi-symbol uexpr, the round-trip-via-* contract, the negative-
-     value branch, the inverse-style uexpr (`m/s`), Tagged-of-Unit
-     composition, and the regression guard against future "fix"
-     attempts that flip the level-1 push to a Name. */
+     OBJ→ on a Unit value pushes the bare numeric value to level 2
+     and the unit prototype `1_unit` to level 1.  Pins cover the
+     basic decomposition, multi-symbol uexpr, the round-trip-via-*
+     contract, the negative-value branch, the inverse-style uexpr
+     (`m/s`), Tagged-of-Unit composition, and a regression guard
+     against a "fix" that flips the level-1 push to a Name. */
   {
     /* Basic Unit decomposition: 5_m → 5  1_m. */
     const s = new Stack();
@@ -710,10 +708,9 @@ import { assert } from './helpers.mjs';
   }
   {
     /* BinaryInteger at octal base — types.js BIN_BASES lists
-       'h' / 'd' / 'o' / 'b'.  Three bases ('h' / 'd' / 'b') were
-       previously pinned; this pin closes the missing 'o' base —
-       the fourth and final valid BinInt display
-       base.  Catches a refactor that special-cases base=='o'
+       'h' / 'd' / 'o' / 'b'.  This pin covers the 'o' base,
+       completing BinInt display-base coverage for all four valid
+       bases.  Catches a refactor that special-cases base=='o'
        (e.g., a digit-grouping rendering tweak that accidentally
        reformats the value through OBJ→). */
     const s = new Stack();

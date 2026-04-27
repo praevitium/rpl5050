@@ -5184,9 +5184,9 @@ giac._setFixtures({
     'session061: HEAVISIDE(X-3) stays Symbolic');
 }
 
-/* ---- HEAVISIDE accepts empty List — session191 wrapper-add ---- */
-/* session061 originally asserted a throw here; wrapper-add (session191)
-   means List is now dispatched element-wise, returning an empty List. */
+/* ---- HEAVISIDE accepts empty List ---- */
+/* List is dispatched element-wise; an empty List input returns an
+   empty List. */
 {
   const s = new Stack();
   s.push(RList([]));
@@ -5238,9 +5238,9 @@ giac._setFixtures({
     'session061: DIRAC(X-3) stays Symbolic');
 }
 
-/* ---- DIRAC accepts empty List — session191 wrapper-add ---- */
-/* session061 originally asserted a throw here; wrapper-add (session191)
-   means List is now dispatched element-wise, returning an empty List. */
+/* ---- DIRAC accepts empty List ---- */
+/* List is dispatched element-wise; an empty List input returns an
+   empty List. */
 {
   const s = new Stack();
   s.push(RList([]));
@@ -7627,30 +7627,26 @@ giac._setFixture('ilaplace(1,x,x)', 'Dirac(x)');
   }
 
   /* ===============================================================
- — MODULO ARITH cluster follow-up. Closes branches
- left by 's pin set. Five clusters:
- (a) DIV2MOD rejects Vector — mirror of DIVMOD
-           Vector pin (the two-result sibling was unpinned).
- (b) DIVMOD rejects Complex / String — extends the
-           Vector pin onto the per-arg type-check fall-throughs in
-           the integer-path guard at ops.js:_modDivBigInt sites.
-       (c) GCDMOD with one zero argument — gcd(a, 0) = a is the
-           identity edge of the extended-Euclidean GCD; pin both
-           directions (gcd(15, 0) and gcd(0, 15)) to guard against
-           a refactor that special-cases the (0,0) reject without
-           preserving the (a,0) and (0,a) accept paths.
-       (d) EXPANDMOD on a negative integer — `-7 mod 12 = 5`
-           centered. pinned positives only; this
-           guards the negative branch of `_centerMod`.
-       (e) FACTORMOD prime modulus boundary cases — m=2 (smallest
-           prime; previously unpinned), m=99 (largest composite
-           below the >=100 cutoff; previously unpinned — closes
- the boundary opposite to 's m=101 prime
-           reject).
- (f) DIVMOD MODSTO consultation — symmetric to 's
-           EXPANDMOD MODSTO consultation pin (the only modular op
-           whose MODSTO sensitivity was pinned).  Changing MODSTO
-           changes the DIVMOD result.
+     MODULO ARITH extended coverage — six clusters:
+     (a) DIV2MOD rejects Vector — mirrors the DIVMOD Vector rejection
+         (both two-result and one-result variants reject non-integer
+         input).
+     (b) DIVMOD rejects Complex / String — the per-arg type-check
+         fall-throughs in the integer-path guard at
+         ops.js:_modDivBigInt must reject these types.
+     (c) GCDMOD with one zero argument — gcd(a, 0) = a is the
+         identity edge of the extended-Euclidean GCD; pins both
+         directions (gcd(15, 0) and gcd(0, 15)) to guard against a
+         refactor that special-cases the (0,0) reject without
+         preserving the (a,0) and (0,a) accept paths.
+     (d) EXPANDMOD on a negative integer — `-7 mod 12 = 5`
+         (centered); guards the negative branch of `_centerMod`.
+     (e) FACTORMOD prime modulus boundary cases — m=2 (smallest
+         prime), m=99 (largest composite below the >=100 cutoff;
+         guards the boundary opposite to the m=101 prime reject).
+     (f) DIVMOD MODSTO consultation — changing MODSTO changes the
+         DIVMOD result (the only modular op whose MODSTO sensitivity
+         is pinned here).
   =============================================================== */
 
   /* ---- (a) DIV2MOD rejects Vector ---- */
