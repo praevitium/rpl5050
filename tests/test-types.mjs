@@ -11352,3 +11352,173 @@ for (const [make, code, label] of TYPE_CODE_TABLE) {
       'session263: 1_m 2_m %CH → Bad argument type (U=✗; same toRealOrThrow path as %)');
   }
 }
+
+/* ================================================================
+   Session 267 — C (Complex) and S (String) column rejection-pin pass,
+   plus V/M rejection pins for the combinatorial family.
+   26 matrix cells flipped ·→✗ across three table groups:
+     (1) C column — Real-decomp family: ZETA / LAMBERT / PSI           (3 cells)
+     (2) C column — Stat-dist family:   DIRAC / ERF / ERFC / BETA /
+                                         UTPC / UTPF / UTPT             (7 cells)
+     (3) C column — Combinatorial:      COMB / PERM / IQUOT /
+                                         IREMAINDER / XROOT             (5 cells)
+     (4) S column — Reference rows:     CONJ / RE / IM                  (3 cells)
+     (5) V/M columns — Combinatorial:   COMB / PERM / IQUOT /
+                                         IREMAINDER (V + M each)        (8 cells)
+   No source changes — all rejections were already correct behavior,
+   just untested.  Complex(1,2) is the representative Complex input;
+   Str('x') the String input; Vector/Matrix with Real elements for V/M.
+   ================================================================ */
+{
+  const C1 = Complex(1, 2);   // 1+2i — representative Complex input
+  const C2 = Complex(2, 1);   // 2+i  — for binary ops
+  const S1 = Str('x');        // String — representative String input
+  const V1 = Vector([Real(1), Real(2)]);
+  const V2 = Vector([Real(3), Real(4)]);
+  const M1 = Matrix([[Real(1), Real(2)], [Real(3), Real(4)]]);
+
+  // --- (1) C column — Real-decomp family ---
+  {
+    const s = new Stack(); s.push(C1);
+    assertThrows(() => lookup('ZETA').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) ZETA → Bad argument type (C=✗; _zetaScalar isInteger/isReal only; Complex → null → throw)');
+  }
+  {
+    const s = new Stack(); s.push(C1);
+    assertThrows(() => lookup('LAMBERT').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) LAMBERT → Bad argument type (C=✗; _lambertScalar isInteger/isReal only; Complex → null → throw)');
+  }
+  {
+    const s = new Stack(); s.push(C1);
+    assertThrows(() => lookup('PSI').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) PSI → Bad argument type (C=✗; _psiScalar isInteger/isReal only; Complex → null → throw)');
+  }
+
+  // --- (2) C column — Stat-dist family ---
+  {
+    const s = new Stack(); s.push(C1);
+    assertThrows(() => lookup('DIRAC').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) DIRAC → Bad argument type (C=✗; DIRAC scalar: isReal/isInteger/isBinaryInteger/isSym only; Complex falls through)');
+  }
+  {
+    const s = new Stack(); s.push(C1);
+    assertThrows(() => lookup('erf').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) ERF → Bad argument type (C=✗; _erfScalar isInteger/isReal/null pattern; Complex → null → throw)');
+  }
+  {
+    const s = new Stack(); s.push(C1);
+    assertThrows(() => lookup('erfc').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) ERFC → Bad argument type (C=✗; _erfcScalar isInteger/isReal/null pattern; Complex → null → throw)');
+  }
+  {
+    // BETA is arity 2: level2=a, level1=b
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('BETA').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) BETA → Bad argument type (C=✗; _betaScalar aNum = isInteger?…:isReal?…:null; Complex a-arg → null → throw)');
+  }
+  {
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('UTPC').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) UTPC → Bad argument type (C=✗; asReal helper isInteger/isReal only; Complex nu-arg → throw)');
+  }
+  {
+    // UTPF is arity 3: level3=v1, level2=v2, level1=x
+    const s = new Stack(); s.push(C1); s.push(C2); s.push(C1);
+    assertThrows(() => lookup('UTPF').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) Complex(1,2) UTPF → Bad argument type (C=✗; same asReal helper; Complex v1-arg → throw)');
+  }
+  {
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('UTPT').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) UTPT → Bad argument type (C=✗; same asReal helper; Complex nu-arg → throw)');
+  }
+
+  // --- (3) C column — Combinatorial family ---
+  {
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('COMB').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) COMB → Bad argument type (C=✗; _combPermArgs: !isInteger&&!isReal → throw; applies to PERM same guard)');
+  }
+  {
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('PERM').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) PERM → Bad argument type (C=✗; same _combPermArgs guard as COMB)');
+  }
+  {
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('IQUOT').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) IQUOT → Bad argument type (C=✗; _intQuotientArg: isInteger/isReal only; Complex → throw; applies to IREMAINDER same guard)');
+  }
+  {
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('IREMAINDER').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) IREMAINDER → Bad argument type (C=✗; same _intQuotientArg guard as IQUOT)');
+  }
+  {
+    // XROOT: level2=radicand y, level1=degree x — both args Complex → Bad argument type on degree
+    const s = new Stack(); s.push(C1); s.push(C2);
+    assertThrows(() => lookup('XROOT').fn(s), /Bad argument type/i,
+      'session267: Complex(1,2) Complex(2,1) XROOT → Bad argument type: expected real, got complex (C=✗; degree x goes through toRealOrThrow which explicitly rejects Complex)');
+  }
+
+  // --- (4) S (String) column — CONJ / RE / IM ---
+  {
+    const s = new Stack(); s.push(S1);
+    assertThrows(() => lookup('CONJ').fn(s), /Bad argument type/i,
+      'session267: Str("x") CONJ → Bad argument type (S=✗; _conjScalar isReal/isInteger/isRational/isComplex/isName/isSym dispatch; no isString branch)');
+  }
+  {
+    const s = new Stack(); s.push(S1);
+    assertThrows(() => lookup('RE').fn(s), /Bad argument type/i,
+      'session267: Str("x") RE → Bad argument type (S=✗; _reScalar same dispatch structure; no isString branch)');
+  }
+  {
+    const s = new Stack(); s.push(S1);
+    assertThrows(() => lookup('IM').fn(s), /Bad argument type/i,
+      'session267: Str("x") IM → Bad argument type (S=✗; _imScalar same dispatch; no isString branch)');
+  }
+
+  // --- (5) V/M columns — Combinatorial family ---
+  // COMB: representative for all four ops (COMB/PERM/IQUOT/IREMAINDER)
+  // All use _combPermArgs or _intQuotientArg — neither has isVector/isMatrix branch.
+  {
+    const s = new Stack(); s.push(V1); s.push(V2);
+    assertThrows(() => lookup('COMB').fn(s), /Bad argument type/i,
+      'session267: V[1,2] V[3,4] COMB → Bad argument type (V=✗; _combPermArgs !isInteger&&!isReal rejects Vector; representative for PERM/IQUOT/IREMAINDER same path)');
+  }
+  {
+    const s = new Stack(); s.push(M1); s.push(M1);
+    assertThrows(() => lookup('COMB').fn(s), /Bad argument type/i,
+      'session267: M[[1,2],[3,4]] M[[1,2],[3,4]] COMB → Bad argument type (M=✗; same _combPermArgs guard; representative for PERM/IQUOT/IREMAINDER same path)');
+  }
+  {
+    const s = new Stack(); s.push(V1); s.push(V2);
+    assertThrows(() => lookup('PERM').fn(s), /Bad argument type/i,
+      'session267: V[1,2] V[3,4] PERM → Bad argument type (V=✗; same _combPermArgs guard as COMB V pin)');
+  }
+  {
+    const s = new Stack(); s.push(M1); s.push(M1);
+    assertThrows(() => lookup('PERM').fn(s), /Bad argument type/i,
+      'session267: M PERM → Bad argument type (M=✗; same _combPermArgs guard as COMB M pin)');
+  }
+  {
+    const s = new Stack(); s.push(V1); s.push(V2);
+    assertThrows(() => lookup('IQUOT').fn(s), /Bad argument type/i,
+      'session267: V[1,2] V[3,4] IQUOT → Bad argument type (V=✗; _intQuotientArg rejects Vector; same for IREMAINDER)');
+  }
+  {
+    const s = new Stack(); s.push(M1); s.push(M1);
+    assertThrows(() => lookup('IQUOT').fn(s), /Bad argument type/i,
+      'session267: M IQUOT → Bad argument type (M=✗; same _intQuotientArg guard; same for IREMAINDER)');
+  }
+  {
+    const s = new Stack(); s.push(V1); s.push(V2);
+    assertThrows(() => lookup('IREMAINDER').fn(s), /Bad argument type/i,
+      'session267: V[1,2] V[3,4] IREMAINDER → Bad argument type (V=✗; same _intQuotientArg guard as IQUOT V pin)');
+  }
+  {
+    const s = new Stack(); s.push(M1); s.push(M1);
+    assertThrows(() => lookup('IREMAINDER').fn(s), /Bad argument type/i,
+      'session267: M IREMAINDER → Bad argument type (M=✗; same _intQuotientArg guard as IQUOT M pin)');
+  }
+}
