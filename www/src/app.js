@@ -307,7 +307,10 @@ class App {
    *  state prevents the app from loading correctly. */
   _installChromeToggles() {
     const MODES = ['full', 'simple', 'minimal'];
-    let idx = 0;
+    const CHROME_KEY = 'hp50.ui.chrome';
+    let savedMode;
+    try { savedMode = localStorage.getItem(CHROME_KEY); } catch { /* ignore */ }
+    let idx = MODES.includes(savedMode) ? MODES.indexOf(savedMode) : 0;
     document.body.classList.add(`mode-${MODES[idx]}`);
     document.querySelector('.brand')?.addEventListener('click', (e) => {
       if (e.ctrlKey || e.metaKey) {
@@ -319,6 +322,7 @@ class App {
       document.body.classList.remove(`mode-${MODES[idx]}`);
       idx = (idx + 1) % MODES.length;
       document.body.classList.add(`mode-${MODES[idx]}`);
+      try { localStorage.setItem(CHROME_KEY, MODES[idx]); } catch { /* ignore */ }
     });
     document.querySelector('.model')?.addEventListener('click', () => {
       const sp = this.sidePanel;
@@ -343,6 +347,7 @@ class App {
     const KEYS = [
       'hp50.state',
       'hp50.ui.sidePanel',
+      'hp50.ui.chrome',
       'rpl5050.chatbot.modelId',
       'rpl5050.chatbot.consented.v1',
       'rpl5050.chatbot.migrated.dropPremium.v1',
