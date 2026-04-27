@@ -15,7 +15,7 @@ open, and the next-session queue.
 
 ---
 
-## Current implementation status (as of session 264)
+## Current implementation status (as of session 268)
 
 
 ### Program value — parser & round-trip
@@ -309,7 +309,33 @@ open, and the next-session queue.
 
 ---
 
-## Session 264 (this run) — what shipped
+## Session 268 (this run) — what shipped
+
+Post-ship verification pass on Sunday 2026-04-26.  All R-bucket findings
+in `docs/REVIEW.md` remain fully closed at run-entry (R-001 — R-012
+all resolved; O-011 + O-012 + O-014 `[deferred - post-ship]`).
+
+**Verification-only run — no source or test change.**  Confirmed
+5666 / 0 clean baseline (Δ+26 from session 264's 5640 — entirely from
+sibling lanes: session 265-unit-tests, session 266-command-support,
+session 266-code-review, session 267-data-type-support).  The RPL
+programming substrate remains in the fully-documented, zero-drift
+condition established by session 180.
+
+Verification gates at exit:
+- `node --check` on `www/src/rpl/ops.js`, `state.js`, `parser.js` → OK.
+- `node tests/test-all.mjs` → 5666 / 0 passed.
+- `node tests/test-persist.mjs` → all passed.
+- `node tests/sanity.mjs` → 22 / 0 passed in 5 ms.
+
+Session-264 `(this run)` heading demoted to plain past tense below
+(per the recurring R-005 discipline — each rpl-programming-lane run
+that adds a `(this run)` chapter must also demote its predecessor).
+Status stamp bumped from "as of session 264" to "as of session 268".
+
+---
+
+## Session 264 — what shipped
 
 Post-ship verification pass on Sunday 2026-04-26.  Scope-capped at
 ~1/3 workload per the scheduled-task guardrail.  All R-bucket findings
