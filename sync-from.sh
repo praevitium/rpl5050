@@ -5,6 +5,11 @@ REMOTE_HOST="mini"
 PROJECT_PATH="/Users/me/Code/play/rpl5050"
 LOCAL_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+if [[ "$(hostname -s)" == "${REMOTE_HOST}" ]]; then
+  echo "Error: this script should not be run on ${REMOTE_HOST}."
+  exit 1
+fi
+
 if [ "$LOCAL_DIR" != "$PROJECT_PATH" ]; then
   echo "Warning: script is not in expected location ($PROJECT_PATH)"
   echo "Local dir: $LOCAL_DIR"

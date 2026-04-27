@@ -4,10 +4,10 @@
 scheduled-task lane. It tracks what tests exist, where the coverage gaps are,
 which tests are known-flaky or known-failing, and what to pick up next run.
 
-**Last updated.** Session 265 (2026-04-26).  Unit-tests lane run
-(snapshot refresh — Sunday 2026-04-26; 27th
+**Last updated.** Session 269 (2026-04-26).  Unit-tests lane run
+(snapshot refresh — Sunday 2026-04-26; 28th
 release-window run in this lane after sessions 156, 160, 164, 160-unit-tests,
-168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246, 250, 256, 260, 265).
+168, 173, 177, 181, 185, 189, 193, 198, 202, 206, 210, 214, 218, 223, 228, 238, 242, 246, 250, 256, 260, 265, 269).
 Note: session-233-unit-tests lock was pruned as crashed (header-only
 update; no session log written) — absorbed into a prior run's snapshot.
 Note: session 238 log index claims a coverage snapshot was added but
@@ -833,6 +833,62 @@ Session 117 unit-tests deltas:
   `cowork_allow_file_delete` permission prompt is blocked in
   unsupervised mode.  Filed an "open — blocked by tooling" pointer
   in the known-gaps list for a human-present run to clear.
+
+## Coverage snapshot (session 269)
+
+Sibling deltas absorbed since session-265 snapshot
+(5640 → 5666, **+26** over sessions 266–268):
+- **Session 266** (command-support) — doc-only run; **0** assertion
+  deltas.  `docs/COMMANDS.md` Counts stamp 262 → 266; session-log
+  back-fill for sessions 263–265-code-review.  `docs/REVIEW.md`
+  preamble advanced.  `register()` count 480 / 461 unchanged.
+- **Session 267** (data-type-support) — **+26** assertions in
+  `tests/test-types.mjs` (1189 → 1215; `session267:` labels) —
+  C/S/V/M column rejection-pin pass: Complex-column pins for ZETA /
+  LAMBERT / PSI / DIRAC / ERF / ERFC / BETA / UTPC / UTPF / UTPT
+  (10 cells); COMB / PERM / IQUOT / IREMAINDER / XROOT V+M column
+  (13 cells); CONJ / RE / IM String-column (3 cells).  No source
+  change — rejections were already correct; pins confirm coverage.
+- **Session 268** (rpl-programming) — doc-only verification pass;
+  **0** assertion deltas.  `docs/RPL.md` stamp 264 → 268;
+  `docs/REVIEW.md` preamble advanced.
+
+Session 269 unit-tests deltas (this run):
+- **0 new assertions** — last-run snapshot-refresh.  All R-bucket
+  findings confirmed closed at entry; T-001 / T-002 / T-003 / T-004
+  all resolved prior sessions.  Gates confirmed green on entry;
+  TESTS.md header, snapshot, and session-log index updated.
+
+Baseline at session-269 entry: **5666 / 0** (fully green).
+Final: **5666 / 0** — fully green (+0 from this run).
+`test-persist.mjs` passed / 0 (stable).
+`sanity.mjs` 22 / 0 (~5 ms).
+
+| File                        | OK   | FAIL | Notes                                    |
+|-----------------------------|------|------|------------------------------------------|
+| test-algebra.mjs            | 1064 | 0    |                                          |
+| test-arrow-aliases.mjs      |   19 | 0    |                                          |
+| test-binary-int.mjs         |  122 | 0    |                                          |
+| test-comparisons.mjs        |  111 | 0    |                                          |
+| test-control-flow.mjs       |  799 | 0    |                                          |
+| test-entry.mjs              |  117 | 0    |                                          |
+| test-eval.mjs               |   61 | 0    |                                          |
+| test-helpers.mjs            |   43 | 0    |                                          |
+| test-lists.mjs              |  190 | 0    |                                          |
+| test-matrix.mjs             |  347 | 0    |                                          |
+| test-numerics.mjs           |  709 | 0    |                                          |
+| test-reflection.mjs         |  382 | 0    |                                          |
+| test-stack-ops.mjs          |   48 | 0    |                                          |
+| test-stats.mjs              |   55 | 0    |                                          |
+| test-types.mjs              | 1215 | 0    | +26 s267 C/S/V/M rejection pins.         |
+| test-ui.mjs                 |   77 | 0    |                                          |
+| test-units.mjs              |   56 | 0    |                                          |
+| test-variables.mjs          |  251 | 0    |                                          |
+| **test-all (aggregate)**    | **5666** | **0** | Session 269 close.  Fully green. |
+| test-persist.mjs (separate) | passed | 0  | Stable.                                  |
+| sanity.mjs (standalone)     |   22 | 0    | ~5 ms smoke suite.                       |
+
+### Prior snapshot — Session 265 (retained for context)
 
 ## Coverage snapshot (session 265)
 

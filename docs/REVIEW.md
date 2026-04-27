@@ -8798,3 +8798,107 @@ Log pointer: `logs/meta-2026-04-26-code-review-4.md`.
 Zero release-blocker findings.
 
 Log pointer: `logs/session-266.md`.
+
+---
+
+### Session 267 — what shipped (data-type-support, last run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-data-type-support`.
+**Lock.** `utils/@locks/session267-data-type-support.json`, scope =
+`[tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`.
+Released gracefully.
+
+**Work done.**
+- Folded in sibling sessions 263–266 (all released gracefully).
+- Baseline verified at entry: 5640 / 0 / 22 — fully green.
+- +26 assertions in `tests/test-types.mjs` (1189 → 1215,
+  `session267:` labels): C/S/V/M column rejection-pin pass —
+  Complex-column for ZETA / LAMBERT / PSI / DIRAC / ERF / ERFC /
+  BETA / UTPC / UTPF / UTPT (10 cells), combinatorial V+M for
+  COMB / PERM / IQUOT / IREMAINDER / XROOT (13 cells), String-
+  column for CONJ / RE / IM (3 cells).  No source change.
+- `docs/DATA_TYPES.md` stamp 263 → 267; 26 `·` cells flipped `✗`.
+
+**Findings delta.**
+- **O-011** — no new occurrences (lock released gracefully with
+  `releaseReason`).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]`.
+- **O-012** `[deferred - post-ship]` (stray file).
+- **O-014** `[deferred - post-ship]`.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-267.md`.
+
+---
+
+### Session 268 — what shipped (rpl-programming, last run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-rpl-programming`.
+**Lock.** `utils/@locks/session268-rpl-programming.json`, scope =
+`[docs/RPL.md, logs/]`.
+Released gracefully.
+
+**Work done.**
+- Folded in sibling sessions 266, 267 (both released gracefully).
+- Baseline verified at entry: 5666 / 0 / 22 — fully green.
+  (+26 from session 267 vs. session 264 baseline of 5640.)
+- Doc-only verification pass: `docs/RPL.md` status stamp 264 → 268;
+  session-268 chapter added to RPL.md.
+- R-001 through R-012 all confirmed resolved; no source changes.
+
+**Findings delta.**
+- **O-011** — no new occurrences (lock released gracefully with
+  `releaseReason`).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]`.
+- **O-012** `[deferred - post-ship]` (stray file).
+- **O-014** `[deferred - post-ship]`.
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-268.md`.
+
+---
+
+### Session 269 — what shipped (unit-tests, last run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-unit-tests`.
+**Lock.** `utils/@locks/session269-unit-tests.json`, scope =
+`[docs/TESTS.md, docs/REVIEW.md, logs/session-269.md]`.
+Released gracefully at end of run.
+
+**Work done.**
+- Folded in sibling sessions 266 (command-support), 267 (data-type-
+  support), 268 (rpl-programming); all released gracefully.
+- Baseline verified at entry: **5666 / 0** (fully green);
+  `test-persist.mjs` all passed; `sanity.mjs` 22 / 0 in ~5 ms.
+- Zero release-blocker findings; T-001 / T-002 / T-003 / T-004
+  all resolved in prior sessions.  D-001 closed ship-prep 2026-04-25.
+- `docs/TESTS.md` stamp advanced 265 → 269; new session-269
+  coverage snapshot added (5666 / 0 table); sibling deltas 266–268
+  absorbed.
+- `docs/REVIEW.md` session log entries appended for sessions
+  267, 268, and 269 (this run).
+
+**Findings delta.**
+- **O-011** — no new occurrences (lock released gracefully with
+  `releaseReason`).  `[deferred - post-ship]`.
+- **O-012** — carried forward.  `[deferred - post-ship]`.
+- **O-014** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]`.
+- **O-012** `[deferred - post-ship]` (stray file).
+- **O-014** `[deferred - post-ship]`.
+
+Zero release-blocker findings.  All lane work complete.
+
+Log pointer: `logs/session-269.md`.
