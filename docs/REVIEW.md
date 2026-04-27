@@ -6,7 +6,10 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 265-code-review (thirty-eighth review-lane
+**Last updated.** Session 266 (command-support — doc-reconciliation,
+last run; COMMANDS.md stamp 262 → 266; session-log back-fill 263–265-code-review;
+5640/0; O-011/O-012/O-014 carried forward; no findings closed; 2026-04-26).
+Prior update: Session 265-code-review (thirty-eighth review-lane
 run, 2026-04-26).
 Prior update: Session 265 (unit-tests — snapshot refresh;
 5640/0 clean; TESTS.md stamp 260 → 265; **lock unreleased, session
@@ -8749,3 +8752,46 @@ unit-tests run made no REVIEW.md changes before crashing).
 Zero release-blocker findings.
 
 Log pointer: `logs/meta-2026-04-26-code-review-4.md`.
+
+---
+
+### Session 266 — what shipped (command-support doc-reconciliation, last run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-command-support`.
+**Lock.** `utils/@locks/session266-command-support.json`, scope =
+`[docs/COMMANDS.md, docs/REVIEW.md, logs/]`.
+
+**Work done.**
+- Folded in sibling sessions 263 (data-type-support), 264 (rpl-programming),
+  265 (unit-tests — crash), 265-code-review (thirty-eighth review run).
+- Baseline verified at entry: 5640 / 0 / 22 — fully green.
+- Register count verified: 480 / 461 — unchanged.
+- Spot checks: DATA_TYPES.md stamp session 263 ✓; RPL.md stamp session
+  264 ✓; TESTS.md stamp session 265 ✓ (5640/0 snapshot); COMMANDS.md
+  stamp session 262 at entry (bumped to 266 this run).
+- O-012: `www/src/ui/keyboard.js.bak` re-verified present.
+- O-014: `www/src/ai/chat-bot.js` carried forward `[deferred - post-ship]`.
+- All locks for sessions 262–264 released gracefully with `releaseReason`.
+- Session-265 unit-tests: lock unreleased (crash) — O-011 count already
+  incremented in session-265-code-review; no further change this run.
+- `docs/COMMANDS.md` Counts stamp advanced session 262 → 266; session-log
+  entries back-filled for sessions 263 / 264 / 265 / 265-code-review.
+- `docs/REVIEW.md` preamble updated to fold in session 266.
+
+**Findings delta.**
+- **O-011** — no new occurrences this run (lock released gracefully).
+  30 code-review-lane runs, count 107.  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak` still
+  in tree).  Aged to 18 code-review-lane runs (unchanged from last
+  code-review entry — this is not a code-review run).
+  `[deferred - post-ship]`.
+- **O-014** — carried forward.  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 30 code-review-lane runs, count 107.
+- **O-012** `[deferred - post-ship]` (stray file) — 18 code-review-lane runs.
+- **O-014** `[deferred - post-ship]` (unlogged algebra edit traceability + chat-bot.js mtime).
+
+Zero release-blocker findings.
+
+Log pointer: `logs/session-266.md`.

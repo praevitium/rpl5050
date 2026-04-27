@@ -21,7 +21,7 @@ exists at all**, not the shape of its type coverage.
 Where relevant the **Notes** column records the last session number that
 touched the row, and any known caveats worth carrying forward.
 
-## Counts (as of session 262 — 2026-04-26)
+## Counts (as of session 266 — 2026-04-26)
 
 - Fully shipped (✓): 447 (no net change since session 149 — sessions
   150 / 151 / 152 / 153 / 154 / 155 / 156 / 157 / 158 / 159 / 160 /
@@ -808,6 +808,63 @@ If a user asks for one of these, the correct response is to point at
 ## Session log — status changes
 
 Maintain chronologically, most recent first.
+
+- **session 266** (2026-04-26) — `rpl5050-command-support` lane.
+  Doc-reconciliation pass (last run).  Counts stamp advanced from session
+  262 → 266; session-log entries back-filled for sessions 263 / 264 / 265 /
+  265-code-review (four sibling sessions with no prior COMMANDS.md entries).
+  O-011 / O-012 / O-014 carried forward `[deferred - post-ship]`
+  (no Commands-bucket findings open).  No source or test edits.  No ✗ → ✓
+  row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5640 / 66 / 22.  Run-close: **5640 / 66 / 22**.
+  Lock = `utils/@locks/session266-command-support.json`, scope
+  `[docs/COMMANDS.md, docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 265-code-review** (2026-04-26) — `rpl5050-code-review` lane.
+  Thirty-eighth review-lane run; post-ship audit.  REVIEW.md preamble
+  folded in sibling sessions 262–264; session-265 (unit-tests crash)
+  absorbed.  O-011 aged 29 → 30 runs, count 106 → 107 (session-265
+  unit-tests crash); O-012 aged 17 → 18 code-review-lane runs; O-014 item 4
+  stable (chat-bot.js mtime `Apr 26 23:26`, unchanged).  No source or test
+  edits.  No ✗ → ✓ row transitions.  `register()` count unchanged at
+  480 / 461.
+  Run-entry: 5640 / 66 / 22.  Run-close: **5640 / 66 / 22**.
+  Lock = `utils/@locks/session265-code-review.json`, scope
+  `[docs/REVIEW.md, logs/]`, released at end of run.
+
+- **session 265** (2026-04-26) — `rpl5050-unit-tests` lane.
+  TESTS.md snapshot refresh absorbing sessions 261–264.  "Last updated"
+  stamp advanced session 260 → 265; 27th release-window run; session-265
+  coverage snapshot added (5640 aggregate, unchanged from session-263
+  close).  Crashed before releasing lock — lock has no `released` field,
+  no comprehensive session log written; TESTS.md snapshot committed before
+  crash.  No new assertions.  No ✗ → ✓ row transitions.  `register()`
+  count unchanged at 480 / 461.
+  Run-entry: 5640 / 66 / 22.  Run-close: **5640 / 66 / 22** (crash; no delta).
+  Lock = `utils/@locks/session265-unit-tests.json`, scope
+  `[docs/TESTS.md, docs/REVIEW.md, logs/session-265.md]`, NOT released
+  (crash — O-011 aging count 106 → 107).
+
+- **session 264** (2026-04-26) — `rpl5050-rpl-programming` lane.
+  Verification-only pass.  RPL.md status stamp bumped session 259 → 264;
+  session-log pointer back-fill for sessions 241 / 245 / 249.  All
+  RPL-bucket findings confirmed closed.  No source or test edits.
+  No ✗ → ✓ row transitions.  `register()` count unchanged at 480 / 461.
+  Run-entry: 5621 / 66 / 22.  Run-close: **5621 / 66 / 22**.
+  Lock = `utils/@locks/session264-rpl-programming.json`, scope
+  `[docs/RPL.md, logs/]`, released at end of run.
+
+- **session 263** (2026-04-26) — `rpl5050-data-type-support` lane.
+  U-column rejection-pin pass.  +19 assertions in `tests/test-types.mjs`
+  (1170 → 1189; `session263:` labels) — 19 rejection pins across 19
+  DATA_TYPES.md matrix rows confirming `Bad argument type` for Unit
+  operands in ops that reject the type.  DATA_TYPES.md "Last updated" stamp
+  advanced session 258 → 263.  No ✗ → ✓ row transitions.  `register()`
+  count unchanged at 480 / 461.
+  Run-entry: 5621 / 66 / 22.  Run-close: **5640 / 66 / 22**.
+  Lock = `utils/@locks/session263-data-type-support.json`, scope
+  `[tests/test-types.mjs, docs/DATA_TYPES.md, logs/]`, released at end
+  of run.
 
 - **session 262** (2026-04-26) — `rpl5050-command-support` lane.
   Doc-reconciliation pass.  Counts stamp advanced from session 257 →
