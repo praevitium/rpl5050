@@ -6,7 +6,15 @@ across the whole repo, classified into the six lane buckets
 (`User Interface`, `Commands`, `Data Types`, `RPL`, `Unit Tests`,
 `Other`), so the sibling implementer lanes can pick them up as a group.
 
-**Last updated.** Session 268 (rpl-programming — final verification
+**Last updated.** Session 270-code-review (thirty-ninth and final
+review-lane run; sessions 266–269 folded in; 5666/0 clean; O-011
+count 107 → 108 (session266-code-review phantom lock); O-012 aged
+18 → 19 code-review-lane runs; O-014 chat-bot.js mtime updated
+Apr 26 23:26 → Apr 27 03:23; zero release-blocker findings; 2026-04-26).
+Prior update: Session 269 (unit-tests — snapshot refresh; TESTS.md
+stamp 265 → 269; 5666/0; session-log entries for sessions 267/268/269
+appended to REVIEW.md; released gracefully).
+Prior update: Session 268 (rpl-programming — final verification
 pass; 5666/0 clean; RPL.md stamp 264 → 268; session-268 log written;
 all R-findings confirmed closed; 2026-04-26).
 Prior update: Session 266 (command-support — doc-reconciliation,
@@ -21,20 +29,22 @@ Prior update: Session 264 (rpl-programming — verification-only pass;
 5640/0 clean; RPL.md stamp 259 → 264; session-264 log written).
 Prior update: Session 262 (command-support — doc-reconciliation;
 COMMANDS.md stamp 257 → 262; session-log back-fill 258–261; 5621/0).
-Prior review-lane baseline = session 261-code-review (thirty-seventh
+Prior review-lane baseline = session 265-code-review (thirty-eighth
 review-lane run, 2026-04-26).
-This run folds in four sibling-lane sessions since session 261-code-review:
-262 (command-support — COMMANDS.md stamp 257 → 262; back-fill for
-sessions 258–261; doc-only; 5621/0; released gracefully);
-263 (data-type-support — +19 assertions in `tests/test-types.mjs`
-(1170 → 1189; `session263:` U-column rejection pins); 5621 → 5640/0;
-DATA_TYPES.md stamp 258 → 263; released gracefully);
-264 (rpl-programming — verification-only; RPL.md stamp 259 → 264;
-5640/0; released gracefully);
-265 (unit-tests — snapshot refresh; TESTS.md stamp 260 → 265;
-5640/0; **lock unreleased + session log missing** — crash;
-`session265-unit-tests.json` claimed `docs/REVIEW.md` in scope but
-no changes made to REVIEW.md; O-011 count → 107).
+This run folds in five sibling-lane sessions since session 265-code-review:
+266 (command-support — COMMANDS.md stamp 262 → 266; session-log
+back-fill 263–265-code-review; doc-only; 5640/0; released gracefully;
+note: a phantom `session266-code-review.json` lock also exists with
+`released: false` and the same `acquiredAt` as session265-code-review —
+no corresponding log; recorded as new O-011 occurrence, count 107 → 108);
+267 (data-type-support — +26 assertions in `tests/test-types.mjs`
+(1189 → 1215; `session267:` C/S/V/M column rejection pins); 5640 → 5666/0;
+DATA_TYPES.md stamp 263 → 267; released gracefully with `releaseReason`);
+268 (rpl-programming — verification-only; RPL.md stamp 264 → 268;
+5666/0; released gracefully with `releaseReason`);
+269 (unit-tests — snapshot refresh; TESTS.md stamp 265 → 269; 5666/0;
+session-log entries for sessions 267/268/269 appended to REVIEW.md;
+released gracefully with `releaseReason`).
 
 Carry-over from session 103: the project tree was relocated —
 `src/` → `www/src/`.  All Where: lines filed prior to session 099
@@ -57,34 +67,36 @@ logs it.  Entries are NEVER deleted — they become the audit trail.
 A finding that turned out to be a phantom on second-read is marked
 `[retracted - session NNN]` with a one-line reason.
 
-**Baseline (session 265-code-review).** Sessions 262, 263, 264 all
-released gracefully with `releaseReason` fields.  Session 265
-(unit-tests) lock unreleased (crash — missing `released` field;
-claimed `docs/REVIEW.md` in scope but no changes made; O-011
-count → 107).  O-011 / O-012 / O-014 all carry forward as
-`[deferred - post-ship]`; zero release-blocker findings.
+**Baseline (session 270-code-review).** Sessions 266 (command-support),
+267 (data-type-support), 268 (rpl-programming), 269 (unit-tests) all
+released gracefully with `releaseReason` fields.  Phantom lock
+`session266-code-review.json` detected (`released: false`,
+same `acquiredAt` as session265-code-review; no corresponding log) —
+recorded as new O-011 occurrence, count 107 → 108.  O-011 / O-012 /
+O-014 all carry forward as `[deferred - post-ship]`; zero
+release-blocker findings.
 At code-review-lane *entry*:
-`node tests/test-all.mjs` = **5640 passing / 0 failing**
-(+19 from session 263; stable through sessions 264, 265);
+`node tests/test-all.mjs` = **5666 passing / 0 failing**
+(+26 from session 267; stable through sessions 268, 269);
 `node tests/test-persist.mjs` = **passing / 0 failing**
 (stable, unchanged); `node tests/sanity.mjs` = **22 passing
 / 0 failing in ~5 ms** (stable).
 `grep -c "register(" www/src/rpl/ops.js` = **480**
 (`grep -cE "^register\(" www/src/rpl/ops.js` = **461** —
-unchanged; sessions 262–265 add no new register calls).
+unchanged; sessions 266–269 add no new register calls).
 
 **This run's own edits.** Doc/hygiene only, no source changes:
   1. **`docs/REVIEW.md`** — preamble rewritten to fold in
-     sibling sessions 262–265; baseline block updated to session
-     265-code-review; O-011 aged 29 → 30 runs, count 106 → 107
-     (session 265-unit-tests crash); O-012 aged 17 → 18
-     code-review-lane runs; O-014 carried forward; session log
-     entries for sessions 265 (unit-tests crash) and
-     265-code-review appended.
-  2. **`logs/meta-2026-04-26-code-review-4.md`** — this run's
+     sibling sessions 266–269; baseline block updated to session
+     270-code-review; O-011 aged 30 → 31 code-review-lane runs,
+     count 107 → 108 (session266-code-review phantom lock); O-012
+     aged 18 → 19 code-review-lane runs; O-014 updated with new
+     chat-bot.js mtime (Apr 27 03:23 from Apr 26 23:26); session
+     log entry for session 270-code-review appended.
+  2. **`logs/meta-2026-04-26-code-review-5.md`** — this run's
      session log (meta file: doc-only run, no source changes).
 
-**Lock.** Held `utils/@locks/session265-code-review.json`,
+**Lock.** Held `utils/@locks/session270-code-review.json`,
 scope = `[docs/REVIEW.md, logs/]`.
 Released at end of run.
 
@@ -3965,6 +3977,13 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   still returns one hit (`www/src/ui/keyboard.js.bak`); mtime
   2026-04-25; unchanged across all four re-checks.
   **Age.** 13 code-review-lane runs.
+  Re-verified sessions 246-code-review, 251-code-review,
+  255-code-review, 261-code-review, 265-code-review, 270-code-review
+  (this run): `find www/ -name '*.bak*'` still returns one hit
+  (`www/src/ui/keyboard.js.bak`); mtime 2026-04-25; unchanged
+  across all six re-checks.  No interactive session has approved
+  the delete; tooling gate unchanged.
+  **Age.** 19 code-review-lane runs.
   **Status.** open.  Lane = `rpl5050-ui-development` or any
   lane in an interactive session.  `[deferred - post-ship]`
   pending interactive approval — no behavior risk.
@@ -4046,10 +4065,20 @@ are UI-adjacent but classified under Other for bookkeeping.)_
   Chat-bot.js audit can happen in the first post-ship session.
 - **Confidence.** high — lock body, session-250.md, TESTS.md
   snapshot, and file mtimes all verified.
-- **Age.** 1 run (filed session 251-code-review; partially
-  retracted session 252).
+- **Age.** 7 runs (filed session 251-code-review; partially
+  retracted session 252; carried forward sessions 255, 261,
+  265, 265-code-review, 266, 267, 268, 269, 270-code-review).
+  Re-verified session 270-code-review: `www/src/ai/chat-bot.js`
+  mtime is now `Apr 27 03:23` (was `Apr 26 23:26` at sessions
+  261-code-review through 269).  A new unlocked modification
+  occurred between session 269 (unit-tests, `releasedAt`
+  2026-04-26T12:10) and this review run.  The file has no
+  session-label comments identifying the change; behavior audit
+  deferred per the post-ship plan.  `tests/test-algebra.mjs`
+  +3 assertions remain passing (5666/0 suite).
 - **Status.** `[deferred - post-ship]` — items 1 and 2 retracted;
   items 3 and 4 are low-risk hygiene with no behavior impact.
+  chat-bot.js new mtime recorded; full audit deferred post-ship.
 
 ---
 
@@ -8902,3 +8931,64 @@ Released gracefully at end of run.
 Zero release-blocker findings.  All lane work complete.
 
 Log pointer: `logs/session-269.md`.
+
+---
+
+### Session 270-code-review — what shipped (thirty-ninth and final review-lane run)
+
+**Date.** 2026-04-26.  **Lane.** `rpl5050-code-review`.
+**Lock.** `utils/@locks/session270-code-review.json`, scope =
+`[docs/REVIEW.md, logs/]`.
+
+**Work done.**
+- Folded in sibling sessions 266 (command-support), 267 (data-type-
+  support), 268 (rpl-programming), 269 (unit-tests); all four
+  released gracefully with `releaseReason`.
+- Baseline verified at entry: **5666 / 0** (fully green);
+  `test-persist.mjs` all passed; `sanity.mjs` 22 / 0 in ~5 ms.
+  Register count verified: 480 / 461 — unchanged.
+- Spot checks: COMMANDS.md stamp session 266 ✓; DATA_TYPES.md stamp
+  session 267 ✓ (+26 C/S/V/M rejection pins, 1189 → 1215);
+  RPL.md stamp session 268 ✓ (verification-only, all R-findings
+  confirmed closed); TESTS.md stamp session 269 ✓ (5666/0 snapshot
+  written, session-log entries for sessions 267–269 appended).
+- Phantom lock detected: `session266-code-review.json` has
+  `released: false` with `acquiredAt: 1777247821` (same timestamp
+  as `session265-code-review.json`). No corresponding log file
+  exists. Recorded as new O-011 occurrence (count 107 → 108).
+- O-012: `www/src/ui/keyboard.js.bak` re-verified present, mtime
+  2026-04-25; unchanged.  Aged to 19 code-review-lane runs.
+- O-014: `www/src/ai/chat-bot.js` mtime now `Apr 27 03:23`
+  (previously `Apr 26 23:26` — a new unlocked modification
+  occurred between session 269 close and this run).  No session
+  labels identify the change; deferred per O-014 plan.
+- R-002 (`_driveGen gen.return()`): confirmed resolved in source —
+  `www/src/rpl/ops.js:4378` has `try { gen.return(); } catch (_) {}`;
+  REVIEW.md body already shows `resolved session-101`.
+- `docs/REVIEW.md` preamble rewritten to fold in sessions 266–269;
+  baseline block updated; O-011 aged 30 → 31 code-review-lane runs,
+  count 107 → 108; O-012 aged 18 → 19 runs (inline body updated);
+  O-014 updated with new mtime observation.
+
+**Findings delta.**
+- **O-011** — 30 → **31** code-review-lane runs.  Phantom
+  `session266-code-review.json` (`released: false`, no log) adds
+  one occurrence; count 107 → **108** since session 106.  Sessions
+  266–269 all released gracefully with `releaseReason` (positive
+  trend continues).  `[deferred - post-ship]`.
+- **O-012** — re-verified present (`www/src/ui/keyboard.js.bak`
+  still in tree, mtime 2026-04-25).  Aged to **19** code-review-lane
+  runs.  `[deferred - post-ship]`.
+- **O-014** — chat-bot.js new mtime `Apr 27 03:23` (was
+  `Apr 26 23:26`).  Low-risk; audit deferred post-ship.
+  `[deferred - post-ship]`.
+
+**Open queue at run-close:**
+- **O-011** `[deferred - post-ship]` — 31 code-review-lane runs, count 108.
+- **O-012** `[deferred - post-ship]` (stray file) — 19 code-review-lane runs.
+- **O-014** `[deferred - post-ship]` (unlogged algebra edit traceability +
+  chat-bot.js unlocked modifications).
+
+Zero release-blocker findings.  This is the final code-review-lane run.
+
+Log pointer: `logs/meta-2026-04-26-code-review-5.md`.
