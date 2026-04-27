@@ -508,6 +508,25 @@ function _withListUnary(handler) {
       s.push(apply(s, v));
       return;
     }
+    // Equation dispatch: apply the op to both sides independently.
+    //   f('X=Y') → 'f(X)=f(Y)'
+    if (s.depth >= 1) {
+      const top = s.peek();
+      if (isSymbolic(top) && top.expr.kind === 'bin' && top.expr.op === '=') {
+        s.pop();
+        s.push(Symbolic(top.expr.l));
+        handler(s);
+        const lResult = s.pop();
+        s.push(Symbolic(top.expr.r));
+        handler(s);
+        const rResult = s.pop();
+        const lAst = _toAst(lResult);
+        const rAst = _toAst(rResult);
+        if (!lAst || !rAst) throw new RPLError('Bad argument type');
+        s.push(Symbolic(AstBin('=', lAst, rAst)));
+        return;
+      }
+    }
     handler(s);
   };
 }
@@ -717,6 +736,38 @@ function binaryMath(op) {
     // into the scalar path with the same generic error.
     if (isVector(a) || isVector(b) || isMatrix(a) || isMatrix(b)) {
       throw new RPLError('Bad argument type');
+    }
+
+    // Equation arithmetic: apply the op to both sides of the equation.
+    //   equation ∘ non-equation → (L ∘ b) = (R ∘ b)
+    //   non-equation ∘ equation → (a ∘ L) = (a ∘ R)
+    //   equation ∘ equation     → (La ∘ Lb) = (Ra ∘ Rb)
+    {
+      const aIsEq = isSymbolic(a) && a.expr.kind === 'bin' && a.expr.op === '=';
+      const bIsEq = isSymbolic(b) && b.expr.kind === 'bin' && b.expr.op === '=';
+      if (aIsEq || bIsEq) {
+        if (aIsEq && bIsEq) {
+          s.push(Symbolic(AstBin('=',
+            AstBin(op, a.expr.l, b.expr.l),
+            AstBin(op, a.expr.r, b.expr.r)
+          )));
+        } else if (aIsEq) {
+          const rhs = _toAst(b);
+          if (!rhs) throw new RPLError('Bad argument type');
+          s.push(Symbolic(AstBin('=',
+            AstBin(op, a.expr.l, rhs),
+            AstBin(op, a.expr.r, rhs)
+          )));
+        } else {
+          const lhs = _toAst(a);
+          if (!lhs) throw new RPLError('Bad argument type');
+          s.push(Symbolic(AstBin('=',
+            AstBin(op, lhs, b.expr.l),
+            AstBin(op, lhs, b.expr.r)
+          )));
+        }
+        return;
+      }
     }
 
     s.push(_scalarBinary(op, a, b));
