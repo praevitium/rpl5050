@@ -503,6 +503,12 @@ body {
   font-style: italic;
 }
 
+/* Success / info notice overlay — same position as error but green. */
+.cmdline-notice {
+  color: #1a7a4a;
+  font-style: italic;
+}
+
 .menu-bar {
   flex: 0 0 auto;
   display: grid;

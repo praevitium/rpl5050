@@ -269,7 +269,8 @@ export function loadFromLocalStorage(stack) {
 
 /* ---------------------- export / import (file) ---------------------- */
 
-/** Trigger a browser download of the current state as a JSON file. */
+/** Trigger a browser download of the current state as a JSON file.
+ *  Returns the filename that was used. */
 export function exportToFile(stack, filename = defaultFilename()) {
   const json = JSON.stringify(snapshot(stack), null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -281,6 +282,7 @@ export function exportToFile(stack, filename = defaultFilename()) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  return filename;
 }
 
 /** Read a File object the user picked, parse it, and rehydrate.
@@ -366,7 +368,8 @@ export function rehydrateVariable(snap) {
 
 /** Trigger a browser download of one named variable as a JSON file.
  *  Filename defaults to `hp50-var-<name>-<stamp>.json` so the user can
- *  tell single-variable dumps from the full snapshot at a glance. */
+ *  tell single-variable dumps from the full snapshot at a glance.
+ *  Returns the filename that was used. */
 export function exportVariableToFile(name, value, filename = defaultVariableFilename(name)) {
   const json = JSON.stringify(snapshotVariable(name, value), null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -378,6 +381,7 @@ export function exportVariableToFile(name, value, filename = defaultVariableFile
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  return filename;
 }
 
 /** Read a File object the user picked, parse it, and return

@@ -302,9 +302,9 @@ class App {
    *  set here so the first paint already matches whatever the user
    *  last chose — kept in memory only for now.
    *
-   *  Ctrl+click (or ⌘-click on Mac) on the brand logo triggers a full
-   *  settings reset after confirmation — useful if a corrupted saved
-   *  state prevents the app from loading correctly. */
+   *  Double-clicking the version label triggers a full settings reset
+   *  (no prompt) — useful if a corrupted saved state prevents the app
+   *  from loading correctly. */
   _installChromeToggles() {
     const MODES = ['full', 'simple', 'minimal'];
     const CHROME_KEY = 'hp50.ui.chrome';
@@ -312,13 +312,7 @@ class App {
     try { savedMode = localStorage.getItem(CHROME_KEY); } catch { /* ignore */ }
     let idx = MODES.includes(savedMode) ? MODES.indexOf(savedMode) : 0;
     document.body.classList.add(`mode-${MODES[idx]}`);
-    document.querySelector('.brand')?.addEventListener('click', (e) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        this._confirmResetSettings();
-        return;
-      }
+    document.querySelector('.brand')?.addEventListener('click', () => {
       document.body.classList.remove(`mode-${MODES[idx]}`);
       idx = (idx + 1) % MODES.length;
       document.body.classList.add(`mode-${MODES[idx]}`);
@@ -330,20 +324,18 @@ class App {
       if (sp.isOpen()) sp.close();
       else sp.open(sp.tab);
     });
+    document.getElementById('versionLabel')?.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this._resetSettings();
+    });
   }
 
-  /** Prompt the user and, on confirmation, wipe all persisted settings
-   *  then reload the page.  Covers every localStorage key the app writes:
-   *  calculator state, side-panel layout, AI model choice, and consent
-   *  flags.  Triggered by Ctrl+click (⌘-click on Mac) on the logo. */
-  _confirmResetSettings() {
-    const ok = window.confirm(
-      'Reset all settings and reload?\n\n' +
-      'This will clear the stack, HOME directory, side-panel layout, ' +
-      'and AI preferences, then reload the page.\n\n' +
-      'This cannot be undone.'
-    );
-    if (!ok) return;
+  /** Wipe all persisted settings then reload the page.  Covers every
+   *  localStorage key the app writes: calculator state, side-panel
+   *  layout, AI model choice, and consent flags.
+   *  Triggered by double-clicking the version label. */
+  _resetSettings() {
     const KEYS = [
       'hp50.state',
       'hp50.ui.sidePanel',
@@ -361,8 +353,10 @@ class App {
    *  Called from the side-panel Files tab.  Errors are flashed on the
    *  LCD rather than raised — the user can just try again. */
   exportSnapshot() {
-    try { exportToFile(this.stack); }
-    catch (e) { this.entry.flashError({ message: `Export failed: ${e.message}` }); }
+    try {
+      const filename = exportToFile(this.stack);
+      this.entry.flashNotice(`Saved ${filename}`);
+    } catch (e) { this.entry.flashError({ message: `Export failed: ${e.message}` }); }
   }
 
   /** Load a snapshot from the given File object, replacing the stack

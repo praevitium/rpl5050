@@ -292,7 +292,7 @@ export class Display {
    *   - toggling an `empty` class so CSS can style the placeholder state
    *  The cursor and text rendering are no longer ours — CM draws them. */
   renderCmdline(entry) {
-    const { buffer, error } = entry;
+    const { buffer, error, notice } = entry;
     // Lazily carve out an error node that overlays the editor.  Living
     // inside #cmdline as a sibling to the CM root keeps the layout
     // cue (same box) while letting CM's DOM stay unmutated.
@@ -301,13 +301,26 @@ export class Display {
       this._errNode.className = 'cmdline-error';
       this.cmdline.appendChild(this._errNode);
     }
+    if (!this._noticeNode) {
+      this._noticeNode = document.createElement('div');
+      this._noticeNode.className = 'cmdline-notice';
+      this.cmdline.appendChild(this._noticeNode);
+    }
     if (error) {
       this._errNode.textContent = error;
       this._errNode.hidden = false;
+      this._noticeNode.hidden = true;
       this.cmdline.classList.remove('empty');
       return;
     }
     this._errNode.hidden = true;
+    if (notice) {
+      this._noticeNode.textContent = notice;
+      this._noticeNode.hidden = false;
+      this.cmdline.classList.remove('empty');
+      return;
+    }
+    this._noticeNode.hidden = true;
     this.cmdline.classList.toggle('empty', buffer.length === 0);
   }
 

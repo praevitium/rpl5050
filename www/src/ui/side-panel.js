@@ -1154,8 +1154,10 @@ export class SidePanel {
         entry.flashError({ message: `Undefined: ${value}` });
         return;
       }
-      try { exportVariableToFile(value, v); }
-      catch (e) {
+      try {
+        const filename = exportVariableToFile(value, v);
+        this.app.entry.flashNotice(`Saved ${filename}`);
+      } catch (e) {
         entry.flashError({ message: `Download failed: ${e.message}` });
       }
       return;

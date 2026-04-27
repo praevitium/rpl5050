@@ -695,10 +695,23 @@ export class Entry {
     this.error = (e && typeof e === 'object' && e.message != null)
       ? String(e.message)
       : String(e);
+    // Errors take priority over any pending notice.
+    this.notice = '';
+    clearTimeout(this._noticeTimer);
     this._emit();
     errorBeep();
     // optionally auto-clear after a bit
     clearTimeout(this._errTimer);
     this._errTimer = setTimeout(() => { this.error = ''; this._emit(); }, 2500);
+  }
+
+  /** Show a transient informational message on the command line (green,
+   *  no beep).  Used for success feedback like "Saved hp50-20260427.json".
+   *  Clears automatically after 2 seconds, or sooner if an error fires. */
+  flashNotice(msg) {
+    this.notice = String(msg);
+    this._emit();
+    clearTimeout(this._noticeTimer);
+    this._noticeTimer = setTimeout(() => { this.notice = ''; this._emit(); }, 2000);
   }
 }
