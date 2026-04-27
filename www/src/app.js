@@ -300,12 +300,22 @@ class App {
   /** Brand tag cycles chrome density (full → simple → minimal) via a
    *  class on <body>; subtitle toggles the side panel.  Mode class is
    *  set here so the first paint already matches whatever the user
-   *  last chose — kept in memory only for now. */
+   *  last chose — kept in memory only for now.
+   *
+   *  Ctrl+click (or ⌘-click on Mac) on the brand logo triggers a full
+   *  settings reset after confirmation — useful if a corrupted saved
+   *  state prevents the app from loading correctly. */
   _installChromeToggles() {
     const MODES = ['full', 'simple', 'minimal'];
     let idx = 0;
     document.body.classList.add(`mode-${MODES[idx]}`);
-    document.querySelector('.brand')?.addEventListener('click', () => {
+    document.querySelector('.brand')?.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        this._confirmResetSettings();
+        return;
+      }
       document.body.classList.remove(`mode-${MODES[idx]}`);
       idx = (idx + 1) % MODES.length;
       document.body.classList.add(`mode-${MODES[idx]}`);
@@ -316,6 +326,30 @@ class App {
       if (sp.isOpen()) sp.close();
       else sp.open(sp.tab);
     });
+  }
+
+  /** Prompt the user and, on confirmation, wipe all persisted settings
+   *  then reload the page.  Covers every localStorage key the app writes:
+   *  calculator state, side-panel layout, AI model choice, and consent
+   *  flags.  Triggered by Ctrl+click (⌘-click on Mac) on the logo. */
+  _confirmResetSettings() {
+    const ok = window.confirm(
+      'Reset all settings and reload?\n\n' +
+      'This will clear the stack, HOME directory, side-panel layout, ' +
+      'and AI preferences, then reload the page.\n\n' +
+      'This cannot be undone.'
+    );
+    if (!ok) return;
+    const KEYS = [
+      'hp50.state',
+      'hp50.ui.sidePanel',
+      'rpl5050.chatbot.modelId',
+      'rpl5050.chatbot.consented.v1',
+      'rpl5050.chatbot.migrated.dropPremium.v1',
+    ];
+    try { for (const k of KEYS) localStorage.removeItem(k); }
+    catch { /* private / storage-blocked mode — proceed to reload anyway */ }
+    location.reload();
   }
 
   /** Download the current stack + HOME directory as a JSON snapshot.
