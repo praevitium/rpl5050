@@ -1,6 +1,6 @@
 {
   "productName": "rp5050ai",
-  "version": "0.1.0",
+  "version": "0.1",
   "identifier": "com.rpl5050.rp5050ai",
   "build": {
     "beforeBuildCommand": "node scripts/build-frontend-dist.mjs",

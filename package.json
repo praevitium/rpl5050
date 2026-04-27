@@ -1,6 +1,6 @@
 {
   "name": "rp5050ai",
-  "version": "0.1.0",
+  "version": "0.1",
   "description": "RPL Scientific Calculator - Modern HP50g Adaptation",
   "type": "module",
   "scripts": {
