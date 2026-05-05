@@ -1,0 +1,1047 @@
+@ ============================================================
+@ PHYSICS & MATH FORMULA LIBRARY  (RPL / HP50 postfix)
+@ Source: Wikipedia "List of equations in ..." pages (CC BY-SA 4.0)
+@ Adapted for rpl5050 (User-RPL)
+@
+@ NOTATION GUIDE
+@   «  »          RPL program delimiters
+@   '  '          Algebraic object
+@   →             local-variable binder inside «  »
+@   STO           stores top-of-stack into variable
+@   SQ            square (x²)
+@   SQRT          square root
+@   INV           1/x
+@   NEG           negate
+@   ABS           absolute value
+@   SIN COS TAN   trig (angle in current mode — set RAD for most physics)
+@   ASIN ACOS ATAN inverse trig
+@   EXP LN LOG    e^x, natural log, log base-10
+@   PI            3.14159...  (or use the π constant key)
+@   %             percent  (n% → n/100)
+@
+@ USAGE PATTERN
+@   To define a named program:   « body » 'NAME' STO
+@   To call it:  push args in the order shown, then call NAME
+@   Stack notation:  ( in1 in2 ... → out )
+@ ============================================================
+
+
+
+@ ============================================================
+@ 1. KINEMATICS — LINEAR MOTION
+@ ============================================================
+
+@ Average velocity  ( dr dt → v )
+@   v = Δr / Δt
+'v = dr/dt'
+
+@ Average acceleration  ( dv dt → a )
+@   a = Δv / Δt
+'a = dv/dt'
+
+@ Equations of motion — constant acceleration
+@ -----------------------------------------------
+
+@ Final velocity  ( v0 a t → v )
+@   v = v0 + a·t
+« → v0 a t « v0 a t * + » »
+@ or as algebraic:
+'v = v0 + a*t'
+
+@ Displacement  ( v0 a t → s )
+@   s = v0·t + ½·a·t²
+« → v0 a t « v0 t * a t SQ * 2 / + » »
+'S = v0*t + (1/2)*a*t^2'
+
+@ Velocity squared  ( v0 a s → v2 )
+@   v² = v0² + 2·a·s
+« → v0 a s « v0 SQ 2 a * s * + » »
+'v^2 = v0^2 + 2*a*S'
+
+@ Displacement (avg velocity)  ( v0 v t → s )
+@   s = (v0 + v)/2 · t
+« → v0 v t « v0 v + 2 / t * » »
+'S = (v0+v)/2*t'
+
+@ Projectile — range on flat ground  ( v0 theta g → R )
+@   R = v0²·sin(2θ) / g
+« → v0 theta g « v0 SQ theta 2 * SIN * g / » »
+'R = v0^2*SIN(2*theta)/g'
+
+@ Projectile — maximum height  ( v0 theta g → H )
+@   H = (v0·sin θ)² / (2·g)
+« → v0 theta g « v0 theta SIN * SQ 2 g * / » »
+'H = (v0*SIN(theta))^2/(2*g)'
+
+@ Time of flight  ( v0 theta g → T )
+@   T = 2·v0·sin θ / g
+« → v0 theta g « 2 v0 * theta SIN * g / » »
+'T = 2*v0*SIN(theta)/g'
+
+
+
+@ ============================================================
+@ 2. KINEMATICS — ROTATIONAL MOTION
+@ ============================================================
+
+@ Angular velocity (average)  ( dtheta dt → omega )
+@   ω = Δθ / Δt
+'omega = dtheta/dt'
+
+@ Angular acceleration (average)  ( domega dt → alpha )
+@   α = Δω / Δt
+'alpha = domega/dt'
+
+@ Rotational equations of motion — constant α
+@ -----------------------------------------------
+
+@ Final angular velocity  ( omega0 alpha t → omega )
+@   ω = ω0 + α·t
+« → omega0 alpha t « omega0 alpha t * + » »
+'omega = omega0 + alpha*t'
+
+@ Angular displacement  ( omega0 alpha t → theta )
+@   θ = ω0·t + ½·α·t²
+« → omega0 alpha t « omega0 t * alpha t SQ * 2 / + » »
+'theta = omega0*t + (1/2)*alpha*t^2'
+
+@ Angular velocity squared  ( omega0 alpha theta → omega2 )
+@   ω² = ω0² + 2·α·θ
+« → omega0 alpha theta « omega0 SQ 2 alpha * theta * + » »
+'omega^2 = omega0^2 + 2*alpha*theta'
+
+@ Tangential velocity from angular velocity  ( r omega → v )
+@   v = r·ω
+« → r omega « r omega * » »
+'v = r*omega'
+
+@ Centripetal acceleration  ( v r → ac )
+@   ac = v² / r
+« → v r « v SQ r / » »
+'ac = v^2/r'
+
+@ Centripetal acceleration (angular)  ( omega r → ac )
+@   ac = ω²·r
+« → omega r « omega SQ r * » »
+'ac = omega^2*r'
+
+
+
+@ ============================================================
+@ 3. DYNAMICS — FORCES & MOMENTUM
+@ ============================================================
+
+@ Newton's Second Law  ( m a → F )
+@   F = m·a
+« → m a « m a * » »
+'F = m*a'
+
+@ Linear momentum  ( m v → p )
+@   p = m·v
+« → m v « m v * » »
+'p = m*v'
+
+@ Impulse  ( F dt → J )
+@   J = F·Δt  (impulse = change in momentum)
+« → F dt « F dt * » »
+'J = F*dt'
+
+@ Angular momentum  ( I omega → L )
+@   L = I·ω
+« → I omega « I omega * » »
+'L = I*omega'
+
+@ Torque (from force and moment arm)  ( r F theta → tau )
+@   τ = r·F·sin θ   (θ = angle between r and F)
+« → r F theta « r F * theta SIN * » »
+'tau = r*F*SIN(theta)'
+
+@ Torque (from moment of inertia)  ( I alpha → tau )
+@   τ = I·α
+« → I alpha « I alpha * » »
+'tau = I*alpha'
+
+@ Centripetal force  ( m v r → Fc )
+@   Fc = m·v² / r
+« → m v r « m v SQ * r / » »
+'Fc = m*v^2/r'
+
+@ Weight / gravitational force  ( m g → W )
+@   W = m·g
+« → m g « m g * » »
+'W = m*g'
+
+@ Friction force  ( mu N → f )
+@   f = μ·N
+« → mu N « mu N * » »
+'f = mu*N'
+
+@ Moment of inertia — point mass  ( m r → I )
+@   I = m·r²
+« → m r « m r SQ * » »
+'I = m*r^2'
+
+@ Moment of inertia — solid sphere  ( m r → I )
+@   I = 2/5·m·r²
+« → m r « 2 5 / m * r SQ * » »
+'I = (2/5)*m*r^2'
+
+@ Moment of inertia — hollow sphere  ( m r → I )
+@   I = 2/3·m·r²
+« → m r « 2 3 / m * r SQ * » »
+'I = (2/3)*m*r^2'
+
+@ Moment of inertia — solid cylinder (axis through center)  ( m r → I )
+@   I = 1/2·m·r²
+« → m r « m r SQ * 2 / » »
+'I = (1/2)*m*r^2'
+
+@ Moment of inertia — thin rod (axis through center)  ( m L → I )
+@   I = 1/12·m·L²
+« → m L « m L SQ * 12 / » »
+'I = (1/12)*m*L^2'
+
+@ Moment of inertia — thin rod (axis through end)  ( m L → I )
+@   I = 1/3·m·L²
+« → m L « m L SQ * 3 / » »
+'I = (1/3)*m*L^2'
+
+@ Parallel axis theorem  ( Icm m d → I )
+@   I = Icm + m·d²
+« → Icm m d « Icm m d SQ * + » »
+'I = Icm + m*d^2'
+
+@ Precession angular speed  ( w r I omega → Omega )
+@   Ω = w·r / (I·ω)
+« → w r I omega « w r * I omega * / » »
+'Omega = w*r/(I*omega)'
+
+
+
+@ ============================================================
+@ 4. ENERGY, WORK & POWER
+@ ============================================================
+
+@ Kinetic energy  ( m v → KE )
+@   KE = ½·m·v²
+« → m v « m v SQ * 2 / » »
+'KE = (1/2)*m*v^2'
+
+@ Rotational kinetic energy  ( I omega → KE )
+@   KE = ½·I·ω²
+« → I omega « I omega SQ * 2 / » »
+'KE = (1/2)*I*omega^2'
+
+@ Gravitational potential energy  ( m g h → PE )
+@   PE = m·g·h
+« → m g h « m g * h * » »
+'PE = m*g*h'
+
+@ Gravitational PE (universal)  ( G m1 m2 r → PE )
+@   PE = -G·m1·m2 / r
+« → G m1 m2 r « G m1 * m2 * r / NEG » »
+'PE = -G*m1*m2/r'
+
+@ Spring (elastic) potential energy  ( k x → PE )
+@   PE = ½·k·x²
+« → k x « k x SQ * 2 / » »
+'PE = (1/2)*k*x^2'
+
+@ Work done by constant force  ( F d theta → W )
+@   W = F·d·cos θ   (θ = angle between F and displacement)
+« → F d theta « F d * theta COS * » »
+'W = F*d*COS(theta)'
+
+@ Power (from work and time)  ( W t → P )
+@   P = W / t
+« → W t « W t / » »
+'P = W/t'
+
+@ Power (from force and velocity)  ( F v → P )
+@   P = F·v
+« → F v « F v * » »
+'P = F*v'
+
+@ Power (from torque and angular velocity)  ( tau omega → P )
+@   P = τ·ω
+« → tau omega « tau omega * » »
+'P = tau*omega'
+
+
+
+@ ============================================================
+@ 5. OSCILLATIONS & SIMPLE HARMONIC MOTION
+@ ============================================================
+
+@ Angular frequency — spring-mass  ( k m → omega )
+@   ω = √(k/m)
+« → k m « k m / SQRT » »
+'omega = SQRT(k/m)'
+
+@ Period — spring-mass  ( k m → T )
+@   T = 2π·√(m/k)
+« → k m « 2 PI * m k / SQRT * » »
+'T = 2*PI*SQRT(m/k)'
+
+@ Angular frequency — simple pendulum (small angle)  ( g L → omega )
+@   ω = √(g/L)
+« → g L « g L / SQRT » »
+'omega = SQRT(g/L)'
+
+@ Period — simple pendulum (small angle)  ( g L → T )
+@   T = 2π·√(L/g)
+« → g L « 2 PI * L g / SQRT * » »
+'T = 2*PI*SQRT(L/g)'
+
+@ Angular frequency — torsional pendulum  ( kappa I → omega )
+@   ω = √(κ/I)
+« → kappa I « kappa I / SQRT » »
+'omega = SQRT(kappa/I)'
+
+@ SHM position  ( A omega t phi → x )
+@   x = A·cos(ω·t + φ)
+« → A omega t phi « A omega t * phi + COS * » »
+'x = A*COS(omega*t+phi)'
+
+@ SHM velocity  ( A omega t phi → vx )
+@   vx = -A·ω·sin(ω·t + φ)
+« → A omega t phi « A omega * omega t * phi + SIN * NEG » »
+'v = -A*omega*SIN(omega*t+phi)'
+
+@ SHM acceleration  ( A omega t phi → ax )
+@   ax = -A·ω²·cos(ω·t + φ)
+« → A omega t phi « A omega SQ * omega t * phi + COS * NEG » »
+'a = -A*omega^2*COS(omega*t+phi)'
+
+@ SHM total energy  ( k A → E )
+@   E = ½·k·A²
+« → k A « k A SQ * 2 / » »
+'E = (1/2)*k*A^2'
+
+@ SHM: kinetic energy at position x  ( k A x → KE )
+@   KE = ½·k·(A² - x²)
+« → k A x « k A SQ x SQ - * 2 / » »
+'KE = (1/2)*k*(A^2-x^2)'
+
+@ Frequency from angular frequency  ( omega → f )
+@   f = ω / (2π)
+« → omega « omega 2 PI * / » »
+'f = omega/(2*PI)'
+
+@ Angular frequency from frequency  ( f → omega )
+@   ω = 2π·f
+« → f « 2 PI * f * » »
+'omega = 2*PI*f'
+
+@ Period from frequency  ( f → T )
+@   T = 1/f
+« → f « f INV » »
+'T = 1/f'
+
+@ Damped harmonic oscillator — resonant frequency  ( omega0 b m → omegaD )
+@   ωD = √(ω0² - (b/(2m))²)
+« → omega0 b m « omega0 SQ b 2 m * / SQ - SQRT » »
+'omegaD = SQRT(omega0^2 - (b/(2*m))^2)'
+
+@ Damped harmonic oscillator — decay rate  ( b m → gamma )
+@   γ = b / (2·m)
+« → b m « b 2 m * / » »
+'gamma = b/(2*m)'
+
+
+
+@ ============================================================
+@ 6. GRAVITATION
+@ ============================================================
+@ Physical constant: G = 6.674×10⁻¹¹ N·m²·kg⁻²
+6.674E-11 'G' STO
+
+@ Gravitational force (Newton)  ( G m1 m2 r → F )
+@   F = G·m1·m2 / r²
+« → G m1 m2 r « G m1 * m2 * r SQ / » »
+'F = G*m1*m2/r^2'
+
+@ Gravitational field strength  ( G M r → g_field )
+@   g = G·M / r²
+« → G M r « G M * r SQ / » »
+'g = G*M/r^2'
+
+@ Gravitational potential  ( G M r → phi )
+@   Φ = -G·M / r
+« → G M r « G M * r / NEG » »
+'Phi = -G*M/r'
+
+@ Gravitational potential energy  ( G m M r → PE )
+@   PE = -G·m·M / r
+« → G m M r « G m * M * r / NEG » »
+'PE = -G*m*M/r'
+
+@ Escape velocity  ( G M r → ve )
+@   ve = √(2·G·M / r)
+« → G M r « 2 G * M * r / SQRT » »
+'ve = SQRT(2*G*M/r)'
+
+@ Circular orbital velocity  ( G M r → vo )
+@   vo = √(G·M / r)
+« → G M r « G M * r / SQRT » »
+'vo = SQRT(G*M/r)'
+
+@ Orbital period (circular)  ( G M r → T )
+@   T = 2π·√(r³ / (G·M))
+« → G M r « 2 PI * r 3 ^ G M * / SQRT * » »
+'T = 2*PI*SQRT(r^3/(G*M))'
+
+@ Kepler's 3rd law  ( G M T → r )
+@   r = (G·M·T² / (4π²))^(1/3)
+« → G M T « G M * T SQ * 4 PI SQ * / 3 ^ INV ^ » »
+'r = (G*M*T^2/(4*PI^2))^(1/3)'
+
+@ Orbital energy  ( G m M r → E )
+@   E = -G·m·M / (2·r)
+« → G m M r « G m * M * 2 r * / NEG » »
+'E = -G*m*M/(2*r)'
+
+@ Standard gravitational parameter  ( G M → mu )
+@   μ = G·M
+« → G M « G M * » »
+'mu = G*M'
+
+
+
+@ ============================================================
+@ 7. WAVES & SOUND
+@ ============================================================
+
+@ Wave speed  ( f lambda → v )
+@   v = f·λ
+« → f lambda « f lambda * » »
+'v = f*lambda'
+
+@ Wavelength from speed and frequency  ( v f → lambda )
+@   λ = v / f
+« → v f « v f / » »
+'lambda = v/f'
+
+@ Period from frequency  ( f → T )
+@   T = 1/f   [see also Oscillations]
+'T = 1/f'
+
+@ Wavenumber  ( lambda → k )
+@   k = 2π / λ
+« → lambda « 2 PI * lambda / » »
+'k = 2*PI/lambda'
+
+@ Wave displacement (travelling sinusoidal)  ( A k x omega t phi → y )
+@   y = A·sin(k·x - ω·t + φ)
+« → A k x omega t phi « A k x * omega t * - phi + SIN * » »
+'y = A*SIN(k*x - omega*t + phi)'
+
+@ Acoustic beat frequency  ( f1 f2 → fbeat )
+@   fbeat = |f1 - f2|
+« → f1 f2 « f1 f2 - ABS » »
+'fbeat = ABS(f1-f2)'
+
+@ Doppler effect (observer moving, source at rest)  ( f v vr → f_obs )
+@   f_obs = f·(v + vr) / v   (+ for approach, - for recession)
+« → f v vr « f v vr + * v / » »
+'f_obs = f*(v+vr)/v'
+
+@ Doppler effect (source moving, observer at rest)  ( f v vs → f_obs )
+@   f_obs = f·v / (v - vs)   (- for approach, + for recession)
+« → f v vs « f v * v vs - / » »
+'f_obs = f*v/(v-vs)'
+
+@ Mach number  ( v vs → M )
+@   M = v / vs
+« → v vs « v vs / » »
+'M = v/vs'
+
+@ Sound intensity  ( P r → I )
+@   I = P / (4π·r²)   (point source, spherical spreading)
+« → P r « P 4 PI * r SQ * / » »
+'I = P/(4*PI*r^2)'
+
+@ Sound level (decibels)  ( I I0 → beta )
+@   β = 10·log₁₀(I / I0)
+« → I I0 « I I0 / LOG 10 * » »
+'beta = 10*LOG(I/I0)'
+
+@ Speed of sound in ideal gas  ( gamma R T M → v )
+@   v = √(γ·R·T / M)
+« → gamma R T M « gamma R * T * M / SQRT » »
+'v = SQRT(gamma*R*T/M)'
+
+@ Harmonic frequencies (standing wave, string)  ( n v L → fn )
+@   fn = n·v / (2·L)
+« → n v L « n v * 2 L * / » »
+'fn = n*v/(2*L)'
+
+@ Fundamental frequency (open pipe, same formula as string):
+@   f1 = v / (2·L)
+« → v L « v 2 L * / » »
+'f1 = v/(2*L)'
+
+@ Fundamental frequency (closed pipe, one closed end):
+@   f1 = v / (4·L)
+« → v L « v 4 L * / » »
+'f1 = v/(4*L)'
+
+
+
+@ ============================================================
+@ 8. OPTICS
+@ ============================================================
+
+@ Snell's law — refracted angle  ( n1 theta1 n2 → theta2 )
+@   sin θ2 = n1·sin θ1 / n2
+« → n1 theta1 n2 « n1 theta1 SIN * n2 / ASIN » »
+'theta2 = ASIN(n1*SIN(theta1)/n2)'
+
+@ Critical angle for total internal reflection  ( n1 n2 → thetaC )
+@   θc = arcsin(n2 / n1)   (n1 > n2)
+« → n1 n2 « n2 n1 / ASIN » »
+'thetaC = ASIN(n2/n1)'
+
+@ Thin lens equation — focal length  ( do di → f )
+@   1/f = 1/do + 1/di
+« → do di « 1 do / 1 di / + INV » »
+'f = 1/(1/do + 1/di)'
+
+@ Thin lens — image distance  ( f do → di )
+@   1/di = 1/f - 1/do
+« → f do « 1 f / 1 do / - INV » »
+'di = 1/(1/f - 1/do)'
+
+@ Magnification (lateral)  ( di do → m )
+@   m = -di / do
+« → di do « di NEG do / » »
+'m = -di/do'
+
+@ Mirror equation (same form as thin lens)
+@   1/f = 1/do + 1/di   (f = R/2 for spherical mirror)
+'f = 1/(1/do + 1/di)'
+
+@ Radius of curvature ↔ focal length  ( R → f )
+@   f = R / 2
+« → R « R 2 / » »
+'f = R/2'
+
+@ Young's double-slit — fringe spacing  ( lambda L d → y )
+@   y = λ·L / d
+« → lambda L d « lambda L * d / » »
+'y = lambda*L/d'
+
+@ Diffraction grating — angle for order n  ( n lambda d → theta )
+@   θ = arcsin(n·λ / d)
+« → n lambda d « n lambda * d / ASIN » »
+'theta = ASIN(n*lambda/d)'
+
+@ Refractive index  ( c v → n )
+@   n = c / v
+« → c v « c v / » »
+'n = c/v'
+
+
+
+@ ============================================================
+@ 9. ELECTRICITY & MAGNETISM
+@ ============================================================
+@ Physical constants:
+@   k  = 8.9875×10⁹  N·m²·C⁻²  (Coulomb constant = 1/(4πε0))
+@   ε0 = 8.8542×10⁻¹²  F/m      (permittivity of free space)
+@   μ0 = 4π×10⁻⁷      H/m      (permeability of free space)
+@   e  = 1.6022×10⁻¹⁹ C         (elementary charge)
+8.9875E9 'ke' STO
+8.8542E-12 'eps0' STO
+1.2566E-6 'mu0' STO
+1.6022E-19 'e' STO
+
+@ Coulomb's law  ( ke q1 q2 r → F )
+@   F = ke·q1·q2 / r²
+« → ke q1 q2 r « ke q1 * q2 * r SQ / » »
+'F = ke*q1*q2/r^2'
+
+@ Electric field (point charge)  ( ke q r → E )
+@   E = ke·q / r²
+« → ke q r « ke q * r SQ / » »
+'E = ke*q/r^2'
+
+@ Electric potential (point charge)  ( ke q r → V )
+@   V = ke·q / r
+« → ke q r « ke q * r / » »
+'V = ke*q/r'
+
+@ Electric potential energy (two charges)  ( ke q1 q2 r → U )
+@   U = ke·q1·q2 / r
+« → ke q1 q2 r « ke q1 * q2 * r / » »
+'U = ke*q1*q2/r'
+
+@ Capacitance  ( Q V → C )
+@   C = Q / V
+« → Q V « Q V / » »
+'C = Q/V'
+
+@ Energy stored in capacitor  ( C V → U )
+@   U = ½·C·V²
+« → C V « C V SQ * 2 / » »
+'U = (1/2)*C*V^2'
+
+@ Charge on capacitor  ( C V → Q )
+@   Q = C·V
+« → C V « C V * » »
+'Q = C*V'
+
+@ Ohm's law  ( I R → V )
+@   V = I·R
+« → I R « I R * » »
+'V = I*R'
+
+@ Current  ( V R → I )
+@   I = V / R
+« → V R « V R / » »
+'I = V/R'
+
+@ Resistance  ( V I → R )
+@   R = V / I
+« → V I « V I / » »
+'R = V/I'
+
+@ Electrical power — from current and voltage  ( V I → P )
+@   P = V·I
+« → V I « V I * » »
+'P = V*I'
+
+@ Electrical power — from current and resistance  ( I R → P )
+@   P = I²·R
+« → I R « I SQ R * » »
+'P = I^2*R'
+
+@ Electrical power — from voltage and resistance  ( V R → P )
+@   P = V² / R
+« → V R « V SQ R / » »
+'P = V^2/R'
+
+@ Resistors in series  ( R1 R2 → Rnet )
+@   Rnet = R1 + R2
+« → R1 R2 « R1 R2 + » »
+'Rnet = R1 + R2'
+
+@ Resistors in parallel  ( R1 R2 → Rnet )
+@   Rnet = (1/R1 + 1/R2)⁻¹
+« → R1 R2 « 1 R1 / 1 R2 / + INV » »
+'Rnet = 1/(1/R1+1/R2)'
+
+@ Capacitors in series  ( C1 C2 → Cnet )
+@   Cnet = (1/C1 + 1/C2)⁻¹
+« → C1 C2 « 1 C1 / 1 C2 / + INV » »
+'Cnet = 1/(1/C1+1/C2)'
+
+@ Capacitors in parallel  ( C1 C2 → Cnet )
+@   Cnet = C1 + C2
+« → C1 C2 « C1 C2 + » »
+'Cnet = C1 + C2'
+
+@ Energy stored in inductor  ( L I → U )
+@   U = ½·L·I²
+« → L I « L I SQ * 2 / » »
+'U = (1/2)*L*I^2'
+
+@ Inductive reactance  ( omega L → XL )
+@   XL = ω·L
+« → omega L « omega L * » »
+'XL = omega*L'
+
+@ Capacitive reactance  ( omega C → XC )
+@   XC = 1 / (ω·C)
+« → omega C « omega C * INV » »
+'XC = 1/(omega*C)'
+
+@ RC time constant  ( R C → tau )
+@   τ = R·C
+« → R C « R C * » »
+'tau = R*C'
+
+@ RL time constant  ( L R → tau )
+@   τ = L / R
+« → L R « L R / » »
+'tau = L/R'
+
+@ LC resonant angular frequency  ( L C → omega0 )
+@   ω0 = 1 / √(L·C)
+« → L C « L C * SQRT INV » »
+'omega0 = 1/SQRT(L*C)'
+
+@ Magnetic force on moving charge  ( q v B theta → F )
+@   F = q·v·B·sin θ
+« → q v B theta « q v * B * theta SIN * » »
+'F = q*v*B*SIN(theta)'
+
+@ Magnetic force on current-carrying wire  ( I L B theta → F )
+@   F = I·L·B·sin θ
+« → I L B theta « I L * B * theta SIN * » »
+'F = I*L*B*SIN(theta)'
+
+@ Magnetic field — long straight wire  ( mu0 I r → B )
+@   B = μ0·I / (2π·r)
+« → mu0 I r « mu0 I * 2 PI * r * / » »
+'B = mu0*I/(2*PI*r)'
+
+@ Magnetic field — solenoid  ( mu0 n I → B )
+@   B = μ0·n·I   (n = turns per unit length)
+« → mu0 n I « mu0 n * I * » »
+'B = mu0*n*I'
+
+@ Faraday's law — induced EMF  ( dPhi dt → emf )
+@   emf = -dΦ/dt
+« → dPhi dt « dPhi dt / NEG » »
+'emf = -dPhi/dt'
+
+@ Magnetic flux  ( B A theta → Phi )
+@   Φ = B·A·cos θ
+« → B A theta « B A * theta COS * » »
+'Phi = B*A*COS(theta)'
+
+@ Transformer voltage ratio  ( N1 N2 V1 → V2 )
+@   V2/V1 = N2/N1
+« → N1 N2 V1 « V1 N2 * N1 / » »
+'V2 = V1*N2/N1'
+
+
+
+@ ============================================================
+@ 10. THERMODYNAMICS
+@ ============================================================
+@ Physical constants:
+@   R  = 8.3145  J/(mol·K)   (universal gas constant)
+@   kB = 1.3806×10⁻²³  J/K  (Boltzmann constant)
+@   NA = 6.0221×10²³  mol⁻¹  (Avogadro's number)
+8.3145 'R_gas' STO
+1.3806E-23 'kB' STO
+6.0221E23 'NA' STO
+
+@ Ideal gas law  ( n R T V → P )
+@   PV = nRT  →  P = nRT/V
+« → n R T V « n R * T * V / » »
+'P = n*R*T/V'
+
+@ Ideal gas law (number of molecules)  ( N kB T V → P )
+@   PV = NkT  →  P = NkT/V
+« → N kB T V « N kB * T * V / » »
+'P = N*kB*T/V'
+
+@ Combined gas law  ( P1 V1 T1 T2 V2 → P2 )
+@   P2 = P1·V1·T2 / (T1·V2)
+« → P1 V1 T1 T2 V2 « P1 V1 * T2 * T1 V2 * / » »
+'P2 = P1*V1*T2/(T1*V2)'
+
+@ First law of thermodynamics  ( Q W → dU )
+@   ΔU = Q - W
+« → Q W « Q W - » »
+'dU = Q - W'
+
+@ Heat transferred  ( m c dT → Q )
+@   Q = m·c·ΔT
+« → m c dT « m c * dT * » »
+'Q = m*c*dT'
+
+@ Latent heat  ( m L_heat → Q )
+@   Q = m·L
+« → m L_heat « m L_heat * » »
+'Q = m*L'
+
+@ Entropy change (reversible process)  ( Q T → dS )
+@   ΔS = Q / T
+« → Q T « Q T / » »
+'dS = Q/T'
+
+@ Boltzmann entropy  ( kB Omega → S )
+@   S = kB·ln(Ω)
+« → kB Omega « kB Omega LN * » »
+'S = kB*LN(Omega)'
+
+@ Carnot efficiency  ( TL TH → eta )
+@   η = 1 - TL/TH
+« → TL TH « 1 TL TH / - » »
+'eta = 1 - TL/TH'
+
+@ Carnot COP — refrigerator  ( TL TH → COP )
+@   COP = TL / (TH - TL)
+« → TL TH « TL TH TL - / » »
+'COP = TL/(TH-TL)'
+
+@ Internal energy change (ideal monatomic gas)  ( n R dT → dU )
+@   ΔU = (3/2)·n·R·ΔT
+« → n R dT « 3 2 / n * R * dT * » »
+'dU = (3/2)*n*R*dT'
+
+@ Internal energy change (ideal diatomic gas)  ( n R dT → dU )
+@   ΔU = (5/2)·n·R·ΔT
+« → n R dT « 5 2 / n * R * dT * » »
+'dU = (5/2)*n*R*dT'
+
+@ Work done by gas (isobaric)  ( P dV → W )
+@   W = P·ΔV
+« → P dV « P dV * » »
+'W = P*dV'
+
+@ Work done by gas (isothermal)  ( n R T V1 V2 → W )
+@   W = n·R·T·ln(V2/V1)
+« → n R T V1 V2 « n R * T * V2 V1 / LN * » »
+'W = n*R*T*LN(V2/V1)'
+
+@ Root-mean-square speed of gas molecules  ( kB T m → vrms )
+@   vrms = √(3·kB·T / m)
+« → kB T m « 3 kB * T * m / SQRT » »
+'vrms = SQRT(3*kB*T/m)'
+
+@ Average kinetic energy per molecule  ( kB T → KE_avg )
+@   KE_avg = (3/2)·kB·T
+« → kB T « 3 2 / kB * T * » »
+'KE = (3/2)*kB*T'
+
+@ Stefan-Boltzmann law — radiated power  ( sigma eps A T → P )
+@   P = σ·ε·A·T⁴
+« → sigma eps A T « sigma eps * A * T 4 ^ * » »
+'P = sigma*eps*A*T^4'
+@ Stefan-Boltzmann constant: σ = 5.6704×10⁻⁸ W/(m²·K⁴)
+5.6704E-8 'sigma_SB' STO
+
+@ Newton's law of cooling  ( h A Ts T_env → Q_rate )
+@   dQ/dt = h·A·(Ts - T_env)
+« → h A Ts T_env « h A * Ts T_env - * » »
+'dQ_dt = h*A*(Ts-T_env)'
+
+@ Fourier heat conduction  ( k A dT dx → Q_rate )
+@   dQ/dt = -k·A·(dT/dx)
+« → k A dT dx « k A * dT * dx / NEG » »
+'dQ_dt = -k*A*dT/dx'
+
+
+
+@ ============================================================
+@ 11. FLUID MECHANICS
+@ ============================================================
+
+@ Pressure  ( F A → P )
+@   P = F / A
+« → F A « F A / » »
+'P = F/A'
+
+@ Hydrostatic pressure  ( rho g h → P )
+@   P = ρ·g·h
+« → rho g h « rho g * h * » »
+'P = rho*g*h'
+
+@ Buoyancy force (Archimedes)  ( rho g V → F_B )
+@   F_B = ρ·g·V
+« → rho g V « rho g * V * » »
+'F_B = rho*g*V'
+
+@ Continuity equation  ( A1 v1 A2 → v2 )
+@   A1·v1 = A2·v2  →  v2 = A1·v1/A2
+« → A1 v1 A2 « A1 v1 * A2 / » »
+'v2 = A1*v1/A2'
+
+@ Bernoulli's equation  ( P1 rho v1 g h1 v2 h2 → P2 )
+@   P2 = P1 + ½·ρ·(v1² - v2²) + ρ·g·(h1 - h2)
+« → P1 rho v1 g h1 v2 h2 
+« P1 rho v1 SQ v2 SQ - * 2 / + rho g * h1 h2 - * + » »
+'P2 = P1 + (1/2)*rho*(v1^2-v2^2) + rho*g*(h1-h2)'
+
+@ Torricelli's theorem — efflux speed  ( g h → v )
+@   v = √(2·g·h)
+« → g h « 2 g * h * SQRT » »
+'v = SQRT(2*g*h)'
+
+@ Reynolds number  ( rho v L mu → Re )
+@   Re = ρ·v·L / μ
+« → rho v L mu « rho v * L * mu / » »
+'Re = rho*v*L/mu'
+
+@ Mass flow rate  ( rho A v → mdot )
+@   ṁ = ρ·A·v
+« → rho A v « rho A * v * » »
+'mdot = rho*A*v'
+
+@ Dynamic viscosity — shear stress  ( mu v A d → F )
+@   F = μ·(v/d)·A   (viscous force, planar Couette flow)
+« → mu v A d « mu v d / * A * » »
+'F = mu*(v/d)*A'
+
+
+
+@ ============================================================
+@ 12. PLANE & SOLID GEOMETRY
+@ ============================================================
+
+@ Circle — circumference  ( r → C )
+'C = 2*PI*r'
+« → r « 2 PI * r * » »
+
+@ Circle — area  ( r → A )
+'A = PI*r^2'
+« → r « PI r SQ * » »
+
+@ Sphere — surface area  ( r → A )
+'A = 4*PI*r^2'
+« → r « 4 PI * r SQ * » »
+
+@ Sphere — volume  ( r → V )
+'V = (4/3)*PI*r^3'
+« → r « 4 3 / PI * r 3 ^ * » »
+
+@ Cylinder — lateral surface area  ( r h → A )
+'A = 2*PI*r*h'
+« → r h « 2 PI * r * h * » »
+
+@ Cylinder — volume  ( r h → V )
+'V = PI*r^2*h'
+« → r h « PI r SQ * h * » »
+
+@ Cone — volume  ( r h → V )
+'V = (1/3)*PI*r^2*h'
+« → r h « PI r SQ * h * 3 / » »
+
+@ Cone — lateral surface area  ( r l → A )
+@   l = slant height
+'A = PI*r*l'
+« → r l « PI r * l * » »
+
+@ Triangle — area (base and height)  ( b h → A )
+'A = (1/2)*b*h'
+« → b h « b h * 2 / » »
+
+@ Triangle — area (Heron's formula)  ( a b c → A )
+@   s = (a+b+c)/2,  A = √(s(s-a)(s-b)(s-c))
+« → a b c
+« a b + c + 2 / DUP DUP DUP a - * SWAP b - * SWAP c - * SWAP * SQRT
+» »
+'A = SQRT(s*(s-a)*(s-b)*(s-c)) where s=(a+b+c)/2'
+
+@ Rectangle — area  ( w h → A )
+'A = w*h'
+« → w h « w h * » »
+
+@ Trapezoid — area  ( a b h → A )
+'A = (a+b)/2*h'
+« → a b h « a b + 2 / h * » »
+
+@ Pythagorean theorem — hypotenuse  ( a b → c )
+'c = SQRT(a^2+b^2)'
+« → a b « a SQ b SQ + SQRT » »
+
+@ Distance between two points (2D)  ( x1 y1 x2 y2 → d )
+'D = SQRT((x2-x1)^2+(y2-y1)^2)'
+« → x1 y1 x2 y2 « x2 x1 - SQ y2 y1 - SQ + SQRT » »
+
+@ Law of cosines  ( a b C_angle → c )
+@   c² = a² + b² - 2·a·b·cos C
+« → a b C_angle « a SQ b SQ + 2 a * b * C_angle COS * - SQRT » »
+'c = SQRT(a^2+b^2-2*a*b*COS(C))'
+
+@ Law of sines ratio  ( a A_angle → ratio )
+@   a / sin A = b / sin B = c / sin C
+« → a A_angle « a A_angle SIN / » »
+'a/SIN(A) = const'
+
+
+
+@ ============================================================
+@ 13. GENERAL MATH UTILITIES
+@ ============================================================
+
+@ Quadratic formula — both roots  ( a b c → x1 x2 )
+@   x = (-b ± √(b²-4ac)) / (2a)
+« → a b c
+« b NEG b SQ 4 a * c * - SQRT DUP
+  ROT + 2 a * /
+  SWAP ROT - 2 a * /
+» »
+'x = (-b +/- SQRT(b^2-4*a*c)) / (2*a)'
+
+@ Quadratic discriminant  ( a b c → disc )
+@   Δ = b² - 4·a·c
+« → a b c « b SQ 4 a * c * - » »
+'D = b^2 - 4*a*c'
+
+@ Percentage  ( part whole → pct )
+@   pct = (part/whole)·100
+« → part whole « part whole / 100 * » »
+'pct = part/whole*100'
+
+@ Logarithm change of base  ( x base → log_b_x )
+@   log_b(x) = ln(x) / ln(base)
+« → x base « x LN base LN / » »
+'log_b(x) = LN(x)/LN(b)'
+
+@ Compound interest — future value  ( P r n → FV )
+@   FV = P·(1 + r)^n
+« → P r n « P 1 r + n ^ * » »
+'FV = P*(1+r)^n'
+
+@ Compound interest — continuous  ( P r t → FV )
+@   FV = P·e^(r·t)
+« → P r t « P r t * EXP * » »
+'FV = P*EXP(r*t)'
+
+@ Weighted average  ( x1 x2 w1 w2 → xavg )
+@   x̄ = (x1·w1 + x2·w2) / (w1 + w2)
+« → x1 x2 w1 w2 « x1 w1 * x2 w2 * + w1 w2 + / » »
+'xavg = (x1*w1+x2*w2)/(w1+w2)'
+
+@ Factorial (integer n)  ( n → n! )
+@   Use built-in: n FACT
+'n! = FACT(n)'
+
+@ Combinations  ( n k → C_nk )
+@   C(n,k) = n! / (k!·(n-k)!)  — use built-in COMB
+'C(n,k) = COMB(n,k)'
+
+@ Permutations  ( n k → P_nk )
+@   P(n,k) = n! / (n-k)!  — use built-in PERM
+'P(n,k) = PERM(n,k)'
+
+@ Arithmetic mean  ( x1 x2 n → mean )  [generalise with MEAN command on lists]
+'mean = sum(xi)/n'
+
+@ Geometric mean (two values)  ( a b → gm )
+« → a b « a b * SQRT » »
+'gm = SQRT(a*b)'
+
+@ Harmonic mean (two values)  ( a b → hm )
+« → a b « 2 1 a / 1 b / + / » »
+'hm = 2/(1/a+1/b)'
+
+
+
+@ ============================================================
+@ 14. PHYSICAL CONSTANTS (reference)
+@ ============================================================
+@   c  = 2.9979×10⁸  m/s       speed of light in vacuum
+@   G  = 6.6743×10⁻¹¹ N m²/kg² gravitational constant
+@   h  = 6.6261×10⁻³⁴ J s      Planck constant
+@   hbar = 1.0546×10⁻³⁴ J s    reduced Planck constant
+@   e  = 1.6022×10⁻¹⁹ C        elementary charge
+@   me = 9.1094×10⁻³¹ kg       electron mass
+@   mp = 1.6726×10⁻²⁷ kg       proton mass
+@   NA = 6.0221×10²³  mol⁻¹    Avogadro's number
+@   R  = 8.3145  J/(mol K)      universal gas constant
+@   kB = 1.3806×10⁻²³ J/K      Boltzmann constant
+@   ε0 = 8.8542×10⁻¹²  F/m     permittivity of free space
+@   μ0 = 1.2566×10⁻⁶   H/m     permeability of free space
+@   σ  = 5.6704×10⁻⁸  W/(m²K⁴) Stefan–Boltzmann constant
+@   atm = 101325 Pa              standard atmosphere
+@   g  = 9.80665 m/s²            standard gravity
+
+2.99792458E8 'c_light' STO
+6.6743E-11 'G' STO
+6.6261E-34 'h_planck' STO
+1.0546E-34 'hbar' STO
+9.1094E-31 'me' STO
+1.6726E-27 'mp' STO
+101325 'atm' STO
+9.80665 'g0' STO
+
+@ ============================================================
+@ END OF FORMULA LIBRARY
+@ ============================================================
