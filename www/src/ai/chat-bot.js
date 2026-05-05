@@ -397,9 +397,9 @@ function stripThinkBlocks(text) {
  *  model is ready.  Kept short and concrete so the user sees what kinds
  *  of things the assistant can actually do. */
 const STARTER_CHIPS = [
-  'Put 3 and 5 on the stack',
-  'Add the top two stack items',
-  'Factor the top stack item',
+  'Compute the sum of 3 and 5',
+  'Take the derivative of x^3+3*x+1',
+  'Factor 1234567890',
 ];
 
 /* ---- Model catalog ------------------------------------------------
