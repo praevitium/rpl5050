@@ -182,13 +182,15 @@ body {
 }
 
 .annunciator {
-  color: var(--screen-dim);
-  opacity: .35;
+  display: none;
 }
-.annunciator.on { opacity: 1; color: var(--screen-text); }
+.annunciator.on {
+  display: inline;
+  color: var(--screen-text);
+}
 #ann-mode {
+  display: inline;
   margin-left: auto;
-  opacity: 1;
   font-weight: 500;
   /* Let the path shrink below its content width when the LCD is narrow,
      and truncate from the LEFT with an ellipsis so the CURRENT directory
@@ -681,11 +683,6 @@ body {
   outline: 3px double #fff;
   outline-offset: -3px;
 }
-
-/* LCD alpha annunciator: visible whenever alpha or alphaLock is on.
-   Made bold for lock so the marker reads at a glance. */
-#ann-alpha.on          { color: var(--alpha-color); }
-#ann-alpha.on.locked   { color: var(--alpha-color); font-weight: 900; }
 
 /* Export / Import toolbar at the top of the side-panel Files tab.
    Two equal-width buttons matching the rest of the panel's dark

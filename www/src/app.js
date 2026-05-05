@@ -262,17 +262,6 @@ class App {
     this.display.setCoordMode(calcState.coordMode);
     this.display.setDisplayAnnunciator(calcState.displayMode, calcState.displayDigits);
 
-    // Alpha annunciator on the LCD status line mirrors shift state.
-    // The annunciator is visible whenever alpha OR alphaLock is active;
-    // a distinct 'locked' class lets CSS style lock differently (e.g.,
-    // steady vs. blinking) if desired later.
-    this.onShiftChange(() => {
-      const a = this.shift === 'alpha' || this.shift === 'alphaLock';
-      this.display.setAnnunciator('alpha', a);
-      const el = this.display.statusLine?.querySelector('#ann-alpha');
-      if (el) el.classList.toggle('locked', this.shift === 'alphaLock');
-    });
-
     this._installKeyboardShortcuts();
     this._installAutosave();
   }
