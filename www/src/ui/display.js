@@ -262,7 +262,7 @@ export class Display {
 
   /** Render a List in textbook mode.
    *
-   *  Produces:  { <item> , <item> , … }
+   *  Produces:  { <item>  <item>  … }
    *
    *  Each item that is a Symbolic gets the full SVG pretty-print;
    *  everything else uses the regular formatter so numbers, names,
@@ -270,7 +270,7 @@ export class Display {
   _renderTextbookList(val) {
     const items = val.items.map(item => {
       if (isSymbolic(item)) {
-        const { svg } = astToSvg(item.expr, { size: 18 });
+        const { svg } = astToSvg(item.expr, { size: 22 });
         return `<span class="lcell lcell-sym">${svg}</span>`;
       }
       const text = format(item, this.displayOpts);
@@ -279,7 +279,7 @@ export class Display {
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       return `<span class="lcell">${safe}</span>`;
     });
-    const inner = items.join('<span class="lsep">,​</span>');
+    const inner = items.join('<span class="lsep"> </span>');
     return `<span class="list-inline">{ ${inner} }</span>`;
   }
 
