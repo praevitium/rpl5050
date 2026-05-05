@@ -102,6 +102,7 @@ export class Display {
     // real content upward, which drops higher levels into view at the
     // top and drops lower levels out at the bottom.
     const rows = snap.slice().reverse();
+    const svgSize = parseFloat(getComputedStyle(this.stackView).fontSize);
     this.stackView.innerHTML = '';
     rows.forEach((val, i) => {
       const level = rows.length - i;
@@ -142,11 +143,11 @@ export class Display {
       this.displayOpts.mode   = calcState.displayMode   || 'STD';
       this.displayOpts.digits = calcState.displayDigits ?? 12;
       if (calcState.textbookMode && isSymbolic(val)) {
-        const { svg } = astToSvg(val.expr, { size: 22 });
+        const { svg } = astToSvg(val.expr, { size: svgSize });
         inner.innerHTML = svg;
         cell.classList.add('textbook');
       } else if (calcState.textbookMode && isList(val)) {
-        inner.innerHTML = this._renderTextbookList(val);
+        inner.innerHTML = this._renderTextbookList(val, svgSize);
         cell.classList.add('textbook');
       } else if (calcState.textbookMode && (isMatrix(val) || isVector(val))) {
         // Textbook 2D matrix/vector: lay rows out as a CSS grid of
@@ -267,10 +268,10 @@ export class Display {
    *  Each item that is a Symbolic gets the full SVG pretty-print;
    *  everything else uses the regular formatter so numbers, names,
    *  nested lists, etc. all display correctly. */
-  _renderTextbookList(val) {
+  _renderTextbookList(val, svgSize = 22) {
     const items = val.items.map(item => {
       if (isSymbolic(item)) {
-        const { svg } = astToSvg(item.expr, { size: 22 });
+        const { svg } = astToSvg(item.expr, { size: svgSize });
         return `<span class="lcell lcell-sym">${svg}</span>`;
       }
       const text = format(item, this.displayOpts);
