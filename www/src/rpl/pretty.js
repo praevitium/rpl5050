@@ -173,12 +173,17 @@ function fracBox(num, den, size = DEFAULT_SIZE) {
   };
 }
 
-/** base^exp  —  base drawn at normal size, exp at SUP_SCALE and raised
- *  SUP_RISE × base.ascent.  The row's ascent stretches to cover the
- *  exponent's top; descent stays at base.descent.  (Exponents never
- *  dip below the baseline for us.) */
+/** base^exp  —  base drawn at normal size, exp at SUP_SCALE and raised so
+ *  it sits cleanly above the base.  For a normal exp ("2"), the rise is
+ *  SUP_RISE × base.ascent — the typographic default that overlaps the top
+ *  of the base.  For a tall exp (a stacked fraction in X^(1/2)), that rise
+ *  isn't enough — the fraction's descent dips below the base's baseline
+ *  and visually crashes into the base.  We bump the rise so the exp's
+ *  bottom stays above the base baseline by a small clearance. */
 function supBox(base, exp) {
-  const rise = SUP_RISE * base.ascent;
+  const minRise = SUP_RISE * base.ascent;
+  const clearance = 0.05 * base.ascent;
+  const rise = Math.max(minRise, exp.descent + clearance);
   const ascent  = Math.max(base.ascent, rise + exp.ascent);
   const descent = base.descent;
   const width   = base.width + exp.width;
