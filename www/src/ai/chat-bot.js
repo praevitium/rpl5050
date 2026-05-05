@@ -398,8 +398,8 @@ function stripThinkBlocks(text) {
  *  of things the assistant can actually do. */
 const STARTER_CHIPS = [
   'Compute the sum of 3 and 5',
+  'Solve for X: X^2-3*X+2 = 0',
   'Take the derivative of x^3+3*x+1',
-  'Factor 1234567890',
 ];
 
 /* ---- Model catalog ------------------------------------------------
