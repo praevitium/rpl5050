@@ -15653,15 +15653,18 @@ function _isNumNode(ast) { return ast && ast.kind === 'num'; }
 
 register('LAPLACE', (s) => {
   const [v] = s.popN(1);
-  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  let expr;
+  if (isSymbolic(v))   expr = v.expr;
+  else if (isName(v))  expr = AstVar(v.id);
+  else throw new RPLError('Bad argument type');
   // Route through Giac.  HP50 convention: same variable for input
   // and output (`X → X`).  Giac's `laplace(f, x, s)` signature wants
   // three args — we pass the same name twice to keep the output in
   // X, matching the HP50's "transform in place" idiom.
   if (!giac.isReady()) throw new RPLError('CAS not ready');
-  const varName = _lapVarName(v.expr);
+  const varName = _lapVarName(expr);
   const cmd = buildGiacCmd(
-    v.expr,
+    expr,
     (e) => `laplace(${e},${varName},${varName})`,
     [varName],
   );
@@ -15670,11 +15673,14 @@ register('LAPLACE', (s) => {
 
 register('ILAP', (s) => {
   const [v] = s.popN(1);
-  if (!isSymbolic(v)) throw new RPLError('Bad argument type');
+  let expr;
+  if (isSymbolic(v))   expr = v.expr;
+  else if (isName(v))  expr = AstVar(v.id);
+  else throw new RPLError('Bad argument type');
   if (!giac.isReady()) throw new RPLError('CAS not ready');
-  const varName = _lapVarName(v.expr);
+  const varName = _lapVarName(expr);
   const cmd = buildGiacCmd(
-    v.expr,
+    expr,
     (e) => `ilaplace(${e},${varName},${varName})`,
     [varName],
   );
