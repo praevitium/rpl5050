@@ -227,7 +227,10 @@ export function parseEntry(src) {
       case 'number': {
         const text = t.text;
         if (/^[-+]?\d+$/.test(text)) return Integer(text);
-        return Real(parseFloat(text));
+        // Hand the raw text to Real() — its Decimal backing parses
+        // arbitrary-magnitude literals like `1E400` directly, while
+        // parseFloat would saturate to Infinity at IEEE-754 overflow.
+        return Real(text);
       }
 
       case 'unit': {

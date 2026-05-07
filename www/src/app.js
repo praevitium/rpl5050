@@ -11,7 +11,7 @@ import { SidePanel }    from './ui/side-panel.js';
 import { clampStackScroll, computeMenuPage } from './ui/paging.js';
 import { handleModifierShortcut } from './ui/shortcuts.js';
 import {
-  interactiveStackMenu, levelUp, levelDown,
+  interactiveStackMenu, levelUp, levelDown, clampLevel,
   rollLevel, rollDownToLevel, dropLevel,
 } from './ui/interactive-stack.js';
 import { format } from './rpl/formatter.js';
@@ -967,6 +967,24 @@ class App {
       this.echoStackLevel(this._interactive.level);
       this.entry.focus();
     });
+    // Backspace while a level is selected = DROP that level, but stay
+    // in browse mode so the user can chain deletions.  After the
+    // splice, the entry that used to sit one level deeper now occupies
+    // the same level number — the cursor naturally lands on it.
+    // clampLevel handles the "deleted the deepest level" case (snap to
+    // new depth) and the "stack is now empty" case (level → 0, no
+    // highlight).  Only Esc / ◀ / ON exit interactive mode.
+    this._interactive.dropAction = () => {
+      try {
+        this.entry._snapForUndo();
+        dropLevel(this.stack, this._interactive.level);
+      } catch (e) {
+        this.entry.flashError(e);
+        return;
+      }
+      this._interactive.level = clampLevel(this._interactive.level, this.stack.depth);
+      refresh();
+    };
     // Cleanup hook for _exitInteractiveStack.
     this._interactive._cleanup = cleanup;
   }
@@ -1177,6 +1195,7 @@ class App {
           case 'ArrowUp':    this._interactive.moveUp();    return e.preventDefault();
           case 'ArrowDown':  this._interactive.moveDown();  return e.preventDefault();
           case 'Enter':      this._interactive.defaultAction(); return e.preventDefault();
+          case 'Backspace':  this._interactive.dropAction(); return e.preventDefault();
           case 'Escape':
           case 'ArrowLeft':  this._exitInteractiveStack();  return e.preventDefault();
           default:           this._exitInteractiveStack();  // fall through
