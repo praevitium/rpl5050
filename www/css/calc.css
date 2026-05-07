@@ -120,6 +120,7 @@ body {
   color: #6b7280;
   letter-spacing: .4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
 }
 
 /* ------------------------------ Screen ------------------------------
