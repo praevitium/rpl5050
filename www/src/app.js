@@ -291,9 +291,13 @@ class App {
    *  set here so the first paint already matches whatever the user
    *  last chose — kept in memory only for now.
    *
-   *  Double-clicking the version label triggers a full settings reset
-   *  (no prompt) — useful if a corrupted saved state prevents the app
-   *  from loading correctly. */
+   *  Clicking the version label toggles the Tauri WebView's
+   *  DevTools panel (single-click — consistent with the brand and
+   *  model labels above it).  In a plain browser context the click
+   *  is a no-op (the browser already has F12 / Cmd+Option+I).
+   *  Settings reset has moved to the global `calc_reset()` function —
+   *  type it into the DevTools console to wipe localStorage and
+   *  reload. */
   _installChromeToggles() {
     const MODES = ['full', 'simple', 'minimal'];
     const CHROME_KEY = 'hp50.ui.chrome';
@@ -313,29 +317,15 @@ class App {
       if (sp.isOpen()) sp.close();
       else sp.open(sp.tab);
     });
-    document.getElementById('versionLabel')?.addEventListener('dblclick', (e) => {
+    document.getElementById('versionLabel')?.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this._resetSettings();
+      // Tauri v2 with `withGlobalTauri: true` exposes invoke at
+      // window.__TAURI__.core.invoke; the matching Rust command is
+      // registered in src-tauri/src/main.rs.  In a plain browser tab
+      // the global is undefined and we silently no-op.
+      window.__TAURI__?.core?.invoke?.('toggle_devtools').catch(() => {});
     });
-  }
-
-  /** Wipe all persisted settings then reload the page.  Covers every
-   *  localStorage key the app writes: calculator state, side-panel
-   *  layout, AI model choice, and consent flags.
-   *  Triggered by double-clicking the version label. */
-  _resetSettings() {
-    const KEYS = [
-      'hp50.state',
-      'hp50.ui.sidePanel',
-      'hp50.ui.chrome',
-      'rpl5050.chatbot.modelId',
-      'rpl5050.chatbot.consented.v1',
-      'rpl5050.chatbot.migrated.dropPremium.v1',
-    ];
-    try { for (const k of KEYS) localStorage.removeItem(k); }
-    catch { /* private / storage-blocked mode — proceed to reload anyway */ }
-    location.reload();
   }
 
   /** Download the current stack + HOME directory as a JSON snapshot.
@@ -1310,6 +1300,27 @@ function customMenuTarget(item) {
 }
 
 window.__hp50 = new App();
+
+/** Wipe all persisted settings and reload the page.  Covers every
+ *  localStorage key the app writes: calculator state, side-panel
+ *  layout, chrome mode, AI model choice, remote endpoint config,
+ *  consent flags, etc.  Exposed as a global so users can run it from
+ *  the DevTools console (the previous double-click-version shortcut
+ *  has been repurposed to open DevTools itself). */
+window.calc_reset = function calc_reset() {
+  const KEYS = [
+    'hp50.state',
+    'hp50.ui.sidePanel',
+    'hp50.ui.chrome',
+    'rpl5050.chatbot.modelId',
+    'rpl5050.chatbot.consented.v1',
+    'rpl5050.chatbot.migrated.dropPremium.v1',
+    'rpl5050.chatbot.remote',
+  ];
+  try { for (const k of KEYS) localStorage.removeItem(k); }
+  catch { /* private / storage-blocked — proceed to reload anyway */ }
+  location.reload();
+};
 
 /* ------------------------------------------------------------------
    Kick off the Giac CAS in the background.  Cold init is ~150 ms
