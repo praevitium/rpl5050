@@ -8,6 +8,7 @@
     "frontendDist": "../www-dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "rp5050ai - RPL Scientific Calculator",
