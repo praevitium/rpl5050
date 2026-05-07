@@ -608,16 +608,26 @@ export class Entry {
   enter() {
     this.error = '';
     const raw = this.buffer.trim();
-    // Bare UNDO / REDO / LASTSTACK route straight to performUndo /
-    // performRedo (matching the UNDO keypad key when not editing).
-    // The normal path's pre-snap would otherwise capture the current
-    // stack the very instant we're about to step back — making typed
-    // UNDO a no-op — and the registered `s.undo()` op skips the
-    // var-state half, so redo would also go out of sync.
-    if (raw === 'UNDO' || raw === 'LASTSTACK' || raw === 'REDO') {
+    // An entry consisting entirely of UNDO / REDO / LASTSTACK tokens
+    // (any case, any count) routes straight to performUndo /
+    // performRedo for each token, matching the UNDO keypad key when
+    // not editing.  The normal path's pre-snap would otherwise capture
+    // the current stack the very instant we're about to step back —
+    // making the first typed UNDO a no-op, so `undo` would visibly do
+    // nothing and `undo undo` would only undo once — and the
+    // registered `s.undo()` op skips the var-state half, so redo would
+    // also go out of sync.
+    const tokens = raw.length > 0 ? raw.split(/\s+/) : [];
+    const isUndoTok = (t) => {
+      const u = t.toUpperCase();
+      return u === 'UNDO' || u === 'LASTSTACK' || u === 'REDO';
+    };
+    if (tokens.length > 0 && tokens.every(isUndoTok)) {
       try {
-        if (raw === 'REDO') this.performRedo();
-        else this.performUndo();
+        for (const t of tokens) {
+          if (t.toUpperCase() === 'REDO') this.performRedo();
+          else this.performUndo();
+        }
       } catch (e) { this.flashError(e); return; }
       this._recordHistory(raw);
       this.buffer = '';

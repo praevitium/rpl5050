@@ -513,12 +513,15 @@ const TOOL_ALIASES = Object.freeze({
 function activeContextTokens(llm) {
   const id = llm?.loadedModelId;
   if (!id) return 4096;
-  // RemoteLLM exposes the server-side model name as loadedModelId; we
-  // can't introspect its context window over OpenAI-compat APIs, so
-  // assume the conservative default defined above.  Detected by
-  // duck-typing on `endpoint` — RemoteLLM has it, the worker LLM
-  // doesn't.
-  if (typeof llm?.endpoint === 'string') return REMOTE_CONTEXT_TOKENS_DEFAULT;
+  // RemoteLLM exposes the server-side model name as loadedModelId.
+  // It also fills `contextTokens` from Ollama's /api/show probe at
+  // load time; when present, use that (the model's true max).
+  // Plain OpenAI-compat servers don't expose this so we fall back to
+  // the default below.  Detected by duck-typing on `endpoint` —
+  // RemoteLLM has it, the worker LLM doesn't.
+  if (typeof llm?.endpoint === 'string') {
+    return llm.contextTokens || REMOTE_CONTEXT_TOKENS_DEFAULT;
+  }
   const entry = MODELS.find((m) => m.id === id);
   return entry?.contextTokens ?? 4096;
 }
@@ -2157,7 +2160,26 @@ export class ChatBot {
       // cancel button's own click listener (it sets "✗ Cancelled"
       // before resolve(false)), so we only call complete() on the
       // run path.
-      const { complete } = this._addToolWidgetBubble({ name: toolCall.name, ...summary });
+      // Rerun closure — captured here so the widget can re-invoke the
+      // same handler+args after the initial confirmation flow has
+      // completed.  Pushes a fresh history note each rerun so the
+      // conversation log reflects every actual execution (the user
+      // explicitly asked for the action to happen again).
+      const rerun = async () => {
+        try {
+          const result = await tool.handler(args);
+          const note = this._summariseToolResult(toolCall.name, args, result);
+          this._pushHistoryNote(note);
+          dlog('dispatchTool: rerun success', toolCall.name);
+        } catch (err) {
+          this._pushHistoryNote(`(Re-running ${toolCall.name} failed: ${err.message}.)`);
+          dwarn('dispatchTool: rerun handler threw for', toolCall.name, err);
+          throw err;
+        }
+      };
+      const { complete } = this._addToolWidgetBubble({
+        name: toolCall.name, ...summary, onRerun: rerun,
+      });
       dlog('dispatchTool: awaiting user confirmation for', toolCall.name);
       const confirmed = await new Promise((resolve) => {
         this._pendingConfirm = { resolve };
@@ -2512,10 +2534,12 @@ export class ChatBot {
    *  widget out of its in-flight "Running…" state once the handler
    *  finishes; see `_buildToolCallWidget`'s docstring for the
    *  contract. */
-  _addToolWidgetBubble({ name, label, code }) {
+  _addToolWidgetBubble({ name, label, code, onRerun }) {
     const bubble = document.createElement('div');
     bubble.className = 'cb-bubble cb-bubble-assistant cb-bubble-tool';
-    const { widget, complete } = this._buildToolCallWidget({ name, label, code });
+    const { widget, complete } = this._buildToolCallWidget({
+      name, label, code, onRerun,
+    });
     bubble.appendChild(widget);
     this._messagesEl.appendChild(bubble);
     this._scrollBottom();
@@ -2655,7 +2679,7 @@ export class ChatBot {
    *  with the actual outcome.  This avoids the previous footgun
    *  where the click handler optimistically wrote "✓ Running…" and
    *  the dispatch path had no way to overwrite it. */
-  _buildToolCallWidget({ name, label, code }) {
+  _buildToolCallWidget({ name, label, code, onRerun }) {
     const widget = document.createElement('div');
     widget.className = 'cb-action-widget';
 
@@ -2677,14 +2701,37 @@ export class ChatBot {
     const confirmBtn = document.createElement('button');
     confirmBtn.className = 'cb-btn-confirm';
     confirmBtn.textContent = '▶ Run';
-    confirmBtn.addEventListener('click', () => {
-      if (!this._pendingConfirm) return;
-      // Disable + show interim label.  _dispatchTool will overwrite
-      // this label via complete() once the handler returns.
-      confirmBtn.disabled = true;
-      cancelBtn.disabled  = true;
-      confirmBtn.textContent = '✓ Running…';
-      this._pendingConfirm.resolve(true);
+    // Capture click time so complete() can enforce a 1s minimum
+    // disabled window — fast handlers (push a number, clear the
+    // editor) otherwise complete in <50 ms and the user gets no
+    // visible feedback that anything happened.
+    let runStartedAt = null;
+    confirmBtn.addEventListener('click', async () => {
+      // First click: drive the initial confirmation flow.  Once
+      // _pendingConfirm has been resolved, _completed flips to true
+      // (after complete() runs); subsequent clicks then go through
+      // the rerun branch below, which re-invokes the captured handler
+      // directly without involving the dispatch loop.
+      if (this._pendingConfirm) {
+        runStartedAt = Date.now();
+        confirmBtn.disabled = true;
+        cancelBtn.disabled  = true;
+        this._pendingConfirm.resolve(true);
+        return;
+      }
+      if (_completed && onRerun) {
+        runStartedAt = Date.now();
+        confirmBtn.disabled = true;
+        // Reset for another complete() cycle.
+        _completed = false;
+        widget.classList.remove('cb-action-done', 'cb-action-failed');
+        try {
+          await onRerun();
+          complete(true);
+        } catch {
+          complete(false);
+        }
+      }
     });
 
     const cancelBtn = document.createElement('button');
@@ -2708,13 +2755,20 @@ export class ChatBot {
     // to call multiple times; only the first call has visible
     // effect.
     let _completed = false;
-    const complete = (ok, finalLabel) => {
+    const complete = (ok /* , _finalLabel */) => {
       if (_completed) return;
       _completed = true;
-      confirmBtn.disabled = true;
-      cancelBtn.disabled  = true;
-      confirmBtn.textContent = finalLabel || (ok ? '✓ Done' : '✗ Failed');
-      widget.classList.add(ok ? 'cb-action-done' : 'cb-action-failed');
+      // Enforce a min 1s disabled window so fast handlers still flash
+      // the interim state visibly.  After that, relabel to "↻ Rerun"
+      // and re-enable so the user can re-execute the same action; the
+      // widget also picks up a done/failed CSS class for distinction.
+      const elapsed   = Date.now() - (runStartedAt ?? Date.now());
+      const remaining = Math.max(0, 1000 - elapsed);
+      setTimeout(() => {
+        confirmBtn.disabled = onRerun ? false : true;
+        confirmBtn.textContent = '↻ Rerun';
+        widget.classList.add(ok ? 'cb-action-done' : 'cb-action-failed');
+      }, remaining);
     };
 
     return { widget, complete };

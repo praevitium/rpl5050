@@ -34,6 +34,12 @@ export class RemoteLLM {
 
     this._loadingModelId = null;
     this._loadedModelId  = null;
+    // Max context tokens reported by the server for the loaded model.
+    // Filled by load() via Ollama's /api/show (when available); null
+    // when the server doesn't expose this (e.g. plain OpenAI-compat).
+    // Read by chat-bot.js's effectiveBudget() to size the history
+    // trimmer.
+    this._contextTokens = null;
 
     // Single in-flight fetch's AbortController.  abort() trips it.
     this._abortCtrl = null;
@@ -46,6 +52,7 @@ export class RemoteLLM {
   get endpoint()  { return this._endpoint; }
   get lastStats() { return this._lastStats; }
   get loadedModelId() { return this._loadedModelId ?? null; }
+  get contextTokens() { return this._contextTokens; }
 
   onStatus(fn) {
     this._statusListeners.add(fn);
@@ -96,6 +103,33 @@ export class RemoteLLM {
                        'not in /models response; available:', ids);
         }
       } catch { /* not JSON / unexpected shape — ignore */ }
+
+      // Best-effort: probe Ollama's `/api/show` for the model's
+      // actual max context length.  The response shape includes a
+      // `model_info` map with one `<arch>.context_length` entry
+      // (e.g. `qwen2.context_length`); we look up whichever key ends
+      // in `.context_length`.  Non-Ollama servers will 404 here and
+      // we silently fall through — chat-bot.js's effectiveBudget
+      // applies a default in that case.
+      try {
+        const ollamaBase = this._endpoint.replace(/\/v1$/, '');
+        const r = await fetch(ollamaBase + '/api/show', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: modelId }),
+        });
+        if (r.ok) {
+          const data = await r.json();
+          const info = data?.model_info ?? {};
+          const ctxKey = Object.keys(info).find((k) => k.endsWith('.context_length'));
+          if (ctxKey && typeof info[ctxKey] === 'number' && info[ctxKey] > 0) {
+            this._contextTokens = info[ctxKey];
+            // eslint-disable-next-line no-console
+            console.log('[RemoteLLM] /api/show: contextTokens =', this._contextTokens,
+                        '(from', ctxKey + ')');
+          }
+        }
+      } catch { /* server didn't expose /api/show — use default */ }
 
       this._loadedModelId  = modelId;
       this._loadingModelId = null;

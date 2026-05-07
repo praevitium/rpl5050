@@ -1678,11 +1678,20 @@ body.mode-minimal .keypad {
    left-border accent.  Sized to fit inside the messages-list area
    without crowding. */
 .cb-picker {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 10px 12px;
   background: #161a26;
   border-top: 1px solid rgba(255,255,255,.06);
+}
+/* When the picker is open, hide the conversation surface so the
+   picker fills the full available height instead of competing with
+   the messages list for space.  :has() needs no JS toggle — the
+   picker's own .hidden class drives this. */
+.cb-inner:has(> .cb-picker:not(.hidden)) > .cb-messages,
+.cb-inner:has(> .cb-picker:not(.hidden)) > .cb-stats {
+  display: none;
 }
 /* Picker header — blurb on the left, close (×) button on the right.
    Close is always visible so the user can back out without making
