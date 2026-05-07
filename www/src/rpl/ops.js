@@ -5751,7 +5751,18 @@ register('SOLVE', (s) => {
   // matches the HP50 convention that SOLVE yields a list of equations.
   if (!giac.isReady()) throw new RPLError('CAS not ready');
   const cmd = buildGiacCmd(ast, (e) => `solve(${e},${varName})`, [varName]);
-  const raw = giac.caseval(cmd);
+  let raw = giac.caseval(cmd);
+  // Numeric fallback: when Giac can't reduce a root to closed-form
+  // radicals (typically a cubic with no rational roots, or higher-
+  // degree polynomials), it returns its `rootof([[…]],[[…]])`
+  // placeholder syntax.  Our algebra parser can't decode that nested-
+  // array argument shape, so retry with `fsolve` which returns real
+  // roots numerically (e.g. `[-0.6388…]`).  Matches the HP50
+  // convention that SOLVE returns real roots only.
+  if (typeof raw === 'string' && raw.includes('rootof')) {
+    const cmdN = buildGiacCmd(ast, (e) => `fsolve(${e},${varName})`, [varName]);
+    raw = giac.caseval(cmdN);
+  }
   let parts = splitGiacList(raw);
   // Giac returns `[]` for "no solutions", or — on some inputs / build
   // configurations — a bare scalar when it has a single root and didn't
