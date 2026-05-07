@@ -444,9 +444,17 @@ const STARTER_CHIPS = [
    prompts (e.g. the system prompt gets clipped), bump it up.
    ------------------------------------------------------------------ */
 const MODELS = [
+  // Code-tuned variants
   { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 0.5B',     size: '~400 MB',  contextTokens: 32768, note: 'Smallest — fast but weakest reasoning; code-tuned' },
   { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  contextTokens: 32768, note: 'Sweet spot for low-end GPUs — strong at structured output', isDefault: true },
+
+  // Original (instruction-tuned) Qwen models, 500 MB – 2 GB
+  { id: 'Qwen3-0.6B-q4f16_1-MLC',                     label: 'Qwen3 0.6B',             size: '~500 MB',  contextTokens: 32768, note: 'Newer Qwen generation — tiny' },
+  { id: 'Qwen3.5-0.8B-q4f16_1-MLC',                   label: 'Qwen3.5 0.8B',           size: '~650 MB',  contextTokens: 32768, note: 'Latest Qwen3.5 — small' },
+  { id: 'Qwen2-1.5B-Instruct-q4f16_1-MLC',            label: 'Qwen2 1.5B',             size: '~1.0 GB',  contextTokens: 32768, note: 'Original Qwen2 instruction-tuned' },
+  { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC',          label: 'Qwen2.5 1.5B',           size: '~1.0 GB',  contextTokens: 32768, note: 'Qwen2.5 base instruct (non-Coder)' },
   { id: 'Qwen3-1.7B-q4f16_1-MLC',                     label: 'Qwen3 1.7B',             size: '~1.4 GB',  contextTokens: 32768, note: 'Newer Qwen generation, mid-size' },
+  { id: 'Qwen3.5-2B-q4f16_1-MLC',                     label: 'Qwen3.5 2B',             size: '~1.6 GB',  contextTokens: 32768, note: 'Latest Qwen3.5 — largest under 2 GB' },
 ];
 
 /** Tool-name aliases for common synonyms small models reach for.
