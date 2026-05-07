@@ -33,6 +33,7 @@
    ================================================================= */
 
 import { LLM } from './llm.js';
+import { RemoteLLM } from './remote-llm.js';
 import { SYSTEM_PROMPT_COMBINED } from './system-prompt.js';
 
 // Diagnostic logging — every flow-control transition in this module
@@ -443,33 +444,9 @@ const STARTER_CHIPS = [
    prompts (e.g. the system prompt gets clipped), bump it up.
    ------------------------------------------------------------------ */
 const MODELS = [
-  // ---- 0.4-0.7 GB — fastest, weakest ----
-  { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC',          label: 'SmolLM2 360M',           size: '~370 MB',  contextTokens: 8192,  note: 'Fastest, weakest — fluent but unreliable on math / structured output' },
-  { id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',          label: 'Qwen2.5 0.5B',           size: '~400 MB',  contextTokens: 16384, note: 'Tiny, surprisingly good at JSON / tool calls' },
-  { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 0.5B',     size: '~400 MB',  contextTokens: 16384, note: 'Code-tuned 0.5B — handles RPL syntax better than the base 0.5B' },
-  { id: 'Qwen3-0.6B-q4f16_1-MLC',                     label: 'Qwen3 0.6B',             size: '~500 MB',  contextTokens: 16384, note: 'Newer Qwen generation' },
-  { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',       label: 'TinyLlama 1.1B',         size: '~700 MB',  contextTokens: 2048,  note: '⚠ Native max only 2K — system prompt vastly exceeds context; not usable with current prompt size' },
-
-  // ---- 0.9-1.5 GB — small / sweet spot ----
-  { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 1B',           size: '~880 MB',  contextTokens: 16384, note: 'Smaller fallback — fast but weaker reasoning (model native max 128K)' },
-  { id: 'stablelm-2-zephyr-1_6b-q4f16_1-MLC',         label: 'StableLM 2 Zephyr 1.6B', size: '~1.0 GB',  contextTokens: 4096,  note: '⚠ Native max 4K — system prompt exceeds context; not usable with current prompt size' },
-  { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC',          label: 'SmolLM2 1.7B',           size: '~1.0 GB',  contextTokens: 8192,  note: 'Larger SmolLM2 — works but tight (~2K tokens of history headroom after the system prompt)' },
-  { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  contextTokens: 16384, note: 'Code-tuned 1.5B — strong at structured output' },
-  { id: 'Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC',     label: 'Qwen2.5 Math 1.5B',      size: '~1.3 GB',  contextTokens: 4096,  note: '⚠ Native max often 4K — system prompt exceeds context; not usable with current prompt size' },
-  { id: 'Qwen3-1.7B-q4f16_1-MLC',                     label: 'Qwen3 1.7B',             size: '~1.4 GB',  contextTokens: 16384, note: 'Newer Qwen, mid-size' },
-
-  // ---- 1.9-2.4 GB — mid-tier ----
-  { id: 'gemma-2-2b-it-q4f16_1-MLC',                  label: 'Gemma 2 2B',             size: '~1.9 GB',  contextTokens: 8192,  note: 'Google instruction-tuned 2B (native max 8K)' },
-  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',          label: 'Llama 3.2 3B',           size: '~2.3 GB',  contextTokens: 16384, note: 'Recommended default — much smarter than 1B, stable in browser WebGPU (unlike 7B+); native max 128K', isDefault: true },
-  { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC',          label: 'Hermes 3 (Llama 3.2 3B)', size: '~2.3 GB', contextTokens: 16384, note: 'NousResearch fine-tune of Llama 3.2 3B — strong tool calling' },
-  { id: 'Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC',      label: 'Qwen2.5 Coder 3B',       size: '~2.4 GB',  contextTokens: 16384, note: 'Code-tuned 3B' },
-  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',          label: 'Phi 3.5 mini',           size: '~2.4 GB',  contextTokens: 16384, note: 'Microsoft — strong on tool / structured output (native max 128K)' },
-
-  // ---- 3.0+ GB — premium, needs a beefy GPU ----
-  { id: 'Qwen3-4B-q4f16_1-MLC',                       label: 'Qwen3 4B',               size: '~3.2 GB',  contextTokens: 16384, note: 'Premium Qwen3 mid-tier' },
-  { id: 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC',       label: 'Mistral 7B v0.3',        size: '~4.5 GB',  contextTokens: 16384, note: 'Premium — needs ≥6 GB VRAM (native max 32K)' },
-  { id: 'Qwen2.5-7B-Instruct-q4f16_1-MLC',            label: 'Qwen2.5 7B',             size: '~5.0 GB',  contextTokens: 8192,  note: 'Premium — needs ≥6 GB VRAM; capped at 8K to leave VRAM for KV cache (native max 32K)' },
-  { id: 'Llama-3.1-8B-Instruct-q4f16_1-MLC',          label: 'Llama 3.1 8B',           size: '~5.4 GB',  contextTokens: 8192,  note: 'Top-tier — needs ≥6 GB VRAM; 8K cap for VRAM headroom (native max 128K)' },
+  { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 0.5B',     size: '~400 MB',  contextTokens: 32768, note: 'Smallest — fast but weakest reasoning; code-tuned' },
+  { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen2.5 Coder 1.5B',     size: '~1.3 GB',  contextTokens: 32768, note: 'Sweet spot for low-end GPUs — strong at structured output', isDefault: true },
+  { id: 'Qwen3-1.7B-q4f16_1-MLC',                     label: 'Qwen3 1.7B',             size: '~1.4 GB',  contextTokens: 32768, note: 'Newer Qwen generation, mid-size' },
 ];
 
 /** Tool-name aliases for common synonyms small models reach for.
@@ -528,12 +505,103 @@ const TOOL_ALIASES = Object.freeze({
 function activeContextTokens(llm) {
   const id = llm?.loadedModelId;
   if (!id) return 4096;
+  // RemoteLLM exposes the server-side model name as loadedModelId; we
+  // can't introspect its context window over OpenAI-compat APIs, so
+  // assume the conservative default defined above.  Detected by
+  // duck-typing on `endpoint` — RemoteLLM has it, the worker LLM
+  // doesn't.
+  if (typeof llm?.endpoint === 'string') return REMOTE_CONTEXT_TOKENS_DEFAULT;
   const entry = MODELS.find((m) => m.id === id);
   return entry?.contextTokens ?? 4096;
 }
 
 const DEFAULT_MODEL_ID  = MODELS.find((m) => m.isDefault)?.id ?? MODELS[0].id;
 const MODEL_STORAGE_KEY = 'rpl5050.chatbot.modelId';
+
+// Sentinel id used in MODEL_STORAGE_KEY to mean "use the saved remote
+// endpoint config" instead of one of the in-browser MODELS entries.
+// Picked to be obviously not a real WebLLM model id so the
+// `MODELS.find(...)` lookup safely returns undefined.
+const REMOTE_MODEL_ID    = '__remote__';
+const REMOTE_CONFIG_KEY  = 'rpl5050.chatbot.remote';
+// Default context-token budget assumed for remote models — Ollama
+// servers typically run with 8K-32K windows and the user can resize
+// it server-side, so we pick a generous middle ground.  This only
+// affects the history-trimming budget shown in the stats line; the
+// server enforces the real limit.
+const REMOTE_CONTEXT_TOKENS_DEFAULT = 16384;
+
+function loadRemoteConfig() {
+  try {
+    const raw = localStorage.getItem(REMOTE_CONFIG_KEY);
+    if (!raw) return null;
+    const cfg = JSON.parse(raw);
+    if (cfg && typeof cfg.url === 'string' && typeof cfg.model === 'string'
+        && cfg.url.trim() && cfg.model.trim()) {
+      return { url: cfg.url.trim(), model: cfg.model.trim() };
+    }
+  } catch { /* corrupt entry — fall through */ }
+  return null;
+}
+function saveRemoteConfig(cfg) {
+  try { localStorage.setItem(REMOTE_CONFIG_KEY, JSON.stringify(cfg)); }
+  catch { /* private mode */ }
+}
+function clearRemoteConfig() {
+  try { localStorage.removeItem(REMOTE_CONFIG_KEY); }
+  catch { /* private mode */ }
+}
+
+/** Fetch the list of models exposed by a remote endpoint.  Tries
+ *  Ollama's `/api/tags` first (rich metadata: size, parameter count,
+ *  quantization) and falls back to OpenAI-compat `/v1/models` (id only).
+ *
+ *  Input `url` is whatever the user typed in the Base URL field.  We
+ *  derive both `<base>/api/tags` (after stripping any trailing `/v1`)
+ *  AND `<typedUrl>/models` so either endpoint shape works.
+ *
+ *  Returns `{ models: [{id, size, params, quant}], source: 'ollama'|'openai' }`.
+ *  Throws if neither probe returns a usable model list. */
+async function fetchRemoteModels(url) {
+  const trimmed = url.replace(/\/+$/, '');
+  const ollamaBase = trimmed.replace(/\/v1$/, '');
+
+  // Try Ollama native first — richer metadata and the URL shape most
+  // users will actually have configured for this app.
+  try {
+    const r = await fetch(ollamaBase + '/api/tags', { method: 'GET' });
+    if (r.ok) {
+      const body = await r.json();
+      const models = (body?.models ?? []).map((m) => ({
+        id:     m.name || m.model,
+        size:   typeof m.size === 'number' ? m.size : null,
+        params: m.details?.parameter_size ?? null,
+        quant:  m.details?.quantization_level ?? null,
+      })).filter((m) => m.id);
+      if (models.length) return { models, source: 'ollama' };
+    }
+  } catch { /* fall through to OpenAI-compat probe */ }
+
+  // OpenAI-compat fallback.  No size/param/quant exposed by the spec —
+  // just id.  We still surface them so the user can pick a model.
+  const r2 = await fetch(trimmed + '/models', { method: 'GET' });
+  if (!r2.ok) throw new Error(`HTTP ${r2.status} from ${trimmed}/models`);
+  const body2 = await r2.json();
+  const models = (body2?.data ?? []).map((m) => ({
+    id: m.id, size: null, params: null, quant: null,
+  })).filter((m) => m.id);
+  if (!models.length) throw new Error('Endpoint returned no models');
+  return { models, source: 'openai' };
+}
+
+/** Format a byte count as a short human-readable string, e.g. 1.3 GB.
+ *  Used in the remote-model dropdown options.  Returns '' for null. */
+function formatBytes(n) {
+  if (typeof n !== 'number' || !isFinite(n) || n <= 0) return '';
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
+  if (n >= 1e6) return (n / 1e6).toFixed(0) + ' MB';
+  return (n / 1e3).toFixed(0) + ' KB';
+}
 
 // First-run consent gate.  The chatbot is a research preview that
 // downloads multi-GB model weights, runs WebGPU inference on the
@@ -642,9 +710,35 @@ export class ChatBot {
     // app.js's `tools` bag.
     this._registry = this._buildRegistry();
 
+    this._wireLLMListeners();
+  }
+
+  /** Subscribe the ChatBot's status/progress/stats handlers to whatever
+   *  is currently in `this._llm`.  Called after construction and after
+   *  every swap between the local LLM (WebLLM worker) and a RemoteLLM
+   *  (HTTP endpoint) — both expose the same listener surface, but each
+   *  instance has its own listener set so we re-subscribe on swap. */
+  _wireLLMListeners() {
     this._llm.onStatus((status, msg) => this._onStatus(status, msg));
     this._llm.onProgress((info) => this._onProgress(info));
     this._llm.onStats((stats) => this._onStats(stats));
+  }
+
+  /** Ensure `this._llm` is the right kind for the requested target.
+   *  `kind` is 'local' (WebLLM worker) or 'remote' (HTTP endpoint).
+   *  No-op if already the right kind AND, for remote, the configured
+   *  endpoint URL hasn't changed.  When swapping, aborts any in-flight
+   *  generation, recreates the instance, and re-wires listeners. */
+  _ensureLLMKind(kind, endpoint = '') {
+    const isRemote = this._llm instanceof RemoteLLM;
+    if (kind === 'remote') {
+      if (isRemote && this._llm.endpoint === endpoint) return;
+    } else {
+      if (!isRemote) return;
+    }
+    try { this._llm.abort(); } catch { /* no-op */ }
+    this._llm = kind === 'remote' ? new RemoteLLM(endpoint) : new LLM();
+    this._wireLLMListeners();
   }
 
   /* ---- Tool registry ---- */
@@ -776,6 +870,14 @@ export class ChatBot {
   _initialiseModelLoad() {
     if (this._llm.status === 'idle') {
       const saved = loadSavedModelId();
+      if (saved === REMOTE_MODEL_ID) {
+        const cfg = loadRemoteConfig();
+        if (cfg) {
+          this._startLoadRemote(cfg);
+          return;
+        }
+        // Saved sentinel but no config — fall through to picker.
+      }
       const known = saved && MODELS.some((m) => m.id === saved);
       if (known) {
         this._startLoad(saved);
@@ -906,6 +1008,10 @@ export class ChatBot {
     this._loadBtn.title = 'Retry loading the selected model.';
     this._loadBtn.addEventListener('click', () => {
       const id = loadSavedModelId() ?? DEFAULT_MODEL_ID;
+      if (id === REMOTE_MODEL_ID) {
+        const cfg = loadRemoteConfig();
+        if (cfg) { this._startLoadRemote(cfg); return; }
+      }
       this._startLoad(id);
     });
 
@@ -1028,59 +1134,351 @@ export class ChatBot {
 
     this._pickerEl.appendChild(head);
 
-    const list = document.createElement('ul');
-    list.className = 'cb-picker-list';
+    const isLocalLLM = !(this._llm instanceof RemoteLLM);
+    const activeId = isLocalLLM
+      ? (this._llm.loadedModelId ?? loadSavedModelId())
+      : loadSavedModelId();
 
-    const activeId = this._llm.loadedModelId ?? loadSavedModelId();
-
+    const select = document.createElement('select');
+    select.className = 'cb-picker-select';
     for (const m of MODELS) {
-      const li = document.createElement('li');
-      li.className = 'cb-picker-row';
-      if (m.id === activeId) li.classList.add('cb-picker-row-active');
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = `${m.label} — ${m.size}`;
+      if (m.id === activeId) opt.selected = true;
+      select.appendChild(opt);
+    }
+    // If activeId didn't match any option (e.g. remote, or stale id),
+    // <select> defaults to the first entry — we want that as the
+    // initial selection so the note row matches what's shown.
+    this._pickerEl.appendChild(select);
+
+    const detail = document.createElement('div');
+    detail.className = 'cb-picker-detail';
+    const note = document.createElement('div');
+    note.className = 'cb-picker-note';
+    detail.appendChild(note);
+
+    const loadBtn = document.createElement('button');
+    loadBtn.type = 'button';
+    loadBtn.className = 'cb-picker-load-btn';
+    detail.appendChild(loadBtn);
+    this._pickerEl.appendChild(detail);
+
+    const refreshDetail = () => {
+      const m = MODELS.find((x) => x.id === select.value) ?? MODELS[0];
+      const isActive = isLocalLLM && this._llm.loadedModelId === m.id;
+      note.textContent = isActive ? `${m.note} · loaded` : m.note;
+      loadBtn.textContent = isActive ? 'Loaded' : 'Load';
+      loadBtn.disabled = isActive;
+    };
+    select.addEventListener('change', refreshDetail);
+    refreshDetail();
+
+    loadBtn.addEventListener('click', () => {
+      if (this._generating) return;
+      const id = select.value;
+      if (isLocalLLM && id === this._llm.loadedModelId) {
+        this._pickerEl.classList.add('hidden');
+        return;
+      }
+      saveModelId(id);
+      this._pickerEl.classList.add('hidden');
+      // Reset the visible conversation when switching models —
+      // the new model has different priors and the prior chat
+      // history would be confusing in that context.
+      this._history = [];
+      if (this._messagesEl) this._messagesEl.innerHTML = '';
+      this._removeActiveChips();
+      this._startLoad(id);
+    });
+
+    this._renderRemoteSection();
+  }
+
+  /* ---- Remote-endpoint section ----------------------------------------
+     Lives under the local-model list inside the picker.  Two states:
+
+       - No saved config: a single "+ Add Ollama-compatible endpoint"
+         button that swaps into an inline form (URL + model name).
+       - Saved config:    a row showing the configured URL + model name
+         that loads on click, with edit/remove buttons.
+
+     Persistence is in localStorage under REMOTE_CONFIG_KEY; the
+     active-row indicator follows the same `cb-picker-row-active` class
+     the local list uses, so a remote row "looks active" identically. */
+
+  _renderRemoteSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'cb-remote-section';
+
+    const heading = document.createElement('div');
+    heading.className = 'cb-remote-heading';
+    heading.textContent = 'Or use a remote OpenAI-compatible endpoint (e.g. Ollama)';
+    wrap.appendChild(heading);
+
+    const cfg = loadRemoteConfig();
+    const savedId = loadSavedModelId();
+    const isActive = savedId === REMOTE_MODEL_ID
+      && this._llm instanceof RemoteLLM
+      && this._llm.loadedModelId === cfg?.model;
+
+    if (cfg) {
+      const row = document.createElement('div');
+      row.className = 'cb-picker-row cb-remote-row';
+      if (isActive) row.classList.add('cb-picker-row-active');
 
       const top = document.createElement('div');
       top.className = 'cb-picker-row-top';
-
       const name = document.createElement('span');
       name.className = 'cb-picker-name';
-      name.textContent = m.label;
-
-      const size = document.createElement('span');
-      size.className = 'cb-picker-size';
-      size.textContent = m.size;
-
+      name.textContent = cfg.model;
+      const url = document.createElement('span');
+      url.className = 'cb-picker-size';
+      url.textContent = cfg.url;
       top.appendChild(name);
-      top.appendChild(size);
+      top.appendChild(url);
+      row.appendChild(top);
 
       const note = document.createElement('div');
       note.className = 'cb-picker-note';
-      note.textContent = m.note;
-      if (m.id === activeId) note.textContent += ' · loaded';
+      note.textContent = isActive
+        ? 'Custom endpoint · loaded'
+        : 'Custom endpoint — click to connect';
+      row.appendChild(note);
 
-      li.appendChild(top);
-      li.appendChild(note);
-
-      li.addEventListener('click', () => {
-        if (this._generating) return; // can't switch mid-generation
-        if (m.id === this._llm.loadedModelId) {
-          // Already loaded — just hide the picker.
-          this._pickerEl.classList.add('hidden');
-          return;
+      const btnRow = document.createElement('div');
+      btnRow.className = 'cb-remote-btns';
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'cb-remote-btn';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._renderRemoteForm(cfg);
+      });
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'cb-remote-btn';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this._generating) return;
+        clearRemoteConfig();
+        // If the removed endpoint was the active selection, fall back
+        // to the default local model so we don't end up with nothing
+        // selected.
+        if (loadSavedModelId() === REMOTE_MODEL_ID) {
+          saveModelId(DEFAULT_MODEL_ID);
         }
-        saveModelId(m.id);
+        this._showPicker();
+      });
+      btnRow.appendChild(editBtn);
+      btnRow.appendChild(removeBtn);
+      row.appendChild(btnRow);
+
+      row.addEventListener('click', () => {
+        if (this._generating) return;
+        if (isActive) { this._pickerEl.classList.add('hidden'); return; }
+        saveModelId(REMOTE_MODEL_ID);
         this._pickerEl.classList.add('hidden');
-        // Reset the visible conversation when switching models —
-        // the new model has different priors and the prior chat
-        // history would be confusing in that context.
         this._history = [];
         if (this._messagesEl) this._messagesEl.innerHTML = '';
         this._removeActiveChips();
-        this._startLoad(m.id);
+        this._startLoadRemote(cfg);
       });
 
-      list.appendChild(li);
+      wrap.appendChild(row);
+    } else {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'cb-remote-add';
+      addBtn.textContent = '+ Add custom endpoint';
+      addBtn.addEventListener('click', () => this._renderRemoteForm(null));
+      wrap.appendChild(addBtn);
     }
-    this._pickerEl.appendChild(list);
+
+    this._pickerEl.appendChild(wrap);
+  }
+
+  /** Render an inline form to enter / edit the remote endpoint config.
+   *  `seed` is the existing config (for edit) or null (for add).  On
+   *  Save the form is replaced with the regular row via _showPicker().
+   *
+   *  When the user types a Base URL (debounced) the form fetches the
+   *  list of available models from the server and populates a
+   *  dropdown alphabetically.  Ollama's `/api/tags` is preferred for
+   *  its size + parameter-count + quantization metadata; OpenAI-compat
+   *  servers fall through to `/v1/models` (id only). */
+  _renderRemoteForm(seed) {
+    if (!this._pickerEl) return;
+
+    // Replace the entire remote section; leave the local list above it
+    // alone so the user can still pick a local model from the form.
+    const existing = this._pickerEl.querySelector('.cb-remote-section');
+    if (existing) existing.remove();
+
+    const wrap = document.createElement('div');
+    wrap.className = 'cb-remote-section cb-remote-form';
+
+    const heading = document.createElement('div');
+    heading.className = 'cb-remote-heading';
+    heading.textContent = seed ? 'Edit endpoint' : 'Add OpenAI-compatible endpoint';
+    wrap.appendChild(heading);
+
+    const help = document.createElement('div');
+    help.className = 'cb-remote-help';
+    help.textContent =
+      'For local Ollama, the URL is typically http://localhost:11434/v1. '
+      + 'Models you have pulled appear in the dropdown once the URL is reachable.';
+    wrap.appendChild(help);
+
+    const urlLabel = document.createElement('label');
+    urlLabel.className = 'cb-remote-label';
+    urlLabel.textContent = 'Base URL';
+    wrap.appendChild(urlLabel);
+    const urlInput = document.createElement('input');
+    urlInput.type = 'url';
+    urlInput.className = 'cb-remote-input';
+    urlInput.placeholder = 'http://localhost:11434/v1';
+    urlInput.value = seed?.url ?? '';
+    wrap.appendChild(urlInput);
+
+    const modelLabel = document.createElement('label');
+    modelLabel.className = 'cb-remote-label';
+    modelLabel.textContent = 'Model';
+    wrap.appendChild(modelLabel);
+    const modelSelect = document.createElement('select');
+    modelSelect.className = 'cb-remote-input cb-picker-select';
+    modelSelect.disabled = true;
+    const placeholder = document.createElement('option');
+    placeholder.textContent = '(enter a URL to load available models)';
+    placeholder.value = '';
+    modelSelect.appendChild(placeholder);
+    wrap.appendChild(modelSelect);
+
+    const statusEl = document.createElement('div');
+    statusEl.className = 'cb-remote-help';
+    wrap.appendChild(statusEl);
+
+    const errEl = document.createElement('div');
+    errEl.className = 'cb-remote-err';
+    wrap.appendChild(errEl);
+
+    // Debounced URL → model-list fetch.  Each keystroke reschedules the
+    // timer; a token incremented per fetch is checked after the await
+    // so a stale response from an earlier URL doesn't overwrite the
+    // current one's models.
+    let fetchToken = 0;
+    let debounceTimer = null;
+    const refreshModels = async (preferredId) => {
+      const url = urlInput.value.trim();
+      if (!url) {
+        modelSelect.innerHTML = '';
+        modelSelect.appendChild(placeholder);
+        modelSelect.disabled = true;
+        statusEl.textContent = '';
+        return;
+      }
+      if (!/^https?:\/\//i.test(url)) {
+        modelSelect.disabled = true;
+        statusEl.textContent = '';
+        return;
+      }
+      const myToken = ++fetchToken;
+      modelSelect.disabled = true;
+      statusEl.textContent = 'Loading models…';
+      errEl.textContent = '';
+      try {
+        const { models, source } = await fetchRemoteModels(url);
+        if (myToken !== fetchToken) return;   // stale — newer fetch in flight
+        models.sort((a, b) => a.id.localeCompare(b.id));
+        modelSelect.innerHTML = '';
+        for (const m of models) {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          const meta = [m.params, formatBytes(m.size), m.quant]
+            .filter(Boolean).join(', ');
+          opt.textContent = meta ? `${m.id} (${meta})` : m.id;
+          modelSelect.appendChild(opt);
+        }
+        if (preferredId) {
+          const match = [...modelSelect.options].find((o) => o.value === preferredId);
+          if (match) modelSelect.value = preferredId;
+        }
+        modelSelect.disabled = false;
+        statusEl.textContent =
+          `${models.length} model${models.length === 1 ? '' : 's'} from `
+          + (source === 'ollama' ? 'Ollama /api/tags' : 'OpenAI /v1/models');
+      } catch (err) {
+        if (myToken !== fetchToken) return;
+        modelSelect.innerHTML = '';
+        modelSelect.appendChild(placeholder);
+        modelSelect.disabled = true;
+        statusEl.textContent = '';
+        errEl.textContent = `Couldn't reach ${url}: ${err.message}`;
+      }
+    };
+    urlInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => refreshModels(seed?.model), 400);
+    });
+    urlInput.addEventListener('change', () => {
+      clearTimeout(debounceTimer);
+      refreshModels(seed?.model);
+    });
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'cb-remote-btns';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'cb-remote-save';
+    saveBtn.textContent = seed ? 'Save & connect' : 'Add & connect';
+    saveBtn.addEventListener('click', () => {
+      const url = urlInput.value.trim();
+      const model = modelSelect.value.trim();
+      if (!url) {
+        errEl.textContent = 'A URL is required.';
+        return;
+      }
+      if (!/^https?:\/\//i.test(url)) {
+        errEl.textContent = 'URL must start with http:// or https://';
+        return;
+      }
+      if (!model) {
+        errEl.textContent = 'Pick a model from the dropdown.';
+        return;
+      }
+      const cfg = { url: url.replace(/\/+$/, ''), model };
+      saveRemoteConfig(cfg);
+      saveModelId(REMOTE_MODEL_ID);
+      this._pickerEl.classList.add('hidden');
+      this._history = [];
+      if (this._messagesEl) this._messagesEl.innerHTML = '';
+      this._removeActiveChips();
+      this._startLoadRemote(cfg);
+    });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'cb-remote-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => this._showPicker());
+
+    btnRow.appendChild(saveBtn);
+    btnRow.appendChild(cancelBtn);
+    wrap.appendChild(btnRow);
+
+    this._pickerEl.appendChild(wrap);
+    urlInput.focus();
+
+    // Auto-fetch on first render when a URL is already present (edit
+    // mode, or browser-restored value).  Skipped when starting fresh
+    // since there's nothing to fetch yet.
+    if (urlInput.value.trim()) {
+      refreshModels(seed?.model);
+    }
   }
 
   _hidePicker() {
@@ -1154,6 +1552,10 @@ export class ChatBot {
 
   async _startLoad(modelId) {
     if (!modelId) modelId = loadSavedModelId() ?? DEFAULT_MODEL_ID;
+    // If we were on a remote endpoint, swap back to the local LLM
+    // before loading.  Same listener wiring on both sides so the rest
+    // of the UI doesn't need to know which path we're on.
+    this._ensureLLMKind('local');
     this._loadBtn.disabled = true;
     this._loadBtn.textContent = 'Loading…';
     this._loadBtn.classList.add('hidden');
@@ -1174,6 +1576,31 @@ export class ChatBot {
     }
   }
 
+  /** Connect to a configured Ollama-compatible HTTP endpoint.  Mirrors
+   *  _startLoad's UI flow (hide picker, show progress, surface Retry on
+   *  failure) but routes through a RemoteLLM instance instead of the
+   *  WebLLM worker. */
+  async _startLoadRemote(cfg) {
+    if (!cfg?.url || !cfg?.model) {
+      dwarn('startLoadRemote: missing url/model in cfg', cfg);
+      this._showPicker();
+      return;
+    }
+    this._ensureLLMKind('remote', cfg.url.replace(/\/+$/, ''));
+    this._loadBtn.disabled = true;
+    this._loadBtn.textContent = 'Loading…';
+    this._loadBtn.classList.add('hidden');
+    this._switchModelBtn.classList.add('hidden');
+    this._hidePicker();
+    dlog('startLoadRemote: url=', cfg.url, 'model=', cfg.model);
+    try {
+      await this._llm.load(cfg.model);
+    } catch (err) {
+      this._loadBtn.disabled = false;
+      this._loadBtn.textContent = 'Retry';
+    }
+  }
+
   _onStatus(status, msg) {
     if (status === 'loading') {
       this._statusEl.textContent = msg || 'Loading…';
@@ -1185,7 +1612,10 @@ export class ChatBot {
     } else if (status === 'ready') {
       const id    = this._llm.loadedModelId;
       const entry = MODELS.find((m) => m.id === id);
-      const label = entry?.label ?? id ?? '';
+      const isRemote = this._llm instanceof RemoteLLM;
+      const label = isRemote
+        ? `Remote: ${id || 'Ready'}`
+        : (entry?.label ?? id ?? '');
       this._statusEl.textContent = `● ${label || 'Ready'}`;
       this._statusEl.className = 'cb-status cb-status-ready';
       this._progressEl.classList.add('hidden');
