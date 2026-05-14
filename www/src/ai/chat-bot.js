@@ -109,9 +109,106 @@ function effectiveBudget(llm) {
   return Math.max(0, ctxChars - RESPONSE_RESERVE_CHARS);
 }
 
+/* ---- Lazy loaders for KaTeX + Mermaid ------------------------------
+   Both libs are vendored under www/vendor/{katex,mermaid}/ but only
+   imported on demand the first time the assistant emits a math expr
+   or a ```mermaid fence.  Keeps the chat UI's cold-start cost from
+   paying for libraries the user may never trigger.  Resolved
+   modules are cached on first call; subsequent renders are sync-fast.
+   ------------------------------------------------------------------ */
+
+let _katexPromise = null;
+function ensureKaTeX() {
+  if (!_katexPromise) {
+    _katexPromise = import('../../vendor/katex/katex.mjs')
+      .then((m) => m.default)
+      .catch((err) => { _katexPromise = null; throw err; });
+  }
+  return _katexPromise;
+}
+
+let _mermaidPromise = null;
+function ensureMermaid() {
+  if (!_mermaidPromise) {
+    _mermaidPromise = new Promise((resolve, reject) => {
+      if (globalThis.mermaid) { resolve(globalThis.mermaid); return; }
+      const s = document.createElement('script');
+      s.src = 'vendor/mermaid/mermaid.min.js';
+      s.onload = () => {
+        const m = globalThis.mermaid;
+        if (!m) { reject(new Error('mermaid global missing after load')); return; }
+        // startOnLoad would auto-scan the page; we render on demand
+        // via mermaid.render() so this must be false.
+        m.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default' });
+        resolve(m);
+      };
+      s.onerror = () => reject(new Error('failed to load vendor/mermaid/mermaid.min.js'));
+      document.head.appendChild(s);
+    }).catch((err) => { _mermaidPromise = null; throw err; });
+  }
+  return _mermaidPromise;
+}
+
+/** Render a KaTeX expression into a freshly-created span/div.  Falls
+ *  back to plain text in a code-style element if KaTeX hasn't loaded
+ *  yet OR if the expression has a parse error — the user sees the
+ *  source rather than an empty box.  `displayMode` true for $$…$$. */
+function renderMathInto(target, expr, displayMode) {
+  // Synchronous fallback first so something appears immediately even
+  // before the lazy import resolves.  Replaced once KaTeX is ready.
+  const fallback = document.createElement(displayMode ? 'div' : 'span');
+  fallback.className = displayMode ? 'cb-math-fallback cb-math-display' : 'cb-math-fallback';
+  fallback.textContent = (displayMode ? '$$' : '$') + expr + (displayMode ? '$$' : '$');
+  target.appendChild(fallback);
+  ensureKaTeX().then((katex) => {
+    try {
+      const html = katex.renderToString(expr, {
+        displayMode,
+        throwOnError: false,
+        output: 'html',
+      });
+      const wrap = document.createElement(displayMode ? 'div' : 'span');
+      wrap.className = displayMode ? 'cb-math-display' : 'cb-math-inline';
+      wrap.innerHTML = html;
+      fallback.replaceWith(wrap);
+    } catch {
+      // Keep the fallback — better than a broken render.
+    }
+  }).catch(() => { /* keep fallback */ });
+}
+
+/** Build a placeholder div for a mermaid diagram and kick off its
+ *  async render.  The placeholder shows the source as a code block
+ *  until mermaid loads; on success we swap in the rendered SVG.  Each
+ *  diagram gets a unique id because mermaid.render() insists on one. */
+let _mermaidCounter = 0;
+function renderMermaidInto(parent, source) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cb-mermaid';
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  code.textContent = source;
+  pre.appendChild(code);
+  wrap.appendChild(pre);
+  parent.appendChild(wrap);
+  ensureMermaid().then(async (m) => {
+    const id = `cb-mermaid-${++_mermaidCounter}`;
+    try {
+      const { svg } = await m.render(id, source);
+      wrap.innerHTML = svg;
+    } catch (err) {
+      const errEl = document.createElement('div');
+      errEl.className = 'cb-mermaid-error';
+      errEl.textContent = `mermaid: ${err && err.message ? err.message : 'render failed'}`;
+      wrap.appendChild(errEl);
+    }
+  }).catch(() => { /* keep source pre */ });
+}
+
 /* ---- Simple markdown → DOM renderer --------------------------------
    Handles the subset the assistant actually uses: headers, bold,
-   italic, inline code, fenced code blocks, bullet lists.
+   italic, inline code, fenced code blocks, bullet lists, plus
+   KaTeX math ($…$ and $$…$$) and ```mermaid diagrams.
    Action / tool_call fences are stripped before this renderer sees
    the text — they get their own widget.
    ------------------------------------------------------------------ */
@@ -127,12 +224,17 @@ function renderMarkdown(text) {
       // Fenced block — extract optional language tag.
       const inner = part.slice(3, -3);
       const nlIdx = inner.indexOf('\n');
+      const lang  = nlIdx >= 0 ? inner.slice(0, nlIdx).trim().toLowerCase() : '';
       const code  = nlIdx >= 0 ? inner.slice(nlIdx + 1) : inner;
-      const pre   = document.createElement('pre');
-      const codeEl = document.createElement('code');
-      codeEl.textContent = code.trimEnd();
-      pre.appendChild(codeEl);
-      frag.appendChild(pre);
+      if (lang === 'mermaid') {
+        renderMermaidInto(frag, code.trimEnd());
+      } else {
+        const pre   = document.createElement('pre');
+        const codeEl = document.createElement('code');
+        codeEl.textContent = code.trimEnd();
+        pre.appendChild(codeEl);
+        frag.appendChild(pre);
+      }
     } else {
       // Plain text segment — inline formatting only.
       appendInlineMarkdown(frag, part);
@@ -142,6 +244,28 @@ function renderMarkdown(text) {
 }
 
 function appendInlineMarkdown(frag, text) {
+  // Pull out display math ($$…$$) before the line-based pass — these
+  // are block-level and shouldn't be glued into a surrounding <p>.
+  // We also accept \[…\] as a synonym (some models emit LaTeX
+  // delimiters rather than dollar pairs).
+  const blockSplit = text.split(/(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\])/g);
+  if (blockSplit.length > 1) {
+    for (const seg of blockSplit) {
+      if (!seg) continue;
+      if (seg.startsWith('$$') && seg.endsWith('$$')) {
+        renderMathInto(frag, seg.slice(2, -2).trim(), /* displayMode */ true);
+      } else if (seg.startsWith('\\[') && seg.endsWith('\\]')) {
+        renderMathInto(frag, seg.slice(2, -2).trim(), /* displayMode */ true);
+      } else {
+        appendInlineMarkdownLines(frag, seg);
+      }
+    }
+    return;
+  }
+  appendInlineMarkdownLines(frag, text);
+}
+
+function appendInlineMarkdownLines(frag, text) {
   // Process line by line so we can detect list items and headers.
   const lines = text.split('\n');
   let p = null; // current paragraph
@@ -208,10 +332,14 @@ function appendInlineMarkdown(frag, text) {
   flushP();
 }
 
-/** Append inline-formatted spans (bold, italic, code) to a parent. */
+/** Append inline-formatted spans (bold, italic, code, $math$) to a
+ *  parent.  Inline math is `$…$` or `\(…\)`; the `$` form requires
+ *  a non-space char immediately after the opening `$` to avoid eating
+ *  bare dollar signs in prose ("costs $5 and $10"). */
 function appendSpans(parent, text) {
-  // Regex that matches **bold**, *italic*, `code` in order of priority.
-  const re = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`)/g;
+  // Order: code (so `…$x$…` inside backticks doesn't math-ify), then
+  // inline math (\(…\) and $…$), then **bold**, then *italic*.
+  const re = /(`([^`]+)`|\\\(([\s\S]+?)\\\)|\$(?=\S)([^$\n]+?)(?<=\S)\$|\*\*([^*]+)\*\*|\*([^*]+)\*)/g;
   let last = 0;
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -219,16 +347,20 @@ function appendSpans(parent, text) {
       parent.appendChild(document.createTextNode(text.slice(last, m.index)));
     }
     if (m[2] !== undefined) {
-      const s = document.createElement('strong');
+      const s = document.createElement('code');
       s.textContent = m[2];
       parent.appendChild(s);
     } else if (m[3] !== undefined) {
-      const s = document.createElement('em');
-      s.textContent = m[3];
-      parent.appendChild(s);
+      renderMathInto(parent, m[3].trim(), /* displayMode */ false);
     } else if (m[4] !== undefined) {
-      const s = document.createElement('code');
-      s.textContent = m[4];
+      renderMathInto(parent, m[4].trim(), /* displayMode */ false);
+    } else if (m[5] !== undefined) {
+      const s = document.createElement('strong');
+      s.textContent = m[5];
+      parent.appendChild(s);
+    } else if (m[6] !== undefined) {
+      const s = document.createElement('em');
+      s.textContent = m[6];
       parent.appendChild(s);
     }
     last = m.index + m[0].length;

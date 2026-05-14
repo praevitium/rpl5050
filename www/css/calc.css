@@ -2065,6 +2065,53 @@ body.mode-minimal .keypad {
   color: #b0c4e8;
 }
 
+/* ---- KaTeX math + Mermaid diagrams inside bubbles ----
+   KaTeX ships its own typography; we only need to keep its colour
+   readable on the dark bubble background and add some breathing room
+   around display equations.  The fallback class is what the renderer
+   inserts before the lazy import resolves (or when KaTeX errors). */
+.cb-bubble .katex { color: #e6edf6; font-size: 1.05em; }
+.cb-bubble .cb-math-display {
+  display: block;
+  overflow-x: auto;
+  margin: 8px 0;
+  text-align: center;
+}
+.cb-bubble .cb-math-display .katex-display { margin: 0; }
+.cb-bubble .cb-math-fallback {
+  font-family: var(--font-lcd);
+  color: #b8d4f0;
+  background: rgba(255,255,255,.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.cb-bubble .cb-math-fallback.cb-math-display {
+  display: block;
+  text-align: center;
+  padding: 6px 8px;
+}
+
+.cb-bubble .cb-mermaid {
+  margin: 8px 0;
+  padding: 10px;
+  background: #f7f8fb;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 6px;
+  overflow-x: auto;
+  text-align: center;
+}
+.cb-bubble .cb-mermaid svg { max-width: 100%; height: auto; }
+.cb-bubble .cb-mermaid pre {
+  background: #181c28;
+  margin: 0;
+  text-align: left;
+}
+.cb-bubble .cb-mermaid-error {
+  color: #ff9b9b;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
 /* ---- Tool-call / action widget ---- */
 .cb-action-widget {
   margin-top: 8px;

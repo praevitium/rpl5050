@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sLo katex.tgz https://registry.npmjs.org/katex/-/katex-0.16.11.tgz)",
+      "Bash(tar tzf *)",
+      "Bash(mkdir -p katex-extract)",
+      "Bash(tar xzf *)",
+      "Bash(cp /tmp/katex-extract/package/dist/katex.mjs /Users/me/Code/play/rpl5050/www/vendor/katex/katex.mjs)",
+      "Bash(cp /tmp/katex-extract/package/dist/katex.min.css /Users/me/Code/play/rpl5050/www/vendor/katex/katex.min.css)",
+      "Bash(cp /tmp/katex-extract/package/LICENSE /Users/me/Code/play/rpl5050/www/vendor/katex/LICENSE)",
+      "Bash(cp /tmp/katex-extract/package/dist/fonts/*.woff2 /Users/me/Code/play/rpl5050/www/vendor/katex/fonts/)",
+      "Bash(curl -sLo mermaid.tgz https://registry.npmjs.org/mermaid/-/mermaid-11.4.1.tgz)",
+      "Bash(mkdir -p mermaid-extract)",
+      "Bash(cp /tmp/mermaid-extract/package/dist/mermaid.min.js /Users/me/Code/play/rpl5050/www/vendor/mermaid/mermaid.min.js)",
+      "Bash(cp /tmp/mermaid-extract/package/LICENSE /Users/me/Code/play/rpl5050/www/vendor/mermaid/LICENSE)",
+      "Bash(node --check /Users/me/Code/play/rpl5050/www/src/ai/chat-bot.js)",
+      "Bash(npx --yes live-server --port=5051 --host=127.0.0.1 --no-browser --entry-file=index.html www)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:5051/index.html)",
+      "Bash(curl -s -o /dev/null -w \"katex.mjs %{http_code}\\\\n\" http://127.0.0.1:5051/vendor/katex/katex.mjs)",
+      "Bash(curl -s -o /dev/null -w \"katex.css %{http_code}\\\\n\" http://127.0.0.1:5051/vendor/katex/katex.min.css)",
+      "Bash(curl -s -o /dev/null -w \"mermaid %{http_code}\\\\n\" http://127.0.0.1:5051/vendor/mermaid/mermaid.min.js)",
+      "Bash(curl -s -o /dev/null -w \"katex font %{http_code}\\\\n\" http://127.0.0.1:5051/vendor/katex/fonts/KaTeX_Main-Regular.woff2)",
+      "Bash(npm test *)",
+      "Bash(rm -rf /tmp/katex-extract /tmp/mermaid-extract /tmp/katex.tgz /tmp/mermaid.tgz /tmp/katex-smoke.mjs /tmp/regex-smoke.mjs 2>/dev/null; echo cleaned)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp/katex-extract"
+    ]
+  }
+}
