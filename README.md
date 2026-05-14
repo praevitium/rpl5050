@@ -1,4 +1,4 @@
-# rp5050ai — RPL Scientific Calculator
+# rpl.ai — AI-Assisted RPL Calculator
 
 | Full View                         | Minimal View (resizable)            |
 |:---------------------------------:|:-----------------------------------:|
@@ -70,14 +70,14 @@ a couple of times before, but the scope always made it feel like years of
 work.
 
 Then things changed. AI-assisted development made what had previously felt
-intractable feel tractable. So I gave it a serious try, and **rp5050ai** is
+intractable feel tractable. So I gave it a serious try, and **rpl.ai** is
 what came out of that effort.
 
 ---
 
 ## What it is
 
-rp5050ai is a desktop RPL scientific calculator built for high-resolution
+rpl.ai is a desktop RPL scientific calculator built for high-resolution
 screens, full keyboard-and-mouse input, and a comfortable side panel. It
 faithfully implements the HP 50g's User-RPL language and command surface, and
 replaces the original 128×80 LCD and aging CAS with a modern UI backed by
@@ -229,7 +229,7 @@ exits non-zero on the first failure and prints a diff.
 
 ## License
 
-rp5050ai is licensed under the **GNU General Public License v3.0 or later**
+rpl.ai is licensed under the **GNU General Public License v3.0 or later**
 (`SPDX-License-Identifier: GPL-3.0-or-later`). See [LICENSE](LICENSE) for
 the full text.
 

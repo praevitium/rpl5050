@@ -1,4 +1,4 @@
-# Tauri Setup for rp5050ai
+# Tauri Setup for rpl.ai
 
 This project is now configured to run as a native desktop application on macOS, Windows, and Linux using Tauri.
 

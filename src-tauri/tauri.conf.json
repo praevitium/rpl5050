@@ -1,7 +1,7 @@
 {
-  "productName": "rp5050ai",
-  "version": "0.1.0",
-  "identifier": "com.rpl5050.rp5050ai",
+  "productName": "rpl.ai",
+  "version": "0.2.0",
+  "identifier": "com.rpl5050.rplai",
   "build": {
     "beforeBuildCommand": "node scripts/build-frontend-dist.mjs",
     "beforeDevCommand": { "script": "node scripts/build-frontend-dist.mjs", "wait": true },
@@ -11,7 +11,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "rp5050ai - RPL Scientific Calculator",
+        "title": "rpl.ai - AI-Assisted RPL Calculator",
         "width": 600,
         "height": 900,
         "resizable": true,

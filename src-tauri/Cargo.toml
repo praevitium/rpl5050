@@ -1,7 +1,7 @@
 [package]
-name = "rp5050ai"
-version = "0.1.0"
-description = "RPL Scientific Calculator - Modern HP50g Adaptation"
+name = "rplai"
+version = "0.2.0"
+description = "AI-Assisted RPL Calculator - Modern HP50g Adaptation"
 authors = ["RPL5050 Contributors"]
 license = "MIT"
 repository = "https://github.com/user/rpl5050"

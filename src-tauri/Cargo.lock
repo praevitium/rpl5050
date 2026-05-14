@@ -2682,8 +2682,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "rp5050ai"
-version = "0.1.0"
+name = "rplai"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",

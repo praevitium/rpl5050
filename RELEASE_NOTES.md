@@ -1,12 +1,12 @@
-# Release Notes — rp5050ai v0.1
+# Release Notes — rpl.ai v0.2
 
 **Release date:** 2026-04-26
 
 ---
 
-## What is rp5050ai?
+## What is rpl.ai?
 
-rp5050ai is a modern, high-resolution desktop reimplementation of the HP 50g
+rpl.ai is a modern, high-resolution desktop reimplementation of the HP 50g
 graphing calculator. It preserves everything that made the HP 50g exceptional
 — the RPN/RPL stack model, the User-RPL programming language, and the full
 AUR command surface — while replacing the original's 128×80 monochrome LCD
@@ -22,7 +22,7 @@ development.
 
 ---
 
-## Functionality in v0.1
+## Functionality in v0.2
 
 ### Stack engine and RPN model
 
@@ -141,7 +141,7 @@ statistics, persistence, reflection, and UI entry logic.
 
 ---
 
-## Known limitations in v0.1
+## Known limitations in v0.2
 
 ### Commands not yet implemented
 
@@ -202,7 +202,7 @@ phone or tablet viewports.
 ## Possible future enhancements
 
 The items below are drawn directly from `docs/ROADMAP.md`. They represent
-the clearest paths forward after v0.1.0, roughly in priority order.
+the clearest paths forward after v0.2.0, roughly in priority order.
 
 **Close the command gap.** Matrix eigensolvers (`EGVL`, `EGV`) and the
 `CHARPOL` characteristic-polynomial op are the highest-value remaining holes
@@ -261,7 +261,7 @@ calculations.
 
 ## Upgrade notes
 
-v0.1 is the first versioned release. There is no migration path from an
+v0.2 is the first versioned release. There is no migration path from an
 earlier development build. If you have a local development clone, pull the
 latest commit and re-run `npm install` to regenerate `build-info.js`.
 
@@ -269,7 +269,7 @@ latest commit and re-run `npm install` to regenerate `build-info.js`.
 
 ## License
 
-rp5050ai is licensed under the **GNU General Public License v3.0 or later**
+rpl.ai is licensed under the **GNU General Public License v3.0 or later**
 (`SPDX-License-Identifier: GPL-3.0-or-later`).
 
 Bundled third-party components: Giac (GPL-3.0+, Bernard Parisse /

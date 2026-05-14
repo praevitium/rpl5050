@@ -1,7 +1,7 @@
 # Vendored Giac (WebAssembly build)
 
 This directory holds a prebuilt WebAssembly build of Giac — the computer
-algebra engine used by rp5050ai for symbolic math (FACTOR, EXPAND, DERIV,
+algebra engine used by rpl.ai for symbolic math (FACTOR, EXPAND, DERIV,
 INTEG, SOLVE, TEXPAND, TLIN, series, limits, etc.).
 
 ## Why Giac
@@ -10,7 +10,7 @@ Bernard Parisse wrote both Giac and "erable", the CAS that shipped on
 the HP 48GX / 49 / 49g+ / 50g. The HP Prime runs Giac directly. Most HP
 CAS command names (`factor`, `integrate`, `diff`, `tlin`, `texpand`,
 `simplify`, etc.) have direct Giac equivalents, which is exactly what
-rp5050ai wants.
+rpl.ai wants.
 
 ## Provenance
 
@@ -52,7 +52,7 @@ anywhere else**.
 ## License
 
 Giac is licensed under **GNU General Public License v3.0 or later**.
-Because rp5050ai bundles Giac, the whole project is distributed under
+Because rpl.ai bundles Giac, the whole project is distributed under
 GPL-3.0-or-later. See the repo-root `LICENSE` and `NOTICE` files.
 
 GMP, MPFR, and MPFI (arbitrary-precision math libraries transitively
