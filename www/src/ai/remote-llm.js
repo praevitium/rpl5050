@@ -22,9 +22,33 @@
      onProgress subscription exists only so the LLM consumer doesn't
      need to special-case which impl it has. */
 
+/** Normalize a user-typed base URL into the OpenAI-compatible base
+ *  (with `/v1` suffix).  Accepts `http://host:port`, `…/v1`, or
+ *  `…/api` (Ollama-native root) and returns `…/v1` in all cases.
+ *  Trailing slashes are stripped. */
+export function toOpenAIBase(typed) {
+  let s = (typed || '').replace(/\/+$/, '');
+  if (!s) return '';               // preserve empty so callers can detect "unset"
+  s = s.replace(/\/api$/, '');     // Ollama-native root → server root
+  if (!/\/v1$/.test(s)) s += '/v1';
+  return s;
+}
+
+/** Normalize a user-typed base URL into the Ollama-native server root
+ *  (no `/v1`, no `/api`).  Call sites append `/api/<endpoint>`. */
+export function toOllamaBase(typed) {
+  return (typed || '')
+    .replace(/\/+$/, '')
+    .replace(/\/v1$/, '')
+    .replace(/\/api$/, '');
+}
+
 export class RemoteLLM {
   constructor(endpoint = '') {
-    this._endpoint  = (endpoint || '').replace(/\/+$/, '');
+    // Always store the OpenAI-compat base (with /v1).  /chat/completions
+    // and /models are appended directly; Ollama-native probes derive the
+    // server root via toOllamaBase() at the call site.
+    this._endpoint  = toOpenAIBase(endpoint);
     this._status    = 'idle';
     this._statusMsg = '';
     this._statusListeners   = new Set();
@@ -112,8 +136,7 @@ export class RemoteLLM {
       // we silently fall through — chat-bot.js's effectiveBudget
       // applies a default in that case.
       try {
-        const ollamaBase = this._endpoint.replace(/\/v1$/, '');
-        const r = await fetch(ollamaBase + '/api/show', {
+        const r = await fetch(toOllamaBase(this._endpoint) + '/api/show', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: modelId }),

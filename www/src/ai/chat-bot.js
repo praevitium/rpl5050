@@ -33,7 +33,7 @@
    ================================================================= */
 
 import { LLM } from './llm.js';
-import { RemoteLLM } from './remote-llm.js';
+import { RemoteLLM, toOpenAIBase, toOllamaBase } from './remote-llm.js';
 import { SYSTEM_PROMPT_COMBINED } from './system-prompt.js';
 
 // Diagnostic logging — every flow-control transition in this module
@@ -706,8 +706,8 @@ function clearRemoteConfig() {
  *  Returns `{ models: [{id, size, params, quant}], source: 'ollama'|'openai' }`.
  *  Throws if neither probe returns a usable model list. */
 async function fetchRemoteModels(url) {
-  const trimmed = url.replace(/\/+$/, '');
-  const ollamaBase = trimmed.replace(/\/v1$/, '');
+  const openaiBase = toOpenAIBase(url);
+  const ollamaBase = toOllamaBase(url);
 
   // Try Ollama native first — richer metadata and the URL shape most
   // users will actually have configured for this app.
@@ -727,8 +727,8 @@ async function fetchRemoteModels(url) {
 
   // OpenAI-compat fallback.  No size/param/quant exposed by the spec —
   // just id.  We still surface them so the user can pick a model.
-  const r2 = await fetch(trimmed + '/models', { method: 'GET' });
-  if (!r2.ok) throw new Error(`HTTP ${r2.status} from ${trimmed}/models`);
+  const r2 = await fetch(openaiBase + '/models', { method: 'GET' });
+  if (!r2.ok) throw new Error(`HTTP ${r2.status} from ${openaiBase}/models`);
   const body2 = await r2.json();
   const models = (body2?.data ?? []).map((m) => ({
     id: m.id, size: null, params: null, quant: null,
@@ -875,7 +875,7 @@ export class ChatBot {
   _ensureLLMKind(kind, endpoint = '') {
     const isRemote = this._llm instanceof RemoteLLM;
     if (kind === 'remote') {
-      if (isRemote && this._llm.endpoint === endpoint) return;
+      if (isRemote && this._llm.endpoint === toOpenAIBase(endpoint)) return;
     } else {
       if (!isRemote) return;
     }
