@@ -5,6 +5,11 @@
 | 💡Click logo to switch views      | 💡Full keyboard + mouse support       |
 | ![Full view](screenshot-full.png) | ![Minimal view](screenshot-min.png) |
 
+| AI Assistant                                                                     |
+|:--------------------------------------------------------------------------------:|
+| 💡Ask about RPL, derive formulas, and push results straight onto the stack       |
+| ![AI assistant](screenshot-ai.png)                                               |
+
 ---
 
 ## The story
