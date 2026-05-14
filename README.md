@@ -10,6 +10,16 @@
 | 💡Ask about RPL, derive formulas, and push results straight onto the stack       |
 | ![AI assistant](screenshot-ai.png)                                               |
 
+| Commands (with help)                                              | Constants & Characters                                                  |
+|:-----------------------------------------------------------------:|:-----------------------------------------------------------------------:|
+| Command catalog with inline help (right-click)                    | 💡Physical constants and special-characters                       |
+| ![Commands with help](screenshot-commands-with-help.png)          | ![Constants and characters](screenshot-constants-and-chars.png)         |
+
+| File Manager                                                      | History                                                                 |
+|:-----------------------------------------------------------------:|:-----------------------------------------------------------------------:|
+| 💡Browse and organize programs, variables, and data               | 💡Replay any prior session entry straight back to the stack             |
+| ![File manager](screenshot-file-manager.png)                      | ![History](screenshot-history.png)                                      |
+
 ---
 
 ## The story
@@ -179,6 +189,44 @@ The frontend is pure static assets. You can also open
 [www/index.html](www/index.html) directly in a browser to use the calculator
 without Tauri, with the caveat that features depending on Tauri APIs (native
 menus, filesystem persistence) won't be wired up.
+
+---
+
+## Try this first
+
+If RPL is new (or rusty), here's a short tour that exercises most of what
+the calculator can do in a few minutes.
+
+**Stack arithmetic.** Type `24` ENTER, then `15` ENTER, then `*`. The two
+operands stack up; `*` consumes them and leaves `360`. Whitespace-separated
+input works too — `2 3 + 4 *` evaluates left-to-right and ends with `20` on
+the stack.
+
+**Symbolic algebra.** Push `'X^2-4'` and run `FACTOR` → `(X-2)*(X+2)`. Try
+`'SIN(X)' 'X' ∂` for a derivative, or `'X^2-4=0' 'X' SOLVE`. The CAS is
+Giac, so most expressions you'd type into Xcas work here too.
+
+**Local variables.** `2 3 → a b « a b + a b * »` pops two values into named
+locals, runs the body, and tears down the frame on exit. Compiled locals are
+the normal way to give intermediate values names inside a program.
+
+**Store a program.** Type `« DUP * » 'SQ' STO`. Now `5 SQ` gives `25`. User-
+defined names sit in the same namespace as built-ins — same lookup, same
+EVAL, same right-click help.
+
+**The side panel.** Open the catalog and type to filter the command list;
+right-click any entry for its signature and description. The characters
+panel handles Greek letters and operators that aren't on the keyboard. The
+file manager moves programs and variables in and out of the calculator's
+home directory.
+
+**Ask the AI.** Prefix any command-line input with `?` to send it to the
+assistant — e.g. `? give me a program that returns the n-th Fibonacci
+number`. Answers come back as RPL you can push onto the stack with one
+click.
+
+**History.** Every entry from the current session is replayable from the
+history panel — click a prior result to push it back onto the stack.
 
 ---
 
